@@ -1,0 +1,106 @@
+name: Deploy PagerDuty-Lite
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+      - 'infrastructure/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_API_REPOSITORY: pagerduty-lite-dev-api
+  ECR_WORKER_REPOSITORY: pagerduty-lite-dev-notification-worker
+  ECS_CLUSTER: pagerduty-lite-dev
+  ECS_API_SERVICE: pagerduty-lite-dev-api
+  ECS_WORKER_SERVICE: pagerduty-lite-dev-notification-worker
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push API image to Amazon ECR
+        id: build-api-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd backend
+          docker build -t $ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG -f Dockerfile.api .
+          docker push $ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_API_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_API_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push Worker image to Amazon ECR
+        id: build-worker-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd backend
+          docker build -t $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG -f Dockerfile.worker .
+          docker push $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Deploy API to Amazon ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_API_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+      - name: Deploy Worker to Amazon ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_WORKER_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION
+
+      - name: Wait for API service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_API_SERVICE \
+            --region $AWS_REGION
+
+      - name: Wait for Worker service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_WORKER_SERVICE \
+            --region $AWS_REGION
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Deployment completed successfully!"
+          echo "API Image: ${{ steps.build-api-image.outputs.image }}"
+          echo "Worker Image: ${{ steps.build-worker-image.outputs.image }}"
+          echo "Cluster: $ECS_CLUSTER"
+          echo "Services: $ECS_API_SERVICE, $ECS_WORKER_SERVICE"
