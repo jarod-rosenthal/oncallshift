@@ -5,6 +5,7 @@
   "main": "dist/api/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/api/server.ts",
+    "dev:test": "ts-node-dev --respawn --transpile-only src/api/server-test.ts",
     "build": "tsc",
     "start": "node dist/api/server.js",
     "start:worker": "node dist/workers/notification-worker.js",
