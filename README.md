@@ -60,10 +60,15 @@ PagerDuty-Lite is a cost-effective, mobile-first incident management and on-call
    - React Native app with Expo
    - Core screens (login, incidents, detail)
 
-8. **Deployment** (Not Started)
-   - Dockerfiles for API and worker
-   - GitHub Actions CI/CD
-   - Deployment guide
+8. **Deployment** (Started - 50% Complete)
+   - Production Dockerfile (API + Frontend) ✅
+   - Docker build tested and working ✅
+   - Ready to push to ECR ✅
+   - **Still Needed:**
+     - Worker Dockerfile
+     - Push images to ECR
+     - Deploy to ECS
+     - GitHub Actions CI/CD
 
 ## MVP Features
 
@@ -182,42 +187,65 @@ terraform apply
 # - cognito_client_id
 ```
 
-### 2. Build Frontend
+### 2. Build and Push Docker Image
 
 ```bash
-cd frontend
+# From project root - builds frontend + backend in one container
+docker build -t pagerduty-lite-api -f Dockerfile .
 
-# Install dependencies
-npm install
+# Get ECR URL from Terraform outputs
+cd infrastructure/terraform/environments/dev
+ECR_URL=$(terraform output -raw api_ecr_repository_url)
 
-# Build for production
-npm run build
+# Authenticate with ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin $ECR_URL
 
-# The build output will be in dist/ and will be served by the backend
+# Tag and push
+docker tag pagerduty-lite-api:latest $ECR_URL:latest
+docker push $ECR_URL:latest
+
+# Deploy to ECS (force new deployment to pull latest image)
+aws ecs update-service \
+  --cluster pagerduty-lite-dev \
+  --service pagerduty-lite-dev-api \
+  --force-new-deployment \
+  --region us-east-1
 ```
 
-### 3. Build and Deploy Backend
+### 3. Build Worker Docker Image (When Worker is Built)
 
 ```bash
 cd backend
+docker build -t pagerduty-lite-worker -f Dockerfile.worker .
 
-# Install dependencies
-npm install
+# Get worker ECR URL
+cd ../infrastructure/terraform/environments/dev
+WORKER_ECR_URL=$(terraform output -raw worker_ecr_repository_url)
 
-# Build Docker images
-docker build -t API_ECR_URL:latest -f Dockerfile.api .
-docker build -t WORKER_ECR_URL:latest -f Dockerfile.worker .
-
-# Push to ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin API_ECR_URL
-docker push API_ECR_URL:latest
-docker push WORKER_ECR_URL:latest
-
-# Run migrations
-npm run migrate
+# Tag and push
+docker tag pagerduty-lite-worker:latest $WORKER_ECR_URL:latest
+docker push $WORKER_ECR_URL:latest
 ```
 
-### 4. Configure and Build Mobile App
+### 4. Test the Deployment
+
+```bash
+# Get ALB DNS name
+cd infrastructure/terraform/environments/dev
+ALB_DNS=$(terraform output -raw alb_dns_name)
+
+# Test endpoints
+curl http://$ALB_DNS/health
+curl http://$ALB_DNS/  # Should return React app
+curl http://$ALB_DNS/demo
+curl http://$ALB_DNS/api-docs
+
+# Open in browser
+open http://$ALB_DNS
+```
+
+### 5. Configure and Build Mobile App (Optional)
 
 ```bash
 cd mobile
@@ -236,7 +264,7 @@ npm run ios
 npm run android
 ```
 
-### 5. Create First Organization
+### 6. Create First Organization
 
 ```bash
 # Use Cognito to create first user
@@ -254,22 +282,6 @@ aws cognito-idp admin-confirm-sign-up \
 curl -X POST http://YOUR_ALB_DNS/api/v1/organizations \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -d '{"name": "My Organization"}'
-```
-
-### 6. Test the Web Application
-
-```bash
-# Access the web frontend
-open http://YOUR_ALB_DNS
-
-# The frontend routes:
-# /login - Login page
-# /register - User registration
-# / - Dashboard (protected, requires login)
-# /incidents - Incidents management
-# /schedules - On-call schedules
-# /demo - Live demo dashboard
-# /api-docs - Swagger API documentation
 ```
 
 ### 7. Test Alert Ingestion
@@ -301,6 +313,8 @@ curl -X POST http://YOUR_ALB_DNS/api/v1/alerts/webhook \
 - ✅ Express backend serves static frontend files
 - ✅ Swagger/OpenAPI documentation at /api-docs
 - ✅ Live demo dashboard at /demo
+- ✅ Production Dockerfile builds frontend + backend in single container
+- ✅ Docker build tested locally and working
 
 ### What Needs to Be Built
 
@@ -334,12 +348,17 @@ curl -X POST http://YOUR_ALB_DNS/api/v1/alerts/webhook \
 5. Push notification handling
 6. Deep linking
 
-**Deployment (~2-3 hours):**
-1. Dockerfiles (API and worker)
-2. GitHub Actions workflow
-3. Deployment documentation
+**Deployment (~1-2 hours remaining):**
+1. ✅ Dockerfile for API + frontend (completed)
+2. Push Docker image to ECR
+3. Deploy to ECS cluster
+4. Test via ALB DNS
+5. Worker Dockerfile
+6. GitHub Actions workflow (optional)
 
-**Total Estimated Time: 17-24 hours**
+See [DEPLOYMENT-STATUS.md](DEPLOYMENT-STATUS.md) for detailed deployment steps.
+
+**Total Estimated Time: 15-22 hours remaining**
 
 ## Cost Breakdown
 
