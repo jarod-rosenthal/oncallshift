@@ -23,29 +23,44 @@ PagerDuty-Lite is a cost-effective, mobile-first incident management and on-call
    - Cognito for authentication
    - Application Load Balancer
 
+### ✅ Recently Completed
+
+3. **React Web Frontend** (100% Complete)
+   - Vite + React 18 + TypeScript setup ✅
+   - Shadcn/ui + Tailwind CSS components ✅
+   - Authentication pages (Login/Register) ✅
+   - Dashboard with navigation ✅
+   - Incidents management page ✅
+   - Schedules management page ✅
+   - Protected routes with automatic auth ✅
+   - API client with token management ✅
+   - Swagger/OpenAPI documentation ✅
+   - Integrated with Express backend ✅
+
 ### 🚧 In Progress
 
-3. **Backend API** (Started - 30% Complete)
+4. **Backend API** (Started - 30% Complete)
    - Package.json and TypeScript configuration ✅
    - Database configuration and data source ✅
+   - Swagger API documentation ✅
+   - Demo dashboard ✅
    - **Still Needed:**
      - Database models (8 entities)
-     - API routes and controllers
-     - Authentication middleware
+     - Complete API route implementations
      - SQS queue integration
 
-4. **Workers** (Not Started)
+5. **Workers** (Not Started)
    - Notification worker for push notifications
 
-5. **Database** (Not Started)
+6. **Database** (Not Started)
    - Initial migration SQL
    - Seed data
 
-6. **Mobile App** (Not Started)
+7. **Mobile App** (Not Started)
    - React Native app with Expo
    - Core screens (login, incidents, detail)
 
-7. **Deployment** (Not Started)
+8. **Deployment** (Not Started)
    - Dockerfiles for API and worker
    - GitHub Actions CI/CD
    - Deployment guide
@@ -60,14 +75,14 @@ PagerDuty-Lite is a cost-effective, mobile-first incident management and on-call
 - ✅ Mobile app (iOS + Android)
 - ✅ Multi-tenant (organization isolation)
 - ✅ JWT authentication via Cognito
+- ✅ Web admin interface (React SPA)
 
 **Excluded from MVP (Phase 2+):**
 - SMS/Voice fallback
 - Email-to-incident
 - Heartbeat monitoring
 - Multi-level escalation
-- Schedule rotations
-- Web admin interface
+- Schedule rotations (automatic)
 
 See [docs/MVP-ROADMAP.md](docs/MVP-ROADMAP.md) for complete feature breakdown and post-MVP phases.
 
@@ -108,6 +123,9 @@ pagerduty-lite/
 ├── backend/
 │   ├── src/
 │   │   ├── api/                 # Express API service (in progress)
+│   │   │   ├── routes/          # API routes ✅
+│   │   │   ├── swagger.ts       # OpenAPI documentation ✅
+│   │   │   └── app.ts           # Express app with frontend integration ✅
 │   │   ├── workers/             # Background workers (not started)
 │   │   └── shared/              # Shared code
 │   │       ├── models/          # Database models (not started)
@@ -117,6 +135,16 @@ pagerduty-lite/
 │   │       └── notifications/   # Notification helpers (not started)
 │   ├── package.json             # ✅
 │   └── tsconfig.json            # ✅
+├── frontend/                    # React web application ✅
+│   ├── src/
+│   │   ├── components/          # UI components ✅
+│   │   ├── pages/               # Login, Dashboard, Incidents, Schedules ✅
+│   │   ├── lib/                 # API client and utilities ✅
+│   │   ├── store/               # Zustand state management ✅
+│   │   └── types/               # TypeScript types ✅
+│   ├── dist/                    # Production build (served by backend) ✅
+│   ├── package.json             # ✅
+│   └── README.md                # Frontend documentation ✅
 ├── mobile/                      # React Native app (not started)
 └── README.md                    # This file
 ```
@@ -154,7 +182,21 @@ terraform apply
 # - cognito_client_id
 ```
 
-### 2. Build and Deploy Backend
+### 2. Build Frontend
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Build for production
+npm run build
+
+# The build output will be in dist/ and will be served by the backend
+```
+
+### 3. Build and Deploy Backend
 
 ```bash
 cd backend
@@ -175,7 +217,7 @@ docker push WORKER_ECR_URL:latest
 npm run migrate
 ```
 
-### 3. Configure and Build Mobile App
+### 4. Configure and Build Mobile App
 
 ```bash
 cd mobile
@@ -194,7 +236,7 @@ npm run ios
 npm run android
 ```
 
-### 4. Create First Organization
+### 5. Create First Organization
 
 ```bash
 # Use Cognito to create first user
@@ -214,7 +256,23 @@ curl -X POST http://YOUR_ALB_DNS/api/v1/organizations \
   -d '{"name": "My Organization"}'
 ```
 
-### 5. Test Alert Ingestion
+### 6. Test the Web Application
+
+```bash
+# Access the web frontend
+open http://YOUR_ALB_DNS
+
+# The frontend routes:
+# /login - Login page
+# /register - User registration
+# / - Dashboard (protected, requires login)
+# /incidents - Incidents management
+# /schedules - On-call schedules
+# /demo - Live demo dashboard
+# /api-docs - Swagger API documentation
+```
+
+### 7. Test Alert Ingestion
 
 ```bash
 # Send test alert
@@ -239,6 +297,10 @@ curl -X POST http://YOUR_ALB_DNS/api/v1/alerts/webhook \
 - ✅ Terraform infrastructure can be deployed
 - ✅ Creates all AWS resources (VPC, ECS, Aurora, ALB, SQS, SNS, Cognito)
 - ✅ Database configuration with Secrets Manager integration
+- ✅ Complete React web frontend with authentication and incident management
+- ✅ Express backend serves static frontend files
+- ✅ Swagger/OpenAPI documentation at /api-docs
+- ✅ Live demo dashboard at /demo
 
 ### What Needs to Be Built
 

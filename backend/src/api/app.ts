@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger';
 import { logger } from '../shared/utils/logger';
@@ -17,12 +18,14 @@ import demoRoutes from './routes/demo';
 export function createApp(): Express {
   const app = express();
 
-  // Security middleware - allow inline scripts for demo page
+  // Security middleware - allow inline scripts for demo page and React app
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:", "blob:"],
         "upgrade-insecure-requests": null, // Disable for demo (no SSL certificate)
       },
     },
@@ -58,37 +61,6 @@ export function createApp(): Express {
     });
   });
 
-  // Root route - placeholder for React app
-  app.get('/', (_req, res) => {
-    res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PagerDuty-Lite</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 40px; text-align: center; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; margin-bottom: 20px; }
-        p { color: #7f8c8d; line-height: 1.6; margin-bottom: 20px; }
-        a { color: #3498db; text-decoration: none; font-weight: 600; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🚨 PagerDuty-Lite</h1>
-        <p>Welcome to PagerDuty-Lite! The web interface is being built.</p>
-        <p>In the meantime:</p>
-        <ul style="text-align: left; color: #7f8c8d; line-height: 2;">
-            <li><a href="/demo">View Live Demo Dashboard</a></li>
-            <li><a href="/api-docs">Browse API Documentation</a></li>
-            <li><a href="/health">Check API Health</a></li>
-        </ul>
-    </div>
-</body>
-</html>`);
-  });
 
   // Swagger API Documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -254,9 +226,40 @@ export function createApp(): Express {
   app.use('/api/v1/users', userRoutes);
   app.use('/api/v1/demo', demoRoutes);
 
-  // 404 handler
-  app.use((_req, res) => {
-    res.status(404).json({ error: 'Not found' });
+  // Serve React frontend (static files from build)
+  const frontendDistPath = process.env.FRONTEND_DIST_PATH || path.join(__dirname, '../../..', 'frontend', 'dist');
+
+  // Serve static files from React build
+  app.use(express.static(frontendDistPath));
+
+  // SPA fallback: serve index.html for all non-API, non-file routes
+  // This allows client-side routing to work
+  app.get('*', (req, res, next) => {
+    // Skip if it's an API route, demo, or api-docs
+    if (req.path.startsWith('/api/') || req.path.startsWith('/demo') || req.path.startsWith('/api-docs')) {
+      return next();
+    }
+
+    // Serve index.html for all other routes (client-side routing)
+    const indexPath = path.join(frontendDistPath, 'index.html');
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        logger.error('Error serving index.html:', err);
+        res.status(404).json({
+          error: 'Frontend not found',
+          message: 'Please build the frontend first: cd frontend && npm run build'
+        });
+      }
+    });
+  });
+
+  // 404 handler for API routes
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      res.status(404).json({ error: 'API endpoint not found' });
+    } else {
+      next();
+    }
   });
 
   // Error handler
