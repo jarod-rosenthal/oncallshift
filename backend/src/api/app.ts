@@ -1,20 +1,32 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './swagger';
 import { logger } from '../shared/utils/logger';
 
 // Import routes
+import authRoutes from './routes/auth';
 import alertRoutes from './routes/alerts';
 import incidentRoutes from './routes/incidents';
 import scheduleRoutes from './routes/schedules';
 import deviceRoutes from './routes/devices';
 import userRoutes from './routes/users';
+import demoRoutes from './routes/demo';
 
 export function createApp(): Express {
   const app = express();
 
-  // Security middleware
-  app.use(helmet());
+  // Security middleware - allow inline scripts for demo page
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "upgrade-insecure-requests": null, // Disable for demo (no SSL certificate)
+      },
+    },
+  }));
 
   // CORS
   app.use(cors({
@@ -27,7 +39,7 @@ export function createApp(): Express {
   app.use(express.urlencoded({ extended: true }));
 
   // Request logging
-  app.use((req, res, next) => {
+  app.use((req, _res, next) => {
     logger.info(`${req.method} ${req.path}`, {
       method: req.method,
       path: req.path,
@@ -38,7 +50,7 @@ export function createApp(): Express {
   });
 
   // Health check endpoint
-  app.get('/health', (req, res) => {
+  app.get('/health', (_req, res) => {
     res.status(200).json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -46,20 +58,209 @@ export function createApp(): Express {
     });
   });
 
+  // Root route - placeholder for React app
+  app.get('/', (_req, res) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PagerDuty-Lite</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 40px; text-align: center; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; margin-bottom: 20px; }
+        p { color: #7f8c8d; line-height: 1.6; margin-bottom: 20px; }
+        a { color: #3498db; text-decoration: none; font-weight: 600; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚨 PagerDuty-Lite</h1>
+        <p>Welcome to PagerDuty-Lite! The web interface is being built.</p>
+        <p>In the meantime:</p>
+        <ul style="text-align: left; color: #7f8c8d; line-height: 2;">
+            <li><a href="/demo">View Live Demo Dashboard</a></li>
+            <li><a href="/api-docs">Browse API Documentation</a></li>
+            <li><a href="/health">Check API Health</a></li>
+        </ul>
+    </div>
+</body>
+</html>`);
+  });
+
+  // Swagger API Documentation
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'PagerDuty-Lite API Docs',
+  }));
+
+  // Demo dashboard - serve HTML at /demo
+  app.get('/demo', (_req, res) => {
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PagerDuty-Lite Live Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1 { color: #2c3e50; font-size: 28px; margin-bottom: 10px; }
+        .status-badge { display: inline-block; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-left: 10px; }
+        .status-live { background: #e8f5e9; color: #2e7d32; }
+        .status-error { background: #ffebee; color: #c62828; }
+        .refresh-btn { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 10px; font-weight: 600; }
+        .refresh-btn:hover { background: #2980b9; }
+        .refresh-btn:disabled { background: #95a5a6; cursor: not-allowed; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-label { color: #7f8c8d; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
+        .stat-value { font-size: 32px; font-weight: bold; color: #2c3e50; }
+        .stat-critical { color: #e74c3c; }
+        .stat-warning { color: #f39c12; }
+        .stat-success { color: #27ae60; }
+        .incidents { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; margin-bottom: 20px; }
+        .incidents-header { padding: 20px; border-bottom: 1px solid #ecf0f1; display: flex; justify-content: space-between; align-items: center; }
+        .incidents-header h2 { color: #2c3e50; font-size: 20px; }
+        .last-updated { font-size: 12px; color: #95a5a6; }
+        .incident { padding: 20px; border-bottom: 1px solid #ecf0f1; transition: background 0.2s; }
+        .incident:hover { background: #f8f9fa; }
+        .incident-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px; }
+        .incident-title { font-size: 18px; font-weight: 600; color: #2c3e50; margin-bottom: 5px; }
+        .incident-number { font-size: 14px; color: #7f8c8d; }
+        .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+        .badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+        .badge-critical { background: #ffeaea; color: #e74c3c; }
+        .badge-warning { background: #fff8e1; color: #f39c12; }
+        .badge-info { background: #e3f2fd; color: #3498db; }
+        .badge-triggered { background: #ffebee; color: #c62828; }
+        .badge-acknowledged { background: #fff3e0; color: #ef6c00; }
+        .badge-resolved { background: #e8f5e9; color: #2e7d32; }
+        .incident-details { color: #7f8c8d; font-size: 14px; margin-top: 10px; }
+        .incident-meta { margin-top: 10px; display: flex; gap: 20px; font-size: 13px; color: #95a5a6; flex-wrap: wrap; }
+        .loading { text-align: center; padding: 40px; color: #7f8c8d; }
+        .loading-spinner { display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .error { background: #ffebee; color: #c62828; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .oncall-section { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .oncall-section h3 { color: #2c3e50; margin-bottom: 15px; font-size: 18px; }
+        .oncall-card { background: #f8f9fa; padding: 15px; border-radius: 4px; border-left: 4px solid #27ae60; margin-bottom: 10px; }
+        .oncall-name { font-weight: 600; color: #2c3e50; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚨 PagerDuty-Lite Live Demo <span class="status-badge" id="status-badge">Loading...</span></h1>
+            <p style="color: #7f8c8d; margin-top: 5px;">Real-time data from production database</p>
+            <button class="refresh-btn" id="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+        </header>
+        <div id="error-container"></div>
+        <div class="oncall-section" id="oncall-section" style="display: none;">
+            <h3>👤 Currently On-Call</h3>
+            <div id="oncall-list"></div>
+        </div>
+        <div class="stats">
+            <div class="stat-card"><div class="stat-label">🔴 Critical</div><div class="stat-value stat-critical" id="critical-count">-</div></div>
+            <div class="stat-card"><div class="stat-label">⚠️ Warning</div><div class="stat-value stat-warning" id="warning-count">-</div></div>
+            <div class="stat-card"><div class="stat-label">🔥 Triggered</div><div class="stat-value stat-critical" id="triggered-count">-</div></div>
+            <div class="stat-card"><div class="stat-label">✅ Resolved</div><div class="stat-value stat-success" id="resolved-count">-</div></div>
+        </div>
+        <div class="incidents">
+            <div class="incidents-header"><h2>Recent Incidents</h2><div class="last-updated" id="last-updated">Never updated</div></div>
+            <div id="incidents-list" class="loading"><div class="loading-spinner"></div><div>Loading live data...</div></div>
+        </div>
+    </div>
+    <script>
+        function formatTimeAgo(dateString) {
+            const date = new Date(dateString);
+            const seconds = Math.floor((new Date() - date) / 1000);
+            if (seconds < 60) return seconds + ' seconds ago';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return minutes + ' minute' + (minutes > 1 ? 's' : '') + ' ago';
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return hours + ' hour' + (hours > 1 ? 's' : '') + ' ago';
+            const days = Math.floor(hours / 24);
+            return days + ' day' + (days > 1 ? 's' : '') + ' ago';
+        }
+        async function loadData() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '⏳ Loading...';
+            try {
+                const response = await fetch('/api/v1/demo/dashboard');
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                document.getElementById('status-badge').textContent = '🟢 Live';
+                document.getElementById('status-badge').className = 'status-badge status-live';
+                document.getElementById('error-container').innerHTML = '';
+                document.getElementById('critical-count').textContent = data.stats.critical;
+                document.getElementById('warning-count').textContent = data.stats.warning;
+                document.getElementById('triggered-count').textContent = data.stats.triggered;
+                document.getElementById('resolved-count').textContent = data.stats.resolved;
+                if (data.oncallInfo && data.oncallInfo.length > 0) {
+                    document.getElementById('oncall-section').style.display = 'block';
+                    document.getElementById('oncall-list').innerHTML = data.oncallInfo.map(info =>
+                        '<div class="oncall-card"><div class="oncall-name">' +
+                        (info.oncallUser ? info.oncallUser.fullName : 'No one on-call') +
+                        '</div><div>' + info.schedule.name + (info.isOverride ? ' (Override)' : '') + '</div></div>'
+                    ).join('');
+                }
+                const container = document.getElementById('incidents-list');
+                if (data.incidents.length === 0) {
+                    container.innerHTML = '<div class="loading">No incidents found</div>';
+                } else {
+                    container.innerHTML = data.incidents.map(incident => {
+                        const details = incident.details ? Object.entries(incident.details).map(([k, v]) => k + ': ' + v).join(', ') : 'No additional details';
+                        return '<div class="incident"><div class="incident-header"><div><div class="incident-title">' + incident.summary + '</div>' +
+                            '<div class="incident-number">#' + incident.number + ' • ' + incident.service.name + '</div></div>' +
+                            '<div class="badges"><span class="badge badge-' + incident.severity + '">' + incident.severity + '</span>' +
+                            '<span class="badge badge-' + incident.state + '">' + incident.state + '</span></div></div>' +
+                            '<div class="incident-details">' + details + '</div>' +
+                            '<div class="incident-meta"><span>⏰ Triggered ' + formatTimeAgo(incident.triggeredAt) + '</span>' +
+                            (incident.acknowledgedBy ? '<span>✓ Ackd by ' + incident.acknowledgedBy.fullName + '</span>' : '') +
+                            (incident.resolvedBy ? '<span>✓ Resolved by ' + incident.resolvedBy.fullName + '</span>' : '') +
+                            (incident.eventCount > 1 ? '<span>📊 ' + incident.eventCount + ' events</span>' : '') + '</div></div>';
+                    }).join('');
+                }
+                document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+            } catch (error) {
+                document.getElementById('status-badge').textContent = 'Error';
+                document.getElementById('status-badge').className = 'status-badge status-error';
+                document.getElementById('error-container').innerHTML = '<div class="error"><strong>⚠️ Error:</strong> ' + error.message + '</div>';
+                document.getElementById('incidents-list').innerHTML = '<div class="loading">Failed to load data</div>';
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = '🔄 Refresh Data';
+            }
+        }
+        loadData();
+        setInterval(loadData, 30000);
+    </script>
+</body>
+</html>`);
+  });
+
   // API routes
+  app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/alerts', alertRoutes);
   app.use('/api/v1/incidents', incidentRoutes);
   app.use('/api/v1/schedules', scheduleRoutes);
   app.use('/api/v1/devices', deviceRoutes);
   app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/demo', demoRoutes);
 
   // 404 handler
-  app.use((req, res) => {
+  app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });
   });
 
   // Error handler
-  app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     logger.error('Unhandled error:', err);
     res.status(500).json({
       error: 'Internal server error',
