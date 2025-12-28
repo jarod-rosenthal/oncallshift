@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PagerDuty-Lite Live Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .status-live {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .api-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .api-url {
+            font-family: monospace;
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .refresh-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            font-weight: 600;
+        }
+
+        .refresh-btn:hover {
+            background: #2980b9;
+        }
+
+        .refresh-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-critical { color: #e74c3c; }
+        .stat-warning { color: #f39c12; }
+        .stat-info { color: #3498db; }
+        .stat-success { color: #27ae60; }
+
+        .incidents {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .incidents-header {
+            padding: 20px;
+            border-bottom: 1px solid #ecf0f1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .incidents-header h2 {
+            color: #2c3e50;
+            font-size: 20px;
+        }
+
+        .last-updated {
+            font-size: 12px;
+            color: #95a5a6;
+        }
+
+        .incident {
+            padding: 20px;
+            border-bottom: 1px solid #ecf0f1;
+            transition: background 0.2s;
+        }
+
+        .incident:hover {
+            background: #f8f9fa;
+        }
+
+        .incident:last-child {
+            border-bottom: none;
+        }
+
+        .incident-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+
+        .incident-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .incident-number {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+
+        .badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-critical {
+            background: #ffeaea;
+            color: #e74c3c;
+        }
+
+        .badge-warning {
+            background: #fff8e1;
+            color: #f39c12;
+        }
+
+        .badge-info {
+            background: #e3f2fd;
+            color: #3498db;
+        }
+
+        .badge-error {
+            background: #ffebee;
+            color: #e74c3c;
+        }
+
+        .badge-triggered {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .badge-acknowledged {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .badge-resolved {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .incident-details {
+            color: #7f8c8d;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+
+        .incident-meta {
+            margin-top: 10px;
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+            color: #95a5a6;
+            flex-wrap: wrap;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .error-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .oncall-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .oncall-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .oncall-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #27ae60;
+            margin-bottom: 10px;
+        }
+
+        .oncall-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .oncall-schedule {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                🚨 PagerDuty-Lite Live Demo
+                <span class="status-badge" id="status-badge">Loading...</span>
+            </h1>
+            <p style="color: #7f8c8d; margin-top: 5px;">Real-time data from production database</p>
+            <div class="api-info">
+                <strong>API Endpoint:</strong>
+                <div class="api-url" id="api-url">http://pagerduty-lite-dev-alb-1402458952.us-east-1.elb.amazonaws.com</div>
+                <button class="refresh-btn" id="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+            </div>
+        </header>
+
+        <div id="error-container"></div>
+
+        <div class="oncall-section" id="oncall-section" style="display: none;">
+            <h3>👤 Currently On-Call</h3>
+            <div id="oncall-list"></div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">🔴 Critical</div>
+                <div class="stat-value stat-critical" id="critical-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">⚠️ Warning</div>
+                <div class="stat-value stat-warning" id="warning-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">🔥 Triggered</div>
+                <div class="stat-value stat-critical" id="triggered-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">✅ Resolved</div>
+                <div class="stat-value stat-success" id="resolved-count">-</div>
+            </div>
+        </div>
+
+        <div class="incidents">
+            <div class="incidents-header">
+                <h2>Recent Incidents</h2>
+                <div class="last-updated" id="last-updated">Never updated</div>
+            </div>
+            <div id="incidents-list" class="loading">
+                <div class="loading-spinner"></div>
+                <div>Loading live data from API...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://pagerduty-lite-dev-alb-1402458952.us-east-1.elb.amazonaws.com';
+
+        function formatTimeAgo(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+
+            if (seconds < 60) return `${seconds} seconds ago`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+            const days = Math.floor(hours / 24);
+            return `${days} day${days > 1 ? 's' : ''} ago`;
+        }
+
+        function showError(message, details) {
+            const container = document.getElementById('error-container');
+            container.innerHTML = `
+                <div class="error">
+                    <div class="error-title">⚠️ Error Loading Data</div>
+                    <div>${message}</div>
+                    ${details ? `<div style="margin-top: 10px; font-size: 12px; opacity: 0.8;">${details}</div>` : ''}
+                </div>
+            `;
+            document.getElementById('status-badge').textContent = 'Error';
+            document.getElementById('status-badge').className = 'status-badge status-error';
+        }
+
+        async function loadData() {
+            const refreshBtn = document.getElementById('refresh-btn');
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '⏳ Loading...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/demo/dashboard`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // Update status
+                document.getElementById('status-badge').textContent = '🟢 Live';
+                document.getElementById('status-badge').className = 'status-badge status-live';
+                document.getElementById('error-container').innerHTML = '';
+
+                // Update stats
+                document.getElementById('critical-count').textContent = data.stats.critical;
+                document.getElementById('warning-count').textContent = data.stats.warning;
+                document.getElementById('triggered-count').textContent = data.stats.triggered;
+                document.getElementById('resolved-count').textContent = data.stats.resolved;
+
+                // Update on-call info
+                if (data.oncallInfo && data.oncallInfo.length > 0) {
+                    document.getElementById('oncall-section').style.display = 'block';
+                    document.getElementById('oncall-list').innerHTML = data.oncallInfo.map(info => `
+                        <div class="oncall-card">
+                            <div class="oncall-name">
+                                ${info.oncallUser ? info.oncallUser.fullName : 'No one on-call'}
+                            </div>
+                            <div class="oncall-schedule">
+                                ${info.schedule.name}
+                                ${info.isOverride ? ' (Override)' : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                // Update incidents
+                const container = document.getElementById('incidents-list');
+                if (data.incidents.length === 0) {
+                    container.innerHTML = '<div class="loading">No incidents found</div>';
+                } else {
+                    container.innerHTML = data.incidents.map(incident => {
+                        const detailsStr = incident.details ?
+                            Object.entries(incident.details).map(([k, v]) => `${k}: ${v}`).join(', ') :
+                            'No additional details';
+
+                        return `
+                            <div class="incident">
+                                <div class="incident-header">
+                                    <div>
+                                        <div class="incident-title">${incident.summary}</div>
+                                        <div class="incident-number">#${incident.number} • ${incident.service.name}</div>
+                                    </div>
+                                    <div class="badges">
+                                        <span class="badge badge-${incident.severity}">${incident.severity}</span>
+                                        <span class="badge badge-${incident.state}">${incident.state}</span>
+                                    </div>
+                                </div>
+                                <div class="incident-details">
+                                    ${detailsStr}
+                                </div>
+                                <div class="incident-meta">
+                                    <span>⏰ Triggered ${formatTimeAgo(incident.triggeredAt)}</span>
+                                    ${incident.acknowledgedBy ? `<span>✓ Ack'd by ${incident.acknowledgedBy.fullName}</span>` : ''}
+                                    ${incident.resolvedBy ? `<span>✓ Resolved by ${incident.resolvedBy.fullName}</span>` : ''}
+                                    ${incident.eventCount > 1 ? `<span>📊 ${incident.eventCount} events</span>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // Update timestamp
+                document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showError(
+                    'Failed to load data from API',
+                    error.message
+                );
+                document.getElementById('incidents-list').innerHTML =
+                    '<div class="loading">Failed to load incidents. Check console for details.</div>';
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = '🔄 Refresh Data';
+            }
+        }
+
+        // Load data on page load
+        loadData();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadData, 30000);
+
+        console.log('%cPagerDuty-Lite Live Demo', 'font-size: 20px; font-weight: bold; color: #3498db;');
+        console.log('🔴 Fetching REAL data from the API');
+        console.log('API Base URL:', API_BASE);
+        console.log('\n📡 Endpoints:');
+        console.log('  - Dashboard: /api/v1/demo/dashboard');
+        console.log('  - Services: /api/v1/demo/services');
+        console.log('\n🔐 Webhook API Key: test-api-key-12345');
+    </script>
+</body>
+</html>
