@@ -1,0 +1,71 @@
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+
+interface DbConfig {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  database: string;
+}
+
+let cachedConfig: DbConfig | null = null;
+
+export async function getDbConfig(): Promise<DbConfig> {
+  // Return cached config if available
+  if (cachedConfig) {
+    return cachedConfig;
+  }
+
+  // Check if DATABASE_URL is provided directly (for local development)
+  const directUrl = process.env.DATABASE_URL;
+  if (directUrl) {
+    cachedConfig = parseDatabaseUrl(directUrl);
+    return cachedConfig;
+  }
+
+  // Fetch from AWS Secrets Manager
+  const secretArn = process.env.DATABASE_SECRET_ARN;
+  if (!secretArn) {
+    throw new Error('DATABASE_URL or DATABASE_SECRET_ARN must be set');
+  }
+
+  const client = new SecretsManagerClient({ region: process.env.AWS_REGION || 'us-east-1' });
+  const command = new GetSecretValueCommand({ SecretId: secretArn });
+
+  try {
+    const response = await client.send(command);
+    if (!response.SecretString) {
+      throw new Error('Secret value is empty');
+    }
+
+    const secret = JSON.parse(response.SecretString);
+    cachedConfig = {
+      host: secret.host,
+      port: secret.port || 5432,
+      username: secret.username,
+      password: secret.password,
+      database: secret.dbname || secret.database,
+    };
+
+    return cachedConfig;
+  } catch (error) {
+    console.error('Error fetching database config:', error);
+    throw error;
+  }
+}
+
+function parseDatabaseUrl(url: string): DbConfig {
+  // Parse postgres://username:password@host:port/database
+  const match = url.match(/postgres:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
+  if (!match) {
+    throw new Error('Invalid DATABASE_URL format');
+  }
+
+  return {
+    username: match[1],
+    password: match[2],
+    host: match[3],
+    port: parseInt(match[4], 10),
+    database: match[5],
+  };
+}

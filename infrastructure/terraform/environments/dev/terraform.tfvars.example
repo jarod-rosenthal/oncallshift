@@ -1,0 +1,51 @@
+# PagerDuty-Lite Dev Environment Configuration
+# Copy this file to terraform.tfvars and fill in your values
+
+# AWS Configuration
+aws_region = "us-east-1"
+az_count   = 2
+
+# Project Configuration
+project_name = "pagerduty-lite"
+environment  = "dev"
+
+# Database Configuration
+database_name           = "pagerduty_lite"
+db_min_capacity         = 0.5  # ~$45/month
+db_max_capacity         = 2
+db_backup_retention_days = 7
+
+# ECS Configuration
+api_desired_count    = 1  # Start with 1 for dev
+worker_desired_count = 1
+
+# Monitoring
+enable_container_insights = false  # Enable in staging/prod
+log_retention_days        = 7
+
+# SSL Certificate (Optional - leave null to use HTTP for MVP testing)
+# Get from AWS Certificate Manager
+acm_certificate_arn = null
+# acm_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID"
+
+# Push Notification Configuration
+# Get FCM server key from Firebase Console
+fcm_server_key = null
+# fcm_server_key = "YOUR_FCM_SERVER_KEY"
+
+# Get APNS credentials from Apple Developer Portal
+apns_certificate = null
+# apns_certificate = <<-EOT
+# -----BEGIN CERTIFICATE-----
+# ...
+# -----END CERTIFICATE-----
+# EOT
+
+apns_private_key = null
+# apns_private_key = <<-EOT
+# -----BEGIN PRIVATE KEY-----
+# ...
+# -----END PRIVATE KEY-----
+# EOT
+
+apns_use_sandbox = true  # Set to false for production

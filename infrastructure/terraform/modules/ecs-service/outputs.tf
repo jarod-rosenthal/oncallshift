@@ -1,0 +1,49 @@
+output "ecr_repository_url" {
+  description = "URL of the ECR repository"
+  value       = aws_ecr_repository.app.repository_url
+}
+
+output "ecr_repository_arn" {
+  description = "ARN of the ECR repository"
+  value       = aws_ecr_repository.app.arn
+}
+
+output "ecs_cluster_id" {
+  description = "ID of the ECS cluster"
+  value       = var.ecs_cluster_id != null ? var.ecs_cluster_id : aws_ecs_cluster.main[0].id
+}
+
+output "ecs_cluster_name" {
+  description = "Name of the ECS cluster"
+  value       = var.ecs_cluster_id != null ? split("/", var.ecs_cluster_id)[1] : aws_ecs_cluster.main[0].name
+}
+
+output "ecs_service_name" {
+  description = "Name of the ECS service"
+  value       = aws_ecs_service.app.name
+}
+
+output "ecs_service_id" {
+  description = "ID of the ECS service"
+  value       = aws_ecs_service.app.id
+}
+
+output "task_definition_arn" {
+  description = "ARN of the task definition"
+  value       = aws_ecs_task_definition.app.arn
+}
+
+output "task_execution_role_arn" {
+  description = "ARN of the task execution role"
+  value       = aws_iam_role.ecs_execution_role.arn
+}
+
+output "task_role_arn" {
+  description = "ARN of the task role"
+  value       = aws_iam_role.ecs_task_role.arn
+}
+
+output "cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group"
+  value       = aws_cloudwatch_log_group.app.name
+}
