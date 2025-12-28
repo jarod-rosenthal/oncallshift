@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Frontend build output (will be built in Docker)
+frontend/dist
+frontend/node_modules
+
+# Backend
+backend/node_modules
+backend/dist
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Terraform
+infrastructure/
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Mobile
+mobile/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Misc
+tmp/
+temp/
+*.log
