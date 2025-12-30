@@ -1,10 +1,7 @@
 name: Deploy Pipeline
 
+# Manual trigger only - no automatic deployments
 on:
-  push:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
     inputs:
       environment:
@@ -58,31 +55,16 @@ jobs:
       - name: Determine environment
         id: set-env
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-          else
-            echo "environment=dev" >> $GITHUB_OUTPUT
-          fi
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
 
       - name: Set deployment flags
         id: set-flags
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
-            echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
-            echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
-            echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
-            echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
-          else
-            # On push, deploy backend and frontend by default
-            echo "deploy_infra=false" >> $GITHUB_OUTPUT
-            echo "auto_approve_infra=false" >> $GITHUB_OUTPUT
-            echo "deploy_backend=true" >> $GITHUB_OUTPUT
-            echo "deploy_frontend=true" >> $GITHUB_OUTPUT
-            echo "deploy_mobile=false" >> $GITHUB_OUTPUT
-          fi
+          echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
+          echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
+          echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
+          echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
+          echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
 
       - name: Display configuration
         run: |
