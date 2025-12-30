@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { getDataSource } from '../shared/db/data-source';
 import { processQueue, AlertMessage, sendNotificationMessage } from '../shared/queues/sqs-client';
-import { Incident, IncidentEvent, Service, Schedule } from '../shared/models';
+import { Incident, IncidentEvent, Service } from '../shared/models';
 import { logger } from '../shared/utils/logger';
 
 const QUEUE_URL = process.env.ALERTS_QUEUE_URL;
@@ -19,10 +19,10 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
     const eventRepo = dataSource.getRepository(IncidentEvent);
     const serviceRepo = dataSource.getRepository(Service);
 
-    // Get service
+    // Get service with escalation policy
     const service = await serviceRepo.findOne({
       where: { id: message.serviceId },
-      relations: ['organization', 'schedule'],
+      relations: ['organization', 'escalationPolicy', 'escalationPolicy.steps', 'escalationPolicy.steps.schedule'],
     });
 
     if (!service) {
@@ -87,6 +87,8 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
         state: 'triggered',
         dedupKey: message.dedupKey,
         eventCount: 1,
+        currentEscalationStep: 1,
+        escalationStartedAt: new Date(),
       });
       await incidentRepo.save(incident);
 
@@ -131,20 +133,53 @@ async function getNextIncidentNumber(orgId: string): Promise<number> {
 }
 
 /**
- * Trigger notifications to on-call users
+ * Trigger notifications to on-call users (PagerDuty-style with Escalation Policies)
  */
 async function triggerNotifications(incident: Incident, service: Service): Promise<void> {
   try {
-    // MVP: Simple notification to current on-call user only
-    if (!service.schedule) {
-      logger.warn('Service has no schedule assigned, no notifications sent', {
+    // Check for escalation policy
+    if (!service.escalationPolicy) {
+      logger.warn('Service has no escalation policy assigned, no notifications sent', {
         serviceId: service.id,
         incidentId: incident.id,
       });
       return;
     }
 
-    const schedule = service.schedule;
+    const escalationPolicy = service.escalationPolicy;
+
+    // Get first escalation step
+    if (!escalationPolicy.steps || escalationPolicy.steps.length === 0) {
+      logger.warn('Escalation policy has no steps configured, no notifications sent', {
+        escalationPolicyId: escalationPolicy.id,
+        incidentId: incident.id,
+      });
+      return;
+    }
+
+    // Sort steps by order and get first step
+    const firstStep = escalationPolicy.steps.sort((a, b) => a.stepOrder - b.stepOrder)[0];
+
+    if (!firstStep) {
+      logger.warn('No escalation steps found', {
+        escalationPolicyId: escalationPolicy.id,
+        incidentId: incident.id,
+      });
+      return;
+    }
+
+    // For MVP, only handle schedule-type escalation targets
+    if (firstStep.targetType !== 'schedule' || !firstStep.schedule) {
+      logger.warn('First escalation step is not a schedule or schedule not loaded', {
+        escalationPolicyId: escalationPolicy.id,
+        stepId: firstStep.id,
+        targetType: firstStep.targetType,
+        incidentId: incident.id,
+      });
+      return;
+    }
+
+    const schedule = firstStep.schedule;
     const oncallUserId = schedule.getCurrentOncallUserId();
 
     if (!oncallUserId) {
@@ -155,18 +190,43 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
       return;
     }
 
+    const priority = incident.severity === 'critical' || incident.severity === 'error' ? 'high' : 'normal';
+
     // Send push notification
     await sendNotificationMessage({
       incidentId: incident.id,
       userId: oncallUserId,
       channel: 'push',
-      priority: incident.severity === 'critical' || incident.severity === 'error' ? 'high' : 'normal',
+      priority,
+      incidentState: 'triggered',
     });
 
-    logger.info('Notification queued for on-call user', {
+    // Send email notification
+    await sendNotificationMessage({
       incidentId: incident.id,
       userId: oncallUserId,
+      channel: 'email',
+      priority,
+      incidentState: 'triggered',
+    });
+
+    // For critical/error incidents, also send SMS
+    if (incident.severity === 'critical' || incident.severity === 'error') {
+      await sendNotificationMessage({
+        incidentId: incident.id,
+        userId: oncallUserId,
+        channel: 'sms',
+        priority: 'high',
+        incidentState: 'triggered',
+      });
+    }
+
+    logger.info('Notifications queued for on-call user (via escalation policy)', {
+      incidentId: incident.id,
+      userId: oncallUserId,
+      escalationPolicyId: escalationPolicy.id,
       scheduleId: schedule.id,
+      channels: ['push', 'email', ...(incident.severity === 'critical' || incident.severity === 'error' ? ['sms'] : [])],
     });
   } catch (error) {
     logger.error('Error triggering notifications:', error);

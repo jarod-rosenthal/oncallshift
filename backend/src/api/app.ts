@@ -1,7 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger';
 import { logger } from '../shared/utils/logger';
@@ -11,8 +10,11 @@ import authRoutes from './routes/auth';
 import alertRoutes from './routes/alerts';
 import incidentRoutes from './routes/incidents';
 import scheduleRoutes from './routes/schedules';
+import escalationPoliciesRoutes from './routes/escalation-policies';
+import serviceRoutes from './routes/services';
 import deviceRoutes from './routes/devices';
 import userRoutes from './routes/users';
+import notificationRoutes from './routes/notifications';
 import demoRoutes from './routes/demo';
 
 export function createApp(): Express {
@@ -26,6 +28,7 @@ export function createApp(): Express {
         "script-src": ["'self'", "'unsafe-inline'"],
         "style-src": ["'self'", "'unsafe-inline'"],
         "img-src": ["'self'", "data:", "blob:"],
+        "connect-src": ["'self'", "https://api.oncallshift.com", "http://localhost:3000"],
         "upgrade-insecure-requests": null, // Disable for demo (no SSL certificate)
       },
     },
@@ -57,7 +60,7 @@ export function createApp(): Express {
     res.status(200).json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      service: 'pagerduty-lite-api',
+      service: 'oncallshift-api',
     });
   });
 
@@ -65,7 +68,7 @@ export function createApp(): Express {
   // Swagger API Documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'PagerDuty-Lite API Docs',
+    customSiteTitle: 'OnCallShift API Docs',
   }));
 
   // Demo dashboard - serve HTML at /demo
@@ -75,7 +78,7 @@ export function createApp(): Express {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PagerDuty-Lite Live Demo</title>
+    <title>OnCallShift Live Demo</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
@@ -127,7 +130,7 @@ export function createApp(): Express {
 <body>
     <div class="container">
         <header>
-            <h1>🚨 PagerDuty-Lite Live Demo <span class="status-badge" id="status-badge">Loading...</span></h1>
+            <h1>📟 OnCallShift Live Demo <span class="status-badge" id="status-badge">Loading...</span></h1>
             <p style="color: #7f8c8d; margin-top: 5px;">Real-time data from production database</p>
             <button class="refresh-btn" id="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
         </header>
@@ -222,34 +225,24 @@ export function createApp(): Express {
   app.use('/api/v1/alerts', alertRoutes);
   app.use('/api/v1/incidents', incidentRoutes);
   app.use('/api/v1/schedules', scheduleRoutes);
+  app.use('/api/v1/escalation-policies', escalationPoliciesRoutes);
+  app.use('/api/v1/services', serviceRoutes);
   app.use('/api/v1/devices', deviceRoutes);
   app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/notifications', notificationRoutes);
   app.use('/api/v1/demo', demoRoutes);
 
-  // Serve React frontend (static files from build)
-  const frontendDistPath = process.env.FRONTEND_DIST_PATH || path.join(__dirname, '../../..', 'frontend', 'dist');
-
-  // Serve static files from React build
-  app.use(express.static(frontendDistPath));
-
-  // SPA fallback: serve index.html for all non-API, non-file routes
-  // This allows client-side routing to work
+  // Non-API routes - frontend is served from CloudFront/S3
+  // This handles direct requests to the backend that should go to CloudFront
   app.get('*', (req, res, next) => {
-    // Skip if it's an API route, demo, or api-docs
-    if (req.path.startsWith('/api/') || req.path.startsWith('/demo') || req.path.startsWith('/api-docs')) {
+    // Skip API routes and health checks
+    if (req.path.startsWith('/api/') || req.path === '/health' || req.path === '/demo' || req.path === '/api-docs') {
       return next();
     }
-
-    // Serve index.html for all other routes (client-side routing)
-    const indexPath = path.join(frontendDistPath, 'index.html');
-    res.sendFile(indexPath, (err) => {
-      if (err) {
-        logger.error('Error serving index.html:', err);
-        res.status(404).json({
-          error: 'Frontend not found',
-          message: 'Please build the frontend first: cd frontend && npm run build'
-        });
-      }
+    // For non-API routes, return JSON indicating this is the API server
+    res.status(404).json({
+      error: 'Not found',
+      message: 'This is the API server. Frontend is served from CloudFront.',
     });
   });
 

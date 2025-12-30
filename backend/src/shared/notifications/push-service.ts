@@ -21,7 +21,7 @@ function isExpoPushToken(token: string): boolean {
 async function sendExpoNotification(
   expoPushToken: string,
   incident: Incident,
-  notificationId: string
+  _notificationId: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const title = `🚨 ${incident.severity.toUpperCase()}: ${incident.service?.name || 'Alert'}`;
@@ -54,7 +54,10 @@ async function sendExpoNotification(
       body: JSON.stringify(message),
     });
 
-    const result = await response.json();
+    const result = await response.json() as {
+      data?: { status: string; id?: string; message?: string };
+      errors?: unknown[];
+    };
 
     if (result.data && result.data.status === 'ok') {
       return { success: true, messageId: result.data.id };
