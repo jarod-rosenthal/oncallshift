@@ -44,6 +44,12 @@ on:
         default: false
         type: boolean
 
+# Permissions needed by child workflows
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
 jobs:
   # Determine environment from branch or input
   setup:
