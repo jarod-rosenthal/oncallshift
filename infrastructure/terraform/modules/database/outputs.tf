@@ -1,31 +1,36 @@
-output "cluster_id" {
-  description = "ID of the Aurora cluster"
-  value       = aws_rds_cluster.main.id
+output "instance_id" {
+  description = "ID of the RDS instance"
+  value       = aws_db_instance.main.id
 }
 
 output "cluster_endpoint" {
-  description = "Writer endpoint for the Aurora cluster"
-  value       = aws_rds_cluster.main.endpoint
+  description = "Endpoint for the RDS instance (kept for compatibility)"
+  value       = aws_db_instance.main.address
 }
 
-output "cluster_reader_endpoint" {
-  description = "Reader endpoint for the Aurora cluster"
-  value       = aws_rds_cluster.main.reader_endpoint
+output "instance_endpoint" {
+  description = "Endpoint for the RDS instance"
+  value       = aws_db_instance.main.address
+}
+
+output "instance_port" {
+  description = "Port of the RDS instance"
+  value       = aws_db_instance.main.port
 }
 
 output "cluster_port" {
-  description = "Port of the Aurora cluster"
-  value       = aws_rds_cluster.main.port
+  description = "Port of the RDS instance (kept for compatibility)"
+  value       = aws_db_instance.main.port
 }
 
 output "database_name" {
   description = "Name of the default database"
-  value       = aws_rds_cluster.main.database_name
+  value       = aws_db_instance.main.db_name
 }
 
 output "master_username" {
   description = "Master username"
-  value       = aws_rds_cluster.main.master_username
+  value       = aws_db_instance.main.username
   sensitive   = true
 }
 

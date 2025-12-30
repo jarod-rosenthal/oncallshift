@@ -34,16 +34,22 @@ variable "database_name" {
   default     = "pagerduty_lite"
 }
 
-variable "db_min_capacity" {
-  description = "Minimum ACU for Aurora Serverless v2"
-  type        = number
-  default     = 0.5
+variable "db_instance_class" {
+  description = "RDS instance class (db.t4g.micro for POC, db.t4g.small for dev, db.t4g.medium for prod)"
+  type        = string
+  default     = "db.t4g.micro"
 }
 
-variable "db_max_capacity" {
-  description = "Maximum ACU for Aurora Serverless v2"
+variable "db_allocated_storage" {
+  description = "Initial allocated storage in GB"
   type        = number
-  default     = 2
+  default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum storage for autoscaling in GB"
+  type        = number
+  default     = 100
 }
 
 variable "db_backup_retention_days" {
@@ -76,8 +82,26 @@ variable "log_retention_days" {
   default     = 7
 }
 
+variable "use_fargate_spot" {
+  description = "Use Fargate Spot for cost savings (up to 70% cheaper)"
+  type        = bool
+  default     = true
+}
+
+variable "fargate_spot_percentage" {
+  description = "Percentage of tasks to run on Fargate Spot (0-100, recommended 70-100 for dev)"
+  type        = number
+  default     = 100
+}
+
 variable "acm_certificate_arn" {
-  description = "ARN of ACM certificate for HTTPS (optional for MVP)"
+  description = "ARN of ACM certificate for HTTPS (optional for MVP, use domain_name instead for auto-generated cert)"
+  type        = string
+  default     = null
+}
+
+variable "domain_name" {
+  description = "Domain name for the application (e.g., oncallshift.com). Will create ACM certificate and Route53 records."
   type        = string
   default     = null
 }

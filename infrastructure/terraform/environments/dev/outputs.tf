@@ -15,7 +15,22 @@ output "alb_url" {
 
 output "api_url" {
   description = "API base URL"
-  value       = var.acm_certificate_arn != null ? "https://${aws_lb.main.dns_name}/api" : "http://${aws_lb.main.dns_name}/api"
+  value       = var.domain_name != null ? "https://${var.domain_name}/api" : "http://${aws_lb.main.dns_name}/api"
+}
+
+output "domain_name" {
+  description = "Custom domain name (if configured)"
+  value       = var.domain_name
+}
+
+output "certificate_arn" {
+  description = "ARN of ACM certificate (if domain configured)"
+  value       = var.domain_name != null ? aws_acm_certificate.main[0].arn : null
+}
+
+output "app_url" {
+  description = "Application URL"
+  value       = var.domain_name != null ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
 }
 
 output "database_endpoint" {
@@ -71,11 +86,13 @@ output "ecs_cluster_name" {
 output "fcm_platform_app_arn" {
   description = "ARN of FCM SNS platform application"
   value       = var.fcm_server_key != null ? aws_sns_platform_application.fcm[0].arn : null
+  sensitive   = true
 }
 
 output "apns_platform_app_arn" {
   description = "ARN of APNS SNS platform application"
   value       = var.apns_certificate != null ? aws_sns_platform_application.apns[0].arn : null
+  sensitive   = true
 }
 
 # Instructions for first deployment
@@ -109,7 +126,7 @@ output "deployment_instructions" {
 
     3. Configure mobile app:
 
-       API_URL: ${var.acm_certificate_arn != null ? "https://${aws_lb.main.dns_name}/api" : "http://${aws_lb.main.dns_name}/api"}
+       API_URL: ${var.domain_name != null ? "https://${var.domain_name}/api" : "http://${aws_lb.main.dns_name}/api"}
        COGNITO_USER_POOL_ID: ${aws_cognito_user_pool.main.id}
        COGNITO_CLIENT_ID: ${aws_cognito_user_pool_client.mobile.id}
        AWS_REGION: ${var.aws_region}
@@ -121,7 +138,7 @@ output "deployment_instructions" {
 
     5. Test webhook:
 
-       curl -X POST ${var.acm_certificate_arn != null ? "https" : "http"}://${aws_lb.main.dns_name}/api/v1/alerts/webhook \
+       curl -X POST ${var.domain_name != null ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"}/api/v1/alerts/webhook \
          -H "Content-Type: application/json" \
          -H "X-API-Key: YOUR_API_KEY" \
          -d '{

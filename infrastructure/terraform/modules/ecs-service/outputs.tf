@@ -10,12 +10,12 @@ output "ecr_repository_arn" {
 
 output "ecs_cluster_id" {
   description = "ID of the ECS cluster"
-  value       = var.ecs_cluster_id != null ? var.ecs_cluster_id : aws_ecs_cluster.main[0].id
+  value       = var.ecs_cluster_id
 }
 
 output "ecs_cluster_name" {
   description = "Name of the ECS cluster"
-  value       = var.ecs_cluster_id != null ? split("/", var.ecs_cluster_id)[1] : aws_ecs_cluster.main[0].name
+  value       = local.cluster_name
 }
 
 output "ecs_service_name" {

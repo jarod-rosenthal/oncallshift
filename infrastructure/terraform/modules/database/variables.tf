@@ -33,19 +33,25 @@ variable "master_username" {
 variable "engine_version" {
   description = "PostgreSQL engine version"
   type        = string
-  default     = "15.4"
+  default     = "15.15"
 }
 
-variable "min_capacity" {
-  description = "Minimum ACU for Aurora Serverless v2"
-  type        = number
-  default     = 0.5
+variable "instance_class" {
+  description = "RDS instance class (e.g., db.t4g.micro, db.t4g.small)"
+  type        = string
+  default     = "db.t4g.micro"
 }
 
-variable "max_capacity" {
-  description = "Maximum ACU for Aurora Serverless v2"
+variable "allocated_storage" {
+  description = "Initial allocated storage in GB"
   type        = number
-  default     = 4
+  default     = 20
+}
+
+variable "max_allocated_storage" {
+  description = "Maximum storage for autoscaling in GB (0 to disable)"
+  type        = number
+  default     = 100
 }
 
 variable "backup_retention_period" {
@@ -80,12 +86,6 @@ variable "enable_performance_insights" {
 
 variable "enable_enhanced_monitoring" {
   description = "Enable Enhanced Monitoring"
-  type        = bool
-  default     = false
-}
-
-variable "create_reader_instance" {
-  description = "Create a reader instance for high availability"
   type        = bool
   default     = false
 }

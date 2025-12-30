@@ -1,15 +1,17 @@
 {
-  "name": "pagerduty-lite-backend",
+  "name": "oncallshift-backend",
   "version": "1.0.0",
-  "description": "PagerDuty-Lite Backend API and Workers",
+  "description": "OnCallShift Backend API and Workers",
   "main": "dist/api/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/api/server.ts",
     "build": "tsc",
     "start": "node dist/api/server.js",
     "start:worker": "node dist/workers/notification-worker.js",
+    "start:escalation-timer": "node dist/workers/escalation-timer.js",
     "migrate": "ts-node src/shared/db/migrate.ts",
     "migrate:create": "ts-node src/shared/db/create-migration.ts",
+    "seed": "ts-node src/shared/db/seed.ts",
     "lint": "eslint src --ext .ts",
     "test": "jest"
   },

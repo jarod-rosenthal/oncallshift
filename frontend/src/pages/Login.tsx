@@ -38,7 +38,7 @@ export function Login() {
     try {
       const response = await authAPI.login(data);
       setTokens(response.tokens);
-      navigate('/');
+      navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
     } finally {

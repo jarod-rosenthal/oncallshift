@@ -18,6 +18,7 @@ RUN npm ci
 COPY frontend/src ./src
 COPY frontend/public ./public
 COPY frontend/index.html ./
+COPY frontend/.env.production ./
 
 # Build frontend for production
 RUN npm run build
@@ -52,6 +53,9 @@ RUN npm ci --only=production
 
 # Copy built backend from builder
 COPY --from=backend-builder /app/dist ./dist
+
+# Copy migrations SQL files (not compiled by TypeScript)
+COPY backend/src/shared/db/migrations ./dist/shared/db/migrations
 
 # Copy built frontend from frontend-builder
 COPY --from=frontend-builder /frontend/dist ./frontend/dist

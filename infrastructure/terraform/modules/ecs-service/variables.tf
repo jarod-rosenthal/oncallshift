@@ -171,3 +171,15 @@ variable "enable_container_insights" {
   type        = bool
   default     = false
 }
+
+variable "use_fargate_spot" {
+  description = "Use Fargate Spot capacity provider (true for cost savings, false for on-demand)"
+  type        = bool
+  default     = false
+}
+
+variable "fargate_spot_percentage" {
+  description = "Percentage of tasks to run on Fargate Spot (0-100)"
+  type        = number
+  default     = 70
+}

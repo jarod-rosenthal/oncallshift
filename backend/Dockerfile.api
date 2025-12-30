@@ -29,6 +29,12 @@ RUN npm ci --only=production
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy public directory for static files
+COPY public ./public
+
+# Copy frontend build for serving static frontend files
+COPY frontend ./frontend
+
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
