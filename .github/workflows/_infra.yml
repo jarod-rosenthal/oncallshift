@@ -112,11 +112,23 @@ jobs:
       - name: Create or Update Approval Issue
         id: create-issue
         if: steps.plan.outputs.has_changes == 'true' && inputs.auto_approve != true
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ADD_COUNT: ${{ steps.plan-summary.outputs.add || '0' }}
+          CHANGE_COUNT: ${{ steps.plan-summary.outputs.change || '0' }}
+          DESTROY_COUNT: ${{ steps.plan-summary.outputs.destroy || '0' }}
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const planPath = 'infrastructure/terraform/environments/${{ inputs.environment }}/plan_readable.txt';
+            const planPath = `infrastructure/terraform/environments/${process.env.ENVIRONMENT}/plan_readable.txt`;
             let planOutput = fs.readFileSync(planPath, 'utf8');
 
             // Truncate if too long for GitHub issue (max ~65k chars)
@@ -124,21 +136,21 @@ jobs:
               planOutput = planOutput.substring(0, 60000) + '\n\n... (truncated, see workflow artifacts for full plan)';
             }
 
-            const issueTitle = `Terraform Plan Approval Required: ${{ inputs.environment }} - Run #${{ github.run_number }}`;
+            const issueTitle = `Terraform Plan Approval Required: ${process.env.ENVIRONMENT} - Run #${process.env.RUN_NUMBER}`;
 
-            const issueBody = `## Terraform Plan for \`${{ inputs.environment }}\` Environment
+            const issueBody = `## Terraform Plan for \`${process.env.ENVIRONMENT}\` Environment
 
-**Workflow Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-**Triggered by:** @${{ github.actor }}
-**Branch:** \`${{ github.ref_name }}\`
-**Commit:** \`${{ github.sha }}\`
+**Workflow Run:** [#${process.env.RUN_NUMBER}](${process.env.SERVER_URL}/${process.env.REPOSITORY}/actions/runs/${process.env.RUN_ID})
+**Triggered by:** @${process.env.ACTOR}
+**Branch:** \`${process.env.REF_NAME}\`
+**Commit:** \`${process.env.SHA}\`
 
 ### Summary
 | Action | Count |
 |--------|-------|
-| Add | ${{ steps.plan-summary.outputs.add || '0' }} |
-| Change | ${{ steps.plan-summary.outputs.change || '0' }} |
-| Destroy | ${{ steps.plan-summary.outputs.destroy || '0' }} |
+| Add | ${process.env.ADD_COUNT} |
+| Change | ${process.env.CHANGE_COUNT} |
+| Destroy | ${process.env.DESTROY_COUNT} |
 
 ### Plan Output
 <details>
@@ -169,7 +181,7 @@ The workflow will automatically detect the label and proceed with applying the c
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
-              labels: ['terraform-plan', `env:${{ inputs.environment }}`]
+              labels: ['terraform-plan', `env:${process.env.ENVIRONMENT}`]
             });
 
             let issueNumber;
@@ -204,7 +216,7 @@ The workflow will automatically detect the label and proceed with applying the c
                 repo: context.repo.repo,
                 title: issueTitle,
                 body: issueBody,
-                labels: ['terraform-plan', `env:${{ inputs.environment }}`]
+                labels: ['terraform-plan', `env:${process.env.ENVIRONMENT}`]
               });
               issueNumber = newIssue.data.number;
               console.log(`Created new issue #${issueNumber}`);
@@ -224,7 +236,7 @@ The workflow will automatically detect the label and proceed with applying the c
     runs-on: ubuntu-latest
     needs: plan
     if: needs.plan.outputs.has_changes == 'true' && inputs.auto_approve != true
-    timeout-minutes: 240  # 4 hour timeout
+    timeout-minutes: 240
     permissions:
       issues: read
     outputs:
@@ -274,7 +286,7 @@ The workflow will automatically detect the label and proceed with applying the c
               }
 
               const waitedMinutes = Math.round((i * checkIntervalSeconds) / 60);
-              if (i % 4 === 0) {  // Log every 2 minutes
+              if (i % 4 === 0) {
                 console.log(`Still waiting... (${waitedMinutes} minutes elapsed)`);
               }
 
@@ -291,7 +303,7 @@ The workflow will automatically detect the label and proceed with applying the c
     if: |
       always() &&
       needs.plan.outputs.has_changes == 'true' &&
-      (needs.wait-for-approval.outputs.approved == 'true' || inputs.auto_approve == true)
+      needs.wait-for-approval.outputs.approved == 'true'
     permissions:
       contents: read
       id-token: write
@@ -340,17 +352,24 @@ The workflow will automatically detect the label and proceed with applying the c
           retention-days: 7
 
       - name: Close Approval Issue
-        if: always() && needs.plan.outputs.issue_number
+        if: always()
+        env:
+          ISSUE_NUMBER: ${{ needs.plan.outputs.issue_number }}
+          JOB_STATUS: ${{ job.status }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         uses: actions/github-script@v7
         with:
           script: |
-            const issueNumber = ${{ needs.plan.outputs.issue_number || 0 }};
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER);
             if (!issueNumber) return;
 
-            const status = '${{ job.status }}';
+            const status = process.env.JOB_STATUS;
             const comment = status === 'success'
-              ? '## Terraform Apply Completed Successfully\n\nInfrastructure changes have been applied to `${{ inputs.environment }}`.'
-              : '## Terraform Apply Failed\n\nPlease check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.';
+              ? `## Terraform Apply Completed Successfully\n\nInfrastructure changes have been applied to \`${process.env.ENVIRONMENT}\`.`
+              : `## Terraform Apply Failed\n\nPlease check the [workflow run](${process.env.SERVER_URL}/${process.env.REPOSITORY}/actions/runs/${process.env.RUN_ID}) for details.`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
