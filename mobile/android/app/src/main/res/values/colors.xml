@@ -1,0 +1,7 @@
+<resources>
+  <!-- Calm Confidence light mode palette -->
+  <color name="splashscreen_background">#FAFAFA</color>
+  <color name="iconBackground">#4A5568</color>
+  <color name="colorPrimary">#319795</color>
+  <color name="colorPrimaryDark">#2D3748</color>
+</resources>

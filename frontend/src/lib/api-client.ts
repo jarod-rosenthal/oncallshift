@@ -18,6 +18,9 @@ import type {
   UpdateServiceRequest,
   IncidentDetailResponse,
   IncidentTimelineResponse,
+  Runbook,
+  CreateRunbookRequest,
+  UpdateRunbookRequest,
 } from '../types/api';
 
 // API base URL - will be same origin when served from Express
@@ -238,6 +241,13 @@ export const incidentsAPI = {
     );
     return response.data;
   },
+
+  delete: async (id: string): Promise<{ message: string; deleted: { id: string; incidentNumber: number; summary: string } }> => {
+    const response = await apiClient.delete<{ message: string; deleted: { id: string; incidentNumber: number; summary: string } }>(
+      `/incidents/${id}`
+    );
+    return response.data;
+  },
 };
 
 // Users API
@@ -300,6 +310,46 @@ export const usersAPI = {
   },
 };
 
+// AI Credentials API
+export interface AnthropicCredentialStatus {
+  configured: boolean;
+  type?: 'api_key' | 'oauth';
+  hint?: string;
+  hasRefreshToken?: boolean;
+  updatedAt?: string;
+  message?: string;
+}
+
+export interface SaveCredentialResponse {
+  message: string;
+  credential: {
+    type: 'api_key' | 'oauth';
+    hint: string;
+    hasRefreshToken: boolean;
+    updatedAt: string;
+  };
+}
+
+export const aiCredentialsAPI = {
+  getStatus: async (): Promise<AnthropicCredentialStatus> => {
+    const response = await apiClient.get<AnthropicCredentialStatus>('/users/me/anthropic-credentials');
+    return response.data;
+  },
+
+  save: async (credential: string, refreshToken?: string): Promise<SaveCredentialResponse> => {
+    const response = await apiClient.post<SaveCredentialResponse>('/users/me/anthropic-credentials', {
+      credential,
+      refreshToken,
+    });
+    return response.data;
+  },
+
+  remove: async (): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>('/users/me/anthropic-credentials');
+    return response.data;
+  },
+};
+
 // Services API
 export const servicesAPI = {
   list: async (): Promise<{ services: Service[] }> => {
@@ -329,6 +379,95 @@ export const servicesAPI = {
 
   delete: async (id: string): Promise<{ message: string }> => {
     const response = await apiClient.delete<{ message: string }>(`/services/${id}`);
+    return response.data;
+  },
+};
+
+// Setup Wizard API
+export interface SetupServiceRequest {
+  templateId: string;
+  name: string;
+  description: string;
+  runbook: {
+    title: string;
+    description: string;
+    steps: Array<{
+      id: string;
+      order: number;
+      title: string;
+      description: string;
+      isOptional: boolean;
+      estimatedMinutes: number;
+      action: {
+        type: 'webhook';
+        label: string;
+        url: string;
+        method: string;
+        body?: Record<string, unknown>;
+        confirmMessage?: string;
+      };
+    }>;
+  };
+}
+
+export interface SetupCompleteRequest {
+  aiApiKey?: string;
+  services: SetupServiceRequest[];
+  teamEmails: string[];
+  createRotation: boolean;
+}
+
+export interface SetupCompleteResponse {
+  message: string;
+  created: {
+    services: number;
+    runbooks: number;
+    invitations: number;
+    schedule?: string;
+  };
+}
+
+export const setupAPI = {
+  complete: async (data: SetupCompleteRequest): Promise<SetupCompleteResponse> => {
+    const response = await apiClient.post<SetupCompleteResponse>('/setup/complete', data);
+    return response.data;
+  },
+
+  getStatus: async (): Promise<{ setupCompleted: boolean; completedAt?: string }> => {
+    const response = await apiClient.get<{ setupCompleted: boolean; completedAt?: string }>('/setup/status');
+    return response.data;
+  },
+};
+
+// Runbooks API
+export const runbooksAPI = {
+  list: async (): Promise<{ runbooks: Runbook[] }> => {
+    const response = await apiClient.get<{ runbooks: Runbook[] }>('/runbooks');
+    return response.data;
+  },
+
+  listForService: async (serviceId: string): Promise<{ runbooks: Runbook[] }> => {
+    const response = await apiClient.get<{ runbooks: Runbook[] }>(`/runbooks/service/${serviceId}`);
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ runbook: Runbook }> => {
+    const response = await apiClient.get<{ runbook: Runbook }>(`/runbooks/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateRunbookRequest): Promise<{ runbook: Runbook; message: string }> => {
+    const response = await apiClient.post<{ runbook: Runbook; message: string }>('/runbooks', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateRunbookRequest): Promise<{ runbook: Runbook; message: string }> => {
+    const response = await apiClient.put<{ runbook: Runbook; message: string }>(`/runbooks/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/runbooks/${id}`);
     return response.data;
   },
 };

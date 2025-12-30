@@ -1021,4 +1021,57 @@ async function getEscalationStatus(
   };
 }
 
+/**
+ * DELETE /api/v1/incidents/:id
+ * Delete an incident (admin only)
+ */
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+    const user = req.user!;
+
+    // Check if user is admin
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can delete incidents' });
+    }
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+      relations: ['service'],
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    const incidentNumber = incident.incidentNumber;
+    const summary = incident.summary;
+
+    // Delete the incident (cascade will delete events and notifications)
+    await incidentRepo.remove(incident);
+
+    logger.info('Incident deleted', {
+      incidentId: id,
+      incidentNumber,
+      deletedBy: user.id,
+    });
+
+    return res.json({
+      message: `Incident #${incidentNumber} deleted successfully`,
+      deleted: {
+        id,
+        incidentNumber,
+        summary,
+      },
+    });
+  } catch (error) {
+    logger.error('Error deleting incident:', error);
+    return res.status(500).json({ error: 'Failed to delete incident' });
+  }
+});
+
 export default router;

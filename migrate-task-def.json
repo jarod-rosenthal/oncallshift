@@ -1,0 +1,30 @@
+{
+  "family": "pagerduty-lite-dev-migrate",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::593971626975:role/pagerduty-lite-dev-alert-processor-ex-20251228212803013100000002",
+  "taskRoleArn": "arn:aws:iam::593971626975:role/pagerduty-lite-dev-alert-processor-tk-20251228212803013000000001",
+  "containerDefinitions": [
+    {
+      "name": "migrate",
+      "image": "593971626975.dkr.ecr.us-east-1.amazonaws.com/pagerduty-lite-dev-migrate:latest",
+      "essential": true,
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/pagerduty-lite-dev/migrate",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:593971626975:secret:pagerduty-lite-dev-db-password-20251228041356008000000001-nIYNC1"
+        }
+      ]
+    }
+  ]
+}

@@ -512,6 +512,39 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
+# Secrets Manager secret for Anthropic API key (for AI diagnosis feature)
+# NOTE: After terraform apply, you need to set the actual key value:
+# aws secretsmanager put-secret-value --secret-id pagerduty-lite-dev-anthropic-key --secret-string "sk-ant-your-key-here" --region us-east-1
+resource "aws_secretsmanager_secret" "anthropic_api_key" {
+  name = "${var.project_name}-${var.environment}-anthropic-key"
+  description = "Anthropic API key for AI-powered incident diagnosis"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-anthropic-key"
+  }
+}
+
+# Secrets Manager secret for credential encryption key (encrypts user-provided API keys)
+# This key is auto-generated - no manual setup needed
+resource "random_password" "credential_encryption_key" {
+  length  = 64
+  special = true
+}
+
+resource "aws_secretsmanager_secret" "credential_encryption_key" {
+  name = "${var.project_name}-${var.environment}-credential-key"
+  description = "Master key for encrypting user Anthropic credentials"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-credential-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "credential_encryption_key" {
+  secret_id     = aws_secretsmanager_secret.credential_encryption_key.id
+  secret_string = random_password.credential_encryption_key.result
+}
+
 # API Service
 module "api_service" {
   source = "../../modules/ecs-service"
@@ -547,9 +580,11 @@ module "api_service" {
 
   secrets = {
     DATABASE_URL = module.database.secret_arn
+    ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
+    CREDENTIAL_ENCRYPTION_KEY = aws_secretsmanager_secret.credential_encryption_key.arn
   }
 
-  secrets_arns = [module.database.secret_arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -570,6 +605,17 @@ module "api_service" {
         "cognito-idp:AdminUpdateUserAttributes"
       ]
       Resource = aws_cognito_user_pool.main.arn
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-${var.environment}/*"
     }
   ]
 
@@ -833,17 +879,16 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default behavior - serve from ALB (Express serves React SPA)
+  # Default behavior - serve React SPA from S3
   default_cache_behavior {
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
+    target_origin_id = "S3-${aws_s3_bucket.web.id}"
 
     forwarded_values {
-      query_string = true
-      headers      = ["Authorization", "Content-Type", "Origin", "Accept", "Host"]
+      query_string = false
       cookies {
-        forward = "all"
+        forward = "none"
       }
     }
 
@@ -854,12 +899,12 @@ resource "aws_cloudfront_distribution" "main" {
     compress               = true
   }
 
-  # Static assets behavior - cache JS, CSS, images from ALB
+  # Static assets behavior - cache JS, CSS, images from S3
   ordered_cache_behavior {
     path_pattern     = "/assets/*"
     allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
+    target_origin_id = "S3-${aws_s3_bucket.web.id}"
 
     forwarded_values {
       query_string = false
@@ -917,46 +962,6 @@ resource "aws_cloudfront_distribution" "main" {
     max_ttl                = 0
   }
 
-  # Demo page behavior
-  ordered_cache_behavior {
-    path_pattern     = "/demo"
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-  }
-
-  # Login page behavior - forward to backend
-  ordered_cache_behavior {
-    path_pattern     = "/login"
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-  }
-
   # API docs behavior
   ordered_cache_behavior {
     path_pattern     = "/api-docs*"
@@ -975,6 +980,19 @@ resource "aws_cloudfront_distribution" "main" {
     min_ttl                = 0
     default_ttl            = 0
     max_ttl                = 0
+  }
+
+  # SPA routing - serve index.html for 404 errors from S3
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
   }
 
   restrictions {

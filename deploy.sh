@@ -1,12 +1,49 @@
 #!/bin/bash
 set -e
 
+#==============================================================================
+# PAGERDUTY-LITE DEPLOYMENT SCRIPT
+#==============================================================================
+#
+# DATABASE ACCESS NOTES:
+# ----------------------
+# The RDS database is in a private subnet and is NOT directly accessible from
+# the internet. To access the database, you must go through the ECS container:
+#
+#   1. Get a running task ID:
+#      aws ecs list-tasks --cluster pagerduty-lite-dev --service-name pagerduty-lite-dev-api
+#
+#   2. Connect to the container:
+#      aws ecs execute-command --cluster pagerduty-lite-dev \
+#        --task <TASK_ARN> --container api --interactive --command "/bin/sh"
+#
+#   3. Run psql (after this deploy, psql is installed in the container):
+#      psql $DATABASE_URL
+#
+# RUNNING MIGRATIONS:
+# -------------------
+# Migrations are managed via Node.js (not psql). Options:
+#
+#   Option 1: Run via migrate.js in ECS container:
+#      aws ecs execute-command --cluster pagerduty-lite-dev \
+#        --task <TASK_ARN> --container api --interactive \
+#        --command "node /app/dist/migrate.js"
+#
+#   Option 2: Build and run the migrate container as an ECS task:
+#      docker build -f backend/Dockerfile.migrate -t migrate ./backend
+#      (then run as one-off ECS task with DATABASE_URL env var)
+#
+#   Option 3: Ad-hoc SQL via psql in ECS container:
+#      psql $DATABASE_URL -c "ALTER TABLE users ADD COLUMN ..."
+#
+#==============================================================================
+
 # Configuration
 AWS_REGION="us-east-1"
 ECR_REPO="593971626975.dkr.ecr.us-east-1.amazonaws.com/pagerduty-lite-dev-api"
 ECS_CLUSTER="pagerduty-lite-dev"
 ECS_SERVICE="pagerduty-lite-dev-api"
-CLOUDFRONT_DIST_ID="EPTCQ6774HKQ2"
+CLOUDFRONT_DIST_ID="E7BQGD7BWAB8B"
 S3_BUCKET="pagerduty-lite-dev-web"
 
 echo "🚀 Starting deployment..."

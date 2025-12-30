@@ -6,6 +6,35 @@ interface IncidentTimelineProps {
   isLoading?: boolean;
 }
 
+// Simple markdown-like renderer for notes
+function renderNoteContent(content: string) {
+  // Split by lines and process each
+  const lines = content.split('\n');
+
+  return lines.map((line, idx) => {
+    // Handle horizontal rules (---)
+    if (line.trim() === '---') {
+      return <hr key={idx} className="my-2 border-gray-300 dark:border-gray-600" />;
+    }
+
+    // Handle bold text (**text**)
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    const renderedLine = parts.map((part, partIdx) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={partIdx}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+
+    return (
+      <span key={idx}>
+        {renderedLine}
+        {idx < lines.length - 1 && '\n'}
+      </span>
+    );
+  });
+}
+
 export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
   const getEventIcon = (type: string) => {
     switch (type) {
@@ -111,14 +140,20 @@ export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
                   <div className={`rounded-lg border p-3 ${index === events.length - 1 ? getEventColor(event.type) : 'bg-background'}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
-                        <p className="text-sm font-medium">{event.message}</p>
+                        {event.type === 'note' ? (
+                          <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                            {renderNoteContent(event.message)}
+                          </div>
+                        ) : (
+                          <p className="text-sm font-medium">{event.message}</p>
+                        )}
                         {event.actor && (
                           <p className="text-xs text-muted-foreground mt-1">
                             by {event.actor.fullName || event.actor.email}
                           </p>
                         )}
                       </div>
-                      <div className="text-right">
+                      <div className="text-right flex-shrink-0">
                         <p className="text-xs text-muted-foreground" title={formatTime(event.createdAt)}>
                           {formatRelativeTime(event.createdAt)}
                         </p>

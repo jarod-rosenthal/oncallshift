@@ -47,6 +47,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install psql for database operations (migrations, debugging)
+RUN apk add --no-cache postgresql-client
+
 # Copy backend package files and install production dependencies only
 COPY backend/package*.json ./
 RUN npm ci --only=production

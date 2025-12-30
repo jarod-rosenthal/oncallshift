@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Text, Surface } from 'react-native-paper';
+import { Text, Surface, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme';
 import { OwnerAvatar } from './OwnerAvatar';
@@ -54,6 +54,29 @@ export const RespondersSection: React.FC<RespondersSectionProps> = ({
   responders,
   acknowledgedBy,
 }) => {
+  const theme = useTheme();
+
+  // Dynamic styles based on current theme
+  const dynamicStyles = {
+    title: {
+      color: theme.colors.onSurface,
+      fontWeight: '600' as const,
+    },
+    surface: {
+      backgroundColor: theme.colors.surfaceVariant,
+      borderRadius: 12,
+      padding: 12,
+    },
+    responderBorder: {
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.outlineVariant,
+    },
+    responderName: {
+      color: theme.colors.onSurface,
+      fontWeight: '500' as const,
+    },
+  };
+
   // If no responders data but we have acknowledgedBy, create a mock responder
   const displayResponders: Responder[] = responders.length > 0
     ? responders
@@ -73,10 +96,10 @@ export const RespondersSection: React.FC<RespondersSectionProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <MaterialCommunityIcons name="account-group" size={18} color={colors.textSecondary} />
-        <Text variant="titleSmall" style={styles.title}>Responders</Text>
+        <MaterialCommunityIcons name="account-group" size={18} color={theme.colors.onSurfaceVariant} />
+        <Text variant="titleSmall" style={dynamicStyles.title}>Responders</Text>
       </View>
-      <Surface style={styles.surface} elevation={0}>
+      <Surface style={dynamicStyles.surface} elevation={0}>
         {displayResponders.map((responder, index) => {
           const { icon, color } = getStatusIcon(responder.status);
           return (
@@ -84,12 +107,12 @@ export const RespondersSection: React.FC<RespondersSectionProps> = ({
               key={responder.id}
               style={[
                 styles.responderRow,
-                index < displayResponders.length - 1 && styles.responderBorder,
+                index < displayResponders.length - 1 && dynamicStyles.responderBorder,
               ]}
             >
               <OwnerAvatar name={responder.fullName} email={responder.email} size={32} />
               <View style={styles.responderInfo}>
-                <Text variant="bodyMedium" style={styles.responderName}>
+                <Text variant="bodyMedium" style={dynamicStyles.responderName}>
                   {responder.fullName}
                 </Text>
                 <View style={styles.statusRow}>

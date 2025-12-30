@@ -25,9 +25,16 @@ import TeamScreen from './src/screens/TeamScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import InboxScreen from './src/screens/InboxScreen';
 import MoreScreen from './src/screens/MoreScreen';
+import AvailabilityScreen from './src/screens/AvailabilityScreen';
+import OnCallCalendarScreen from './src/screens/OnCallCalendarScreen';
+import EscalationPoliciesScreen from './src/screens/EscalationPoliciesScreen';
+import ManageSchedulesScreen from './src/screens/ManageSchedulesScreen';
+import ManageServicesScreen from './src/screens/ManageServicesScreen';
+import ManageUsersScreen from './src/screens/ManageUsersScreen';
+import AIChatScreen from './src/screens/AIChatScreen';
 
 // Components
-import { ToastProvider, OfflineBanner } from './src/components';
+import { ToastProvider, OfflineBanner, ConfettiProvider } from './src/components';
 
 // Services
 import { setupNotificationListeners, getLastNotificationResponse, registerForPushNotifications, setBadgeCount } from './src/services/notificationService';
@@ -71,7 +78,6 @@ const linking = {
       Team: 'team',
       Analytics: 'analytics',
       Settings: 'settings',
-      Profile: 'profile',
     },
   },
 };
@@ -464,10 +470,11 @@ function AppContent() {
 
   return (
     <PaperProvider theme={theme}>
-      <ToastProvider>
-        <View style={{ flex: 1 }}>
-          <OfflineBanner />
-          <NavigationContainer ref={navigationRef} linking={linking}>
+      <ConfettiProvider>
+        <ToastProvider>
+          <View style={{ flex: 1 }}>
+            <OfflineBanner />
+            <NavigationContainer ref={navigationRef} linking={linking}>
             <StatusBar style={isDark ? 'light' : 'dark'} />
             <Stack.Navigator
               screenOptions={{
@@ -531,16 +538,51 @@ function AppContent() {
                   />
                   <Stack.Screen
                     name="Settings"
+                    component={SettingsScreen}
                     options={{ title: 'Settings' }}
-                  >
-                    {(props) => <SettingsScreen {...props} onLogout={handleLogout} />}
-                  </Stack.Screen>
+                  />
+                  <Stack.Screen
+                    name="Availability"
+                    component={AvailabilityScreen}
+                    options={{ title: 'Availability' }}
+                  />
+                  <Stack.Screen
+                    name="OnCallCalendar"
+                    component={OnCallCalendarScreen}
+                    options={{ title: 'My On-Call Calendar' }}
+                  />
+                  <Stack.Screen
+                    name="EscalationPolicies"
+                    component={EscalationPoliciesScreen}
+                    options={{ title: 'Escalation Policies' }}
+                  />
+                  <Stack.Screen
+                    name="ManageSchedules"
+                    component={ManageSchedulesScreen}
+                    options={{ title: 'Manage Schedules' }}
+                  />
+                  <Stack.Screen
+                    name="ManageServices"
+                    component={ManageServicesScreen}
+                    options={{ title: 'Manage Services' }}
+                  />
+                  <Stack.Screen
+                    name="ManageUsers"
+                    component={ManageUsersScreen}
+                    options={{ title: 'Manage Users' }}
+                  />
+                  <Stack.Screen
+                    name="AIChat"
+                    component={AIChatScreen}
+                    options={{ title: 'AI Assistant', headerShown: false }}
+                  />
                 </>
               )}
             </Stack.Navigator>
           </NavigationContainer>
-        </View>
-      </ToastProvider>
+          </View>
+        </ToastProvider>
+      </ConfettiProvider>
     </PaperProvider>
   );
 }

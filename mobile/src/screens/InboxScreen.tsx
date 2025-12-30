@@ -294,6 +294,11 @@ export default function InboxScreen({ navigation }: any) {
         }
         ListEmptyComponent={renderEmpty}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        // Performance optimizations
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        initialNumToRender={8}
       />
     </View>
   );

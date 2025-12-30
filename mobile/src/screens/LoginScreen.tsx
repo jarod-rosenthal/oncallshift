@@ -16,7 +16,6 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as authService from '../services/authService';
 import { initializePushNotifications } from '../services/notificationService';
-import { colors } from '../theme';
 
 interface LoginScreenProps {
   navigation: any;
@@ -29,6 +28,35 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Dynamic styles based on current theme
+  const dynamicStyles = {
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    logoContainer: {
+      width: 100,
+      height: 100,
+      borderRadius: 50,
+      backgroundColor: theme.colors.surface,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      marginBottom: 20,
+    },
+    subtitle: {
+      color: theme.colors.onSurfaceVariant,
+    },
+    formContainer: {
+      padding: 24,
+      borderRadius: 16,
+      backgroundColor: theme.colors.surface,
+    },
+    input: {
+      marginBottom: 16,
+      backgroundColor: theme.colors.surface,
+    },
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -62,12 +90,12 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={dynamicStyles.container}
     >
       <View style={styles.content}>
         {/* Logo/Title */}
         <View style={styles.header}>
-          <Surface style={styles.logoContainer} elevation={2}>
+          <Surface style={dynamicStyles.logoContainer} elevation={2}>
             <MaterialCommunityIcons
               name="bell-ring"
               size={48}
@@ -77,13 +105,13 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
           <Text variant="headlineLarge" style={[styles.title, { color: theme.colors.primary }]}>
             OnCallShift
           </Text>
-          <Text variant="bodyLarge" style={styles.subtitle}>
+          <Text variant="bodyLarge" style={dynamicStyles.subtitle}>
             Stay on top of incidents
           </Text>
         </View>
 
         {/* Login Form */}
-        <Surface style={styles.formContainer} elevation={1}>
+        <Surface style={dynamicStyles.formContainer} elevation={1}>
           <TextInput
             mode="outlined"
             label="Email"
@@ -93,7 +121,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
             autoCapitalize="none"
             autoCorrect={false}
             left={<TextInput.Icon icon="email-outline" />}
-            style={styles.input}
+            style={dynamicStyles.input}
             outlineStyle={styles.inputOutline}
           />
           <TextInput
@@ -110,7 +138,7 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
                 onPress={() => setShowPassword(!showPassword)}
               />
             }
-            style={styles.input}
+            style={dynamicStyles.input}
             outlineStyle={styles.inputOutline}
           />
 
@@ -140,10 +168,6 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
   content: {
     flex: 1,
     justifyContent: 'center',
@@ -153,30 +177,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
   title: {
     fontWeight: 'bold',
     marginBottom: 8,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-  },
-  formContainer: {
-    padding: 24,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-  },
-  input: {
-    marginBottom: 16,
-    backgroundColor: colors.surface,
   },
   inputOutline: {
     borderRadius: 12,

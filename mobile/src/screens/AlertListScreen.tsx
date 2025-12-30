@@ -18,6 +18,8 @@ import {
   Avatar,
   Portal,
   Modal,
+  Checkbox,
+  IconButton,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -26,10 +28,10 @@ import * as apiService from '../services/apiService';
 import * as settingsService from '../services/settingsService';
 import * as hapticService from '../services/hapticService';
 import * as notificationService from '../services/notificationService';
-import type { Incident, OnCallData } from '../services/apiService';
+import type { Incident, OnCallData, Service } from '../services/apiService';
 import { useAppTheme } from '../context/ThemeContext';
 import { severityColors, statusColors } from '../theme';
-import { OwnerAvatar, EscalationBadge, EmptyStatePreset, useToast, toastMessages } from '../components';
+import { OwnerAvatar, EscalationBadge, EmptyStatePreset, useToast, toastMessages, useConfetti, UrgencyIndicator } from '../components';
 
 const FILTER_STORAGE_KEY = '@incident_filter';
 
@@ -38,6 +40,7 @@ type FilterType = 'all' | 'mine' | 'triggered' | 'acknowledged' | 'resolved';
 export default function AlertListScreen({ navigation }: any) {
   const { theme, colors } = useAppTheme();
   const { showSuccess, showError } = useToast();
+  const { showConfetti } = useConfetti();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [onCallData, setOnCallData] = useState<OnCallData[]>([]);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
@@ -51,16 +54,28 @@ export default function AlertListScreen({ navigation }: any) {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
+  // Bulk selection state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  // Service filter state
+  const [services, setServices] = useState<Service[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [showServiceFilter, setShowServiceFilter] = useState(false);
+
   const fetchData = async () => {
     try {
       setError(null);
-      const [incidentsData, onCallResult, profile] = await Promise.all([
+      const [incidentsData, onCallResult, profile, servicesData] = await Promise.all([
         apiService.getIncidents(),
         apiService.getOnCallData().catch(() => []),
         apiService.getUserProfile().catch(() => null),
+        apiService.getServices().catch(() => []),
       ]);
       setIncidents(incidentsData);
       setOnCallData(onCallResult);
+      setServices(servicesData.filter(s => s.status === 'active'));
       if (profile?.email) {
         setCurrentUserEmail(profile.email);
       }
@@ -161,6 +176,11 @@ export default function AlertListScreen({ navigation }: any) {
     // Filter out snoozed incidents
     result = result.filter(i => !snoozedIds.includes(i.id));
 
+    // Apply service filter
+    if (selectedServiceId) {
+      result = result.filter(i => i.service.id === selectedServiceId);
+    }
+
     // Apply state filter
     if (filter === 'triggered') {
       result = result.filter(i => i.state === 'triggered');
@@ -220,6 +240,7 @@ export default function AlertListScreen({ navigation }: any) {
       } else {
         await apiService.resolveIncident(incident.id);
         await hapticService.success();
+        showConfetti();
         showSuccess(toastMessages.resolve);
       }
       fetchData();
@@ -232,19 +253,110 @@ export default function AlertListScreen({ navigation }: any) {
   const handleSnooze = async (minutes: number) => {
     if (!selectedIncident) return;
     await hapticService.lightTap();
-    await settingsService.snoozeIncident(selectedIncident.id, minutes);
 
-    // Schedule a reminder notification
-    await notificationService.scheduleLocalNotification(
-      'Snoozed Incident Reminder',
-      selectedIncident.summary,
-      { incidentId: selectedIncident.id },
-      minutes * 60
-    );
+    try {
+      // Call server-side snooze API
+      await apiService.snoozeIncident(selectedIncident.id, minutes);
 
-    setShowSnoozeModal(false);
-    loadSnoozedIncidents();
-    await hapticService.success();
+      // Also store locally and schedule reminder notification for offline/UX
+      await settingsService.snoozeIncident(selectedIncident.id, minutes);
+      await notificationService.scheduleLocalNotification(
+        'Snoozed Incident Reminder',
+        selectedIncident.summary,
+        { incidentId: selectedIncident.id },
+        minutes * 60
+      );
+
+      setShowSnoozeModal(false);
+      loadSnoozedIncidents();
+      await hapticService.success();
+      showSuccess({ title: 'Snoozed', message: `Incident snoozed for ${minutes} minutes` });
+    } catch (error: any) {
+      await hapticService.error();
+      showError(error.message || 'Failed to snooze incident');
+    }
+  };
+
+  // Bulk selection functions
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+    hapticService.lightTap();
+  };
+
+  const selectAll = () => {
+    const actionableIds = filteredIncidents
+      .filter((i) => i.state !== 'resolved')
+      .map((i) => i.id);
+    setSelectedIds(new Set(actionableIds));
+    hapticService.lightTap();
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const handleBulkAcknowledge = async () => {
+    const toAcknowledge = Array.from(selectedIds).filter((id) => {
+      const incident = incidents.find((i) => i.id === id);
+      return incident?.state === 'triggered';
+    });
+
+    if (toAcknowledge.length === 0) {
+      showError('No triggered incidents selected');
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      await hapticService.mediumTap();
+      await Promise.all(toAcknowledge.map((id) => apiService.acknowledgeIncident(id)));
+      await hapticService.success();
+      showSuccess(`Acknowledged ${toAcknowledge.length} incident${toAcknowledge.length > 1 ? 's' : ''}`);
+      clearSelection();
+      fetchData();
+    } catch (err: any) {
+      await hapticService.error();
+      showError(err.message || 'Failed to acknowledge incidents');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkResolve = async () => {
+    const toResolve = Array.from(selectedIds).filter((id) => {
+      const incident = incidents.find((i) => i.id === id);
+      return incident?.state !== 'resolved';
+    });
+
+    if (toResolve.length === 0) {
+      showError('No actionable incidents selected');
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      await hapticService.mediumTap();
+      await Promise.all(toResolve.map((id) => apiService.resolveIncident(id)));
+      await hapticService.success();
+      showConfetti();
+      showSuccess(`Resolved ${toResolve.length} incident${toResolve.length > 1 ? 's' : ''}`);
+      clearSelection();
+      fetchData();
+    } catch (err: any) {
+      await hapticService.error();
+      showError(err.message || 'Failed to resolve incidents');
+    } finally {
+      setBulkActionLoading(false);
+    }
   };
 
   const getSeverityColor = (severity: string) => {
@@ -314,16 +426,6 @@ export default function AlertListScreen({ navigation }: any) {
           <MaterialCommunityIcons name="check-all" size={24} color="#fff" />
           <Text style={styles(colors).actionText}>Resolve</Text>
         </Pressable>
-        <Pressable
-          style={[styles(colors).actionButton, { backgroundColor: colors.info }]}
-          onPress={() => {
-            setSelectedIncident(incident);
-            setShowSnoozeModal(true);
-          }}
-        >
-          <MaterialCommunityIcons name="clock-outline" size={24} color="#fff" />
-          <Text style={styles(colors).actionText}>Snooze</Text>
-        </Pressable>
       </Animated.View>
     );
   }, [colors]);
@@ -378,6 +480,12 @@ export default function AlertListScreen({ navigation }: any) {
     );
   };
 
+  const getSelectedServiceName = () => {
+    if (!selectedServiceId) return null;
+    const service = services.find(s => s.id === selectedServiceId);
+    return service?.name || 'Unknown';
+  };
+
   const renderFilters = () => (
     <View style={styles(colors).filterRow}>
       <Pressable
@@ -401,30 +509,108 @@ export default function AlertListScreen({ navigation }: any) {
           Mine
         </Text>
       </Pressable>
+      {/* Service Filter */}
+      <Pressable
+        style={[styles(colors).filterChip, selectedServiceId && styles(colors).filterChipActive]}
+        onPress={() => setShowServiceFilter(true)}
+      >
+        <MaterialCommunityIcons
+          name="server"
+          size={14}
+          color={selectedServiceId ? '#fff' : colors.textSecondary}
+        />
+        <Text
+          style={[styles(colors).filterChipText, selectedServiceId && styles(colors).filterChipTextActive]}
+          numberOfLines={1}
+        >
+          {selectedServiceId ? getSelectedServiceName() : 'Service'}
+        </Text>
+        {selectedServiceId && (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              setSelectedServiceId(null);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 5, right: 10 }}
+          >
+            <MaterialCommunityIcons name="close-circle" size={14} color="#fff" />
+          </Pressable>
+        )}
+      </Pressable>
+      <View style={{ flex: 1 }} />
+      {!isSelectionMode ? (
+        <Pressable
+          style={styles(colors).filterChip}
+          onPress={() => setIsSelectionMode(true)}
+        >
+          <MaterialCommunityIcons name="checkbox-multiple-outline" size={14} color={colors.textSecondary} />
+          <Text style={styles(colors).filterChipText}>Select</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          style={[styles(colors).filterChip, styles(colors).filterChipActive]}
+          onPress={clearSelection}
+        >
+          <MaterialCommunityIcons name="close" size={14} color="#fff" />
+          <Text style={styles(colors).filterChipTextActive}>Cancel</Text>
+        </Pressable>
+      )}
     </View>
   );
 
   const renderIncident = ({ item }: { item: Incident }) => {
     const assignee = item.acknowledgedBy || item.resolvedBy;
+    const isSelected = selectedIds.has(item.id);
+    const isActionable = item.state !== 'resolved';
+
+    const handlePress = () => {
+      if (isSelectionMode && isActionable) {
+        toggleSelection(item.id);
+      } else {
+        navigation.navigate('AlertDetail', { alert: item });
+      }
+    };
+
+    const handleLongPress = () => {
+      if (!isSelectionMode && isActionable) {
+        setIsSelectionMode(true);
+        toggleSelection(item.id);
+      }
+    };
 
     return (
       <Swipeable
-        renderLeftActions={(progress, dragX) => renderLeftActions(progress, dragX, item)}
-        renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
+        renderLeftActions={isSelectionMode ? undefined : (progress, dragX) => renderLeftActions(progress, dragX, item)}
+        renderRightActions={isSelectionMode ? undefined : (progress, dragX) => renderRightActions(progress, dragX, item)}
         overshootLeft={false}
         overshootRight={false}
+        enabled={!isSelectionMode}
         onSwipeableOpen={(direction) => {
           hapticService.lightTap();
         }}
       >
         <Pressable
-          onPress={() => navigation.navigate('AlertDetail', { alert: item })}
+          onPress={handlePress}
+          onLongPress={handleLongPress}
         >
-          <Card style={styles(colors).card} mode="elevated">
+          <Card style={[styles(colors).card, isSelected && styles(colors).cardSelected]} mode="elevated">
             {/* Severity indicator bar */}
             <View style={[styles(colors).severityBar, { backgroundColor: getSeverityColor(item.severity) }]} />
 
             <Card.Content style={styles(colors).cardContent}>
+              <View style={styles(colors).cardRow}>
+                {/* Selection checkbox */}
+                {isSelectionMode && (
+                  <View style={styles(colors).checkboxContainer}>
+                    <Checkbox
+                      status={isSelected ? 'checked' : 'unchecked'}
+                      onPress={() => isActionable && toggleSelection(item.id)}
+                      color={colors.accent}
+                      disabled={!isActionable}
+                    />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
               {/* Top row: incident number, status, time */}
               <View style={styles(colors).cardTopRow}>
                 <View style={styles(colors).incidentMeta}>
@@ -441,6 +627,11 @@ export default function AlertListScreen({ navigation }: any) {
                       escalationTimeoutMinutes={30}
                     />
                   )}
+                  <UrgencyIndicator
+                    triggeredAt={item.triggeredAt}
+                    state={item.state}
+                    thresholdMinutes={5}
+                  />
                 </View>
                 <Text style={styles(colors).timeText}>{formatTimeSince(item.triggeredAt)}</Text>
               </View>
@@ -468,7 +659,7 @@ export default function AlertListScreen({ navigation }: any) {
               </View>
 
               {/* Quick Actions */}
-              {item.state !== 'resolved' && (
+              {item.state !== 'resolved' && !isSelectionMode && (
                 <View style={styles(colors).quickActions}>
                   {item.state === 'triggered' && (
                     <Button
@@ -496,6 +687,8 @@ export default function AlertListScreen({ navigation }: any) {
                   </Button>
                 </View>
               )}
+                </View>
+              </View>
             </Card.Content>
           </Card>
         </Pressable>
@@ -553,7 +746,56 @@ export default function AlertListScreen({ navigation }: any) {
             type={searchQuery ? 'search' : filter === 'triggered' ? 'incidents_triggered' : filter === 'acknowledged' ? 'incidents_acknowledged' : filter === 'resolved' ? 'incidents_resolved' : 'incidents'}
           />
         }
+        // Performance optimizations
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        initialNumToRender={8}
+        updateCellsBatchingPeriod={50}
       />
+
+      {/* Bulk Action Bar */}
+      {isSelectionMode && selectedIds.size > 0 && (
+        <Surface style={styles(colors).bulkActionBar} elevation={4}>
+          <View style={styles(colors).bulkActionContent}>
+            <View style={styles(colors).bulkSelectionInfo}>
+              <Text style={styles(colors).bulkSelectionCount}>{selectedIds.size}</Text>
+              <Text style={styles(colors).bulkSelectionLabel}>selected</Text>
+              <Pressable onPress={selectAll} style={styles(colors).selectAllButton}>
+                <Text style={styles(colors).selectAllText}>Select all</Text>
+              </Pressable>
+            </View>
+            <View style={styles(colors).bulkActions}>
+              <Button
+                mode="contained"
+                compact
+                buttonColor={colors.warning}
+                textColor="#fff"
+                onPress={handleBulkAcknowledge}
+                loading={bulkActionLoading}
+                disabled={bulkActionLoading}
+                style={styles(colors).bulkActionButton}
+                icon="check"
+              >
+                Ack
+              </Button>
+              <Button
+                mode="contained"
+                compact
+                buttonColor={colors.success}
+                textColor="#fff"
+                onPress={handleBulkResolve}
+                loading={bulkActionLoading}
+                disabled={bulkActionLoading}
+                style={styles(colors).bulkActionButton}
+                icon="check-all"
+              >
+                Resolve
+              </Button>
+            </View>
+          </View>
+        </Surface>
+      )}
 
       {/* Snooze Modal */}
       <Portal>
@@ -588,6 +830,101 @@ export default function AlertListScreen({ navigation }: any) {
           <Button
             mode="text"
             onPress={() => setShowSnoozeModal(false)}
+            textColor={colors.textSecondary}
+          >
+            Cancel
+          </Button>
+        </Modal>
+
+        {/* Service Filter Modal */}
+        <Modal
+          visible={showServiceFilter}
+          onDismiss={() => setShowServiceFilter(false)}
+          contentContainerStyle={[styles(colors).modal, { backgroundColor: colors.surface, maxHeight: '70%' }]}
+        >
+          <Text variant="titleLarge" style={styles(colors).modalTitle}>
+            Filter by Service
+          </Text>
+          <FlatList
+            data={services}
+            keyExtractor={(item) => item.id}
+            style={styles(colors).serviceList}
+            ListHeaderComponent={
+              <Pressable
+                style={[
+                  styles(colors).serviceOption,
+                  !selectedServiceId && styles(colors).serviceOptionActive,
+                ]}
+                onPress={() => {
+                  setSelectedServiceId(null);
+                  setShowServiceFilter(false);
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="view-grid-outline"
+                  size={20}
+                  color={!selectedServiceId ? colors.accent : colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles(colors).serviceOptionText,
+                    !selectedServiceId && styles(colors).serviceOptionTextActive,
+                  ]}
+                >
+                  All Services
+                </Text>
+                {!selectedServiceId && (
+                  <MaterialCommunityIcons name="check" size={20} color={colors.accent} />
+                )}
+              </Pressable>
+            }
+            renderItem={({ item: service }) => (
+              <Pressable
+                style={[
+                  styles(colors).serviceOption,
+                  selectedServiceId === service.id && styles(colors).serviceOptionActive,
+                ]}
+                onPress={() => {
+                  setSelectedServiceId(service.id);
+                  setShowServiceFilter(false);
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="server"
+                  size={20}
+                  color={selectedServiceId === service.id ? colors.accent : colors.textSecondary}
+                />
+                <View style={styles(colors).serviceOptionContent}>
+                  <Text
+                    style={[
+                      styles(colors).serviceOptionText,
+                      selectedServiceId === service.id && styles(colors).serviceOptionTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {service.name}
+                  </Text>
+                  {service.description && (
+                    <Text style={styles(colors).serviceOptionDescription} numberOfLines={1}>
+                      {service.description}
+                    </Text>
+                  )}
+                </View>
+                {selectedServiceId === service.id && (
+                  <MaterialCommunityIcons name="check" size={20} color={colors.accent} />
+                )}
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              <View style={styles(colors).emptyServiceList}>
+                <MaterialCommunityIcons name="server-off" size={32} color={colors.textMuted} />
+                <Text style={styles(colors).emptyServiceText}>No services available</Text>
+              </View>
+            }
+          />
+          <Button
+            mode="text"
+            onPress={() => setShowServiceFilter(false)}
             textColor={colors.textSecondary}
           >
             Cancel
@@ -919,5 +1256,105 @@ const styles = (colors: any) => StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '500',
+  },
+  // Bulk Selection Styles
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  cardSelected: {
+    borderWidth: 2,
+    borderColor: colors.accent,
+  },
+  checkboxContainer: {
+    marginRight: 8,
+    marginTop: -4,
+  },
+  bulkActionBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  bulkActionContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bulkSelectionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bulkSelectionCount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.accent,
+  },
+  bulkSelectionLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  selectAllButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  selectAllText: {
+    fontSize: 13,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  bulkActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  bulkActionButton: {
+    borderRadius: 8,
+  },
+  // Service Filter Modal
+  serviceList: {
+    maxHeight: 400,
+  },
+  serviceOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  serviceOptionActive: {
+    backgroundColor: colors.accentMuted + '20',
+  },
+  serviceOptionContent: {
+    flex: 1,
+  },
+  serviceOptionText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  serviceOptionTextActive: {
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  serviceOptionDescription: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  emptyServiceList: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 8,
+  },
+  emptyServiceText: {
+    color: colors.textMuted,
+    fontSize: 14,
   },
 });
