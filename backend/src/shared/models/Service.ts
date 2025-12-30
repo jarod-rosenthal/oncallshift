@@ -25,6 +25,9 @@ export class Service {
   @Column({ name: 'email_address', type: 'varchar', length: 255, nullable: true, unique: true })
   emailAddress: string | null; // For email-to-incident (Phase 2)
 
+  @Column({ name: 'webhook_secret', type: 'varchar', length: 255, nullable: true })
+  webhookSecret: string | null; // HMAC-SHA256 secret for webhook signature verification
+
   @Column({ name: 'schedule_id', type: 'uuid', nullable: true })
   scheduleId: string | null;
 

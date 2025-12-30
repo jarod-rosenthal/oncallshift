@@ -18,78 +18,89 @@ const fontConfig = {
   bodySmall: { fontFamily: 'System', fontWeight: '400' as const },
 };
 
-// Light mode colors - Calm, professional slate blue palette
+// Light mode colors - "Calm Confidence" palette
+// Design philosophy: Muted, professional tones that lower stress during incident response
 export const lightColors = {
-  // Primary slate blue
-  primary: '#475569',
-  primaryLight: '#64748B',
-  primaryDark: '#334155',
+  // Primary warm slate - approachable professionalism
+  primary: '#4A5568',
+  primaryLight: '#718096',
+  primaryDark: '#2D3748',
+  primaryContainer: '#EDF2F7',
 
-  // Accent blue for interactive elements
-  accent: '#6366F1',
-  accentLight: '#818CF8',
-  accentMuted: '#A5B4FC',
+  // Accent calming teal - professional, not playful (replaces indigo)
+  accent: '#319795',
+  accentLight: '#4FD1C5',
+  accentMuted: '#81E6D9',
 
-  // Backgrounds - warm, soft grays
-  background: '#F8FAFC',
+  // Backgrounds - warm, neutral off-whites
+  background: '#FAFAFA',
   surface: '#FFFFFF',
-  surfaceSecondary: '#F1F5F9',
+  surfaceSecondary: '#F7FAFC',
+  surfaceVariant: '#EDF2F7',
 
-  // Text - softer for less harsh contrast
-  textPrimary: '#1E293B',
-  textSecondary: '#64748B',
-  textMuted: '#94A3B8',
+  // Text - softer contrast for less eye strain
+  textPrimary: '#2D3748',
+  textSecondary: '#718096',
+  textMuted: '#A0AEC0',
+  textDisabled: '#CBD5E0',
 
-  // Borders
+  // Borders - near-invisible structure
   border: '#E2E8F0',
-  borderLight: '#F1F5F9',
+  borderLight: '#EDF2F7',
+  borderFocus: '#4A5568',
 
-  // Status colors - slightly muted for calm feel
-  success: '#059669',
-  successLight: '#D1FAE5',
-  warning: '#D97706',
-  warningLight: '#FEF3C7',
-  error: '#DC2626',
-  errorLight: '#FEE2E2',
-  info: '#0284C7',
-  infoLight: '#E0F2FE',
+  // Status colors - desaturated for calm (serious but not alarming)
+  success: '#38A169',       // Sage green - confirmation without celebration
+  successLight: '#C6F6D5',
+  warning: '#B7791F',       // Earthy ochre - noticeable without screaming
+  warningLight: '#FAF089',
+  warningMuted: '#D69E2E',
+  error: '#C53030',         // Muted terracotta red - urgent but not panic-inducing
+  errorLight: '#FED7D7',
+  info: '#3182CE',          // Calm cerulean - informational only
+  infoLight: '#BEE3F8',
 };
 
-// Dark mode colors
+// Dark mode colors - "Calm Confidence" dark palette
 export const darkColors = {
-  // Primary slate blue (lighter for dark mode)
-  primary: '#94A3B8',
-  primaryLight: '#CBD5E1',
-  primaryDark: '#64748B',
+  // Primary slate (lifted for visibility on dark)
+  primary: '#A0AEC0',
+  primaryLight: '#CBD5E0',
+  primaryDark: '#718096',
+  primaryContainer: '#2D3748',
 
-  // Accent blue for interactive elements
-  accent: '#818CF8',
-  accentLight: '#A5B4FC',
-  accentMuted: '#6366F1',
+  // Accent bright teal for dark backgrounds
+  accent: '#4FD1C5',
+  accentLight: '#81E6D9',
+  accentMuted: '#319795',
 
-  // Backgrounds - dark slate
-  background: '#0F172A',
-  surface: '#1E293B',
-  surfaceSecondary: '#334155',
+  // Backgrounds - deep navy slate (easier on eyes than pure black)
+  background: '#1A202C',
+  surface: '#2D3748',
+  surfaceSecondary: '#4A5568',
+  surfaceVariant: '#4A5568',
 
   // Text - light for dark backgrounds
-  textPrimary: '#F1F5F9',
-  textSecondary: '#CBD5E1',
-  textMuted: '#64748B',
+  textPrimary: '#F7FAFC',
+  textSecondary: '#E2E8F0',
+  textMuted: '#A0AEC0',
+  textDisabled: '#718096',
 
   // Borders
-  border: '#475569',
-  borderLight: '#334155',
+  border: '#4A5568',
+  borderLight: '#2D3748',
+  borderFocus: '#A0AEC0',
 
-  // Status colors - brighter for dark mode visibility
-  success: '#10B981',
-  successLight: '#064E3B',
-  warning: '#F59E0B',
-  warningLight: '#78350F',
-  error: '#EF4444',
-  errorLight: '#7F1D1D',
-  info: '#38BDF8',
-  infoLight: '#0C4A6E',
+  // Status colors - softened for night (visible without piercing)
+  success: '#68D391',       // Mint green - soft confirmation
+  successLight: '#276749',
+  warning: '#F6AD55',       // Warm peach - gentle warning
+  warningLight: '#744210',
+  warningMuted: '#DD6B20',
+  error: '#FC8181',         // Soft coral - visible without piercing
+  errorLight: '#822727',
+  info: '#63B3ED',          // Sky blue - informational
+  infoLight: '#2A4365',
 };
 
 // Default to light colors (will be overridden by context)
@@ -106,9 +117,9 @@ export const lightTheme = {
   colors: {
     ...MD3LightTheme.colors,
     primary: lightColors.primary,
-    primaryContainer: lightColors.surfaceSecondary,
+    primaryContainer: lightColors.surfaceVariant,
     secondary: lightColors.accent,
-    secondaryContainer: '#EEF2FF',
+    secondaryContainer: '#E6FFFA', // Teal container
     tertiary: lightColors.primaryLight,
     tertiaryContainer: lightColors.surfaceSecondary,
     surface: lightColors.surface,
@@ -119,12 +130,12 @@ export const lightTheme = {
     onPrimary: '#FFFFFF',
     onPrimaryContainer: lightColors.primaryDark,
     onSecondary: '#FFFFFF',
-    onSecondaryContainer: '#3730A3',
+    onSecondaryContainer: '#234E52', // Dark teal text
     onSurface: lightColors.textPrimary,
     onSurfaceVariant: lightColors.textSecondary,
     onBackground: lightColors.textPrimary,
     onError: '#FFFFFF',
-    onErrorContainer: '#991B1B',
+    onErrorContainer: '#822727',
     outline: lightColors.border,
     outlineVariant: lightColors.borderLight,
     elevation: {
@@ -145,9 +156,9 @@ export const darkTheme = {
   colors: {
     ...MD3DarkTheme.colors,
     primary: darkColors.primary,
-    primaryContainer: darkColors.surfaceSecondary,
+    primaryContainer: darkColors.primaryContainer,
     secondary: darkColors.accent,
-    secondaryContainer: '#312E81',
+    secondaryContainer: '#234E52', // Dark teal container
     tertiary: darkColors.primaryLight,
     tertiaryContainer: darkColors.surfaceSecondary,
     surface: darkColors.surface,
@@ -155,24 +166,24 @@ export const darkTheme = {
     background: darkColors.background,
     error: darkColors.error,
     errorContainer: darkColors.errorLight,
-    onPrimary: '#0F172A',
+    onPrimary: '#1A202C',
     onPrimaryContainer: darkColors.primaryLight,
-    onSecondary: '#0F172A',
-    onSecondaryContainer: '#C7D2FE',
+    onSecondary: '#1A202C',
+    onSecondaryContainer: '#81E6D9', // Light teal text
     onSurface: darkColors.textPrimary,
     onSurfaceVariant: darkColors.textSecondary,
     onBackground: darkColors.textPrimary,
-    onError: '#FFFFFF',
-    onErrorContainer: '#FECACA',
+    onError: '#1A202C',
+    onErrorContainer: '#FED7D7',
     outline: darkColors.border,
     outlineVariant: darkColors.borderLight,
     elevation: {
       level0: 'transparent',
       level1: darkColors.surface,
-      level2: '#253349',
-      level3: '#2D3D52',
-      level4: '#35475B',
-      level5: '#3D5164',
+      level2: '#374151',
+      level3: '#4B5563',
+      level4: '#6B7280',
+      level5: '#9CA3AF',
     },
   },
   roundness: 12,
@@ -181,20 +192,30 @@ export const darkTheme = {
 // Default theme export (light)
 export const theme = lightTheme;
 
-// Severity colors - slightly muted for professional feel
+// Severity colors - graduated calm (urgent but not panic-inducing)
 export const severityColors = {
-  critical: '#DC2626',
-  error: '#E11D48',
-  warning: '#D97706',
-  info: '#0284C7',
-  default: lightColors.textSecondary,
+  critical: '#C53030',   // Muted red - urgent but not panic-inducing
+  high: '#B7791F',       // Ochre - elevated attention
+  error: '#C53030',      // Same as critical for consistency
+  warning: '#B7791F',    // Earthy ochre
+  moderate: '#3182CE',   // Blue - standard awareness
+  info: '#3182CE',       // Calm cerulean - informational only
+  low: '#718096',        // Slate - minimal concern
+  default: '#A0AEC0',    // Barely noticeable
 };
 
-// Status colors - professional but clear
+// Status colors - calm but clear state indication
 export const statusColors = {
-  triggered: '#DC2626',
-  acknowledged: '#D97706',
-  resolved: '#059669',
+  triggered: '#C53030',   // Muted terracotta - needs action, not alarm
+  acknowledged: '#B7791F', // Earthy ochre - being handled
+  resolved: '#38A169',    // Sage green - confirmation without celebration
+};
+
+// Dark mode status colors (for reference when needed)
+export const statusColorsDark = {
+  triggered: '#FC8181',   // Soft coral
+  acknowledged: '#F6AD55', // Warm peach
+  resolved: '#68D391',    // Mint green
 };
 
 export type AppTheme = typeof theme;

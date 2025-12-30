@@ -196,6 +196,9 @@ export function AdminServices() {
             <Link to="/admin/users">
               <Button variant="outline">Users</Button>
             </Link>
+            <Link to="/admin/runbooks">
+              <Button variant="outline">Runbooks</Button>
+            </Link>
             <Button onClick={() => {
               if (showCreateForm) {
                 resetForm();

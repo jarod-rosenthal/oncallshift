@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Navigation } from '../components/Navigation';
-import { incidentsAPI, schedulesAPI } from '../lib/api-client';
+import { incidentsAPI, schedulesAPI, setupAPI } from '../lib/api-client';
+import { useAuthStore } from '../store/auth-store';
 import type { Incident, OnCallInfo } from '../types/api';
 
 interface DashboardStats {
@@ -28,12 +29,28 @@ export function Dashboard() {
   const [onCallData, setOnCallData] = useState<OnCallInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [showSetupBanner, setShowSetupBanner] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadDashboardData();
+    if (isAdmin) {
+      checkSetupStatus();
+    }
     const interval = setInterval(loadDashboardData, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [isAdmin]);
+
+  const checkSetupStatus = async () => {
+    try {
+      const status = await setupAPI.getStatus();
+      setShowSetupBanner(!status.setupCompleted);
+    } catch (error) {
+      // If the endpoint fails, don't show the banner
+      console.error('Failed to check setup status:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -96,6 +113,37 @@ export function Dashboard() {
       <Navigation />
 
       <main className="container mx-auto px-4 py-8">
+        {/* Setup Wizard Banner */}
+        {showSetupBanner && (
+          <div className="mb-6 p-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg shadow-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🚀</span>
+                <div>
+                  <h3 className="font-bold text-lg">Complete Your Setup</h3>
+                  <p className="text-blue-100 text-sm">
+                    Set up services, runbooks, and AI-powered incident response in just 5 minutes.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Link to="/setup">
+                  <Button className="bg-white text-blue-600 hover:bg-blue-50">
+                    Start Setup Wizard
+                  </Button>
+                </Link>
+                <Button
+                  variant="ghost"
+                  className="text-white hover:bg-white/20"
+                  onClick={() => setShowSetupBanner(false)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mb-6 flex justify-between items-center">
           <div>
             <h2 className="text-3xl font-bold mb-2">Dashboard</h2>
@@ -288,28 +336,31 @@ export function Dashboard() {
               ) : (
                 <div className="space-y-3">
                   {recentIncidents.map((incident) => (
-                    <div
+                    <Link
                       key={incident.id}
-                      className="flex items-start justify-between p-3 border rounded-lg hover:bg-accent transition-colors"
+                      to={`/incidents/${incident.id}`}
+                      className="block"
                     >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(incident.severity)}`}>
-                            {incident.severity.toUpperCase()}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
-                            {incident.state.toUpperCase()}
-                          </span>
-                          <span className="text-sm text-muted-foreground">
-                            #{incident.incidentNumber}
-                          </span>
+                      <div className="flex items-start justify-between p-3 border rounded-lg hover:bg-accent transition-colors cursor-pointer">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(incident.severity)}`}>
+                              {incident.severity.toUpperCase()}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
+                              {incident.state.toUpperCase()}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              #{incident.incidentNumber}
+                            </span>
+                          </div>
+                          <p className="font-medium">{incident.summary}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {incident.service.name} • {new Date(incident.triggeredAt).toLocaleString()}
+                          </p>
                         </div>
-                        <p className="font-medium">{incident.summary}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {incident.service.name} • {new Date(incident.triggeredAt).toLocaleString()}
-                        </p>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}

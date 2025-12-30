@@ -7,6 +7,7 @@ import { IncidentActions } from '../components/IncidentActions';
 import { IncidentTimeline } from '../components/IncidentTimeline';
 import { EscalationStatusPanel } from '../components/EscalationStatusPanel';
 import { RunbookPanel } from '../components/RunbookPanel';
+import { RelatedIncidents } from '../components/RelatedIncidents';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
 import type { Incident, User, EscalationStatus, IncidentEvent } from '../types/api';
 
@@ -18,16 +19,24 @@ export function IncidentDetail() {
   const [escalation, setEscalation] = useState<EscalationStatus | null>(null);
   const [events, setEvents] = useState<IncidentEvent[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isTimelineLoading, setIsTimelineLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isAIChatActive, setIsAIChatActive] = useState(false);
 
-  const loadIncidentData = useCallback(async () => {
+  const loadIncidentData = useCallback(async (isInitialLoad = false) => {
     if (!id) return;
 
     try {
-      setIsLoading(true);
+      // Only show loading spinner on initial load, not during auto-refresh
+      // This prevents unmounting components (like RunbookPanel) and losing their state
+      if (isInitialLoad) {
+        setIsLoading(true);
+      }
       const response = await incidentsAPI.get(id);
       setIncident(response.incident);
       setEscalation(response.escalation);
@@ -38,7 +47,9 @@ export function IncidentDetail() {
         setError(err.response?.data?.error || 'Failed to load incident');
       }
     } finally {
-      setIsLoading(false);
+      if (isInitialLoad) {
+        setIsLoading(false);
+      }
     }
   }, [id]);
 
@@ -66,15 +77,30 @@ export function IncidentDetail() {
     }
   }, []);
 
+  const loadCurrentUser = useCallback(async () => {
+    try {
+      const response = await usersAPI.getMe();
+      setCurrentUser(response.user);
+    } catch (err) {
+      // Current user is optional for delete button display
+    }
+  }, []);
+
   useEffect(() => {
-    loadIncidentData();
+    loadIncidentData(true); // Initial load - show loading spinner
     loadTimeline();
     loadUsers();
-  }, [loadIncidentData, loadTimeline, loadUsers]);
+    loadCurrentUser();
+  }, [loadIncidentData, loadTimeline, loadUsers, loadCurrentUser]);
 
   // Auto-refresh data every 30 seconds for active incidents
+  // Pause refresh when AI chat is active to avoid disrupting the conversation
+  const incidentId = incident?.id;
+  const incidentState = incident?.state;
+
   useEffect(() => {
-    if (!incident || incident.state === 'resolved') return;
+    // Don't auto-refresh if incident is resolved or AI chat is active
+    if (!incidentId || incidentState === 'resolved' || isAIChatActive) return;
 
     const interval = setInterval(() => {
       loadIncidentData();
@@ -82,7 +108,7 @@ export function IncidentDetail() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [incident, loadIncidentData, loadTimeline]);
+  }, [incidentId, incidentState, isAIChatActive, loadIncidentData, loadTimeline]);
 
   const showSuccess = (message: string) => {
     setSuccessMessage(message);
@@ -141,6 +167,20 @@ export function IncidentDetail() {
     await incidentsAPI.addNote(id, content);
     showSuccess('Note added');
     await loadTimeline();
+  };
+
+  const handleDelete = async () => {
+    if (!id) return;
+    setIsDeleting(true);
+    try {
+      await incidentsAPI.delete(id);
+      navigate('/incidents', { replace: true });
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete incident');
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const getSeverityColor = (severity: string) => {
@@ -330,18 +370,76 @@ export function IncidentDetail() {
               isSnoozed={incident.isSnoozed}
               snoozedUntil={incident.snoozedUntil}
             />
+
+            {/* Admin Actions */}
+            {currentUser?.role === 'admin' && (
+              <Card className="border-destructive/50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm text-destructive">Admin Actions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    Delete Incident
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Right Column: Runbook and Timeline (spans 2 columns on large screens) */}
           <div className="lg:col-span-2 space-y-6">
             {/* Runbook */}
-            <RunbookPanel incident={incident} />
+            <RunbookPanel
+              incident={incident}
+              onAddNote={handleAddNote}
+              onAIChatActiveChange={setIsAIChatActive}
+            />
+
+            {/* Related Incidents */}
+            <RelatedIncidents currentIncident={incident} />
 
             {/* Timeline */}
             <IncidentTimeline events={events} isLoading={isTimelineLoading} />
           </div>
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="text-destructive">Delete Incident</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to delete incident #{incident.incidentNumber}? This action cannot be undone and will remove all associated timeline events and notes.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

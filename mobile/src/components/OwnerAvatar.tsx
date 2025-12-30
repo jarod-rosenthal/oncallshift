@@ -30,15 +30,16 @@ const getAvatarColor = (name?: string, email?: string): string => {
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
+  // Professional, muted avatar palette - sophisticated, not playful
   const avatarColors = [
-    '#6366F1', // Indigo
-    '#8B5CF6', // Violet
-    '#EC4899', // Pink
-    '#F59E0B', // Amber
-    '#10B981', // Emerald
-    '#3B82F6', // Blue
-    '#EF4444', // Red
-    '#14B8A6', // Teal
+    '#5A67D8', // Muted Indigo
+    '#6B46C1', // Deep Purple
+    '#9F7AEA', // Soft Violet
+    '#B7791F', // Ochre
+    '#38A169', // Sage
+    '#3182CE', // Cerulean
+    '#718096', // Slate (replaced red)
+    '#319795', // Calm Teal
   ];
   return avatarColors[Math.abs(hash) % avatarColors.length];
 };

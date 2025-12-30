@@ -13,6 +13,8 @@ import { Availability } from './pages/Availability';
 import { Profile } from './pages/Profile';
 import { AdminUsers } from './pages/AdminUsers';
 import { AdminServices } from './pages/AdminServices';
+import { AdminRunbooks } from './pages/AdminRunbooks';
+import { SetupWizard } from './pages/SetupWizard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 
@@ -24,6 +26,14 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/demo" element={<Demo />} />
+        <Route
+          path="/setup"
+          element={
+            <AdminRoute>
+              <SetupWizard />
+            </AdminRoute>
+          }
+        />
         <Route
           path="/dashboard"
           element={
@@ -101,6 +111,14 @@ function App() {
           element={
             <AdminRoute>
               <AdminServices />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/runbooks"
+          element={
+            <AdminRoute>
+              <AdminRunbooks />
             </AdminRoute>
           }
         />
