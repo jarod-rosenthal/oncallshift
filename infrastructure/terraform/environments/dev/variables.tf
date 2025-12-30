@@ -133,3 +133,16 @@ variable "apns_use_sandbox" {
   type        = bool
   default     = true
 }
+
+# GitHub Actions OIDC
+variable "github_org" {
+  description = "GitHub organization/user name for OIDC authentication"
+  type        = string
+  default     = null
+}
+
+variable "github_repo" {
+  description = "GitHub repository name for OIDC authentication"
+  type        = string
+  default     = null
+}

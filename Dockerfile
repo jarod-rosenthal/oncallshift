@@ -32,9 +32,8 @@ WORKDIR /app
 COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production && \
-    npm install --save-dev typescript @types/node
+# Install all dependencies (need devDependencies for build)
+RUN npm ci
 
 # Copy backend source code
 COPY backend/src ./src
@@ -52,7 +51,7 @@ RUN apk add --no-cache postgresql-client
 
 # Copy backend package files and install production dependencies only
 COPY backend/package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Copy built backend from builder
 COPY --from=backend-builder /app/dist ./dist
