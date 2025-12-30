@@ -8,6 +8,11 @@ on:
         description: 'Target environment'
         required: true
         type: string
+      dry_run:
+        description: 'Dry run - build only, no deploy'
+        required: false
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: us-east-1
@@ -69,10 +74,12 @@ jobs:
           VITE_API_URL: ${{ inputs.environment == 'prod' && 'https://oncallshift.com' || 'https://oncallshift.com' }}
 
       - name: Deploy to S3
+        if: inputs.dry_run != true
         run: |
           aws s3 sync frontend/dist/ s3://${{ steps.set-vars.outputs.S3_BUCKET }}/ --delete
 
       - name: Invalidate CloudFront cache
+        if: inputs.dry_run != true
         run: |
           DIST_ID="${{ steps.set-vars.outputs.CLOUDFRONT_DIST_ID }}"
           if [ -n "$DIST_ID" ]; then
@@ -84,7 +91,24 @@ jobs:
             echo "No CloudFront distribution ID configured for this environment"
           fi
 
+      - name: Dry run summary
+        if: inputs.dry_run == true
+        run: |
+          echo "🔍 DRY RUN - Frontend Build Summary"
+          echo "===================================="
+          echo "Environment: ${{ inputs.environment }}"
+          echo ""
+          echo "Build output:"
+          ls -la frontend/dist/
+          echo ""
+          echo "Would deploy to:"
+          echo "  - S3 Bucket: ${{ steps.set-vars.outputs.S3_BUCKET }}"
+          echo "  - CloudFront Distribution: ${{ steps.set-vars.outputs.CLOUDFRONT_DIST_ID }}"
+          echo ""
+          echo "⚠️  DRY RUN MODE - No files uploaded, no cache invalidated"
+
       - name: Frontend deployment summary
+        if: inputs.dry_run != true
         run: |
           echo "✅ Frontend deployment complete!"
           echo "Environment: ${{ inputs.environment }}"

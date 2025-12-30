@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: 'Dry run - plan only, no apply'
+        required: false
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: us-east-1
@@ -109,9 +114,20 @@ jobs:
             infrastructure/terraform/environments/${{ inputs.environment }}/plan_readable.txt
           retention-days: 1
 
+      - name: Dry Run Summary
+        if: steps.plan.outputs.has_changes == 'true' && inputs.dry_run == true
+        run: |
+          echo "🔍 DRY RUN - Terraform Plan Summary"
+          echo "===================================="
+          echo "Environment: ${{ inputs.environment }}"
+          echo ""
+          cat plan_readable.txt
+          echo ""
+          echo "⚠️  DRY RUN MODE - No changes will be applied"
+
       - name: Create or Update Approval Issue
         id: create-issue
-        if: steps.plan.outputs.has_changes == 'true' && inputs.auto_approve != true
+        if: steps.plan.outputs.has_changes == 'true' && inputs.auto_approve != true && inputs.dry_run != true
         env:
           ENVIRONMENT: ${{ inputs.environment }}
           RUN_NUMBER: ${{ github.run_number }}
@@ -235,7 +251,7 @@ The workflow will automatically detect the label and proceed with applying the c
     name: Wait for Approval (${{ inputs.environment }})
     runs-on: ubuntu-latest
     needs: plan
-    if: needs.plan.outputs.has_changes == 'true' && inputs.auto_approve != true
+    if: needs.plan.outputs.has_changes == 'true' && inputs.auto_approve != true && inputs.dry_run != true
     timeout-minutes: 240
     permissions:
       issues: read
@@ -389,7 +405,7 @@ The workflow will automatically detect the label and proceed with applying the c
     name: Terraform Apply - Auto (${{ inputs.environment }})
     runs-on: ubuntu-latest
     needs: plan
-    if: needs.plan.outputs.has_changes == 'true' && inputs.auto_approve == true
+    if: needs.plan.outputs.has_changes == 'true' && inputs.auto_approve == true && inputs.dry_run != true
     permissions:
       contents: read
       id-token: write

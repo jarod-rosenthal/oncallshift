@@ -38,6 +38,11 @@ on:
         required: false
         default: false
         type: boolean
+      dry_run:
+        description: 'Dry Run - show what would happen without deploying'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   # Determine environment from branch or input
@@ -51,6 +56,7 @@ jobs:
       deploy_backend: ${{ steps.set-flags.outputs.deploy_backend }}
       deploy_frontend: ${{ steps.set-flags.outputs.deploy_frontend }}
       deploy_mobile: ${{ steps.set-flags.outputs.deploy_mobile }}
+      dry_run: ${{ steps.set-flags.outputs.dry_run }}
     steps:
       - name: Determine environment
         id: set-env
@@ -65,15 +71,21 @@ jobs:
           echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
           echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
           echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
+          echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
 
       - name: Display configuration
         run: |
           echo "🚀 Deployment Configuration"
           echo "Environment: ${{ steps.set-env.outputs.environment }}"
+          echo "Dry Run: ${{ steps.set-flags.outputs.dry_run }}"
           echo "Deploy Infra: ${{ steps.set-flags.outputs.deploy_infra }}"
           echo "Deploy Backend: ${{ steps.set-flags.outputs.deploy_backend }}"
           echo "Deploy Frontend: ${{ steps.set-flags.outputs.deploy_frontend }}"
           echo "Deploy Mobile: ${{ steps.set-flags.outputs.deploy_mobile }}"
+          if [ "${{ steps.set-flags.outputs.dry_run }}" = "true" ]; then
+            echo ""
+            echo "⚠️  DRY RUN MODE - No actual deployments will occur"
+          fi
 
   # Stage 1: Infrastructure (Terraform)
   infrastructure:
@@ -84,6 +96,7 @@ jobs:
     with:
       environment: ${{ needs.setup.outputs.environment }}
       auto_approve: ${{ needs.setup.outputs.auto_approve_infra == 'true' }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
   # Stage 2: Backend (API + Workers)
@@ -97,6 +110,7 @@ jobs:
     uses: ./.github/workflows/_backend.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
   # Stage 3: Frontend (S3 + CloudFront)
@@ -110,6 +124,7 @@ jobs:
     uses: ./.github/workflows/_frontend.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
   # Stage 4: Mobile (Expo EAS)
@@ -123,6 +138,7 @@ jobs:
     uses: ./.github/workflows/_mobile.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
   # Summary

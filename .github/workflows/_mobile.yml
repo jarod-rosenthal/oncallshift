@@ -8,6 +8,11 @@ on:
         description: 'Target environment'
         required: true
         type: string
+      dry_run:
+        description: 'Dry run - validate only, no build'
+        required: false
+        type: boolean
+        default: false
 
 env:
   NODE_VERSION: '20'
@@ -53,7 +58,25 @@ jobs:
         working-directory: mobile
         run: npm ci
 
+      - name: Validate EAS configuration (dry run)
+        if: inputs.dry_run == true
+        working-directory: mobile
+        run: |
+          echo "🔍 DRY RUN - Mobile Build Configuration"
+          echo "========================================"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "EAS Profile: ${{ steps.set-profile.outputs.EAS_PROFILE }}"
+          echo ""
+          echo "EAS configuration:"
+          cat eas.json
+          echo ""
+          echo "App configuration:"
+          cat app.json
+          echo ""
+          echo "⚠️  DRY RUN MODE - No build will be triggered"
+
       - name: Build Android APK with EAS
+        if: inputs.dry_run != true
         working-directory: mobile
         run: |
           eas build \
@@ -65,6 +88,7 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Mobile build summary
+        if: inputs.dry_run != true
         run: |
           echo "✅ Mobile build triggered!"
           echo "Environment: ${{ inputs.environment }}"
