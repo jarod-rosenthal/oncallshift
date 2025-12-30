@@ -8,6 +8,11 @@ on:
         description: 'Target environment'
         required: true
         type: string
+      dry_run:
+        description: 'Dry run - build only, no push or deploy'
+        required: false
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: us-east-1
@@ -45,13 +50,39 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: inputs.dry_run != true
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build API image (dry run)
+        if: inputs.dry_run == true
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: |
+            ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_API_REPO }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Worker image (dry run)
+        if: inputs.dry_run == true
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.worker
+          push: false
+          tags: |
+            ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_WORKER_REPO }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build and push API image
+        if: inputs.dry_run != true
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -64,6 +95,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Worker image
+        if: inputs.dry_run != true
         uses: docker/build-push-action@v5
         with:
           context: ./backend
@@ -76,6 +108,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Deploy API to ECS
+        if: inputs.dry_run != true
         run: |
           aws ecs update-service \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
@@ -84,6 +117,7 @@ jobs:
             --region ${{ env.AWS_REGION }}
 
       - name: Deploy Worker to ECS
+        if: inputs.dry_run != true
         run: |
           aws ecs update-service \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
@@ -92,6 +126,7 @@ jobs:
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for API service to stabilize
+        if: inputs.dry_run != true
         run: |
           echo "Waiting for API service to stabilize..."
           aws ecs wait services-stable \
@@ -100,6 +135,7 @@ jobs:
             --region ${{ env.AWS_REGION }}
 
       - name: Wait for Worker service to stabilize
+        if: inputs.dry_run != true
         run: |
           echo "Waiting for Worker service to stabilize..."
           aws ecs wait services-stable \
@@ -107,7 +143,26 @@ jobs:
             --services ${{ steps.set-vars.outputs.ECS_WORKER_SERVICE }} \
             --region ${{ env.AWS_REGION }}
 
+      - name: Dry run summary
+        if: inputs.dry_run == true
+        run: |
+          echo "🔍 DRY RUN - Backend Build Summary"
+          echo "===================================="
+          echo "Environment: ${{ inputs.environment }}"
+          echo ""
+          echo "Would build and push:"
+          echo "  - API Image: ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_API_REPO }}:${{ github.sha }}"
+          echo "  - Worker Image: ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_WORKER_REPO }}:${{ github.sha }}"
+          echo ""
+          echo "Would deploy to:"
+          echo "  - Cluster: ${{ steps.set-vars.outputs.ECS_CLUSTER }}"
+          echo "  - API Service: ${{ steps.set-vars.outputs.ECS_API_SERVICE }}"
+          echo "  - Worker Service: ${{ steps.set-vars.outputs.ECS_WORKER_SERVICE }}"
+          echo ""
+          echo "⚠️  DRY RUN MODE - No images pushed, no deployments made"
+
       - name: Backend deployment summary
+        if: inputs.dry_run != true
         run: |
           echo "✅ Backend deployment complete!"
           echo "Environment: ${{ inputs.environment }}"
