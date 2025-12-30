@@ -21,6 +21,11 @@ on:
         required: false
         default: false
         type: boolean
+      auto_approve_infra:
+        description: 'Auto-approve Terraform changes (skip issue approval)'
+        required: false
+        default: false
+        type: boolean
       deploy_backend:
         description: 'Deploy Backend (API + Workers)'
         required: false
@@ -45,6 +50,7 @@ jobs:
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
       deploy_infra: ${{ steps.set-flags.outputs.deploy_infra }}
+      auto_approve_infra: ${{ steps.set-flags.outputs.auto_approve_infra }}
       deploy_backend: ${{ steps.set-flags.outputs.deploy_backend }}
       deploy_frontend: ${{ steps.set-flags.outputs.deploy_frontend }}
       deploy_mobile: ${{ steps.set-flags.outputs.deploy_mobile }}
@@ -65,12 +71,14 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
+            echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
             echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
             echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
             echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
           else
             # On push, deploy backend and frontend by default
             echo "deploy_infra=false" >> $GITHUB_OUTPUT
+            echo "auto_approve_infra=false" >> $GITHUB_OUTPUT
             echo "deploy_backend=true" >> $GITHUB_OUTPUT
             echo "deploy_frontend=true" >> $GITHUB_OUTPUT
             echo "deploy_mobile=false" >> $GITHUB_OUTPUT
@@ -93,6 +101,7 @@ jobs:
     uses: ./.github/workflows/_infra.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
+      auto_approve: ${{ needs.setup.outputs.auto_approve_infra == 'true' }}
     secrets: inherit
 
   # Stage 2: Backend (API + Workers)
