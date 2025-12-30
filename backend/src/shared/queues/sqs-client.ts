@@ -14,8 +14,9 @@ export interface AlertMessage {
 export interface NotificationMessage {
   incidentId: string;
   userId: string;
-  channel: 'push' | 'sms' | 'voice';
+  channel: 'push' | 'sms' | 'email' | 'voice';
   priority: 'high' | 'normal';
+  incidentState: 'triggered' | 'acknowledged' | 'resolved';
 }
 
 /**
@@ -129,7 +130,7 @@ export async function processQueue<T>(
   handler: (message: T) => Promise<void>,
   options: { maxMessages?: number; batchSize?: number } = {}
 ): Promise<void> {
-  const { maxMessages = 10, batchSize = 1 } = options;
+  const { batchSize = 1 } = options;
 
   while (true) {
     try {

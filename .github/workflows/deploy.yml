@@ -1,106 +1,171 @@
-name: Deploy PagerDuty-Lite
+name: Deploy Pipeline
 
+# Manual trigger only - no automatic deployments
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'backend/**'
-      - 'infrastructure/**'
-      - '.github/workflows/**'
   workflow_dispatch:
-
-env:
-  AWS_REGION: us-east-1
-  ECR_API_REPOSITORY: pagerduty-lite-dev-api
-  ECR_WORKER_REPOSITORY: pagerduty-lite-dev-notification-worker
-  ECS_CLUSTER: pagerduty-lite-dev
-  ECS_API_SERVICE: pagerduty-lite-dev-api
-  ECS_WORKER_SERVICE: pagerduty-lite-dev-notification-worker
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      deploy_infra:
+        description: 'Deploy Infrastructure (Terraform)'
+        required: false
+        default: false
+        type: boolean
+      auto_approve_infra:
+        description: 'Auto-approve Terraform changes (skip issue approval)'
+        required: false
+        default: false
+        type: boolean
+      deploy_backend:
+        description: 'Deploy Backend (API + Workers)'
+        required: false
+        default: true
+        type: boolean
+      deploy_frontend:
+        description: 'Deploy Frontend (S3 + CloudFront)'
+        required: false
+        default: true
+        type: boolean
+      deploy_mobile:
+        description: 'Deploy Mobile (Expo EAS)'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Dry Run - show what would happen without deploying'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  build-and-deploy:
-    name: Build and Deploy
+  # Determine environment from branch or input
+  setup:
+    name: Setup
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      deploy_infra: ${{ steps.set-flags.outputs.deploy_infra }}
+      auto_approve_infra: ${{ steps.set-flags.outputs.auto_approve_infra }}
+      deploy_backend: ${{ steps.set-flags.outputs.deploy_backend }}
+      deploy_frontend: ${{ steps.set-flags.outputs.deploy_frontend }}
+      deploy_mobile: ${{ steps.set-flags.outputs.deploy_mobile }}
+      dry_run: ${{ steps.set-flags.outputs.dry_run }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, tag, and push API image to Amazon ECR
-        id: build-api-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Determine environment
+        id: set-env
         run: |
-          cd backend
-          docker build -t $ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG -f Dockerfile.api .
-          docker push $ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG
-          docker tag $ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_API_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_API_REPOSITORY:latest
-          echo "image=$ECR_REGISTRY/$ECR_API_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
 
-      - name: Build, tag, and push Worker image to Amazon ECR
-        id: build-worker-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Set deployment flags
+        id: set-flags
         run: |
-          cd backend
-          docker build -t $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG -f Dockerfile.worker .
-          docker push $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG
-          docker tag $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_WORKER_REPOSITORY:latest
-          echo "image=$ECR_REGISTRY/$ECR_WORKER_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
+          echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
+          echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
+          echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
+          echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
+          echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
 
-      - name: Deploy API to Amazon ECS
+      - name: Display configuration
         run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_API_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
+          echo "🚀 Deployment Configuration"
+          echo "Environment: ${{ steps.set-env.outputs.environment }}"
+          echo "Dry Run: ${{ steps.set-flags.outputs.dry_run }}"
+          echo "Deploy Infra: ${{ steps.set-flags.outputs.deploy_infra }}"
+          echo "Deploy Backend: ${{ steps.set-flags.outputs.deploy_backend }}"
+          echo "Deploy Frontend: ${{ steps.set-flags.outputs.deploy_frontend }}"
+          echo "Deploy Mobile: ${{ steps.set-flags.outputs.deploy_mobile }}"
+          if [ "${{ steps.set-flags.outputs.dry_run }}" = "true" ]; then
+            echo ""
+            echo "⚠️  DRY RUN MODE - No actual deployments will occur"
+          fi
 
-      - name: Deploy Worker to Amazon ECS
-        run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_WORKER_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
+  # Stage 1: Infrastructure (Terraform)
+  infrastructure:
+    name: Infrastructure
+    needs: setup
+    if: needs.setup.outputs.deploy_infra == 'true'
+    uses: ./.github/workflows/_infra.yml
+    with:
+      environment: ${{ needs.setup.outputs.environment }}
+      auto_approve: ${{ needs.setup.outputs.auto_approve_infra == 'true' }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
+    secrets: inherit
 
-      - name: Wait for API service to stabilize
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_API_SERVICE \
-            --region $AWS_REGION
+  # Stage 2: Backend (API + Workers)
+  backend:
+    name: Backend
+    needs: [setup, infrastructure]
+    if: |
+      always() &&
+      needs.setup.outputs.deploy_backend == 'true' &&
+      (needs.infrastructure.result == 'success' || needs.infrastructure.result == 'skipped')
+    uses: ./.github/workflows/_backend.yml
+    with:
+      environment: ${{ needs.setup.outputs.environment }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
+    secrets: inherit
 
-      - name: Wait for Worker service to stabilize
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_WORKER_SERVICE \
-            --region $AWS_REGION
+  # Stage 3: Frontend (S3 + CloudFront)
+  frontend:
+    name: Frontend
+    needs: [setup, backend]
+    if: |
+      always() &&
+      needs.setup.outputs.deploy_frontend == 'true' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+    uses: ./.github/workflows/_frontend.yml
+    with:
+      environment: ${{ needs.setup.outputs.environment }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
+    secrets: inherit
 
-      - name: Deployment summary
+  # Stage 4: Mobile (Expo EAS)
+  mobile:
+    name: Mobile
+    needs: [setup, frontend]
+    if: |
+      always() &&
+      needs.setup.outputs.deploy_mobile == 'true' &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+    uses: ./.github/workflows/_mobile.yml
+    with:
+      environment: ${{ needs.setup.outputs.environment }}
+      dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
+    secrets: inherit
+
+  # Summary
+  summary:
+    name: Deployment Summary
+    needs: [setup, infrastructure, backend, frontend, mobile]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment Summary
         run: |
-          echo "✅ Deployment completed successfully!"
-          echo "API Image: ${{ steps.build-api-image.outputs.image }}"
-          echo "Worker Image: ${{ steps.build-worker-image.outputs.image }}"
-          echo "Cluster: $ECS_CLUSTER"
-          echo "Services: $ECS_API_SERVICE, $ECS_WORKER_SERVICE"
+          echo "🏁 Deployment Pipeline Complete"
+          echo "================================"
+          echo "Environment: ${{ needs.setup.outputs.environment }}"
+          echo ""
+          echo "Stage Results:"
+          echo "  Infrastructure: ${{ needs.infrastructure.result || 'skipped' }}"
+          echo "  Backend: ${{ needs.backend.result || 'skipped' }}"
+          echo "  Frontend: ${{ needs.frontend.result || 'skipped' }}"
+          echo "  Mobile: ${{ needs.mobile.result || 'skipped' }}"
+
+      - name: Check for failures
+        if: |
+          needs.infrastructure.result == 'failure' ||
+          needs.backend.result == 'failure' ||
+          needs.frontend.result == 'failure' ||
+          needs.mobile.result == 'failure'
+        run: |
+          echo "❌ One or more stages failed!"
+          exit 1

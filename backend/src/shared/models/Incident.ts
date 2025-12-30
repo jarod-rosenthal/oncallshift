@@ -58,6 +58,30 @@ export class Incident {
   @Column({ name: 'last_event_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   lastEventAt: Date;
 
+  @Column({ name: 'current_escalation_step', type: 'int', default: 0 })
+  currentEscalationStep: number;
+
+  @Column({ name: 'escalation_started_at', type: 'timestamp', nullable: true })
+  escalationStartedAt: Date | null;
+
+  // Assignment tracking
+  @Column({ name: 'assigned_to_user_id', type: 'uuid', nullable: true })
+  assignedToUserId: string | null;
+
+  @Column({ name: 'assigned_at', type: 'timestamp', nullable: true })
+  assignedAt: Date | null;
+
+  // Snooze functionality
+  @Column({ name: 'snoozed_until', type: 'timestamp', nullable: true })
+  snoozedUntil: Date | null;
+
+  @Column({ name: 'snoozed_by', type: 'uuid', nullable: true })
+  snoozedBy: string | null;
+
+  // Merged incident tracking
+  @Column({ name: 'merged_into_incident_id', type: 'uuid', nullable: true })
+  mergedIntoIncidentId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -81,6 +105,18 @@ export class Incident {
   @JoinColumn({ name: 'resolved_by' })
   resolvedByUser: User | null;
 
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'assigned_to_user_id' })
+  assignedToUser: User | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'snoozed_by' })
+  snoozedByUser: User | null;
+
+  @ManyToOne(() => Incident, { nullable: true })
+  @JoinColumn({ name: 'merged_into_incident_id' })
+  mergedIntoIncident: Incident | null;
+
   @OneToMany(() => IncidentEvent, event => event.incident)
   events: IncidentEvent[];
 
@@ -98,5 +134,25 @@ export class Incident {
 
   canResolve(): boolean {
     return this.state !== 'resolved';
+  }
+
+  canReassign(): boolean {
+    return this.state !== 'resolved';
+  }
+
+  canSnooze(): boolean {
+    return this.state === 'triggered' && !this.isSnoozed();
+  }
+
+  canEscalate(): boolean {
+    return this.state === 'triggered';
+  }
+
+  isSnoozed(): boolean {
+    return this.snoozedUntil !== null && new Date(this.snoozedUntil) > new Date();
+  }
+
+  isMerged(): boolean {
+    return this.mergedIntoIncidentId !== null;
   }
 }

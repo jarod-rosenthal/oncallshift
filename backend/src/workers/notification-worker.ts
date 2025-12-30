@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { getDataSource } from '../shared/db/data-source';
 import { processQueue, NotificationMessage } from '../shared/queues/sqs-client';
 import { sendPushNotification } from '../shared/notifications/push-service';
+import { sendSMSNotification } from '../shared/notifications/sms-service';
+import { sendEmailNotification } from '../shared/notifications/email-service';
 import { logger } from '../shared/utils/logger';
 
 const QUEUE_URL = process.env.NOTIFICATIONS_QUEUE_URL;
@@ -19,10 +21,25 @@ async function handleNotificationMessage(message: NotificationMessage): Promise<
         incidentId: message.incidentId,
         userId: message.userId,
         priority: message.priority,
+        incidentState: message.incidentState,
+      });
+    } else if (message.channel === 'sms') {
+      await sendSMSNotification({
+        incidentId: message.incidentId,
+        userId: message.userId,
+        priority: message.priority,
+        incidentState: message.incidentState,
+      });
+    } else if (message.channel === 'email') {
+      await sendEmailNotification({
+        incidentId: message.incidentId,
+        userId: message.userId,
+        priority: message.priority,
+        incidentState: message.incidentState,
       });
     } else {
-      // SMS and voice are Phase 2
-      logger.warn(`Channel ${message.channel} not yet implemented (Phase 2)`);
+      // Voice is Phase 3
+      logger.warn(`Channel ${message.channel} not yet implemented`);
     }
   } catch (error) {
     logger.error('Error handling notification message:', error);

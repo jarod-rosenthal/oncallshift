@@ -1,54 +1,66 @@
 {
   "expo": {
-    "name": "PagerDuty Lite",
-    "slug": "pagerduty-lite",
+    "name": "OnCallShift",
+    "slug": "oncallshift",
+    "scheme": "oncallshift",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F8FAFC"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.pagerduty-lite",
+      "bundleIdentifier": "com.oncallshift.mobile",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": ["remote-notification"],
+        "NSFaceIDUsageDescription": "Use Face ID to quickly unlock the app"
       }
     },
     "android": {
+      "package": "com.oncallshift.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#475569"
       },
-      "package": "com.yourcompany.pagerdutylite",
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "VIBRATE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
       ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
+      "expo-notifications",
       [
-        "expo-notifications",
+        "expo-local-authentication",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#ffffff",
-          "sounds": ["./assets/notification-sound.wav"]
+          "faceIDPermission": "Allow OnCallShift to use Face ID for quick authentication"
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "oncallshift-mobile",
+          "organization": "oncallshift"
         }
       ]
     ],
+    "updates": {
+      "enabled": false
+    },
     "extra": {
       "eas": {
         "projectId": "your-project-id-here"
-      }
+      },
+      "sentryDsn": "https://your-sentry-dsn@o0.ingest.sentry.io/0"
     }
   }
 }

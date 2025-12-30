@@ -1,17 +1,23 @@
 import { create } from 'zustand';
-import type { AuthTokens } from '../types/api';
+import type { AuthTokens, User } from '../types/api';
 
 interface AuthState {
   isAuthenticated: boolean;
   tokens: AuthTokens | null;
+  user: User | null;
+  isInitialized: boolean;
   setTokens: (tokens: AuthTokens) => void;
+  setUser: (user: User | null) => void;
   clearAuth: () => void;
   initializeAuth: () => void;
+  isAdmin: () => boolean;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   tokens: null,
+  user: null,
+  isInitialized: false,
 
   setTokens: (tokens: AuthTokens) => {
     localStorage.setItem('accessToken', tokens.accessToken);
@@ -20,11 +26,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ tokens, isAuthenticated: true });
   },
 
+  setUser: (user: User | null) => {
+    set({ user });
+  },
+
   clearAuth: () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('idToken');
-    set({ tokens: null, isAuthenticated: false });
+    set({ tokens: null, user: null, isAuthenticated: false });
   },
 
   initializeAuth: () => {
@@ -41,7 +51,15 @@ export const useAuthStore = create<AuthState>((set) => ({
           expiresIn: 3600, // Will be refreshed automatically
         },
         isAuthenticated: true,
+        isInitialized: true,
       });
+    } else {
+      set({ isInitialized: true });
     }
+  },
+
+  isAdmin: () => {
+    const state = get();
+    return state.user?.role === 'admin';
   },
 }));

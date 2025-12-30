@@ -6,6 +6,9 @@ import { Organization } from '../models/Organization';
 import { User } from '../models/User';
 import { Service } from '../models/Service';
 import { Schedule } from '../models/Schedule';
+import { ScheduleMember } from '../models/ScheduleMember';
+import { EscalationPolicy } from '../models/EscalationPolicy';
+import { EscalationStep } from '../models/EscalationStep';
 import { Incident } from '../models/Incident';
 import { IncidentEvent } from '../models/IncidentEvent';
 import { Notification } from '../models/Notification';
@@ -21,13 +24,17 @@ export async function createDataSource(): Promise<DataSource> {
     username: dbConfig.username,
     password: dbConfig.password,
     database: dbConfig.database,
-    synchronize: false, // Use migrations in production
+    ssl: dbConfig.ssl ? { rejectUnauthorized: false } : false,
+    synchronize: process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev', // Auto-create tables in dev, use migrations in production
     logging: process.env.NODE_ENV === 'development',
     entities: [
       Organization,
       User,
       Service,
       Schedule,
+      ScheduleMember,
+      EscalationPolicy,
+      EscalationStep,
       Incident,
       IncidentEvent,
       Notification,

@@ -27,19 +27,22 @@
 - No rotation logic (manual updates via admin)
 - View "who's on call now"
 
-#### 4. Push Notifications Only ✅
-- FCM (Android) + APNs (iOS) push notifications
+#### 4. Multi-Channel Notifications ✅
+- **Email notifications** ✅ Working with noreply@oncallshift.com
+- **Push notifications** 🚧 Infrastructure ready (FCM + APNs), needs mobile app
+- **SMS notifications** 🚧 Infrastructure ready (AWS SNS), needs implementation
 - High-priority notifications
-- Deep linking to incident detail
+- Deep linking to incident detail (pending mobile app)
 - Track delivery status
 
-#### 5. Mobile App (Core Screens) ✅
-- Login/Authentication (Cognito)
-- Incident list (open/resolved filter)
-- Incident detail with ACK/Resolve buttons
-- Add notes
-- View on-call roster
-- Basic settings
+#### 5. Mobile App (Core Screens) 🚧
+- Login/Authentication (Cognito) - pending
+- Incident list (open/resolved filter) - pending
+- Incident detail with ACK/Resolve buttons - pending
+- Add notes - pending
+- View on-call roster - pending
+- Basic settings - pending
+- **Status:** React Native/Expo scaffolded, implementation in progress
 
 #### 6. Authentication & Multi-Tenancy ✅
 - Amazon Cognito user pools
@@ -48,26 +51,34 @@
 - API key for webhook ingestion
 
 #### 7. Infrastructure ✅
-- ECS Fargate (1 API task, 1 worker task)
-- Aurora Serverless v2 (0.5 ACU minimum)
+- ECS Fargate (3 services: API, Alert Processor, Notification Worker)
+- RDS PostgreSQL (db.t4g.micro)
 - Application Load Balancer
+- CloudFront CDN
 - SQS queues (alerts, notifications)
+- ProtonMail domain email (SPF, DKIM, DMARC)
+- Route 53 DNS management
 - No NAT Gateway (using VPC endpoints)
 
-### MVP Exclusions (Coming in Phase 2+)
+### Implemented Beyond MVP
 
-#### ❌ Not in MVP:
-- SMS/Voice fallback notifications
+#### ✅ Completed Features (Originally planned for Phase 2+):
+- **Email notifications** - Working with noreply@oncallshift.com
+- **Multi-level escalation policies** - PagerDuty-style escalation fully implemented
+- **Web admin interface** - React SPA deployed at https://oncallshift.com
+
+### Still Pending (Phase 2+)
+
+#### ❌ Not Yet Implemented:
+- SMS/Voice fallback notifications (infrastructure ready, needs implementation)
 - Email-to-incident ingestion
 - Heartbeat/dead man's switch monitoring
-- Multi-level escalation policies
 - Automatic schedule rotations
 - Maintenance windows
 - Quiet hours/notification rules
-- Web admin interface (mobile-only config for MVP)
 - Advanced reporting/analytics
 - Billing integration (Stripe)
-- Team management (single team per org for MVP)
+- Team management (single team per org currently)
 
 ---
 
@@ -364,21 +375,25 @@
 
 ## Success Criteria for MVP
 
-### Must Have (MVP Launch):
+### ✅ Completed (MVP Launched):
 - ✅ Receive webhook alerts
-- ✅ Create incidents
-- ✅ Send push notifications to on-call user
-- ✅ Acknowledge incidents from mobile
-- ✅ Resolve incidents from mobile
-- ✅ View incident history
-- ✅ Basic on-call assignment
+- ✅ Create incidents automatically
+- ✅ Send email notifications to on-call user
+- ✅ Multi-level escalation policies (PagerDuty-style)
+- ✅ View incident history via web interface
+- ✅ Basic on-call assignment with schedule members
+- ✅ Web admin interface deployed
 
-### Nice to Have (Can wait for Phase 2):
-- Email-to-incident
-- SMS fallback
-- Schedule rotations
-- Web admin interface
-- Multi-level escalation
+### 🚧 In Progress:
+- Mobile app implementation (React Native/Expo scaffolded)
+- Push notification registration and delivery
+- Acknowledge/resolve incidents from mobile
+
+### ❌ Pending (Phase 2+):
+- Email-to-incident parsing
+- SMS/Voice fallback
+- Automatic schedule rotations
+- Heartbeat monitoring
 
 ### Metrics for Success:
 - Alert ingestion P99 < 500ms
@@ -405,23 +420,30 @@ Each phase builds incrementally:
 
 ## What You Get Today
 
-**Deployable Code:**
-- Complete Terraform (infrastructure as code)
-- Backend API (Node.js/TypeScript)
-- Notification worker
-- Database schema
-- React Native mobile app (basic)
-- CI/CD pipeline
-- Deployment documentation
+**✅ Fully Deployed and Running:**
+- Complete Terraform infrastructure (VPC, ECS, RDS, ALB, CloudFront)
+- Backend API (Express + TypeScript) - https://oncallshift.com
+- Alert processor worker (SQS-based async processing)
+- Notification worker (multi-channel delivery)
+- PostgreSQL database with full schema and seed data
+- React web frontend (dashboard, incidents, schedules, services)
+- ProtonMail domain email (noreply@oncallshift.com)
+- Swagger API docs - https://oncallshift.com/api-docs
 
-**Can be deployed to AWS and functional for:**
-- Receiving webhook alerts
-- Creating incidents
-- Notifying on-call users via push
-- Acknowledging/resolving from mobile
-- Multi-tenant (organization isolation)
+**🚧 In Progress:**
+- React Native mobile app (scaffolded, needs implementation)
 
-**Ready to test with real alerts within ~1 hour of deployment.**
+**✅ Currently Functional For:**
+- Receiving webhook alerts at https://oncallshift.com/api/alerts/webhook
+- Creating incidents automatically via alert processor
+- PagerDuty-style multi-level escalation
+- Determining on-call users from schedules
+- Sending email notifications to on-call engineers
+- Managing services, schedules, and escalation policies via web UI
+- Multi-tenant organization isolation
+- Viewing live incident dashboard
+
+**Production Ready:** System is live and handling real alerts with email notifications.
 
 ---
 

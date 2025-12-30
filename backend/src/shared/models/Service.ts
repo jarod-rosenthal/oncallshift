@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { Organization } from './Organization';
 import { Schedule } from './Schedule';
 import { Incident } from './Incident';
+import { EscalationPolicy } from './EscalationPolicy';
 import { v4 as uuidv4 } from 'uuid';
 
 @Entity('services')
@@ -27,6 +28,9 @@ export class Service {
   @Column({ name: 'schedule_id', type: 'uuid', nullable: true })
   scheduleId: string | null;
 
+  @Column({ name: 'escalation_policy_id', type: 'uuid', nullable: true })
+  escalationPolicyId: string | null;
+
   @Column({ type: 'varchar', length: 50, default: 'active' })
   status: 'active' | 'inactive' | 'maintenance';
 
@@ -50,6 +54,10 @@ export class Service {
   @ManyToOne(() => Schedule, { nullable: true })
   @JoinColumn({ name: 'schedule_id' })
   schedule: Schedule | null;
+
+  @ManyToOne(() => EscalationPolicy, policy => policy.services, { nullable: true })
+  @JoinColumn({ name: 'escalation_policy_id' })
+  escalationPolicy: EscalationPolicy | null;
 
   @OneToMany(() => Incident, incident => incident.service)
   incidents: Incident[];

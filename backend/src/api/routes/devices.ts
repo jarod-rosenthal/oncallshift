@@ -67,7 +67,7 @@ router.post(
         deviceId: device.id,
       });
 
-      res.status(201).json({
+      return res.status(201).json({
         device: {
           id: device.id,
           platform: device.platform,
@@ -78,7 +78,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error registering device:', error);
-      res.status(500).json({ error: 'Failed to register device' });
+      return res.status(500).json({ error: 'Failed to register device' });
     }
   }
 );
@@ -112,12 +112,12 @@ router.delete('/:id', async (req: Request, res: Response) => {
       deviceId: device.id,
     });
 
-    res.json({
+    return res.json({
       message: 'Device unregistered successfully',
     });
   } catch (error) {
     logger.error('Error unregistering device:', error);
-    res.status(500).json({ error: 'Failed to unregister device' });
+    return res.status(500).json({ error: 'Failed to unregister device' });
   }
 });
 
@@ -137,7 +137,7 @@ router.get('/', async (req: Request, res: Response) => {
       order: { lastUsedAt: 'DESC' },
     });
 
-    res.json({
+    return res.json({
       devices: devices.map(device => ({
         id: device.id,
         platform: device.platform,
@@ -149,7 +149,7 @@ router.get('/', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching devices:', error);
-    res.status(500).json({ error: 'Failed to fetch devices' });
+    return res.status(500).json({ error: 'Failed to fetch devices' });
   }
 });
 

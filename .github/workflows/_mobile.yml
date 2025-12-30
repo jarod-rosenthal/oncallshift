@@ -1,0 +1,103 @@
+name: Mobile (Expo EAS)
+
+# Only callable from orchestrator - no standalone triggers
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run - validate only, no build'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set EAS profile
+        id: set-profile
+        run: |
+          case "${{ inputs.environment }}" in
+            dev)
+              echo "EAS_PROFILE=preview" >> $GITHUB_OUTPUT
+              ;;
+            staging)
+              echo "EAS_PROFILE=preview" >> $GITHUB_OUTPUT
+              ;;
+            prod)
+              echo "EAS_PROFILE=production" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Validate EAS configuration (dry run)
+        if: inputs.dry_run == true
+        working-directory: mobile
+        run: |
+          echo "🔍 DRY RUN - Mobile Build Configuration"
+          echo "========================================"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "EAS Profile: ${{ steps.set-profile.outputs.EAS_PROFILE }}"
+          echo ""
+          echo "EAS configuration:"
+          cat eas.json
+          echo ""
+          echo "App configuration:"
+          cat app.json
+          echo ""
+          echo "⚠️  DRY RUN MODE - No build will be triggered"
+
+      - name: Build Android APK with EAS
+        if: inputs.dry_run != true
+        working-directory: mobile
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ steps.set-profile.outputs.EAS_PROFILE }} \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Mobile build summary
+        if: inputs.dry_run != true
+        run: |
+          echo "✅ Mobile build triggered!"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "EAS Profile: ${{ steps.set-profile.outputs.EAS_PROFILE }}"
+          echo ""
+          echo "Note: EAS builds run on Expo's servers."
+          echo "Check build status at: https://expo.dev/accounts/YOUR_ACCOUNT/projects/oncallshift/builds"
+          echo ""
+          echo "Once complete, you can:"
+          echo "  - Download APK from Expo dashboard"
+          echo "  - Install on physical Android device via QR code"
+          echo "  - Use 'eas build:list' to check status"

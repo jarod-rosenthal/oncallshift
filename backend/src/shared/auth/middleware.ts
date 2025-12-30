@@ -63,7 +63,7 @@ export async function authenticateUser(req: Request, res: Response, next: NextFu
     req.user = user;
     req.orgId = user.orgId;
 
-    next();
+    return next();
   } catch (error) {
     logger.error('Authentication error:', error);
     return res.status(401).json({ error: 'Invalid token' });
@@ -106,7 +106,7 @@ export async function authenticateApiKey(req: Request, res: Response, next: Next
     req.service = service;
     req.orgId = service.orgId;
 
-    next();
+    return next();
   } catch (error) {
     logger.error('API key authentication error:', error);
     return res.status(401).json({ error: 'Invalid API key' });
@@ -125,5 +125,5 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
-  next();
+  return next();
 }

@@ -6,6 +6,7 @@ interface DbConfig {
   username: string;
   password: string;
   database: string;
+  ssl?: boolean;
 }
 
 let cachedConfig: DbConfig | null = null;
@@ -55,17 +56,29 @@ export async function getDbConfig(): Promise<DbConfig> {
 }
 
 function parseDatabaseUrl(url: string): DbConfig {
-  // Parse postgres://username:password@host:port/database
-  const match = url.match(/postgres:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
+  // Parse postgres://username:password@host:port/database?sslmode=require
+  const match = url.match(/postgres(?:ql)?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)(?:\?(.+))?/);
   if (!match) {
     throw new Error('Invalid DATABASE_URL format');
   }
 
+  // Parse query parameters
+  const queryString = match[6];
+  let ssl = false;
+
+  if (queryString) {
+    const params = new URLSearchParams(queryString);
+    const sslMode = params.get('sslmode');
+    // Enable SSL if sslmode is set to anything other than 'disable'
+    ssl = sslMode !== null && sslMode !== 'disable';
+  }
+
   return {
-    username: match[1],
-    password: match[2],
+    username: decodeURIComponent(match[1]),
+    password: decodeURIComponent(match[2]),
     host: match[3],
     port: parseInt(match[4], 10),
     database: match[5],
+    ssl,
   };
 }

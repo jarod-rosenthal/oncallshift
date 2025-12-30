@@ -7,9 +7,12 @@ export type IncidentEventType =
   | 'note'            // User added note
   | 'acknowledge'     // Incident acknowledged
   | 'resolve'         // Incident resolved
-  | 'escalate'        // Escalation triggered (Phase 3)
+  | 'escalate'        // Escalation triggered
   | 'notification'    // Notification sent
-  | 'state_change';   // State changed
+  | 'state_change'    // State changed
+  | 'snooze'          // Incident snoozed
+  | 'unsnooze'        // Snooze cancelled or expired
+  | 'reassign';       // Incident reassigned
 
 @Entity('incident_events')
 export class IncidentEvent {

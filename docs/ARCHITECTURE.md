@@ -31,28 +31,27 @@ Mobile-first incident management platform built on AWS ECS with cost-effective, 
                   │
       ┌───────────┴──────────┐
       │                      │
-┌─────▼──────┐      ┌────────▼─────────┐
-│  ECS API   │      │   ECS Workers    │
-│  Service   │      │   Service        │
-│            │      │                  │
-│ - Alert    │      │ - Notification   │
-│   Ingestion│      │   Sender         │
-│ - Incident │      │ - Escalation     │
-│   CRUD     │      │   Engine         │
-│ - Schedule │      │ - Heartbeat      │
-│   Mgmt     │      │   Checker        │
-│ - Auth     │      │                  │
-└─────┬──────┘      └────────┬─────────┘
-      │                      │
-      │      ┌───────────────┤
-      │      │               │
-┌─────▼──────▼───┐  ┌────────▼─────────┐
-│  Aurora        │  │  SQS Queues      │
-│  Serverless v2 │  │                  │
-│  (Postgres)    │  │ - alerts_queue   │
-│                │  │ - notifs_queue   │
-└────────────────┘  │ - escal_queue    │
-                    └──────────────────┘
+┌─────▼──────┐   ┌──────▼────────┐   ┌─────────▼──────┐
+│  ECS API   │   │ Alert Proc    │   │ Notification   │
+│  Service   │   │ Worker        │   │ Worker         │
+│            │   │               │   │                │
+│ - REST API │   │ - Alert       │   │ - Email        │
+│ - Incident │   │   Processing  │   │   Delivery     │
+│   CRUD     │   │ - Incident    │   │ - Push (FCM/   │
+│ - Schedule │   │   Creation    │   │   APNs)        │
+│   Mgmt     │   │ - Escalation  │   │ - SMS (SNS)    │
+│ - Services │   │   Trigger     │   │                │
+│ - Auth     │   │               │   │                │
+└─────┬──────┘   └──────┬────────┘   └─────────┬──────┘
+      │                 │                      │
+      │      ┌──────────┼──────────────────────┤
+      │      │          │                      │
+┌─────▼──────▼──────────▼───┐  ┌───────────────▼──────┐
+│  RDS PostgreSQL            │  │  SQS Queues          │
+│  (db.t4g.micro)            │  │                      │
+│                            │  │ - alerts_queue       │
+│                            │  │ - notifications_queue│
+└────────────────────────────┘  └──────────────────────┘
                            │
       ┌────────────────────┼────────────────────┐
       │                    │                    │
@@ -88,38 +87,38 @@ Mobile-first incident management platform built on AWS ECS with cost-effective, 
 
 **Workers:**
 
-**Notification Worker:**
+**Alert Processor Worker (✅ Deployed):**
+- Consumes from `alerts_queue`
+- Creates incidents from incoming alerts
+- Determines on-call users from schedules
+- Triggers escalation policies
+- Enqueues notifications for delivery
+- Configuration: 1 task, 0.25 vCPU, 512MB RAM
+
+**Notification Worker (✅ Deployed):**
 - Consumes from `notifications_queue`
-- Sends push/SMS/voice notifications
-- Implements fallback logic (push → SMS → voice)
-- Tracks notification status
+- **Email**: AWS SES with noreply@oncallshift.com
+- **Push**: FCM (Android) + APNs (iOS) - infrastructure ready
+- **SMS**: AWS SNS - infrastructure ready
+- Tracks notification delivery status
+- Implements retry logic for failed deliveries
+- Configuration: 1 task, 0.25 vCPU, 512MB RAM
 
-**Escalation Worker:**
-- Consumes from `escalation_queue`
-- Processes escalation steps with timeouts
-- Triggers next level if no acknowledgment
-- Handles schedule resolution
+**Future Workers (Planned):**
+- **Heartbeat Worker**: EventBridge cron to check missed heartbeats
+- **Schedule Rotation Worker**: Automated on-call rotation logic
 
-**Heartbeat Worker:**
-- Runs on schedule (EventBridge cron: every 1 min)
-- Checks missed heartbeats
-- Creates incidents for dead man's switches
-
-**Configuration:**
-- 1-2 tasks per worker type
-- 0.25 vCPU, 512MB RAM
-- Can scale based on queue depth
-
-### 3. Database (Aurora Serverless v2)
+### 3. Database (RDS PostgreSQL)
 
 **Engine**: PostgreSQL 15
 
 **Configuration:**
-- Min capacity: 0.5 ACU (~$45/month)
-- Max capacity: 4 ACU (scales with load)
-- Multi-AZ for HA
+- Instance type: db.t4g.micro (cost-optimized)
+- Cost: ~$13/month
+- Single-AZ for dev environment
 - Automated backups (7 day retention)
 - Encryption at rest
+- Located in private subnets
 
 **Schema:**
 - Organizations, users, teams
@@ -129,24 +128,24 @@ Mobile-first incident management platform built on AWS ECS with cost-effective, 
 
 ### 4. Message Queues (SQS)
 
-**Queues:**
+**Queues (✅ Deployed):**
 
 1. **alerts_queue** (Standard)
    - Alert ingestion for async processing
+   - Consumed by Alert Processor Worker
    - Allows burst traffic without overwhelming API
+   - DLQ for failed alert processing
 
 2. **notifications_queue** (Standard)
-   - Notification jobs (push, SMS, voice)
-   - DLQ for failed notifications
-
-3. **escalation_queue** (Standard with delay)
-   - Escalation step timeouts
-   - Uses SQS delay for timing
+   - Notification delivery jobs (email, push, SMS)
+   - Consumed by Notification Worker
+   - DLQ for failed notification deliveries
 
 **Configuration:**
-- Visibility timeout: 30s (notifications), 60s (escalations)
+- Visibility timeout: 30s (notifications), 60s (alerts)
 - DLQs with maxReceiveCount: 3
 - Encryption at rest
+- FIFO not required (idempotent processing)
 
 ### 5. Authentication (Amazon Cognito)
 
@@ -162,19 +161,28 @@ Mobile-first incident management platform built on AWS ECS with cost-effective, 
 
 ### 6. Notifications
 
-**Push Notifications:**
-- SNS → FCM (Android) + APNs (iOS)
+**Email Notifications (✅ Working):**
+- AWS SES for outbound email
+- Sender: noreply@oncallshift.com
+- ProtonMail domain with SPF, DKIM, DMARC configured
+- Incident details with actionable links
+- HTML email templates
+
+**Push Notifications (🚧 Infrastructure Ready):**
+- FCM (Android) + APNs (iOS) via AWS SNS
 - Device tokens registered per user
 - High-priority messages
+- Deep linking to incident detail
+- Requires mobile app implementation
 
-**SMS/Voice:**
-- Twilio API (external service)
-- Fallback after push timeout
-- Voice calls with TTS for critical alerts
+**SMS (🚧 Infrastructure Ready):**
+- AWS SNS for SMS delivery
+- Fallback channel when email/push unavailable
+- Rate limiting to control costs
 
-**Email (Inbound):**
-- SES with email receiving rules
-- Lambda processes incoming emails → alerts
+**Future Notification Channels:**
+- Voice calls with TTS (Twilio)
+- Email-to-incident (SES receiving rules + Lambda)
 
 ### 7. Networking
 
@@ -234,30 +242,30 @@ Mobile-first incident management platform built on AWS ECS with cost-effective, 
 6. Repeat until acknowledged or end of policy
 ```
 
-## Cost Breakdown (Monthly, 20 users)
+## Cost Breakdown (Actual Production Deployment)
+
+### Current Monthly Cost
 
 | Service | Configuration | Cost |
 |---------|---------------|------|
-| ECS Fargate (API) | 2 x 0.5 vCPU, 1GB | $32 |
-| ECS Fargate (Workers) | 3 x 0.25 vCPU, 512MB | $24 |
-| Aurora Serverless v2 | 0.5 ACU min | $45 |
-| Application Load Balancer | 1 ALB | $20 |
-| NAT Gateway | 1 x per AZ | $32 (or $0 with VPC endpoints) |
-| SQS | 1M requests | $1 |
-| SNS | 1M publishes | $1 |
-| Cognito | 20 MAU | $0 (free tier) |
-| SES (receiving) | 1k emails | $0.10 |
-| CloudWatch Logs | 10GB | $5 |
-| **Total Infrastructure** | | **~$160/month** |
-| **Per User (20 users)** | | **$8/user** |
-| Twilio (SMS) | ~5 SMS/user/month | ~$0.40/user |
-| Twilio (Voice) | ~1 call/user/month | ~$0.05/user |
-| **Total with Notifications** | | **~$8.45/user** |
+| ECS Fargate (3 services) | API + Alert Processor + Notification Worker | ~$15 |
+| RDS PostgreSQL | db.t4g.micro | ~$13 |
+| Application Load Balancer | 1 ALB | ~$20 |
+| CloudFront CDN | Global distribution | ~$5 |
+| Cognito + SQS + Logs | Standard usage | ~$5 |
+| **Total Infrastructure** | | **~$58/month** |
 
-**Optimization for target ($5-10/user):**
-- Use VPC endpoints instead of NAT Gateway: Save $32/month ($1.60/user)
-- Start with 1 AZ for dev: Save on NAT costs
-- Reduced cost: **$6.85/user** ✅
+### Cost Per User Analysis
+
+| Users | Cost per User | Notes |
+|-------|--------------|--------|
+| 10 users | ~$5.80/user | Within target range |
+| 20 users | ~$2.90/user | Well under target |
+| 50 users | ~$1.16/user | Highly cost-effective |
+
+**Target Achieved:** $3-6/user for 10-20 users ✅
+
+**vs PagerDuty:** $29-49/user/month → **87-90% cost savings** ✅
 
 ## Scalability
 
@@ -339,8 +347,20 @@ Mobile-first incident management platform built on AWS ECS with cost-effective, 
 
 ## Next Steps (Post-MVP)
 
+### Immediate Priority
+1. **Mobile App Implementation** - React Native/Expo app with incident management
+2. **Push Notification Integration** - FCM + APNs registration and delivery
+3. **SMS Fallback** - Implement AWS SNS SMS delivery
+
+### Short Term
+1. Email-to-incident parsing (SES receiving rules + Lambda)
+2. Heartbeat monitoring for dead man's switch
+3. Automatic schedule rotations
+4. Multi-tenant organization switching UI
+
+### Long Term
 1. Add ElastiCache Redis for rate limiting
 2. Implement WebSocket for real-time updates
-3. Add CloudFront CDN for static assets
-4. Multi-region deployment for global teams
-5. Add read replicas for reporting queries
+3. Multi-region deployment for global teams
+4. Add read replicas for reporting queries
+5. Voice call fallback (Twilio integration)

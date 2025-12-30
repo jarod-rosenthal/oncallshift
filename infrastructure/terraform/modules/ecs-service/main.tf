@@ -63,21 +63,12 @@ resource "aws_ecr_lifecycle_policy" "app" {
   })
 }
 
-# ECS Cluster (only create if not provided)
-resource "aws_ecs_cluster" "main" {
-  count = var.ecs_cluster_id == null ? 1 : 0
-
-  name = "${var.project_name}-${var.environment}"
-
-  setting {
-    name  = "containerInsights"
-    value = var.enable_container_insights ? "enabled" : "disabled"
-  }
-
-  tags = {
-    Name        = "${var.project_name}-${var.environment}-cluster"
-    Environment = var.environment
-  }
+# Local variables for naming
+locals {
+  # Shorten service name for IAM roles to avoid 38-char limit
+  # notification-worker -> notif-worker, escalation-timer -> esc-timer
+  short_service_name = replace(replace(var.service_name, "notification-", "notif-"), "escalation-", "esc-")
+  cluster_name = split("/", var.ecs_cluster_id)[1]
 }
 
 # CloudWatch Log Group
@@ -94,7 +85,7 @@ resource "aws_cloudwatch_log_group" "app" {
 
 # IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_execution_role" {
-  name_prefix = "${var.project_name}-${var.environment}-${var.service_name}-exec-"
+  name_prefix = "${var.project_name}-${var.environment}-${local.short_service_name}-ex-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -150,7 +141,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
 
 # IAM Role for ECS Task
 resource "aws_iam_role" "ecs_task_role" {
-  name_prefix = "${var.project_name}-${var.environment}-${var.service_name}-task-"
+  name_prefix = "${var.project_name}-${var.environment}-${local.short_service_name}-tk-"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -203,6 +194,16 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
           Action = [
             "ses:SendEmail",
             "ses:SendRawEmail"
+          ]
+          Resource = "*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "ssmmessages:CreateControlChannel",
+            "ssmmessages:CreateDataChannel",
+            "ssmmessages:OpenControlChannel",
+            "ssmmessages:OpenDataChannel"
           ]
           Resource = "*"
         }
@@ -273,11 +274,33 @@ resource "aws_ecs_task_definition" "app" {
 
 # ECS Service
 resource "aws_ecs_service" "app" {
-  name            = "${var.project_name}-${var.environment}-${var.service_name}"
-  cluster         = var.ecs_cluster_id != null ? var.ecs_cluster_id : aws_ecs_cluster.main[0].id
-  task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name                   = "${var.project_name}-${var.environment}-${var.service_name}"
+  cluster                = var.ecs_cluster_id
+  task_definition        = aws_ecs_task_definition.app.arn
+  desired_count          = var.desired_count
+  enable_execute_command = true
+
+  # Use capacity provider strategy instead of launch_type for Fargate Spot support
+  dynamic "capacity_provider_strategy" {
+    for_each = var.use_fargate_spot ? [1] : []
+    content {
+      capacity_provider = "FARGATE_SPOT"
+      weight           = var.fargate_spot_percentage
+      base             = 0
+    }
+  }
+
+  dynamic "capacity_provider_strategy" {
+    for_each = var.use_fargate_spot && var.fargate_spot_percentage < 100 ? [1] : []
+    content {
+      capacity_provider = "FARGATE"
+      weight           = 100 - var.fargate_spot_percentage
+      base             = 0
+    }
+  }
+
+  # Use launch_type only when not using Fargate Spot
+  launch_type = var.use_fargate_spot ? null : "FARGATE"
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -315,7 +338,7 @@ resource "aws_appautoscaling_target" "ecs" {
 
   max_capacity       = var.autoscaling_max_capacity
   min_capacity       = var.autoscaling_min_capacity
-  resource_id        = "service/${var.ecs_cluster_id != null ? split("/", var.ecs_cluster_id)[1] : aws_ecs_cluster.main[0].name}/${aws_ecs_service.app.name}"
+  resource_id        = "service/${local.cluster_name}/${aws_ecs_service.app.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
