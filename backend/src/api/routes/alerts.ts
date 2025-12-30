@@ -47,7 +47,7 @@ router.post(
       });
 
       // Return 202 Accepted immediately
-      res.status(202).json({
+      return res.status(202).json({
         message: 'Alert received and queued for processing',
         service: {
           id: service.id,
@@ -56,7 +56,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error processing webhook alert:', error);
-      res.status(500).json({ error: 'Failed to process alert' });
+      return res.status(500).json({ error: 'Failed to process alert' });
     }
   }
 );

@@ -5,17 +5,110 @@ import { logger } from '../utils/logger';
 
 const snsClient = new SNSClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
+// Expo Push API endpoint
+const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+/**
+ * Check if token is an Expo push token
+ */
+function isExpoPushToken(token: string): boolean {
+  return token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[');
+}
+
+/**
+ * Send push notification via Expo Push API
+ */
+async function sendExpoNotification(
+  expoPushToken: string,
+  incident: Incident,
+  _notificationId: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const title = `🚨 ${incident.severity.toUpperCase()}: ${incident.service?.name || 'Alert'}`;
+    const body = incident.summary;
+
+    const message = {
+      to: expoPushToken,
+      sound: 'default',
+      title,
+      body,
+      data: {
+        incidentId: incident.id,
+        summary: incident.summary,
+        severity: incident.severity,
+        state: incident.state,
+        serviceName: incident.service?.name,
+      },
+      priority: 'high',
+      channelId: 'incidents',
+      categoryId: 'incident',
+    };
+
+    const response = await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+
+    const result = await response.json() as {
+      data?: { status: string; id?: string; message?: string };
+      errors?: unknown[];
+    };
+
+    if (result.data && result.data.status === 'ok') {
+      return { success: true, messageId: result.data.id };
+    } else if (result.data && result.data.status === 'error') {
+      return { success: false, error: result.data.message || 'Expo push error' };
+    } else if (result.errors) {
+      return { success: false, error: JSON.stringify(result.errors) };
+    }
+
+    return { success: true, messageId: result.data?.id };
+  } catch (error) {
+    logger.error('Error sending Expo push notification:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
 export interface PushNotificationPayload {
   incidentId: string;
   userId: string;
   priority: 'high' | 'normal';
+  incidentState: 'triggered' | 'acknowledged' | 'resolved';
+}
+
+/**
+ * Check if push notification should be sent based on user preferences
+ */
+function shouldSendPush(
+  user: User,
+  incidentState: 'triggered' | 'acknowledged' | 'resolved'
+): boolean {
+  const prefs = user.settings?.notificationPreferences?.push;
+
+  // If no preferences set, default to enabled for triggered/acknowledged
+  if (!prefs) {
+    return incidentState !== 'resolved';
+  }
+
+  // Check if push is enabled
+  if (!prefs.enabled) {
+    return false;
+  }
+
+  // Check if this incident state is in the types array
+  return prefs.types?.includes(incidentState) ?? false;
 }
 
 /**
  * Send push notification to a user for an incident
  */
 export async function sendPushNotification(payload: PushNotificationPayload): Promise<void> {
-  const { incidentId, userId, priority } = payload;
+  const { incidentId, userId, incidentState } = payload;
 
   try {
     const dataSource = await getDataSource();
@@ -32,6 +125,18 @@ export async function sendPushNotification(payload: PushNotificationPayload): Pr
 
     if (!user || !incident) {
       logger.error('User or incident not found', { userId, incidentId });
+      return;
+    }
+
+    // Check user notification preferences
+    if (!shouldSendPush(user, incidentState)) {
+      logger.info('Push notification skipped due to user preferences', {
+        userId,
+        userEmail: user.email,
+        incidentState,
+        pushEnabled: user.settings?.notificationPreferences?.push?.enabled,
+        pushTypes: user.settings?.notificationPreferences?.push?.types,
+      });
       return;
     }
 
@@ -56,6 +161,39 @@ export async function sendPushNotification(payload: PushNotificationPayload): Pr
       await notificationRepo.save(notification);
 
       try {
+        // Check if this is an Expo push token
+        if (isExpoPushToken(device.token)) {
+          // Send via Expo Push API
+          const result = await sendExpoNotification(device.token, incident, notification.id);
+
+          if (result.success) {
+            notification.status = 'sent';
+            notification.sentAt = new Date();
+            notification.externalId = result.messageId || null;
+            await notificationRepo.save(notification);
+
+            logger.info('Expo push notification sent', {
+              notificationId: notification.id,
+              incidentId,
+              userId,
+              platform: device.platform,
+              messageId: result.messageId,
+            });
+          } else {
+            notification.status = 'failed';
+            notification.errorMessage = result.error || 'Unknown Expo error';
+            notification.failedAt = new Date();
+            await notificationRepo.save(notification);
+
+            logger.error('Expo push notification failed', {
+              notificationId: notification.id,
+              error: result.error,
+            });
+          }
+          continue;
+        }
+
+        // For non-Expo tokens, use SNS
         // Get or create SNS platform endpoint
         const endpointArn = await getOrCreatePlatformEndpoint(device);
 
@@ -82,7 +220,7 @@ export async function sendPushNotification(payload: PushNotificationPayload): Pr
         // Update notification status
         notification.status = 'sent';
         notification.sentAt = new Date();
-        notification.externalId = result.MessageId;
+        notification.externalId = result.MessageId || null;
         await notificationRepo.save(notification);
 
         logger.info('Push notification sent', {

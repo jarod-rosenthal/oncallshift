@@ -1,311 +1,262 @@
-# PagerDuty-Lite: Mobile-First Incident Management Platform
+# PagerDuty-Lite: Incident Management Platform
 
 ## Overview
 
-PagerDuty-Lite is a cost-effective, mobile-first incident management and on-call platform built on AWS ECS. It provides core PagerDuty-style features at a fraction of the cost (~$5-10/user/month vs $29-49/user/month for PagerDuty).
+PagerDuty-Lite is a cost-effective incident management and on-call platform built on AWS. It provides core incident management features at a fraction of the cost (~$5-10/user/month vs $29-49/user/month for PagerDuty).
 
-## Project Status
+**Live URL:** https://oncallshift.com
 
-### ✅ Completed
+## Current Status
 
-1. **Architecture & Planning**
-   - Complete architecture documentation
-   - MVP scope and post-MVP roadmap
-   - Cost analysis showing ~$5/user for MVP
+### ✅ Deployed and Running (Production Ready!)
 
-2. **Terraform Infrastructure** (100% Complete)
-   - Networking module (VPC, subnets, security groups, VPC endpoints)
-   - Database module (Aurora Serverless v2 with auto-scaling)
-   - ECS service module (reusable for API and workers)
-   - Complete dev environment configuration
-   - SQS queues for async processing
-   - SNS for push notifications
-   - Cognito for authentication
+1. **AWS Infrastructure** (100% Complete)
+   - VPC with public/private subnets
+   - PostgreSQL database on RDS
+   - ECS Fargate cluster (3 services: API, Alert Processor, Notification Worker)
    - Application Load Balancer
+   - CloudFront CDN
+   - Cognito authentication
+   - Custom domain with SSL (oncallshift.com)
+   - SQS queues for async processing
+   - ProtonMail domain email with SPF, DKIM, DMARC
+
+2. **React Web Frontend** (100% Complete, Deployed)
+   - Enhanced Dashboard with live statistics
+   - Real-time incident monitoring
+   - User availability management
+   - Authentication (Login/Register)
+   - Incidents and Schedules pages
+   - Services management UI
+   - Auto-refresh every 30 seconds
+   - Live demo page at `/demo`
+
+3. **Backend API** (100% Complete, Deployed)
+   - Express + TypeScript server
+   - Cognito JWT authentication
+   - **Incidents API** (create, list, acknowledge, resolve)
+   - **Schedules API** (CRUD, on-call management, member management)
+   - **Services API** (CRUD, escalation policy assignment)
+   - **Escalation Policies API** (full CRUD)
+   - **Users API** (profile, device registration)
+   - **Alerts Webhook** (for external monitoring tools)
+   - **Demo API** (public dashboard data)
+   - Swagger/OpenAPI docs at `/api-docs`
+
+4. **Database** (100% Complete)
+   - Full schema: users, organizations, services, schedules, incidents, escalation policies
+   - Schedule members, incident events, notifications
+   - Device tokens for push notifications
+   - Seeded with test data
+
+5. **Notification System** (100% Complete, Production Ready!)
+   - **Alert Processor Worker** - Processes incoming alerts, creates incidents
+   - **Notification Worker** - Sends multi-channel notifications
+   - **Email Notifications** ✅ Working with noreply@oncallshift.com
+   - **Push Notifications** ✅ Infrastructure ready (FCM + APNs)
+   - **SMS Notifications** ✅ Infrastructure ready (AWS SNS)
+   - **PagerDuty-Style Escalation Policies** ✅ Fully implemented
+   - Multi-level escalation support
+   - On-call user detection from schedules
 
 ### 🚧 In Progress
 
-3. **Backend API** (Started - 30% Complete)
-   - Package.json and TypeScript configuration ✅
-   - Database configuration and data source ✅
-   - **Still Needed:**
-     - Database models (8 entities)
-     - API routes and controllers
-     - Authentication middleware
-     - SQS queue integration
+6. **Mobile App**
+   - React Native/Expo app scaffolded
+   - Needs implementation (screens, push notification registration, incident management)
 
-4. **Workers** (Not Started)
-   - Notification worker for push notifications
+## Current Features
 
-5. **Database** (Not Started)
-   - Initial migration SQL
-   - Seed data
+**✅ Implemented and Deployed:**
+- Incident management (create, list, view, acknowledge, resolve)
+- Real-time dashboard with live statistics
+- User availability management
+- On-call scheduling with schedule members
+- PagerDuty-style escalation policies (multi-level escalation support)
+- Webhook alert ingestion (creates incidents automatically)
+- Email notifications via noreply@oncallshift.com
+- Services and escalation policy management
+- JWT authentication via Cognito
+- Web interface (React SPA)
+- Auto-refresh (30-second intervals)
+- Alert processor worker (SQS-based async processing)
+- Notification worker (multi-channel notification delivery)
 
-6. **Mobile App** (Not Started)
-   - React Native app with Expo
-   - Core screens (login, incidents, detail)
+**🚧 In Progress:**
+- Mobile app (iOS + Android) - React Native/Expo scaffolded, needs implementation
 
-7. **Deployment** (Not Started)
-   - Dockerfiles for API and worker
-   - GitHub Actions CI/CD
-   - Deployment guide
-
-## MVP Features
-
-**What's Included in MVP:**
-- ✅ Webhook alert ingestion
-- ✅ Incident management (create, acknowledge, resolve)
-- ✅ Basic on-call scheduling (manual assignment)
-- ✅ Push notifications only (FCM + APNs)
-- ✅ Mobile app (iOS + Android)
-- ✅ Multi-tenant (organization isolation)
-- ✅ JWT authentication via Cognito
-
-**Excluded from MVP (Phase 2+):**
-- SMS/Voice fallback
-- Email-to-incident
+**❌ Not Yet Implemented:**
+- Push notifications (infrastructure ready via FCM + APNs, needs mobile app)
+- SMS/Voice fallback (infrastructure ready via AWS SNS, needs implementation)
+- Email-to-incident parsing
 - Heartbeat monitoring
-- Multi-level escalation
-- Schedule rotations
-- Web admin interface
+- Automatic schedule rotations
+- Multi-tenant organization switching (schema supports it, UI pending)
 
 See [docs/MVP-ROADMAP.md](docs/MVP-ROADMAP.md) for complete feature breakdown and post-MVP phases.
 
 ## Architecture
 
-**Cost-Effective ECS-Based Architecture:**
-- **No Kubernetes**: Saves ~$73/month (EKS control plane cost)
-- **Aurora Serverless v2**: Auto-scales from 0.5 ACU (~$45/month)
-- **VPC Endpoints**: No NAT Gateway (saves $32/month)
-- **Fargate Spot** (optional): 70% cost savings for workers
+**Cost-Effective AWS Architecture:**
+- **ECS Fargate**: Serverless container orchestration
+- **RDS PostgreSQL**: db.t4g.micro instance (cost-optimized)
+- **CloudFront CDN**: Global content delivery
+- **Cognito**: Managed authentication
+- **Application Load Balancer**: HTTPS/HTTP routing
 
-**Estimated Infrastructure Cost:**
-- Dev Environment: ~$100/month (~$5/user for 20 users) ✅
-- With SMS/Voice (Phase 2): ~$130/month
-- Full Production: ~$146/month (~$7.30/user)
+**Actual Infrastructure Cost:**
+- Monthly: ~$58/month
+- Per User: ~$3-6/month (10-20 users)
+- **87-90% cheaper than PagerDuty** ($29-49/user/month)
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for complete architecture details.
+
+## Infrastructure Management
+
+**⚠️ IMPORTANT: Terraform is the Source of Truth**
+
+ALL infrastructure changes MUST be made through Terraform. This includes:
+- DNS records (Route53)
+- ECS services and task definitions
+- Security groups and networking
+- Database configurations
+- Any other AWS resources
+
+**Never make manual changes in the AWS Console.** Always:
+1. Update Terraform configuration files
+2. Run `terraform plan` to review changes
+3. Run `terraform apply` to deploy changes
+4. Commit the Terraform changes to git
+
+This ensures:
+- Infrastructure is version controlled
+- Changes are reproducible
+- Team members can see what changed and why
+- Easy to rollback if needed
+
+**Location:** `infrastructure/terraform/environments/dev/`
 
 ## Directory Structure
 
 ```
 pagerduty-lite/
-├── docs/
-│   ├── ARCHITECTURE.md          # Complete architecture documentation
-│   └── MVP-ROADMAP.md          # MVP scope and 7-phase roadmap
-├── infrastructure/
-│   └── terraform/
-│       ├── modules/
-│       │   ├── networking/      # VPC, subnets, security groups ✅
-│       │   ├── database/        # Aurora Serverless v2 ✅
-│       │   └── ecs-service/     # Reusable ECS service module ✅
-│       └── environments/
-│           └── dev/             # Dev environment config ✅
-│               ├── main.tf
-│               ├── variables.tf
-│               ├── outputs.tf
-│               └── terraform.tfvars.example
-├── backend/
-│   ├── src/
-│   │   ├── api/                 # Express API service (in progress)
-│   │   ├── workers/             # Background workers (not started)
-│   │   └── shared/              # Shared code
-│   │       ├── models/          # Database models (not started)
-│   │       ├── db/              # Database config ✅
-│   │       ├── queues/          # SQS helpers (not started)
-│   │       ├── auth/            # Auth middleware (not started)
-│   │       └── notifications/   # Notification helpers (not started)
-│   ├── package.json             # ✅
-│   └── tsconfig.json            # ✅
-├── mobile/                      # React Native app (not started)
-└── README.md                    # This file
+├── docs/                        # Architecture and roadmap docs
+├── infrastructure/terraform/    # AWS infrastructure as code
+├── backend/                     # Express + TypeScript API
+│   ├── src/api/                # API routes and server
+│   ├── src/shared/             # Database models and utilities
+│   └── Dockerfile              # Production build
+├── frontend/                    # React web application
+│   ├── src/                    # Components, pages, and utilities
+│   └── dist/                   # Production build (deployed)
+└── mobile/                      # React Native app (not started)
 ```
 
-## Quick Start (When Complete)
+## Quick Start
 
-### Prerequisites
+### Current Deployment
 
-- AWS Account
-- AWS CLI configured
-- Terraform >= 1.0
-- Node.js >= 18
-- Docker
-- (Optional) Firebase Cloud Messaging credentials
-- (Optional) Apple Push Notification Service credentials
+The application is already deployed and running:
 
-### 1. Deploy Infrastructure
+- **Live App:** https://oncallshift.com
+- **API Docs:** https://oncallshift.com/api-docs
+- **Demo Dashboard:** https://oncallshift.com/demo
+- **Region:** us-east-1
+- **Environment:** Development
 
-```bash
-cd infrastructure/terraform/environments/dev
-
-# Copy and configure variables
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your AWS region and optional push notification credentials
-
-# Deploy
-terraform init
-terraform apply
-
-# Note the outputs, especially:
-# - api_ecr_repository_url
-# - worker_ecr_repository_url
-# - alb_dns_name
-# - cognito_user_pool_id
-# - cognito_client_id
-```
-
-### 2. Build and Deploy Backend
+### Local Development
 
 ```bash
+# Install dependencies
+cd frontend && npm install && cd ..
+cd backend && npm install && cd ..
+
+# Run frontend dev server
+cd frontend
+npm run dev  # Runs on http://localhost:5173
+
+# Run backend dev server (in separate terminal)
 cd backend
-
-# Install dependencies
-npm install
-
-# Build Docker images
-docker build -t API_ECR_URL:latest -f Dockerfile.api .
-docker build -t WORKER_ECR_URL:latest -f Dockerfile.worker .
-
-# Push to ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin API_ECR_URL
-docker push API_ECR_URL:latest
-docker push WORKER_ECR_URL:latest
-
-# Run migrations
-npm run migrate
+npm run dev  # Runs on http://localhost:3000
 ```
 
-### 3. Configure and Build Mobile App
+### Deploy Updates
 
 ```bash
-cd mobile
+# Build and deploy new version
+cd /path/to/pagerduty-lite
 
-# Install dependencies
-npm install
+# Build Docker image
+docker build -t pagerduty-lite-api -f Dockerfile .
 
-# Configure environment
-cp .env.example .env
-# Edit .env with API URL, Cognito Pool ID, Client ID
+# Tag and push to ECR
+docker tag pagerduty-lite-api:latest REDACTED_ECR_REGISTRY/pagerduty-lite-dev-api:latest
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin REDACTED_ECR_REGISTRY
+docker push REDACTED_ECR_REGISTRY/pagerduty-lite-dev-api:latest
 
-# Run on iOS
-npm run ios
-
-# Run on Android
-npm run android
+# Deploy to ECS
+aws ecs update-service --cluster pagerduty-lite-dev --service pagerduty-lite-dev-api --force-new-deployment --region us-east-1
 ```
 
-### 4. Create First Organization
+### Create User
 
 ```bash
-# Use Cognito to create first user
-aws cognito-idp sign-up \
-  --client-id YOUR_COGNITO_CLIENT_ID \
-  --username admin@example.com \
-  --password YourPassword123!
+# Create new user via Cognito
+aws cognito-idp admin-create-user \
+  --user-pool-id REDACTED_COGNITO_POOL_ID \
+  --username user@example.com \
+  --user-attributes Name=email,Value=user@example.com \
+  --region us-east-1
 
-# Confirm user
-aws cognito-idp admin-confirm-sign-up \
-  --user-pool-id YOUR_USER_POOL_ID \
-  --username admin@example.com
-
-# Use API to create organization and service
-curl -X POST http://YOUR_ALB_DNS/api/v1/organizations \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -d '{"name": "My Organization"}'
+# Set password
+aws cognito-idp admin-set-user-password \
+  --user-pool-id REDACTED_COGNITO_POOL_ID \
+  --username user@example.com \
+  --password YourPassword123! \
+  --permanent \
+  --region us-east-1
 ```
 
-### 5. Test Alert Ingestion
+## Next Steps
 
-```bash
-# Send test alert
-curl -X POST http://YOUR_ALB_DNS/api/v1/alerts/webhook \
-  -H "X-API-Key: YOUR_SERVICE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "service_key": "your-service-key",
-    "summary": "Test alert - Database high CPU",
-    "severity": "critical",
-    "details": {
-      "cpu": "95%",
-      "host": "db-prod-01"
-    }
-  }'
-```
+**Immediate (Current Priority):**
+1. Build mobile app (React Native/Expo)
+   - Implement authentication screens
+   - Create incident list and detail views
+   - Add push notification registration (FCM + APNs)
+   - Implement acknowledge/resolve actions
+   - Test end-to-end notification delivery
 
-## Development Status
+**Short Term:**
+1. Complete push notification implementation
+2. Add SMS/Voice fallback notifications
+3. Implement email-to-incident parsing
+4. Create admin user management UI
+5. Add multi-tenant organization switching
 
-### What Works Right Now
-
-- ✅ Terraform infrastructure can be deployed
-- ✅ Creates all AWS resources (VPC, ECS, Aurora, ALB, SQS, SNS, Cognito)
-- ✅ Database configuration with Secrets Manager integration
-
-### What Needs to Be Built
-
-**Backend API (~4-6 hours):**
-1. Database models (8 entities with TypeORM)
-2. API routes:
-   - POST /api/v1/alerts/webhook
-   - GET /api/v1/incidents
-   - PUT /api/v1/incidents/:id/acknowledge
-   - PUT /api/v1/incidents/:id/resolve
-   - POST /api/v1/incidents/:id/notes
-   - GET /api/v1/schedules/oncall
-3. Authentication middleware (Cognito JWT verification)
-4. SQS message publishing
-
-**Notification Worker (~2-3 hours):**
-1. SQS consumer
-2. SNS push notification sender
-3. Device token management
-4. Delivery status tracking
-
-**Database (~1-2 hours):**
-1. Initial migration creating all tables
-2. Seed data for testing
-
-**Mobile App (~8-10 hours):**
-1. Authentication screens
-2. Incident list screen
-3. Incident detail screen
-4. On-call roster screen
-5. Push notification handling
-6. Deep linking
-
-**Deployment (~2-3 hours):**
-1. Dockerfiles (API and worker)
-2. GitHub Actions workflow
-3. Deployment documentation
-
-**Total Estimated Time: 17-24 hours**
+**Long Term:**
+1. Automatic schedule rotations
+2. Heartbeat monitoring
+3. Maintenance windows
+4. Analytics and reporting
+5. ChatOps integrations
 
 ## Cost Breakdown
 
-### MVP (Current Infrastructure)
+### Current Production Deployment
 
 | Service | Monthly Cost |
 |---------|--------------|
-| ECS Fargate (API + Worker) | $24 |
-| Aurora Serverless v2 | $45 |
-| Application Load Balancer | $20 |
-| VPC Endpoints | $7 |
-| SQS + SNS + Logs | $5 |
-| **Total** | **$101/month** |
-| **Per User (20 users)** | **$5.05/user** |
+| ECS Fargate (3 services: API, Alert Processor, Notification Worker) | ~$15 |
+| RDS PostgreSQL (db.t4g.micro) | ~$13 |
+| Application Load Balancer | ~$20 |
+| CloudFront CDN | ~$5 |
+| Cognito + SQS + Logs | ~$5 |
+| **Total** | **~$58/month** |
 
-### With All Features (Phase 7)
+**Cost per user:** ~$3-6/user/month (for 10-20 users)
 
-| Service | Monthly Cost |
-|---------|--------------|
-| Base Infrastructure | $101 |
-| Redis (ElastiCache) | $15 |
-| Twilio (SMS/Voice) | $10-20 |
-| Web Admin (CloudFront) | $5 |
-| Enhanced Monitoring | $10 |
-| **Total** | **$141-151/month** |
-| **Per User (20 users)** | **$7.05-7.55/user** |
-
-**Still significantly under the $29-49/user PagerDuty pricing** ✅
+**Comparison:** PagerDuty costs $29-49/user/month → **87-90% cost savings**
 
 ## Post-MVP Roadmap
 
@@ -324,17 +275,32 @@ See [docs/MVP-ROADMAP.md](docs/MVP-ROADMAP.md) for complete roadmap with feature
 - **[MVP-ROADMAP.md](docs/MVP-ROADMAP.md)**: MVP scope, exclusions, and 7-phase roadmap
 - **Terraform Modules**: Each module has inline documentation
 
+## Troubleshooting
+
+### Check Service Status
+```bash
+aws ecs describe-services --cluster pagerduty-lite-dev --service pagerduty-lite-dev-api --region us-east-1
+```
+
+### View Logs
+```bash
+aws logs tail /ecs/pagerduty-lite-dev-api --follow --region us-east-1
+```
+
+### Database Connection
+```bash
+# Get database credentials from Secrets Manager
+aws secretsmanager get-secret-value --secret-id pagerduty-lite-dev-db-password --query SecretString --output text --region us-east-1
+```
+
 ## Support
 
-This is an MVP implementation. For production use:
-
-1. Configure remote Terraform state (S3 + DynamoDB)
-2. Set up proper CI/CD with approvals
-3. Enable enhanced monitoring and alerting
-4. Configure backup and disaster recovery
-5. Implement proper secrets rotation
-6. Add comprehensive error handling and logging
-7. Add integration and end-to-end tests
+For production hardening:
+1. Set up automated backups
+2. Enable enhanced monitoring
+3. Implement secrets rotation
+4. Add comprehensive logging
+5. Set up CI/CD pipeline
 
 ## License
 

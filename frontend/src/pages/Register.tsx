@@ -16,7 +16,8 @@ const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
     .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+    .regex(/[0-9]/, 'Password must contain at least one number')
+    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
   fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   organizationName: z.string().min(2, 'Organization name must be at least 2 characters'),
   phoneNumber: z.string().optional(),
@@ -50,7 +51,17 @@ export function Register() {
         state: { message: 'Registration successful! Please log in.' }
       });
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      const data = err.response?.data;
+      if (data?.error) {
+        setError(data.error);
+      } else if (data?.errors && Array.isArray(data.errors)) {
+        // Validation errors from express-validator
+        setError(data.errors.map((e: any) => e.msg).join('. '));
+      } else if (data?.details) {
+        setError(data.details);
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -62,7 +73,7 @@ export function Register() {
         <CardHeader>
           <CardTitle>Create an Account</CardTitle>
           <CardDescription>
-            Get started with PagerDuty Lite
+            Get started with OnCallShift
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -119,7 +130,7 @@ export function Register() {
                     <FormControl>
                       <Input
                         type="password"
-                        placeholder="Create a strong password"
+                        placeholder="Min 8 chars, upper, lower, number, symbol"
                         {...field}
                       />
                     </FormControl>

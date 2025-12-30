@@ -1,0 +1,21 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source files (we need the SQL files)
+COPY src ./src
+
+# Copy migration script
+COPY migrate.js ./
+
+# Make it executable
+RUN chmod +x migrate.js
+
+# Run migration
+CMD ["node", "migrate.js"]
