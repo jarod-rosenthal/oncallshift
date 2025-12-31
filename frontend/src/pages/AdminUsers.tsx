@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select';
-import { Navigation } from '../components/Navigation';
 import { usersAPI } from '../lib/api-client';
 import { useAuthStore } from '../store/auth-store';
 import type { User } from '../types/api';
@@ -91,34 +89,17 @@ export function AdminUsers() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">
-            ← Back to Dashboard
-          </Button>
-        </Link>
-
+    <div className="max-w-6xl mx-auto">
         <div className="mb-8 flex justify-between items-start">
           <div>
-            <h2 className="text-3xl font-bold mb-2">Admin: User Management</h2>
+            <h2 className="text-3xl font-bold mb-2">User Management</h2>
             <p className="text-muted-foreground">
               Invite users, manage roles, and control access
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link to="/admin/services">
-              <Button variant="outline">Services</Button>
-            </Link>
-            <Link to="/admin/runbooks">
-              <Button variant="outline">Runbooks</Button>
-            </Link>
-            <Button onClick={() => setShowInviteForm(!showInviteForm)}>
-              {showInviteForm ? 'Cancel' : 'Invite User'}
-            </Button>
-          </div>
+          <Button onClick={() => setShowInviteForm(!showInviteForm)}>
+            {showInviteForm ? 'Cancel' : 'Invite User'}
+          </Button>
         </div>
 
         {error && (
@@ -268,7 +249,6 @@ export function AdminUsers() {
             )}
           </CardContent>
         </Card>
-      </main>
     </div>
   );
 }

@@ -4,7 +4,6 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Navigation } from '../components/Navigation';
 import { schedulesAPI, usersAPI } from '../lib/api-client';
 import type { Schedule, User } from '../types/api';
 
@@ -124,13 +123,8 @@ export function Schedules() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">← Back to Dashboard</Button>
-        </Link>
+    <div>
+      <main className="container mx-auto">
         <div className="mb-8 flex justify-between items-center">
           <div>
             <h2 className="text-3xl font-bold mb-2">On-Call Schedules</h2>

@@ -6,7 +6,6 @@ import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, Di
 import { Select } from '../components/ui/select';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Navigation } from '../components/Navigation';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
 import type { Incident, User } from '../types/api';
 
@@ -169,15 +168,8 @@ export function Incidents() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">
-            ← Back to Dashboard
-          </Button>
-        </Link>
+    <div>
+      <main className="container mx-auto">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Incidents</h2>
           <p className="text-muted-foreground">

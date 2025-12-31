@@ -10,6 +10,17 @@ import type {
   User,
   OnCallInfo,
   ScheduleMember,
+  ScheduleOverride,
+  CreateScheduleOverrideRequest,
+  UpdateScheduleOverrideRequest,
+  ScheduleLayer,
+  ScheduleLayerMember,
+  CreateScheduleLayerRequest,
+  UpdateScheduleLayerRequest,
+  RenderedScheduleResponse,
+  MaintenanceWindow,
+  CreateMaintenanceWindowRequest,
+  UpdateMaintenanceWindowRequest,
   UpdateProfileRequest,
   UpdateProfileResponse,
   Service,
@@ -21,6 +32,39 @@ import type {
   Runbook,
   CreateRunbookRequest,
   UpdateRunbookRequest,
+  UserContactMethod,
+  CreateContactMethodRequest,
+  UpdateContactMethodRequest,
+  UserNotificationRule,
+  CreateNotificationRuleRequest,
+  UpdateNotificationRuleRequest,
+  AlertRoutingRule,
+  CreateRoutingRuleRequest,
+  UpdateRoutingRuleRequest,
+  RoutingRuleTestResult,
+  AlertGroupingRule,
+  UpdateGroupingRuleRequest,
+  PriorityLevel,
+  CreatePriorityRequest,
+  UpdatePriorityRequest,
+  BusinessService,
+  CreateBusinessServiceRequest,
+  UpdateBusinessServiceRequest,
+  ServiceDependency,
+  CreateDependencyRequest,
+  UpdateDependencyRequest,
+  ServiceDependencies,
+  DependencyGraph,
+  EventTransformRule,
+  CreateEventTransformRuleRequest,
+  UpdateEventTransformRuleRequest,
+  EventTransformTestResult,
+  Tag,
+  CreateTagRequest,
+  UpdateTagRequest,
+  BulkCreateTagRequest,
+  EntityType,
+  TagEntitiesResponse,
 } from '../types/api';
 
 // API base URL - will be same origin when served from Express
@@ -175,6 +219,116 @@ export const schedulesAPI = {
 
   delete: async (id: string): Promise<void> => {
     await apiClient.delete(`/schedules/${id}`);
+  },
+
+  // Schedule Overrides (new table-based)
+  listOverrides: async (scheduleId: string): Promise<{ overrides: ScheduleOverride[] }> => {
+    const response = await apiClient.get<{ overrides: ScheduleOverride[] }>(
+      `/schedules/${scheduleId}/overrides`
+    );
+    return response.data;
+  },
+
+  getOverride: async (scheduleId: string, overrideId: string): Promise<{ override: ScheduleOverride }> => {
+    const response = await apiClient.get<{ override: ScheduleOverride }>(
+      `/schedules/${scheduleId}/overrides/${overrideId}`
+    );
+    return response.data;
+  },
+
+  createOverrideNew: async (
+    scheduleId: string,
+    data: CreateScheduleOverrideRequest
+  ): Promise<{ override: ScheduleOverride; message: string }> => {
+    const response = await apiClient.post<{ override: ScheduleOverride; message: string }>(
+      `/schedules/${scheduleId}/overrides`,
+      data
+    );
+    return response.data;
+  },
+
+  updateOverride: async (
+    scheduleId: string,
+    overrideId: string,
+    data: UpdateScheduleOverrideRequest
+  ): Promise<{ override: ScheduleOverride; message: string }> => {
+    const response = await apiClient.put<{ override: ScheduleOverride; message: string }>(
+      `/schedules/${scheduleId}/overrides/${overrideId}`,
+      data
+    );
+    return response.data;
+  },
+
+  deleteOverride: async (scheduleId: string, overrideId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(
+      `/schedules/${scheduleId}/overrides/${overrideId}`
+    );
+    return response.data;
+  },
+
+  // Schedule Layers
+  listLayers: async (scheduleId: string): Promise<{ schedule: { id: string; name: string }; layers: ScheduleLayer[] }> => {
+    const response = await apiClient.get<{ schedule: { id: string; name: string }; layers: ScheduleLayer[] }>(
+      `/schedules/${scheduleId}/layers`
+    );
+    return response.data;
+  },
+
+  createLayer: async (
+    scheduleId: string,
+    data: CreateScheduleLayerRequest
+  ): Promise<{ layer: ScheduleLayer; message: string }> => {
+    const response = await apiClient.post<{ layer: ScheduleLayer; message: string }>(
+      `/schedules/${scheduleId}/layers`,
+      data
+    );
+    return response.data;
+  },
+
+  updateLayer: async (
+    scheduleId: string,
+    layerId: string,
+    data: UpdateScheduleLayerRequest
+  ): Promise<{ layer: ScheduleLayer; message: string }> => {
+    const response = await apiClient.put<{ layer: ScheduleLayer; message: string }>(
+      `/schedules/${scheduleId}/layers/${layerId}`,
+      data
+    );
+    return response.data;
+  },
+
+  deleteLayer: async (scheduleId: string, layerId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(
+      `/schedules/${scheduleId}/layers/${layerId}`
+    );
+    return response.data;
+  },
+
+  updateLayerMembers: async (
+    scheduleId: string,
+    layerId: string,
+    userIds: string[]
+  ): Promise<{ members: ScheduleLayerMember[]; currentOncallUserId: string | null }> => {
+    const response = await apiClient.put<{ members: ScheduleLayerMember[]; currentOncallUserId: string | null }>(
+      `/schedules/${scheduleId}/layers/${layerId}/members`,
+      { userIds }
+    );
+    return response.data;
+  },
+
+  getRenderedSchedule: async (
+    scheduleId: string,
+    since?: string,
+    until?: string
+  ): Promise<RenderedScheduleResponse> => {
+    const params: Record<string, string> = {};
+    if (since) params.since = since;
+    if (until) params.until = until;
+    const response = await apiClient.get<RenderedScheduleResponse>(
+      `/schedules/${scheduleId}/rendered`,
+      { params }
+    );
+    return response.data;
   },
 };
 
@@ -352,6 +506,56 @@ export const usersAPI = {
     const response = await apiClient.put<{ message: string; user: User }>(`/users/${userId}/status`, { status });
     return response.data;
   },
+
+  // Contact Methods
+  listContactMethods: async (): Promise<{ contactMethods: UserContactMethod[] }> => {
+    const response = await apiClient.get<{ contactMethods: UserContactMethod[] }>('/users/me/contact-methods');
+    return response.data;
+  },
+
+  createContactMethod: async (data: CreateContactMethodRequest): Promise<{ contactMethod: UserContactMethod; message: string }> => {
+    const response = await apiClient.post<{ contactMethod: UserContactMethod; message: string }>('/users/me/contact-methods', data);
+    return response.data;
+  },
+
+  updateContactMethod: async (id: string, data: UpdateContactMethodRequest): Promise<{ contactMethod: UserContactMethod; message: string }> => {
+    const response = await apiClient.put<{ contactMethod: UserContactMethod; message: string }>(`/users/me/contact-methods/${id}`, data);
+    return response.data;
+  },
+
+  deleteContactMethod: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/users/me/contact-methods/${id}`);
+    return response.data;
+  },
+
+  verifyContactMethod: async (id: string, code?: string): Promise<{ message: string; verified?: boolean; sentAt?: string }> => {
+    const response = await apiClient.post<{ message: string; verified?: boolean; sentAt?: string }>(
+      `/users/me/contact-methods/${id}/verify`,
+      code ? { code } : {}
+    );
+    return response.data;
+  },
+
+  // Notification Rules
+  listNotificationRules: async (): Promise<{ notificationRules: UserNotificationRule[] }> => {
+    const response = await apiClient.get<{ notificationRules: UserNotificationRule[] }>('/users/me/notification-rules');
+    return response.data;
+  },
+
+  createNotificationRule: async (data: CreateNotificationRuleRequest): Promise<{ notificationRule: UserNotificationRule; message: string }> => {
+    const response = await apiClient.post<{ notificationRule: UserNotificationRule; message: string }>('/users/me/notification-rules', data);
+    return response.data;
+  },
+
+  updateNotificationRule: async (id: string, data: UpdateNotificationRuleRequest): Promise<{ notificationRule: UserNotificationRule; message: string }> => {
+    const response = await apiClient.put<{ notificationRule: UserNotificationRule; message: string }>(`/users/me/notification-rules/${id}`, data);
+    return response.data;
+  },
+
+  deleteNotificationRule: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/users/me/notification-rules/${id}`);
+    return response.data;
+  },
 };
 
 // AI Credentials API
@@ -425,6 +629,109 @@ export const servicesAPI = {
     const response = await apiClient.delete<{ message: string }>(`/services/${id}`);
     return response.data;
   },
+
+  // Maintenance Windows
+  listMaintenanceWindows: async (
+    serviceId: string,
+    status?: 'active' | 'upcoming' | 'past'
+  ): Promise<{ maintenanceWindows: MaintenanceWindow[] }> => {
+    const params = status ? { status } : {};
+    const response = await apiClient.get<{ maintenanceWindows: MaintenanceWindow[] }>(
+      `/services/${serviceId}/maintenance-windows`,
+      { params }
+    );
+    return response.data;
+  },
+
+  getMaintenanceWindow: async (
+    serviceId: string,
+    windowId: string
+  ): Promise<{ maintenanceWindow: MaintenanceWindow }> => {
+    const response = await apiClient.get<{ maintenanceWindow: MaintenanceWindow }>(
+      `/services/${serviceId}/maintenance-windows/${windowId}`
+    );
+    return response.data;
+  },
+
+  createMaintenanceWindow: async (
+    serviceId: string,
+    data: CreateMaintenanceWindowRequest
+  ): Promise<{ maintenanceWindow: MaintenanceWindow; message: string }> => {
+    const response = await apiClient.post<{ maintenanceWindow: MaintenanceWindow; message: string }>(
+      `/services/${serviceId}/maintenance-windows`,
+      data
+    );
+    return response.data;
+  },
+
+  updateMaintenanceWindow: async (
+    serviceId: string,
+    windowId: string,
+    data: UpdateMaintenanceWindowRequest
+  ): Promise<{ maintenanceWindow: MaintenanceWindow; message: string }> => {
+    const response = await apiClient.put<{ maintenanceWindow: MaintenanceWindow; message: string }>(
+      `/services/${serviceId}/maintenance-windows/${windowId}`,
+      data
+    );
+    return response.data;
+  },
+
+  deleteMaintenanceWindow: async (
+    serviceId: string,
+    windowId: string
+  ): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(
+      `/services/${serviceId}/maintenance-windows/${windowId}`
+    );
+    return response.data;
+  },
+
+  getActiveMaintenanceWindows: async (): Promise<{ maintenanceWindows: MaintenanceWindow[] }> => {
+    const response = await apiClient.get<{ maintenanceWindows: MaintenanceWindow[] }>(
+      '/services/maintenance-windows/active'
+    );
+    return response.data;
+  },
+
+  // Alert Grouping Rules
+  getGroupingRule: async (serviceId: string): Promise<{
+    groupingRule: AlertGroupingRule | null;
+    defaults?: {
+      groupingType: string;
+      timeWindowMinutes: number;
+      contentFields: string[];
+      maxAlertsPerIncident: number;
+    };
+  }> => {
+    const response = await apiClient.get<{
+      groupingRule: AlertGroupingRule | null;
+      defaults?: {
+        groupingType: string;
+        timeWindowMinutes: number;
+        contentFields: string[];
+        maxAlertsPerIncident: number;
+      };
+    }>(`/services/${serviceId}/grouping-rule`);
+    return response.data;
+  },
+
+  updateGroupingRule: async (
+    serviceId: string,
+    data: UpdateGroupingRuleRequest
+  ): Promise<{ groupingRule: AlertGroupingRule; message: string }> => {
+    const response = await apiClient.put<{ groupingRule: AlertGroupingRule; message: string }>(
+      `/services/${serviceId}/grouping-rule`,
+      data
+    );
+    return response.data;
+  },
+
+  deleteGroupingRule: async (serviceId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(
+      `/services/${serviceId}/grouping-rule`
+    );
+    return response.data;
+  },
 };
 
 // Setup Wizard API
@@ -483,6 +790,225 @@ export const setupAPI = {
   },
 };
 
+// Integrations API
+export interface Integration {
+  id: string;
+  type: 'slack' | 'teams' | 'jira' | 'servicenow' | 'webhook' | 'pagerduty_import';
+  name: string;
+  status: 'pending' | 'active' | 'error' | 'disabled';
+  config: Record<string, any>;
+  features: Record<string, boolean>;
+  slackWorkspaceId?: string;
+  slackWorkspaceName?: string;
+  slackDefaultChannelId?: string;
+  jiraSiteUrl?: string;
+  jiraProjectKey?: string;
+  jiraIssueType?: string;
+  webhookUrl?: string;
+  lastError?: string;
+  lastErrorAt?: string;
+  errorCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntegrationEvent {
+  id: string;
+  eventType: string;
+  direction: 'inbound' | 'outbound';
+  status: 'success' | 'failed' | 'pending' | 'retrying';
+  errorMessage?: string;
+  incidentId?: string;
+  externalId?: string;
+  externalUrl?: string;
+  createdAt: string;
+}
+
+export interface SlackChannel {
+  id: string;
+  name: string;
+}
+
+export const integrationsAPI = {
+  list: async (type?: string): Promise<{ integrations: Integration[] }> => {
+    const params = type ? { type } : {};
+    const response = await apiClient.get<{ integrations: Integration[] }>('/integrations', { params });
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ integration: Integration }> => {
+    const response = await apiClient.get<{ integration: Integration }>(`/integrations/${id}`);
+    return response.data;
+  },
+
+  create: async (data: {
+    type: Integration['type'];
+    name: string;
+    config?: Record<string, any>;
+    features?: Record<string, boolean>;
+  }): Promise<{ integration: Integration; message: string }> => {
+    const response = await apiClient.post<{ integration: Integration; message: string }>('/integrations', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: {
+    name?: string;
+    config?: Record<string, any>;
+    features?: Record<string, boolean>;
+    status?: 'active' | 'disabled';
+  }): Promise<{ integration: Integration; message: string }> => {
+    const response = await apiClient.put<{ integration: Integration; message: string }>(`/integrations/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/integrations/${id}`);
+    return response.data;
+  },
+
+  getEvents: async (id: string, limit?: number): Promise<{ events: IntegrationEvent[] }> => {
+    const params = limit ? { limit } : {};
+    const response = await apiClient.get<{ events: IntegrationEvent[] }>(`/integrations/${id}/events`, { params });
+    return response.data;
+  },
+
+  // Slack-specific
+  getSlackOAuthUrl: async (id: string, redirectUri: string): Promise<{ oauthUrl: string }> => {
+    const response = await apiClient.get<{ oauthUrl: string }>(`/integrations/${id}/slack/oauth-url`, {
+      params: { redirect_uri: redirectUri },
+    });
+    return response.data;
+  },
+
+  completeSlackOAuth: async (id: string, code: string, redirectUri: string): Promise<{ integration: Integration; message: string }> => {
+    const response = await apiClient.post<{ integration: Integration; message: string }>(`/integrations/${id}/slack/oauth-callback`, {
+      code,
+      redirect_uri: redirectUri,
+    });
+    return response.data;
+  },
+
+  listSlackChannels: async (id: string): Promise<{ channels: SlackChannel[] }> => {
+    const response = await apiClient.get<{ channels: SlackChannel[] }>(`/integrations/${id}/slack/channels`);
+    return response.data;
+  },
+
+  testSlack: async (id: string, channelId: string): Promise<{ message: string; messageTs?: string }> => {
+    const response = await apiClient.post<{ message: string; messageTs?: string }>(`/integrations/${id}/slack/test`, {
+      channel_id: channelId,
+    });
+    return response.data;
+  },
+
+  // Service linking
+  getLinkedServices: async (id: string): Promise<{ services: { id: string; name: string; status: string }[] }> => {
+    const response = await apiClient.get<{ services: { id: string; name: string; status: string }[] }>(`/integrations/${id}/services`);
+    return response.data;
+  },
+
+  linkService: async (integrationId: string, serviceId: string, configOverrides?: Record<string, any>): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>(`/integrations/${integrationId}/services/${serviceId}`, {
+      config_overrides: configOverrides,
+    });
+    return response.data;
+  },
+
+  unlinkService: async (integrationId: string, serviceId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/integrations/${integrationId}/services/${serviceId}`);
+    return response.data;
+  },
+};
+
+// Teams API
+export interface Team {
+  id: string;
+  name: string;
+  description: string | null;
+  slug: string | null;
+  memberCount: number;
+  members?: TeamMember[];
+  resources?: {
+    schedules: { id: string; name: string }[];
+    escalationPolicies: { id: string; name: string }[];
+    services: { id: string; name: string }[];
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamMember {
+  id: string;
+  userId: string;
+  role: 'manager' | 'member';
+  user: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  createdAt: string;
+}
+
+export interface CreateTeamRequest {
+  name: string;
+  description?: string;
+  slug?: string;
+}
+
+export interface UpdateTeamRequest {
+  name?: string;
+  description?: string;
+  slug?: string;
+  settings?: Record<string, any>;
+}
+
+export const teamsAPI = {
+  list: async (): Promise<{ teams: Team[] }> => {
+    const response = await apiClient.get<{ teams: Team[] }>('/teams');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ team: Team }> => {
+    const response = await apiClient.get<{ team: Team }>(`/teams/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateTeamRequest): Promise<{ team: Team; message: string }> => {
+    const response = await apiClient.post<{ team: Team; message: string }>('/teams', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateTeamRequest): Promise<{ team: Team; message: string }> => {
+    const response = await apiClient.put<{ team: Team; message: string }>(`/teams/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/teams/${id}`);
+    return response.data;
+  },
+
+  // Members
+  getMembers: async (id: string): Promise<{ teamId: string; teamName: string; members: TeamMember[] }> => {
+    const response = await apiClient.get<{ teamId: string; teamName: string; members: TeamMember[] }>(`/teams/${id}/members`);
+    return response.data;
+  },
+
+  addMember: async (teamId: string, userId: string, role: 'manager' | 'member' = 'member'): Promise<{ member: TeamMember; message: string }> => {
+    const response = await apiClient.post<{ member: TeamMember; message: string }>(`/teams/${teamId}/members`, { userId, role });
+    return response.data;
+  },
+
+  updateMemberRole: async (teamId: string, userId: string, role: 'manager' | 'member'): Promise<{ member: TeamMember; message: string }> => {
+    const response = await apiClient.put<{ member: TeamMember; message: string }>(`/teams/${teamId}/members/${userId}`, { role });
+    return response.data;
+  },
+
+  removeMember: async (teamId: string, userId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/teams/${teamId}/members/${userId}`);
+    return response.data;
+  },
+};
+
 // Runbooks API
 export const runbooksAPI = {
   list: async (): Promise<{ runbooks: Runbook[] }> => {
@@ -512,6 +1038,295 @@ export const runbooksAPI = {
 
   delete: async (id: string): Promise<{ message: string }> => {
     const response = await apiClient.delete<{ message: string }>(`/runbooks/${id}`);
+    return response.data;
+  },
+};
+
+// Routing Rules API
+export const routingRulesAPI = {
+  list: async (): Promise<{ rules: AlertRoutingRule[] }> => {
+    const response = await apiClient.get<{ rules: AlertRoutingRule[] }>('/routing-rules');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ rule: AlertRoutingRule }> => {
+    const response = await apiClient.get<{ rule: AlertRoutingRule }>(`/routing-rules/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateRoutingRuleRequest): Promise<{ rule: AlertRoutingRule; message: string }> => {
+    const response = await apiClient.post<{ rule: AlertRoutingRule; message: string }>('/routing-rules', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateRoutingRuleRequest): Promise<{ rule: AlertRoutingRule; message: string }> => {
+    const response = await apiClient.put<{ rule: AlertRoutingRule; message: string }>(`/routing-rules/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/routing-rules/${id}`);
+    return response.data;
+  },
+
+  reorder: async (ruleIds: string[]): Promise<{ message: string }> => {
+    const response = await apiClient.put<{ message: string }>('/routing-rules/reorder', { ruleIds });
+    return response.data;
+  },
+
+  test: async (id: string, payload: Record<string, any>): Promise<RoutingRuleTestResult> => {
+    const response = await apiClient.post<RoutingRuleTestResult>(`/routing-rules/${id}/test`, { payload });
+    return response.data;
+  },
+};
+
+// Priorities API
+export const prioritiesAPI = {
+  list: async (): Promise<{ priorities: PriorityLevel[] }> => {
+    const response = await apiClient.get<{ priorities: PriorityLevel[] }>('/priorities');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ priority: PriorityLevel }> => {
+    const response = await apiClient.get<{ priority: PriorityLevel }>(`/priorities/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreatePriorityRequest): Promise<{ priority: PriorityLevel; message: string }> => {
+    const response = await apiClient.post<{ priority: PriorityLevel; message: string }>('/priorities', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdatePriorityRequest): Promise<{ priority: PriorityLevel; message: string }> => {
+    const response = await apiClient.put<{ priority: PriorityLevel; message: string }>(`/priorities/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/priorities/${id}`);
+    return response.data;
+  },
+
+  reorder: async (priorityIds: string[]): Promise<{ message: string }> => {
+    const response = await apiClient.put<{ message: string }>('/priorities/reorder', { priorityIds });
+    return response.data;
+  },
+
+  seedDefaults: async (): Promise<{ priorities: PriorityLevel[]; message: string }> => {
+    const response = await apiClient.post<{ priorities: PriorityLevel[]; message: string }>('/priorities/seed-defaults');
+    return response.data;
+  },
+};
+
+// Business Services API
+export const businessServicesAPI = {
+  list: async (params?: {
+    status?: string;
+    impactTier?: string;
+    teamId?: string;
+  }): Promise<BusinessService[]> => {
+    const response = await apiClient.get<BusinessService[]>('/business-services', { params });
+    return response.data;
+  },
+
+  get: async (id: string): Promise<BusinessService> => {
+    const response = await apiClient.get<BusinessService>(`/business-services/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateBusinessServiceRequest): Promise<BusinessService> => {
+    const response = await apiClient.post<BusinessService>('/business-services', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateBusinessServiceRequest): Promise<BusinessService> => {
+    const response = await apiClient.put<BusinessService>(`/business-services/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/business-services/${id}`);
+  },
+
+  updateServices: async (id: string, serviceIds: string[]): Promise<BusinessService> => {
+    const response = await apiClient.put<BusinessService>(`/business-services/${id}/services`, { serviceIds });
+    return response.data;
+  },
+
+  // Dependency Graph
+  getDependencyGraph: async (): Promise<DependencyGraph> => {
+    const response = await apiClient.get<DependencyGraph>('/business-services/dependency-graph');
+    return response.data;
+  },
+};
+
+// Service Dependencies API
+export const dependenciesAPI = {
+  getForService: async (
+    serviceId: string,
+    direction: 'upstream' | 'downstream' | 'both' = 'both'
+  ): Promise<ServiceDependencies> => {
+    const response = await apiClient.get<ServiceDependencies>(
+      `/business-services/services/${serviceId}/dependencies`,
+      { params: { direction } }
+    );
+    return response.data;
+  },
+
+  create: async (data: CreateDependencyRequest): Promise<ServiceDependency> => {
+    const response = await apiClient.post<ServiceDependency>('/business-services/dependencies', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateDependencyRequest): Promise<ServiceDependency> => {
+    const response = await apiClient.put<ServiceDependency>(`/business-services/dependencies/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/business-services/dependencies/${id}`);
+  },
+};
+
+// Event Transform Rules API
+export const eventTransformRulesAPI = {
+  listForService: async (serviceId: string): Promise<{ rules: EventTransformRule[] }> => {
+    const response = await apiClient.get<{ rules: EventTransformRule[] }>(
+      `/services/${serviceId}/event-rules`
+    );
+    return response.data;
+  },
+
+  get: async (serviceId: string, ruleId: string): Promise<{ rule: EventTransformRule }> => {
+    const response = await apiClient.get<{ rule: EventTransformRule }>(
+      `/services/${serviceId}/event-rules/${ruleId}`
+    );
+    return response.data;
+  },
+
+  create: async (
+    serviceId: string,
+    data: CreateEventTransformRuleRequest
+  ): Promise<{ rule: EventTransformRule; message: string }> => {
+    const response = await apiClient.post<{ rule: EventTransformRule; message: string }>(
+      `/services/${serviceId}/event-rules`,
+      data
+    );
+    return response.data;
+  },
+
+  update: async (
+    serviceId: string,
+    ruleId: string,
+    data: UpdateEventTransformRuleRequest
+  ): Promise<{ rule: EventTransformRule; message: string }> => {
+    const response = await apiClient.put<{ rule: EventTransformRule; message: string }>(
+      `/services/${serviceId}/event-rules/${ruleId}`,
+      data
+    );
+    return response.data;
+  },
+
+  delete: async (serviceId: string, ruleId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(
+      `/services/${serviceId}/event-rules/${ruleId}`
+    );
+    return response.data;
+  },
+
+  reorder: async (serviceId: string, ruleIds: string[]): Promise<{ message: string }> => {
+    const response = await apiClient.put<{ message: string }>(
+      `/services/${serviceId}/event-rules/reorder`,
+      { ruleIds }
+    );
+    return response.data;
+  },
+
+  test: async (
+    serviceId: string,
+    ruleId: string,
+    payload: Record<string, any>
+  ): Promise<EventTransformTestResult> => {
+    const response = await apiClient.post<EventTransformTestResult>(
+      `/services/${serviceId}/event-rules/${ruleId}/test`,
+      { payload }
+    );
+    return response.data;
+  },
+};
+
+// Tags API
+export const tagsAPI = {
+  list: async (params?: { search?: string }): Promise<{ tags: Tag[] }> => {
+    const response = await apiClient.get<{ tags: Tag[] }>('/tags', { params });
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ tag: Tag }> => {
+    const response = await apiClient.get<{ tag: Tag }>(`/tags/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateTagRequest): Promise<{ tag: Tag; message: string }> => {
+    const response = await apiClient.post<{ tag: Tag; message: string }>('/tags', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateTagRequest): Promise<{ tag: Tag; message: string }> => {
+    const response = await apiClient.put<{ tag: Tag; message: string }>(`/tags/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/tags/${id}`);
+    return response.data;
+  },
+
+  bulkCreate: async (data: BulkCreateTagRequest): Promise<{ tags: Tag[]; message: string }> => {
+    const response = await apiClient.post<{ tags: Tag[]; message: string }>('/tags/bulk', data);
+    return response.data;
+  },
+
+  seedDefaults: async (): Promise<{ tags: Tag[]; message: string }> => {
+    const response = await apiClient.post<{ tags: Tag[]; message: string }>('/tags/seed-defaults');
+    return response.data;
+  },
+
+  // Entity tagging
+  getEntitiesForTag: async (tagId: string): Promise<TagEntitiesResponse> => {
+    const response = await apiClient.get<TagEntitiesResponse>(`/tags/${tagId}/entities`);
+    return response.data;
+  },
+
+  getTagsForEntity: async (
+    entityType: EntityType,
+    entityId: string
+  ): Promise<{ tags: Tag[] }> => {
+    const response = await apiClient.get<{ tags: Tag[] }>(
+      `/tags/entities/${entityType}/${entityId}`
+    );
+    return response.data;
+  },
+
+  addTagToEntity: async (
+    tagId: string,
+    entityType: EntityType,
+    entityId: string
+  ): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>(
+      `/tags/${tagId}/entities/${entityType}/${entityId}`
+    );
+    return response.data;
+  },
+
+  removeTagFromEntity: async (
+    tagId: string,
+    entityType: EntityType,
+    entityId: string
+  ): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(
+      `/tags/${tagId}/entities/${entityType}/${entityId}`
+    );
     return response.data;
   },
 };

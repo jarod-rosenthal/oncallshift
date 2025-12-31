@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Navigation } from '../components/Navigation';
 import { servicesAPI, schedulesAPI } from '../lib/api-client';
-import type { Service, Schedule } from '../types/api';
+import type { Service, Schedule, MaintenanceWindow } from '../types/api';
 
 interface EscalationPolicy {
   id: string;
@@ -17,6 +15,7 @@ export function AdminServices() {
   const [services, setServices] = useState<Service[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [escalationPolicies, setEscalationPolicies] = useState<EscalationPolicy[]>([]);
+  const [maintenanceWindows, setMaintenanceWindows] = useState<Record<string, MaintenanceWindow[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -32,6 +31,16 @@ export function AdminServices() {
 
   // API key visibility
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<string>>(new Set());
+
+  // Maintenance window form state
+  const [showMaintenanceForm, setShowMaintenanceForm] = useState<string | null>(null);
+  const [maintenanceForm, setMaintenanceForm] = useState({
+    startTime: '',
+    endTime: '',
+    description: '',
+    suppressAlerts: true,
+  });
+  const [isCreatingMaintenance, setIsCreatingMaintenance] = useState(false);
 
   // Webhook URL
   const webhookUrl = `${window.location.origin}/api/v1/alerts/webhook`;
@@ -61,6 +70,23 @@ export function AdminServices() {
           setEscalationPolicies(policiesData.policies || []);
         }
       }
+
+      // Load maintenance windows for all services
+      const windowsMap: Record<string, MaintenanceWindow[]> = {};
+      await Promise.all(
+        servicesRes.services.map(async (service) => {
+          try {
+            const mwRes = await servicesAPI.listMaintenanceWindows(service.id);
+            // Filter to show only active and upcoming
+            windowsMap[service.id] = (mwRes.maintenanceWindows || []).filter(
+              (mw) => mw.isActive || mw.isFuture
+            );
+          } catch {
+            windowsMap[service.id] = [];
+          }
+        })
+      );
+      setMaintenanceWindows(windowsMap);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load data');
     } finally {
@@ -174,41 +200,84 @@ export function AdminServices() {
     return apiKey.substring(0, 8) + '••••••••••••••••';
   };
 
+  // Maintenance window handlers
+  const formatDateTimeLocal = (date: Date) => {
+    return date.toISOString().slice(0, 16);
+  };
+
+  const handleOpenMaintenanceForm = (serviceId: string) => {
+    const now = new Date();
+    const endTime = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hours from now
+    setMaintenanceForm({
+      startTime: formatDateTimeLocal(now),
+      endTime: formatDateTimeLocal(endTime),
+      description: '',
+      suppressAlerts: true,
+    });
+    setShowMaintenanceForm(serviceId);
+  };
+
+  const handleCreateMaintenanceWindow = async (e: React.FormEvent, serviceId: string) => {
+    e.preventDefault();
+
+    if (!maintenanceForm.startTime || !maintenanceForm.endTime) {
+      setError('Start time and end time are required');
+      return;
+    }
+
+    try {
+      setIsCreatingMaintenance(true);
+      setError(null);
+      await servicesAPI.createMaintenanceWindow(serviceId, {
+        startTime: new Date(maintenanceForm.startTime).toISOString(),
+        endTime: new Date(maintenanceForm.endTime).toISOString(),
+        description: maintenanceForm.description || undefined,
+        suppressAlerts: maintenanceForm.suppressAlerts,
+      });
+      setShowMaintenanceForm(null);
+      setMaintenanceForm({ startTime: '', endTime: '', description: '', suppressAlerts: true });
+      setSuccess('Maintenance window created successfully');
+      await loadData();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to create maintenance window');
+    } finally {
+      setIsCreatingMaintenance(false);
+    }
+  };
+
+  const handleDeleteMaintenanceWindow = async (serviceId: string, windowId: string) => {
+    if (!confirm('Are you sure you want to delete this maintenance window?')) return;
+
+    try {
+      setError(null);
+      await servicesAPI.deleteMaintenanceWindow(serviceId, windowId);
+      setSuccess('Maintenance window deleted');
+      await loadData();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete maintenance window');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">
-            ← Back to Dashboard
-          </Button>
-        </Link>
-
+    <div className="max-w-6xl mx-auto">
         <div className="mb-8 flex justify-between items-start">
           <div>
-            <h2 className="text-3xl font-bold mb-2">Admin: Services & Webhooks</h2>
+            <h2 className="text-3xl font-bold mb-2">Services & Webhooks</h2>
             <p className="text-muted-foreground">
               Manage services and API keys for integrations
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link to="/admin/users">
-              <Button variant="outline">Users</Button>
-            </Link>
-            <Link to="/admin/runbooks">
-              <Button variant="outline">Runbooks</Button>
-            </Link>
-            <Button onClick={() => {
-              if (showCreateForm) {
-                resetForm();
-              } else {
-                setShowCreateForm(true);
-              }
-            }}>
-              {showCreateForm ? 'Cancel' : 'Create Service'}
-            </Button>
-          </div>
+          <Button onClick={() => {
+            if (showCreateForm) {
+              resetForm();
+            } else {
+              setShowCreateForm(true);
+            }
+          }}>
+            {showCreateForm ? 'Cancel' : 'Create Service'}
+          </Button>
         </div>
 
         {error && (
@@ -453,6 +522,133 @@ export function AdminServices() {
                         </Button>
                       </div>
                     </div>
+
+                    {/* Maintenance Windows Section */}
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-medium">Maintenance Windows</h4>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenMaintenanceForm(service.id)}
+                        >
+                          Schedule Maintenance
+                        </Button>
+                      </div>
+
+                      {/* Maintenance Window Form */}
+                      {showMaintenanceForm === service.id && (
+                        <div className="mb-4 p-4 border rounded-lg bg-accent">
+                          <h5 className="font-medium mb-3">Schedule Maintenance Window</h5>
+                          <form onSubmit={(e) => handleCreateMaintenanceWindow(e, service.id)} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label htmlFor={`mw-start-${service.id}`}>Start Time</Label>
+                                <Input
+                                  id={`mw-start-${service.id}`}
+                                  type="datetime-local"
+                                  value={maintenanceForm.startTime}
+                                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, startTime: e.target.value })}
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <Label htmlFor={`mw-end-${service.id}`}>End Time</Label>
+                                <Input
+                                  id={`mw-end-${service.id}`}
+                                  type="datetime-local"
+                                  value={maintenanceForm.endTime}
+                                  onChange={(e) => setMaintenanceForm({ ...maintenanceForm, endTime: e.target.value })}
+                                  required
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <Label htmlFor={`mw-desc-${service.id}`}>Description (optional)</Label>
+                              <Input
+                                id={`mw-desc-${service.id}`}
+                                type="text"
+                                placeholder="e.g., Database upgrade"
+                                value={maintenanceForm.description}
+                                onChange={(e) => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id={`mw-suppress-${service.id}`}
+                                checked={maintenanceForm.suppressAlerts}
+                                onChange={(e) => setMaintenanceForm({ ...maintenanceForm, suppressAlerts: e.target.checked })}
+                                className="rounded border-input"
+                              />
+                              <Label htmlFor={`mw-suppress-${service.id}`} className="text-sm">
+                                Suppress alerts during maintenance
+                              </Label>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button type="submit" size="sm" disabled={isCreatingMaintenance}>
+                                {isCreatingMaintenance ? 'Creating...' : 'Create'}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowMaintenanceForm(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
+
+                      {/* Active and Upcoming Windows */}
+                      {maintenanceWindows[service.id]?.length > 0 ? (
+                        <div className="space-y-2">
+                          {maintenanceWindows[service.id].map((mw) => (
+                            <div
+                              key={mw.id}
+                              className={`flex items-center justify-between p-2 rounded-lg text-sm ${
+                                mw.isActive
+                                  ? 'bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800'
+                                  : 'bg-muted'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`px-1.5 py-0.5 text-xs rounded ${
+                                      mw.isActive
+                                        ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200'
+                                        : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
+                                    }`}
+                                  >
+                                    {mw.isActive ? 'ACTIVE' : 'SCHEDULED'}
+                                  </span>
+                                  <span>
+                                    {new Date(mw.startTime).toLocaleString()} — {new Date(mw.endTime).toLocaleString()}
+                                  </span>
+                                </div>
+                                {mw.description && (
+                                  <p className="text-muted-foreground mt-1">{mw.description}</p>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteMaintenanceWindow(service.id, mw.id)}
+                              >
+                                {mw.isActive ? 'End' : 'Cancel'}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No maintenance windows scheduled
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -487,7 +683,6 @@ export function AdminServices() {
             </div>
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </div>
   );
 }

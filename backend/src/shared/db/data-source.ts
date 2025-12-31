@@ -4,9 +4,22 @@ import { getDbConfig } from './config';
 // Import entities
 import { Organization } from '../models/Organization';
 import { User } from '../models/User';
+import { Team } from '../models/Team';
+import { TeamMembership } from '../models/TeamMembership';
 import { Service } from '../models/Service';
 import { Schedule } from '../models/Schedule';
 import { ScheduleMember } from '../models/ScheduleMember';
+import { ScheduleOverride } from '../models/ScheduleOverride';
+import { ScheduleLayer } from '../models/ScheduleLayer';
+import { ScheduleLayerMember } from '../models/ScheduleLayerMember';
+import { UserContactMethod } from '../models/UserContactMethod';
+import { UserNotificationRule } from '../models/UserNotificationRule';
+import { AlertRoutingRule } from '../models/AlertRoutingRule';
+import { Alert } from '../models/Alert';
+import { AlertGroupingRule } from '../models/AlertGroupingRule';
+import { PriorityLevel } from '../models/PriorityLevel';
+import { BusinessService } from '../models/BusinessService';
+import { ServiceDependency } from '../models/ServiceDependency';
 import { EscalationPolicy } from '../models/EscalationPolicy';
 import { EscalationStep } from '../models/EscalationStep';
 import { EscalationTarget } from '../models/EscalationTarget';
@@ -15,6 +28,14 @@ import { IncidentEvent } from '../models/IncidentEvent';
 import { Notification } from '../models/Notification';
 import { DeviceToken } from '../models/DeviceToken';
 import { Runbook } from '../models/Runbook';
+import { MaintenanceWindow } from '../models/MaintenanceWindow';
+import { Integration } from '../models/Integration';
+import { IntegrationEvent } from '../models/IntegrationEvent';
+import { IntegrationOAuthToken } from '../models/IntegrationOAuthToken';
+import { ServiceIntegration } from '../models/ServiceIntegration';
+import { EventTransformRule } from '../models/EventTransformRule';
+import { Tag } from '../models/Tag';
+import { EntityTag } from '../models/EntityTag';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -32,9 +53,22 @@ export async function createDataSource(): Promise<DataSource> {
     entities: [
       Organization,
       User,
+      Team,
+      TeamMembership,
       Service,
       Schedule,
       ScheduleMember,
+      ScheduleOverride,
+      ScheduleLayer,
+      ScheduleLayerMember,
+      UserContactMethod,
+      UserNotificationRule,
+      AlertRoutingRule,
+      Alert,
+      AlertGroupingRule,
+      PriorityLevel,
+      BusinessService,
+      ServiceDependency,
       EscalationPolicy,
       EscalationStep,
       EscalationTarget,
@@ -43,6 +77,14 @@ export async function createDataSource(): Promise<DataSource> {
       Notification,
       DeviceToken,
       Runbook,
+      MaintenanceWindow,
+      Integration,
+      IntegrationEvent,
+      IntegrationOAuthToken,
+      ServiceIntegration,
+      EventTransformRule,
+      Tag,
+      EntityTag,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],

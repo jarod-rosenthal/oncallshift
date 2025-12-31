@@ -2,89 +2,196 @@
 
 **Last Updated:** December 2024
 
-## Current Status: Production MVP
+This document tracks remaining work for the OnCallShift incident management platform.
 
-OnCallShift is a production-ready incident management platform deployed at https://oncallshift.com
+---
 
-### What's Deployed and Working
+## Current State: Feature-Complete Production Platform
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| **Infrastructure** | ✅ Complete | VPC, ECS Fargate, RDS PostgreSQL, ALB, CloudFront, Cognito, SQS |
-| **Backend API** | ✅ Complete | Express + TypeScript, all CRUD endpoints, Swagger docs |
-| **Web Frontend** | ✅ Complete | React SPA, dashboard, incidents, schedules, services, escalation policies |
-| **Alert Processing** | ✅ Complete | Webhook ingestion, deduplication, incident creation |
-| **Email Notifications** | ✅ Complete | AWS SES via noreply@oncallshift.com |
-| **Push Notifications** | ✅ Complete | Expo Push API for mobile |
-| **SMS Notifications** | ✅ Complete | AWS SNS text messaging |
-| **Escalation Policies** | ✅ Complete | Multi-level PagerDuty-style escalation |
-| **On-Call Schedules** | ✅ Complete | Schedule management, member assignment |
-| **CI/CD Pipeline** | ✅ Complete | GitHub Actions with Terraform approval workflow |
-| **Terraform State** | ✅ Complete | S3 backend (oncallshift bucket) |
+OnCallShift is deployed at https://oncallshift.com with comprehensive functionality:
 
-### Mobile App Status
+### Completed Features
 
-The React Native/Expo mobile app is scaffolded with screens implemented:
-- LoginScreen, ForgotPasswordScreen
-- AlertListScreen, AlertDetailScreen
-- OnCallScreen, ScheduleScreen
-- SettingsScreen, AnalyticsScreen
-- InboxScreen, TeamScreen, MoreScreen
-
-**Pending:** Final testing, push notification registration, App Store/Play Store submission
+| Feature | Status |
+|---------|--------|
+| **Mobile App** | 20 React Native screens (incidents, schedules, settings, analytics, AI chat) |
+| **Escalation Timer** | Automatic step advancement with configurable timeouts |
+| **Multi-Channel Notifications** | Push, Email, SMS with delivery tracking |
+| **User Actions** | Acknowledge, Resolve, Reassign, Snooze, Manual Escalate |
+| **Runbooks** | Full CRUD with one-click action execution |
+| **AI Diagnosis** | Claude-powered incident analysis and chat |
+| **Setup Wizard** | Web and mobile onboarding flow |
+| **Notification Status Panel** | Per-user delivery status tracking |
+| **Audit Trail** | Comprehensive incident event logging |
+| **CI/CD Pipeline** | GitHub Actions with Terraform approval workflow |
 
 ---
 
 ## Remaining Work
 
-### Priority 1: Mobile App Completion
+### Phase 1: Production Hardening (2-3 weeks)
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| Test all screens against live API | 1 day | Verify data flows correctly |
-| Push notification registration | 1 day | Register device tokens with Expo |
-| Deep linking from notifications | 1 day | Open specific incident from push |
-| Build APK/IPA for testing | 1 day | EAS Build configured |
-| App Store submission | 1 day | After testing complete |
+#### 1.1 Testing (Current Coverage: ~0%)
 
-### Priority 2: Production Hardening
+Priority tests needed:
+- Escalation timer logic (timeout calculation, step advancement)
+- Alert deduplication
+- Notification delivery
+- Incident state transitions
+- API authentication/authorization
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| Add rate limiting | 1 day | Protect webhook endpoint |
-| Add webhook signatures | 1 day | HMAC-SHA256 verification |
-| Add database indexes | 1 day | Performance optimization |
-| Correlation IDs in logs | 1 day | Traceability |
-| Unit test coverage | 2 weeks | Target 80% coverage |
+**Target:** 80% coverage on critical paths
 
-### Priority 3: Enhanced Features
+#### 1.2 Security Improvements
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| Voice call fallback | 1 week | Twilio integration |
-| Notification delivery tracking | 1 week | Track sent/delivered/ack status |
-| User notification preferences | 1 week | Per-user channel preferences |
-| Quiet hours | 3 days | Time-based notification rules |
-| Automatic schedule rotations | 1 week | Weekly/daily rotation logic |
+| Task | Priority | Status |
+|------|----------|--------|
+| Webhook signatures (HMAC-SHA256) | P1 | Not started |
+| API key hashing | P1 | Not started |
+| Secrets Manager integration | P2 | Partial |
 
-### Priority 4: DevOps Features
+#### 1.3 Reliability Improvements
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| Slack integration | 2 weeks | Notifications + interactive buttons |
-| CLI tool (`ocs`) | 2 weeks | Command-line incident management |
-| Heartbeat monitoring | 1 week | Dead man's switch |
-| Maintenance windows | 1 week | Suppress alerts during maintenance |
+| Task | Priority | Status |
+|------|----------|--------|
+| Retry logic with exponential backoff | P1 | Partial |
+| Transaction boundaries | P1 | Partial |
+| Graceful shutdown | P2 | Not started |
+| Circuit breakers | P2 | Not started |
 
-### Priority 5: Enterprise Features
+---
 
-| Task | Effort | Notes |
-|------|--------|-------|
-| Analytics dashboard | 2 weeks | MTTA/MTTR metrics |
-| SSO/SAML | 2 weeks | Enterprise auth |
-| Advanced RBAC | 2 weeks | Fine-grained permissions |
-| Billing (Stripe) | 2 weeks | Subscription management |
-| Multi-tenant org switching | 1 week | UI for org management |
+### Phase 2: Notification Enhancements (2 weeks)
+
+#### 2.1 Notification Fallback Chain
+
+**Current:** Sends channels based on severity
+**Required:** Sequential fallback with delays
+
+```
+Push → (wait 2 min) → SMS → (wait 3 min) → Voice
+         ↓                    ↓                ↓
+    Check if ack'd       Check if ack'd   Final attempt
+```
+
+#### 2.2 User Notification Preferences
+
+- Per-user default channels
+- Quiet hours (time-based suppression)
+- High urgency override for critical incidents
+
+#### 2.3 Repeat Notifications
+
+Re-page at configurable intervals until acknowledged.
+
+---
+
+### Phase 3: Missing MVP Features (2 weeks)
+
+#### 3.1 Heartbeat Monitoring
+
+Dead man's switch for cron jobs and batch processes:
+```
+POST /api/v1/heartbeat/:token  # Record heartbeat
+GET  /api/v1/heartbeat/:token  # For curl/wget
+```
+
+#### 3.2 Email-to-Incident
+
+- SES inbound email configuration
+- Email parsing to create incidents
+- Service mapping by email address
+
+#### 3.3 Maintenance Windows
+
+- Service-level scheduled windows
+- Option to suppress or just skip notifications
+- Calendar integration
+
+---
+
+### Phase 4: DevOps Differentiators (4-6 weeks)
+
+#### 4.1 Service Dependency Graph
+
+- Track service dependencies
+- Blast radius visualization
+- Cascading escalation to dependent teams
+
+#### 4.2 Noise Suppression
+
+- Flapping detection (suppress repeated fire/resolve)
+- Correlation rules (parent alert suppresses children)
+- Suggested rules from historical patterns
+
+#### 4.3 CLI Tool
+
+```bash
+ocs incidents list
+ocs incidents ack INC-123
+ocs oncall show
+ocs alert create --service api --severity critical --summary "Test"
+```
+
+#### 4.4 Slack Integration
+
+- Post incidents to channels
+- Interactive ack/resolve buttons
+- Slash commands (/oncall, /incident, /ack)
+
+#### 4.5 Terraform Provider
+
+```hcl
+resource "oncallshift_service" "api" {
+  name = "API Service"
+  escalation_policy_id = oncallshift_escalation_policy.primary.id
+}
+```
+
+---
+
+### Phase 5: Enterprise Features (6-8 weeks)
+
+#### 5.1 SSO/SAML
+
+- SAML 2.0 support (Okta, Azure AD, OneLogin)
+- Just-in-time user provisioning
+- Role mapping from IdP groups
+
+#### 5.2 Advanced RBAC
+
+Custom roles with granular permissions:
+- incidents.view, incidents.acknowledge, incidents.resolve
+- schedules.view, schedules.edit
+- billing.view, billing.manage
+
+#### 5.3 SLA Tracking
+
+- Define ack/resolve SLAs per severity
+- Compliance dashboard
+- At-risk alerts
+
+#### 5.4 Billing Integration
+
+- Stripe subscription management
+- Usage metering
+- Per-org billing dashboard
+
+---
+
+### Phase 6: AI & Intelligence (Ongoing)
+
+#### 6.1 Similar Incident Detection
+
+Find past incidents with similar signatures and show resolution steps.
+
+#### 6.2 Predictive Alerting
+
+Analyze patterns and suggest proactive measures.
+
+#### 6.3 Auto-Remediation
+
+Define automated actions for known issues (restart, scale, rollback).
 
 ---
 
@@ -120,37 +227,11 @@ The React Native/Expo mobile app is scaffolded with screens implemented:
 
 ---
 
-## CI/CD Pipeline
-
-**Orchestrator:** `.github/workflows/deploy.yml`
-- Manual trigger with stage checkboxes
-- Environment selection (dev/staging/prod)
-- Dry-run mode for testing
-
-**Stages:**
-1. **Infrastructure** (`_infra.yml`) - Terraform with plan approval via GitHub Issues
-2. **Backend** (`_backend.yml`) - Docker build + ECR push + ECS deploy
-3. **Frontend** (`_frontend.yml`) - npm build + S3 sync + CloudFront invalidation
-4. **Mobile** (`_mobile.yml`) - Expo EAS build
-
----
-
-## Key URLs
-
-| Resource | URL |
-|----------|-----|
-| Live App | https://oncallshift.com |
-| API Docs | https://oncallshift.com/api-docs |
-| Webhook | https://oncallshift.com/api/alerts/webhook |
-| GitHub | https://github.com/jarod-rosenthal/pagerduty-lite |
-
----
-
 ## Quick Reference
 
 ### Deploy Changes
 ```bash
-./deploy.sh  # Local deployment script
+./deploy.sh  # Full deployment
 ```
 
 ### Create User
@@ -180,8 +261,10 @@ aws logs tail /ecs/pagerduty-lite-dev/api --follow --region us-east-1
 
 ---
 
-## Documentation
+## Key URLs
 
-- `docs/ARCHITECTURE.md` - Technical architecture details
-- `README.md` - Project overview and quick start
-- `mobile/README.md` - Mobile app development guide
+| Resource | URL |
+|----------|-----|
+| Live App | https://oncallshift.com |
+| API Docs | https://oncallshift.com/api-docs |
+| Webhook | https://oncallshift.com/api/alerts/webhook |

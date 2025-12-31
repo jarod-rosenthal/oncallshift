@@ -4,23 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PagerDuty-Lite (OnCallShift) is a cost-effective incident management platform deployed at https://oncallshift.com. It's a full-stack TypeScript application with a backend API, React web frontend, React Native mobile app, and AWS infrastructure managed by Terraform.
+OnCallShift is a production incident management platform deployed at https://oncallshift.com. It's a full-stack TypeScript application with:
+- Backend API (Express + TypeScript)
+- Web frontend (React + Vite)
+- Mobile app (React Native + Expo) - 20 screens
+- AWS infrastructure managed by Terraform
 
 ## Build and Development Commands
 
-### Backend (Express + TypeScript)
+### Backend
 ```bash
 cd backend
 npm install
-npm run dev          # Development server with hot reload (localhost:3000)
+npm run dev          # Development server (localhost:3000)
 npm run build        # TypeScript compilation
 npm run start        # Production server
 npm run migrate      # Run database migrations
 npm run seed         # Seed test data
-npm test             # Run Jest tests
 ```
 
-### Frontend (React + Vite)
+### Frontend
 ```bash
 cd frontend
 npm install
@@ -29,7 +32,7 @@ npm run build        # Production build
 npm run lint         # ESLint
 ```
 
-### Mobile (React Native + Expo)
+### Mobile
 ```bash
 cd mobile
 npm install
@@ -40,10 +43,10 @@ npm run ios          # Run on iOS
 
 ### Deployment
 ```bash
-./deploy.sh          # Full deployment (build + push to ECR + deploy to ECS + CloudFront invalidation)
+./deploy.sh          # Full deployment (ECR + ECS + CloudFront invalidation)
 ```
 
-### Infrastructure (Terraform)
+### Infrastructure
 ```bash
 cd infrastructure/terraform/environments/dev
 terraform init
@@ -54,55 +57,55 @@ terraform apply
 ## Architecture
 
 ### Component Structure
-- **backend/src/api/**: Express REST API with routes in `routes/`, app setup in `app.ts`
-- **backend/src/workers/**: Background job processors (alert-processor, notification-worker, escalation-timer)
+- **backend/src/api/routes/**: REST API routes (incidents, services, schedules, runbooks, ai-diagnosis, notifications)
+- **backend/src/workers/**: Background processors (alert-processor, notification-worker, escalation-timer)
 - **backend/src/shared/**: Database models (TypeORM), middleware, utilities
-- **frontend/src/pages/**: React page components with React Router
-- **frontend/src/lib/**: API client (Axios), utilities
-- **frontend/src/store/**: Zustand auth store
-- **mobile/src/screens/**: React Native screens
-- **mobile/src/services/**: API client, auth, push notifications
-- **infrastructure/terraform/**: AWS infrastructure as code
+- **frontend/src/pages/**: React page components
+- **frontend/src/components/**: Shared UI components
+- **mobile/src/screens/**: React Native screens (20 implemented)
+- **mobile/src/services/**: API client, auth, push notifications, runbooks
+- **mobile/src/components/**: Shared mobile components
+
+### Key Features Implemented
+- **Escalation Timer**: `backend/src/workers/escalation-timer.ts` - Auto-advances escalation steps
+- **Runbooks**: `backend/src/api/routes/runbooks.ts` - CRUD + execution
+- **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered analysis
+- **User Actions**: Reassign, snooze, escalate in `backend/src/api/routes/incidents.ts`
+- **Setup Wizard**: `frontend/src/pages/SetupWizard.tsx` and `mobile/src/screens/SetupWizardScreen.tsx`
+- **Notification Tracking**: Delivery status per user/channel
 
 ### Data Flow
-1. **Alert Ingestion**: External webhook → API → SQS `alerts_queue` → Alert Processor Worker → Creates incident → Triggers escalation
-2. **Notifications**: Escalation step → SQS `notifications_queue` → Notification Worker → Email (SES), Push (FCM/APNs), SMS (SNS)
-3. **Authentication**: AWS Cognito JWT tokens verified by middleware in `backend/src/shared/middleware/`
+1. **Alert Ingestion**: Webhook → API → SQS → Alert Processor → Incident created → Escalation starts
+2. **Escalation**: Escalation Timer checks every 30s → Advances steps → Triggers notifications
+3. **Notifications**: Notification Worker → Email (SES), Push (Expo), SMS (SNS)
+4. **Authentication**: AWS Cognito JWT tokens verified by middleware
 
-### AWS Services
-- **ECS Fargate**: 3 services (API, Alert Processor, Notification Worker)
-- **RDS PostgreSQL**: Primary database (db.t4g.micro)
-- **SQS**: Alert and notification queues with DLQs
-- **Cognito**: JWT authentication
-- **CloudFront + S3**: Frontend CDN hosting
-- **SES**: Email delivery (noreply@oncallshift.com)
-- **ALB**: HTTPS load balancing
-
-### Database Models (backend/src/shared/models/)
-Key entities: Organization, User, Service, Schedule, ScheduleMember, Incident, IncidentEvent, EscalationPolicy, EscalationStep, Notification, DeviceToken
+### Database Models
+Key entities: Organization, User, Service, Schedule, ScheduleMember, Incident, IncidentEvent, EscalationPolicy, EscalationStep, Notification, DeviceToken, Runbook, RunbookStep
 
 ## Key Patterns
 
 ### API Routes
-Routes follow RESTful patterns in `backend/src/api/routes/`. Each route file exports an Express router. Auth middleware protects routes requiring authentication.
+Routes in `backend/src/api/routes/` follow RESTful patterns. Auth middleware protects authenticated endpoints.
 
 ### Multi-Tenancy
-All queries are scoped by `org_id`. Users belong to organizations via the User model's `org_id` field.
+All queries scoped by `org_id`. Users belong to organizations.
 
 ### Workers
-Workers in `backend/src/workers/` consume from SQS queues using long polling. They're deployed as separate ECS tasks from the API.
+Workers in `backend/src/workers/` consume from SQS queues using long polling. Deployed as separate ECS tasks.
 
 ### Frontend State
 - Server state: TanStack React Query
-- Auth state: Zustand store (`frontend/src/store/auth-store.ts`)
+- Auth state: Zustand store
 - Forms: React Hook Form
 
 ### Mobile Navigation
-React Navigation with bottom tabs for main screens, stack navigation for detail flows. Deep linking configured for push notifications.
+React Navigation with bottom tabs + stack navigation. Deep linking for push notifications.
 
 ## Infrastructure Rules
 
-**Terraform is the source of truth.** Never make manual changes in AWS Console. All infrastructure changes must go through:
+**Terraform is the source of truth.** Never make manual AWS Console changes.
+
 1. Update Terraform files in `infrastructure/terraform/environments/dev/`
 2. `terraform plan` to review
 3. `terraform apply` to deploy
@@ -112,9 +115,9 @@ React Navigation with bottom tabs for main screens, stack navigation for detail 
 
 GitHub Actions workflows in `.github/workflows/`:
 - `deploy.yml`: Orchestrator (manual trigger)
-- `_infra.yml`: Terraform with plan approval via GitHub Issues
-- `_backend.yml`: Docker build → ECR → ECS deploy
-- `_frontend.yml`: npm build → S3 → CloudFront invalidation
+- `_infra.yml`: Terraform with plan approval
+- `_backend.yml`: Docker → ECR → ECS
+- `_frontend.yml`: Build → S3 → CloudFront
 - `_mobile.yml`: Expo EAS build
 
 ## Environment
@@ -123,3 +126,13 @@ GitHub Actions workflows in `.github/workflows/`:
 - **Live URL**: https://oncallshift.com
 - **API Docs**: https://oncallshift.com/api-docs
 - **Cognito User Pool**: us-east-1_vMk9CQycK
+
+## Recent Changes (December 2024)
+
+- Full mobile app implementation (20 screens)
+- Runbooks with one-click action execution
+- AI diagnosis and chat features
+- Setup wizard for new organizations
+- Notification status panel with delivery tracking
+- User actions: reassign, snooze, manual escalate
+- Escalation timer auto-advancement

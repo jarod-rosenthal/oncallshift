@@ -26,7 +26,10 @@ export function Navigation() {
     { path: '/escalation-policies', label: 'Escalation Policies' },
     { path: '/availability', label: 'Availability' },
     { path: '/profile', label: 'Profile' },
-    ...(user?.role === 'admin' ? [{ path: '/admin/users', label: 'Admin' }] : []),
+    ...(user?.role === 'admin' ? [
+      { path: '/integrations', label: 'Integrations' },
+      { path: '/admin/users', label: 'Admin' },
+    ] : []),
   ];
 
   return (

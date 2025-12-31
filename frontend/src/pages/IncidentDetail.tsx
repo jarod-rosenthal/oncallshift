@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Navigation } from '../components/Navigation';
 import { IncidentActions } from '../components/IncidentActions';
 import { IncidentTimeline } from '../components/IncidentTimeline';
 import { EscalationStatusPanel } from '../components/EscalationStatusPanel';
@@ -234,9 +233,8 @@ export function IncidentDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <Navigation />
-        <main className="container mx-auto px-4 py-8">
+      <div>
+        <main className="container mx-auto">
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading incident...</p>
           </div>
@@ -247,9 +245,8 @@ export function IncidentDetail() {
 
   if (error || !incident) {
     return (
-      <div className="min-h-screen bg-background">
-        <Navigation />
-        <main className="container mx-auto px-4 py-8">
+      <div>
+        <main className="container mx-auto">
           <Link to="/incidents">
             <Button variant="ghost" size="sm" className="mb-4">
               &larr; Back to Incidents
@@ -273,10 +270,8 @@ export function IncidentDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8">
+    <div>
+      <main className="container mx-auto">
         {/* Back button */}
         <Link to="/incidents">
           <Button variant="ghost" size="sm" className="mb-4">
@@ -382,6 +377,7 @@ export function IncidentDetail() {
               escalation={escalation}
               isSnoozed={incident.isSnoozed}
               snoozedUntil={incident.snoozedUntil}
+              onEscalateNow={() => handleEscalate('Manual escalation from incident detail')}
             />
 
             {/* Notification Status */}
