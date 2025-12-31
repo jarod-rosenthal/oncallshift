@@ -821,6 +821,9 @@ export interface EscalationStep {
   schedule?: { id: string; name: string };
   userIds?: string[];
   targets?: EscalationTarget[]; // New multi-target support
+  // Resolved user info from backend
+  resolvedOncallUser?: { id: string; fullName: string; email: string };
+  resolvedUsers?: Array<{ id: string; fullName: string; email: string }>;
 }
 
 export interface EscalationPolicy {

@@ -25,6 +25,9 @@ interface EscalationStep {
   timeoutSeconds: number;
   schedule?: { id: string; name: string };
   targets?: EscalationTarget[];
+  // Resolved user info from backend
+  resolvedOncallUser?: { id: string; fullName: string; email: string };
+  resolvedUsers?: Array<{ id: string; fullName: string; email: string }>;
 }
 
 interface EscalationPolicy {
@@ -330,10 +333,17 @@ export function EscalationPolicies() {
       return descriptions.join(', ');
     }
 
-    // Fall back to old format
+    // Use resolved user info from backend
     if (step.targetType === 'schedule') {
+      if (step.resolvedOncallUser) {
+        return `${step.resolvedOncallUser.fullName} (on-call)`;
+      }
       return `on-call from ${step.schedule?.name || 'Unknown Schedule'}`;
     } else {
+      // Use resolved users if available
+      if (step.resolvedUsers && step.resolvedUsers.length > 0) {
+        return step.resolvedUsers.map(u => u.fullName).join(', ');
+      }
       return step.userIds && step.userIds.length > 0 ? getUserNamesByIds(step.userIds) : 'no users';
     }
   };

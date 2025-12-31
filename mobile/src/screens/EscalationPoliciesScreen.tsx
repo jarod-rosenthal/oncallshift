@@ -232,9 +232,21 @@ export default function EscalationPoliciesScreen() {
       }).join(', ');
     }
 
+    // Use resolved user info from backend
+    if (step.targetType === 'schedule') {
+      if (step.resolvedOncallUser) {
+        return `${step.resolvedOncallUser.fullName} (on-call)`;
+      }
+      if (step.schedule?.name) return step.schedule.name;
+    } else {
+      // Use resolved users if available
+      if (step.resolvedUsers && step.resolvedUsers.length > 0) {
+        return step.resolvedUsers.map(u => u.fullName).join(', ');
+      }
+    }
+
     // Fall back to old format
     if (step.targetName) return step.targetName;
-    if (step.schedule?.name) return step.schedule.name;
     return step.targetId;
   };
 

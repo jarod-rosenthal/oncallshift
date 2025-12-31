@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { EscalationPolicy, EscalationStep, EscalationTarget } from '../../shared/models';
+import { EscalationPolicy, EscalationStep, EscalationTarget, Schedule, User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
@@ -49,8 +49,15 @@ router.get(
         }
       });
 
+      // Resolve on-call users for schedule targets
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const userRepo = dataSource.getRepository(User);
+      const formattedPolicies = await Promise.all(
+        policies.map(policy => formatPolicyWithResolvedUsers(policy, scheduleRepo, userRepo))
+      );
+
       return res.json({
-        policies: policies.map(formatPolicy),
+        policies: formattedPolicies,
         pagination: {
           total,
           limit,
@@ -96,7 +103,12 @@ router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) =
       policy.steps.sort((a, b) => a.stepOrder - b.stepOrder);
     }
 
-    return res.json({ policy: formatPolicy(policy) });
+    // Resolve on-call users for schedule targets
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const userRepo = dataSource.getRepository(User);
+    const formattedPolicy = await formatPolicyWithResolvedUsers(policy, scheduleRepo, userRepo);
+
+    return res.json({ policy: formattedPolicy });
   } catch (error) {
     logger.error('Error fetching escalation policy:', error);
     return res.status(500).json({ error: 'Failed to fetch escalation policy' });
@@ -706,6 +718,74 @@ function formatPolicy(policy: EscalationPolicy) {
     createdAt: policy.createdAt,
     updatedAt: policy.updatedAt,
   };
+}
+
+async function formatPolicyWithResolvedUsers(
+  policy: EscalationPolicy,
+  scheduleRepo: any,
+  userRepo: any
+) {
+  const formattedSteps = await Promise.all(
+    (policy.steps || []).map(step => formatStepWithResolvedUser(step, scheduleRepo, userRepo))
+  );
+
+  return {
+    id: policy.id,
+    orgId: policy.orgId,
+    name: policy.name,
+    description: policy.description,
+    repeatEnabled: policy.repeatEnabled,
+    repeatCount: policy.repeatCount,
+    steps: formattedSteps,
+    createdAt: policy.createdAt,
+    updatedAt: policy.updatedAt,
+  };
+}
+
+async function formatStepWithResolvedUser(
+  step: EscalationStep,
+  scheduleRepo: any,
+  userRepo: any
+) {
+  const baseStep = formatStep(step);
+
+  // If this step targets a schedule, resolve the current on-call user
+  if (step.targetType === 'schedule' && step.scheduleId) {
+    const schedule = await scheduleRepo.findOne({ where: { id: step.scheduleId } });
+    if (schedule) {
+      const oncallUserId = schedule.getCurrentOncallUserId();
+      if (oncallUserId) {
+        const oncallUser = await userRepo.findOne({ where: { id: oncallUserId } });
+        if (oncallUser) {
+          return {
+            ...baseStep,
+            resolvedOncallUser: {
+              id: oncallUser.id,
+              fullName: oncallUser.fullName || oncallUser.email,
+              email: oncallUser.email,
+            },
+          };
+        }
+      }
+    }
+  }
+
+  // If this step targets specific users, resolve their info
+  if (step.targetType === 'users' && step.userIds && step.userIds.length > 0) {
+    const users = await userRepo.find({
+      where: step.userIds.map((id: string) => ({ id })),
+    });
+    return {
+      ...baseStep,
+      resolvedUsers: users.map((user: User) => ({
+        id: user.id,
+        fullName: user.fullName || user.email,
+        email: user.email,
+      })),
+    };
+  }
+
+  return baseStep;
 }
 
 function formatStep(step: EscalationStep) {
