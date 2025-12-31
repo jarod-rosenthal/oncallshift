@@ -1,0 +1,308 @@
+# Migration Compatibility Implementation Tracker
+
+**Branch**: `feature/migration-compatibility-analysis`
+**Started**: December 31, 2024
+**Status**: Planning Complete
+
+---
+
+## Phase 1: Critical Migration Completeness (P0)
+
+> **Goal**: Enable complete account migration with zero webhook reconfiguration
+
+### 1.1 Import User Contact Methods & Notification Rules
+**Effort**: 3-5 days | **Status**: Complete
+
+- [x] Extend PagerDuty import to fetch `contact_methods` for each user
+- [x] Map PagerDuty contact method types to OnCallShift format
+  - [x] `phone_contact_method` → `phone`
+  - [x] `email_contact_method` → `email`
+  - [x] `push_notification_contact_method` → `push`
+  - [x] `sms_contact_method` → `sms`
+- [x] Extend PagerDuty import to fetch `notification_rules` for each user
+- [x] Map notification rule fields
+  - [x] `start_delay_in_minutes` → `delayMinutes`
+  - [x] `urgency` → `urgency` (high/low)
+  - [x] `contact_method.type` → `method`
+- [x] Extend Opsgenie import to fetch user contacts
+- [x] Map Opsgenie notification rules
+- [x] Add contact methods to import preview
+- [x] Handle merging contact methods for existing users
+- [x] Write tests for contact method import
+
+### 1.2 Multi-Target Escalation Steps
+**Effort**: 2-3 days | **Status**: Complete
+
+- [x] Audit current `EscalationStep` model for multi-target support
+- [x] Update import to process ALL targets per escalation rule (not just first)
+- [x] Add `notifyStrategy` field to EscalationStep (`all` | `round_robin`)
+- [x] Map PagerDuty multi-target rules
+- [x] Map Opsgenie multi-target rules
+- [x] Update escalation worker to notify multiple targets per step
+- [x] Add to import preview with target counts
+- [x] Write tests for multi-target escalation
+
+### 1.3 Preserve Integration Keys (Zero-Config Migration)
+**Effort**: 1-2 days | **Status**: Complete
+
+- [x] Add `preserveKeys` option to import API
+- [x] Modify Service creation to accept external integration key
+- [x] Add `externalKeys` JSONB field to Service model (store original PD/OG keys)
+- [x] Create database migration for `externalKeys` field
+- [x] Update webhook endpoints to lookup by external key as fallback
+- [x] Fetch integration keys from PagerDuty service integrations API
+- [x] Fetch integration keys from Opsgenie integrations API
+- [x] Add key preservation to import preview
+- [x] Write tests for key preservation
+
+### 1.4 Import Alert Routing Rules
+**Effort**: 3-4 days | **Status**: Complete
+
+- [x] Add `routingRules` to PagerDuty import data structure
+- [x] Fetch PagerDuty Global Event Rules via API
+- [x] Map PagerDuty event rule conditions to OnCallShift format
+- [x] Map PagerDuty event rule actions (route, severity, etc.)
+- [x] Add `alertPolicies` to Opsgenie import data structure
+- [x] Fetch Opsgenie Alert Policies via API
+- [x] Map Opsgenie policy conditions
+- [x] Map Opsgenie policy responders to routing targets
+- [x] Link imported rules to services via ID mappings
+- [x] Add routing rules to import preview
+- [x] Write tests for routing rule import
+
+---
+
+## Phase 2: Important Features (P1)
+
+> **Goal**: Feature parity for common use cases
+
+### 2.1 Heartbeat Monitors (Opsgenie)
+**Effort**: 3-4 days | **Status**: Complete
+
+- [x] Create `Heartbeat` model
+  ```
+  id, orgId, serviceId, name, intervalSeconds,
+  alertAfterMissedCount, lastPingAt, status, enabled
+  ```
+- [x] Create database migration for heartbeats table
+- [x] Create heartbeat API endpoints
+  - [x] `POST /api/v1/heartbeats` - Create heartbeat
+  - [x] `GET /api/v1/heartbeats` - List heartbeats
+  - [x] `GET /api/v1/heartbeats/:name/ping` - Ping heartbeat
+  - [x] `POST /api/v1/heartbeats/:name/ping` - Ping heartbeat (POST)
+  - [x] `DELETE /api/v1/heartbeats/:id` - Delete heartbeat
+- [x] Add heartbeat to Opsgenie import
+- [x] Create heartbeat monitoring worker (check for missed pings)
+- [x] Trigger incident on heartbeat timeout
+- [x] Write tests
+
+### 2.2 Import Maintenance Windows
+**Effort**: 1-2 days | **Status**: Complete
+
+- [x] Add `maintenanceWindows` to PagerDuty import structure
+- [x] Map PagerDuty maintenance windows to OnCallShift model
+- [x] Add `maintenanceWindows` to Opsgenie import structure
+- [x] Map Opsgenie maintenance windows (scheduled + quick types)
+- [x] Add to import preview with skippedPast tracking
+- [x] Write tests (12 tests)
+
+### 2.3 Import Service Dependencies
+**Effort**: 1-2 days | **Status**: Complete
+
+- [x] Add `service_dependencies` to PagerDuty import structure
+- [x] Add PagerDutyServiceDependency interface
+- [x] Resolve service ID mappings for supporting/dependent services
+- [x] Create ServiceDependency records with default type and impact
+- [x] Add to import preview with unmappedServices tracking
+- [x] Write tests (12 tests)
+
+### 2.4 Import Tags
+**Effort**: 1 day | **Status**: Complete
+
+- [x] Add tags array to PagerDuty service and team interfaces
+- [x] Add tags array to Opsgenie service and team interfaces
+- [x] Extract tags from PagerDuty entities (label/summary/id fallback)
+- [x] Extract tags from Opsgenie entities (string arrays)
+- [x] Create/match Tag records with getOrCreateTag helper
+- [x] Create EntityTag associations with associateTag helper
+- [x] Handle tag name normalization and deduplication
+- [x] Generate consistent tag colors (predefined + hash-based)
+- [x] Add to import preview with associations count
+- [x] Write tests (13 tests)
+
+---
+
+## Phase 3: Migration Tools (P2)
+
+> **Goal**: Self-service migration experience
+
+### 3.1 Self-Service Export Tool
+**Effort**: 5-7 days | **Status**: Complete
+
+#### Frontend Import Wizard (Complete)
+- [x] Create `/import` page with step-by-step wizard
+- [x] Step 1: Select source (PagerDuty / Opsgenie)
+- [x] Step 2: Authentication method selection
+  - [ ] OAuth connection option (future enhancement)
+  - [x] API key input option
+- [x] Step 3: Connection test and account info display
+- [x] Step 4: Select entities to import (checkboxes)
+- [x] Step 5: Preview changes (dry-run results)
+- [x] Step 6: Execute import with progress indicator
+- [x] Step 7: Results summary with any errors
+- [x] JSON paste fallback mode for offline migration
+
+#### PagerDuty OAuth Integration (Deferred)
+- [ ] Register OnCallShift as PagerDuty OAuth app
+- [ ] Implement OAuth authorization flow
+- [ ] Store OAuth tokens securely
+- [ ] Implement token refresh
+
+#### Opsgenie OAuth Integration (Deferred)
+- [ ] Register OnCallShift as Atlassian OAuth app
+- [ ] Implement OAuth authorization flow
+- [ ] Store OAuth tokens securely
+- [ ] Implement token refresh
+
+#### Data Fetching Service (Complete)
+- [x] Create `PagerDutyExportService` for PagerDuty
+- [x] Create `OpsgenieExportService` for Opsgenie
+- [x] Implement pagination with rate limiting
+- [x] Implement exponential backoff for 429 errors
+- [x] Progress tracking for large accounts
+- [x] Create fetch API endpoints (`POST /api/v1/import/fetch/pagerduty`, `/opsgenie`)
+- [x] Create connection test endpoints (`POST /api/v1/import/fetch/pagerduty/test`, `/opsgenie/test`)
+- [x] Frontend API client integration
+
+### 3.2 Migration Validation & Diff Report
+**Effort**: 3-4 days | **Status**: Backend Complete
+
+- [x] Create validation endpoint `POST /api/v1/import/validate`
+- [x] Compare source account vs imported configuration
+- [x] Generate diff report:
+  - [x] Missing users (not invited)
+  - [x] Schedule rotation differences
+  - [x] Escalation policy differences
+  - [x] Unmapped integrations (integration key preservation check)
+- [x] Identify configuration gaps
+- [x] Suggest manual fixes needed
+- [x] Write tests (25 tests)
+- [ ] Create frontend validation results view
+
+### 3.3 Incident History Import (Optional)
+**Effort**: 5-7 days | **Status**: Backend Complete
+
+- [x] Add `incidents`/`alerts` to export data structures
+- [x] Fetch historical incidents from PagerDuty (with log entries and notes)
+- [x] Fetch historical alerts from Opsgenie (with notes and logs)
+- [x] Map incident fields preserving timestamps
+- [x] Import incident events/notes
+- [x] Handle large volumes (pagination with safety limit)
+- [x] Add date range filter option
+- [x] Write tests (14 tests)
+- [ ] Create incident import logic for database insertion (optional)
+
+---
+
+## Phase 4: Webhook API Parity (P2)
+
+> **Goal**: Complete drop-in replacement for webhook endpoints
+
+### 4.1 PagerDuty Change Events
+**Effort**: 1-2 days | **Status**: Not Started
+
+- [ ] Add `change` event_action support to PagerDuty webhook
+- [ ] Create change event record (informational, no incident)
+- [ ] Link change events to services
+- [ ] Return change event in response
+
+### 4.2 Additional Opsgenie Alert Actions
+**Effort**: 2-3 days | **Status**: Not Started
+
+- [ ] `POST /api/v1/webhooks/opsgenie/{id}/notes` - Add note to incident
+- [ ] `POST /api/v1/webhooks/opsgenie/{id}/tags` - Add tags to incident
+- [ ] `POST /api/v1/webhooks/opsgenie/{id}/responders` - Add responder
+- [ ] `POST /api/v1/webhooks/opsgenie/{id}/assign` - Assign incident
+- [ ] `DELETE /api/v1/webhooks/opsgenie/{id}` - Delete/cancel alert
+- [ ] `GET /api/v1/webhooks/opsgenie/{id}` - Get alert details
+- [ ] Write tests for each endpoint
+
+### 4.3 Opsgenie Request Status API
+**Effort**: 1 day | **Status**: Not Started
+
+- [ ] Create `WebhookRequest` model to track async requests
+- [ ] Store request status (pending, processing, completed, failed)
+- [ ] `GET /api/v1/webhooks/opsgenie/requests/{requestId}` - Get status
+- [ ] Return Opsgenie-compatible response format
+- [ ] Clean up old request records (TTL)
+- [ ] Write tests
+
+---
+
+## Progress Summary
+
+| Phase | Tasks | Completed | Progress |
+|-------|-------|-----------|----------|
+| Phase 1: Critical | 40 | 40 | 100% |
+| Phase 2: Important | 28 | 28 | 100% |
+| Phase 3: Tools | 37 | 33 | 89% |
+| Phase 4: API Parity | 13 | 0 | 0% |
+| **Total** | **118** | **101** | **86%** |
+
+---
+
+## Notes & Decisions
+
+### Technical Decisions
+- External keys stored in `externalKeys` JSONB field on Service model
+- Webhook lookup checks native `apiKey` first, then falls back to external keys
+- Import accepts `options.preserveKeys` flag to control key preservation
+- Both PagerDuty and Opsgenie keys can be stored per service
+- Routing rules use existing `AlertRoutingRule` model with JSONB conditions
+- PagerDuty event rules map to AlertRoutingRule with operator/field/value conditions
+- Opsgenie alert policies map to AlertRoutingRule with priority-to-severity mapping
+
+### Blockers
+- *None*
+
+### Completed Sessions
+- **Dec 31, 2024**: Initial analysis and plan creation
+- **Dec 31, 2024**: Implemented Phase 1.3 - Preserve Integration Keys (9/9 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.1 - Import User Contact Methods & Notification Rules (12/12 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.2 - Multi-Target Escalation Steps (8/8 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.4 - Import Alert Routing Rules (11/11 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.1 - Heartbeat Monitors (12/12 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.2 - Import Maintenance Windows (6/6 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.3 - Import Service Dependencies (6/6 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.4 - Import Tags (10/10 tasks) - **Phase 2 Complete!**
+- **Dec 31, 2024**: Phase 3.1 Data Fetching Service - Backend Complete (7/8 tasks)
+  - Created `PagerDutyExportService` with pagination, rate limiting, exponential backoff
+  - Created `OpsgenieExportService` with US/EU region support
+  - Created 4 API endpoints: fetch/test for both PagerDuty and Opsgenie
+- **Dec 31, 2024**: Phase 3.2 Migration Validation - Backend Complete (8/9 tasks)
+  - Created `POST /api/v1/import/validate` endpoint
+  - Compares users, teams, schedules, escalation policies, services
+  - Generates diff report with configuration gaps and suggestions
+  - Added 25 tests (143 total)
+- **Dec 31, 2024**: Phase 3.3 Incident History Import - Backend Complete (8/9 tasks)
+  - Added incident fetching to PagerDutyExportService with date range filtering
+  - Added alert fetching to OpsgenieExportService with date range filtering
+  - Fetches log entries, notes for PagerDuty; notes, logs for Opsgenie
+  - Added 14 tests (157 total) - **Phase 3 Backend Complete!**
+- **Dec 31, 2024**: Phase 3.1 Frontend Import Wizard - Complete (10/10 tasks)
+  - Enhanced ImportWizard.tsx with dual-mode import (API fetch vs JSON paste)
+  - Added API client methods for connection test, data fetch, validation
+  - Step-by-step wizard: Source → Method → API Key + Test → Entity Selection → Preview → Execute → Results
+  - Entity selection with platform-specific options (users, teams, schedules, etc.)
+  - Preserve integration keys option for zero-config migration
+  - Progress indicators during data fetch operations
+
+---
+
+## Quick Links
+
+- [Full Analysis Document](./MIGRATION-COMPATIBILITY-PLAN.md)
+- [PagerDuty API Reference](https://developer.pagerduty.com/api-reference)
+- [Opsgenie API Overview](https://docs.opsgenie.com/docs/api-overview)
+- [Current webhooks.ts](../backend/src/api/routes/webhooks.ts)
+- [Current import.ts](../backend/src/api/routes/import.ts)

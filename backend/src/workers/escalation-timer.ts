@@ -1,12 +1,13 @@
 import 'dotenv/config';
 import { getDataSource } from '../shared/db/data-source';
 import { sendNotificationMessage } from '../shared/queues/sqs-client';
-import { Incident, IncidentEvent, Service, EscalationStep, Schedule, User } from '../shared/models';
+import { Incident, IncidentEvent, Service, EscalationStep, EscalationTarget, Schedule, User, Heartbeat } from '../shared/models';
 import { logger } from '../shared/utils/logger';
 import { In } from 'typeorm';
 
 const CHECK_INTERVAL_MS = parseInt(process.env.ESCALATION_CHECK_INTERVAL_MS || '30000', 10); // Default 30 seconds
 const ROTATION_CHECK_INTERVAL_MS = parseInt(process.env.ROTATION_CHECK_INTERVAL_MS || '60000', 10); // Default 60 seconds
+const HEARTBEAT_CHECK_INTERVAL_MS = parseInt(process.env.HEARTBEAT_CHECK_INTERVAL_MS || '60000', 10); // Default 60 seconds
 
 /**
  * Escalation Timer Worker
@@ -21,6 +22,7 @@ async function checkAndEscalateIncidents(): Promise<void> {
     const eventRepo = dataSource.getRepository(IncidentEvent);
     const serviceRepo = dataSource.getRepository(Service);
     const scheduleRepo = dataSource.getRepository(Schedule);
+    const targetRepo = dataSource.getRepository(EscalationTarget);
 
     // Find all triggered incidents (not acknowledged or resolved)
     const triggeredIncidents = await incidentRepo.find({
@@ -41,7 +43,8 @@ async function checkAndEscalateIncidents(): Promise<void> {
           serviceRepo,
           scheduleRepo,
           incidentRepo,
-          eventRepo
+          eventRepo,
+          targetRepo
         );
       } catch (error) {
         logger.error('Error processing escalation for incident:', {
@@ -60,7 +63,8 @@ async function processIncidentEscalation(
   serviceRepo: any,
   scheduleRepo: any,
   incidentRepo: any,
-  eventRepo: any
+  eventRepo: any,
+  targetRepo: any
 ): Promise<void> {
   // Get service with escalation policy
   const service = await serviceRepo.findOne({
@@ -164,7 +168,7 @@ async function processIncidentEscalation(
   await eventRepo.save(escalateEvent);
 
   // Get target users for next step and send notifications
-  const targetUserIds = await getStepTargetUsers(nextStep, scheduleRepo);
+  const targetUserIds = await getStepTargetUsers(nextStep, scheduleRepo, targetRepo);
 
   if (targetUserIds.length === 0) {
     logger.warn('No target users found for escalation step', {
@@ -220,8 +224,43 @@ async function processIncidentEscalation(
 
 async function getStepTargetUsers(
   step: EscalationStep,
-  scheduleRepo: any
+  scheduleRepo: any,
+  targetRepo?: any
 ): Promise<string[]> {
+  const targetUsers: string[] = [];
+
+  // First check new multi-target relation (EscalationTarget table)
+  if (targetRepo) {
+    const targets = await targetRepo.find({
+      where: { escalationStepId: step.id },
+    });
+
+    if (targets && targets.length > 0) {
+      for (const target of targets) {
+        if (target.targetType === 'user' && target.userId) {
+          targetUsers.push(target.userId);
+        } else if (target.targetType === 'schedule' && target.scheduleId) {
+          const schedule = await scheduleRepo.findOne({
+            where: { id: target.scheduleId },
+            relations: ['layers', 'layers.members', 'overrides'],
+          });
+
+          if (schedule) {
+            const oncallUserId = schedule.getEffectiveOncallUserId(new Date());
+            if (oncallUserId && !targetUsers.includes(oncallUserId)) {
+              targetUsers.push(oncallUserId);
+            }
+          }
+        }
+      }
+
+      if (targetUsers.length > 0) {
+        return targetUsers;
+      }
+    }
+  }
+
+  // Fall back to legacy fields for backward compatibility
   if (step.targetType === 'users' && step.userIds) {
     // Direct user targeting
     return step.userIds;
@@ -394,6 +433,121 @@ async function processRotationHandoff(
   }
 }
 
+/**
+ * Check heartbeats for missed pings and create incidents
+ */
+async function checkHeartbeats(): Promise<void> {
+  try {
+    const dataSource = await getDataSource();
+    const heartbeatRepo = dataSource.getRepository(Heartbeat);
+    const incidentRepo = dataSource.getRepository(Incident);
+    const eventRepo = dataSource.getRepository(IncidentEvent);
+    const serviceRepo = dataSource.getRepository(Service);
+
+    // Find all enabled heartbeats that have been pinged at least once
+    const heartbeats = await heartbeatRepo.find({
+      where: { enabled: true },
+      relations: ['service'],
+    });
+
+    if (heartbeats.length === 0) {
+      return;
+    }
+
+    logger.debug(`Checking ${heartbeats.length} heartbeats`);
+
+    for (const heartbeat of heartbeats) {
+      try {
+        const previousStatus = heartbeat.status;
+        heartbeat.updateStatus();
+
+        // If status changed to expired and no active incident, create one
+        if (heartbeat.status === 'expired' && previousStatus !== 'expired' && !heartbeat.activeIncidentId) {
+          logger.warn('Heartbeat expired, creating incident', {
+            heartbeatId: heartbeat.id,
+            heartbeatName: heartbeat.name,
+            missedCount: heartbeat.missedCount,
+            lastPingAt: heartbeat.lastPingAt?.toISOString(),
+          });
+
+          // Find a service to associate with the incident
+          // Use the heartbeat's service if configured, otherwise try to find a default service
+          let service = heartbeat.service;
+          if (!service) {
+            // Try to find any service in the org to associate the incident
+            service = await serviceRepo.findOne({
+              where: { orgId: heartbeat.orgId },
+              order: { createdAt: 'ASC' },
+            });
+          }
+
+          if (!service) {
+            logger.error('No service found for heartbeat incident', {
+              heartbeatId: heartbeat.id,
+              orgId: heartbeat.orgId,
+            });
+            continue;
+          }
+
+          // Create incident for expired heartbeat
+          const incident = incidentRepo.create({
+            orgId: heartbeat.orgId,
+            serviceId: service.id,
+            summary: `Heartbeat "${heartbeat.name}" has expired`,
+            severity: 'error',
+            state: 'triggered',
+            dedupKey: `heartbeat:${heartbeat.id}`,
+            details: {
+              source: 'heartbeat',
+              heartbeatId: heartbeat.id,
+              heartbeatName: heartbeat.name,
+              intervalSeconds: heartbeat.intervalSeconds,
+              missedCount: heartbeat.missedCount,
+              lastPingAt: heartbeat.lastPingAt?.toISOString(),
+              expiredAt: new Date().toISOString(),
+            },
+          });
+
+          await incidentRepo.save(incident);
+
+          // Create alert event for the heartbeat expiry
+          const event = eventRepo.create({
+            incidentId: incident.id,
+            type: 'alert',
+            message: `Heartbeat "${heartbeat.name}" has missed ${heartbeat.missedCount} ping(s)`,
+            payload: {
+              heartbeatId: heartbeat.id,
+              missedCount: heartbeat.missedCount,
+              intervalSeconds: heartbeat.intervalSeconds,
+            },
+          });
+          await eventRepo.save(event);
+
+          // Link incident to heartbeat
+          heartbeat.activeIncidentId = incident.id;
+
+          logger.info('Heartbeat incident created', {
+            heartbeatId: heartbeat.id,
+            heartbeatName: heartbeat.name,
+            incidentId: incident.id,
+            incidentNumber: incident.incidentNumber,
+          });
+        }
+
+        // Save heartbeat status update
+        await heartbeatRepo.save(heartbeat);
+      } catch (error) {
+        logger.error('Error processing heartbeat:', {
+          heartbeatId: heartbeat.id,
+          error,
+        });
+      }
+    }
+  } catch (error) {
+    logger.error('Error in heartbeat check:', error);
+  }
+}
+
 async function startWorker() {
   try {
     logger.info('Starting escalation timer worker...');
@@ -403,20 +557,28 @@ async function startWorker() {
     await getDataSource();
     logger.info('Database connected successfully');
 
-    logger.info(`Escalation timer worker started, checking escalations every ${CHECK_INTERVAL_MS}ms, rotations every ${ROTATION_CHECK_INTERVAL_MS}ms`);
+    logger.info(`Escalation timer worker started, checking escalations every ${CHECK_INTERVAL_MS}ms, rotations every ${ROTATION_CHECK_INTERVAL_MS}ms, heartbeats every ${HEARTBEAT_CHECK_INTERVAL_MS}ms`);
 
-    // Track last rotation check time
+    // Track last check times
     let lastRotationCheck = 0;
+    let lastHeartbeatCheck = 0;
 
     // Run check loop
     while (true) {
       await checkAndEscalateIncidents();
 
-      // Check rotations less frequently
       const now = Date.now();
+
+      // Check rotations less frequently
       if (now - lastRotationCheck >= ROTATION_CHECK_INTERVAL_MS) {
         await checkAndAdvanceRotations();
         lastRotationCheck = now;
+      }
+
+      // Check heartbeats
+      if (now - lastHeartbeatCheck >= HEARTBEAT_CHECK_INTERVAL_MS) {
+        await checkHeartbeats();
+        lastHeartbeatCheck = now;
       }
 
       await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));

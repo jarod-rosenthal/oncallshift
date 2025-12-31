@@ -12,6 +12,7 @@
     "migrate": "ts-node src/shared/db/migrate.ts",
     "migrate:create": "ts-node src/shared/db/create-migration.ts",
     "seed": "ts-node src/shared/db/seed.ts",
+    "setup-contoso": "ts-node src/shared/db/setup-contoso-schedule.ts",
     "lint": "eslint src --ext .ts",
     "test": "jest"
   },
@@ -49,6 +50,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.6",
     "@types/swagger-jsdoc": "^6.0.4",
