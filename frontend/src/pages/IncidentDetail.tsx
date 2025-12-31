@@ -364,31 +364,15 @@ export function IncidentDetail() {
               onAddNote={handleAddNote}
             />
 
+            {/* Related Incidents */}
+            <RelatedIncidents currentIncident={incident} />
+
             {/* Escalation Status */}
             <EscalationStatusPanel
               escalation={escalation}
               isSnoozed={incident.isSnoozed}
               snoozedUntil={incident.snoozedUntil}
             />
-
-            {/* Admin Actions */}
-            {currentUser?.role === 'admin' && (
-              <Card className="border-destructive/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm text-destructive">Admin Actions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setShowDeleteConfirm(true)}
-                  >
-                    Delete Incident
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
           </div>
 
           {/* Right Column: Runbook and Timeline (spans 2 columns on large screens) */}
@@ -400,13 +384,28 @@ export function IncidentDetail() {
               onAIChatActiveChange={setIsAIChatActive}
             />
 
-            {/* Related Incidents */}
-            <RelatedIncidents currentIncident={incident} />
-
             {/* Timeline */}
             <IncidentTimeline events={events} isLoading={isTimelineLoading} />
           </div>
         </div>
+
+        {/* Admin Actions - Delete Incident */}
+        {currentUser?.role === 'admin' && (
+          <Card className="mt-8 border-destructive/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm text-destructive">Admin Actions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                Delete Incident
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       {/* Delete Confirmation Dialog */}

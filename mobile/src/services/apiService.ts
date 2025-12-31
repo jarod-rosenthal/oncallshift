@@ -1158,3 +1158,79 @@ export const removeAnthropicCredential = async (): Promise<{ message: string }> 
     throw error;
   }
 };
+
+// ============ SETUP WIZARD ============
+
+export interface SetupStatus {
+  setupCompleted: boolean;
+  completedAt?: string;
+}
+
+export interface SetupServiceInput {
+  templateId: string;
+  name: string;
+  description: string;
+  runbook: {
+    title: string;
+    description: string;
+    steps: Array<{
+      id: string;
+      order: number;
+      title: string;
+      description: string;
+      isOptional: boolean;
+      estimatedMinutes: number;
+      action?: {
+        type: 'webhook';
+        label: string;
+        url: string;
+        method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+        body?: Record<string, unknown>;
+        confirmMessage?: string;
+      };
+    }>;
+  };
+}
+
+export interface SetupCompleteInput {
+  aiApiKey?: string;
+  services: SetupServiceInput[];
+  teamEmails: string[];
+  createRotation: boolean;
+}
+
+export interface SetupCompleteResult {
+  message: string;
+  created: {
+    services: number;
+    runbooks: number;
+    invitations: number;
+    schedule?: string;
+  };
+}
+
+/**
+ * Get current setup status for the organization
+ */
+export const getSetupStatus = async (): Promise<SetupStatus> => {
+  try {
+    const response = await apiClient.get<SetupStatus>('/v1/setup/status');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching setup status:', error);
+    throw error;
+  }
+};
+
+/**
+ * Complete the setup wizard
+ */
+export const completeSetup = async (data: SetupCompleteInput): Promise<SetupCompleteResult> => {
+  try {
+    const response = await apiClient.post<SetupCompleteResult>('/v1/setup/complete', data);
+    return response.data;
+  } catch (error) {
+    console.error('Error completing setup:', error);
+    throw error;
+  }
+};

@@ -32,6 +32,7 @@ import ManageSchedulesScreen from './src/screens/ManageSchedulesScreen';
 import ManageServicesScreen from './src/screens/ManageServicesScreen';
 import ManageUsersScreen from './src/screens/ManageUsersScreen';
 import AIChatScreen from './src/screens/AIChatScreen';
+import SetupWizardScreen from './src/screens/SetupWizardScreen';
 
 // Components
 import { ToastProvider, OfflineBanner, ConfettiProvider } from './src/components';
@@ -183,6 +184,7 @@ function AppContent() {
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [checkingBiometric, setCheckingBiometric] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [incidentCount, setIncidentCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -254,6 +256,13 @@ function AppContent() {
         crashReporting.setUserContext(profile.id, profile.email, profile.fullName);
         crashReporting.addBreadcrumb('User logged in', 'auth', { userId: profile.id });
       }).catch(err => console.error('Failed to get user profile for crash reporting:', err));
+
+      // Check if setup wizard should be shown for new users
+      apiService.getSetupStatus().then((status) => {
+        if (!status.setupCompleted) {
+          setShowSetupWizard(true);
+        }
+      }).catch(err => console.log('Failed to get setup status:', err));
 
       // Register background refresh
       backgroundRefreshService.registerBackgroundFetch().then((registered) => {
@@ -390,6 +399,10 @@ function AppContent() {
     setShowOnboarding(false);
   };
 
+  const handleSetupWizardComplete = () => {
+    setShowSetupWizard(false);
+  };
+
   // Show loading while checking auth
   if (isLoggedIn === null) {
     return (
@@ -464,6 +477,17 @@ function AppContent() {
             </Text>
           </Pressable>
         </View>
+      </PaperProvider>
+    );
+  }
+
+  // Show setup wizard for new users
+  if (isLoggedIn && biometricVerified && showSetupWizard) {
+    return (
+      <PaperProvider theme={theme}>
+        <ToastProvider>
+          <SetupWizardScreen navigation={null} onComplete={handleSetupWizardComplete} />
+        </ToastProvider>
       </PaperProvider>
     );
   }
@@ -575,6 +599,11 @@ function AppContent() {
                     name="AIChat"
                     component={AIChatScreen}
                     options={{ title: 'AI Assistant', headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="SetupWizard"
+                    component={SetupWizardScreen}
+                    options={{ title: 'Setup Wizard', headerShown: false }}
                   />
                 </>
               )}

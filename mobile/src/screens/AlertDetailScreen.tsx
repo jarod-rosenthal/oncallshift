@@ -33,7 +33,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as apiService from '../services/apiService';
 import * as runbookService from '../services/runbookService';
 import type { Incident, IncidentEvent, User, AIDiagnosisResponse, UserProfile } from '../services/apiService';
-import type { Runbook, RunbookStep, RunbookExecution } from '../services/runbookService';
+import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '../services/runbookService';
 import { severityColors, statusColors, colors } from '../theme';
 import * as hapticService from '../services/hapticService';
 import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel } from '../components';
@@ -72,6 +72,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savingApiKey, setSavingApiKey] = useState(false);
+  const [actionStates, setActionStates] = useState<Record<string, { status: 'idle' | 'confirming' | 'executing' | 'success' | 'error'; message?: string }>>({});
+  const [confirmingAction, setConfirmingAction] = useState<{ stepId: string; action: RunbookStepAction } | null>(null);
 
   // Dynamic styles based on current theme
   const dynamicStyles = {
@@ -186,6 +188,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   };
 
   const toggleStepCompleted = async (stepId: string) => {
+    console.log('[AlertDetail] Toggling step:', stepId);
     await hapticService.lightTap();
     const isCompleting = !completedSteps.includes(stepId);
 
@@ -222,6 +225,89 @@ export default function AlertDetailScreen({ route, navigation }: any) {
     } else {
       setCompletedSteps(completedSteps.filter(id => id !== stepId));
     }
+  };
+
+  const executeAction = async (stepId: string, action: RunbookStepAction) => {
+    // If action has confirm message and we're not already confirming, show confirmation
+    if (action.confirmMessage && actionStates[stepId]?.status !== 'confirming') {
+      setConfirmingAction({ stepId, action });
+      setActionStates(prev => ({
+        ...prev,
+        [stepId]: { status: 'confirming', message: action.confirmMessage }
+      }));
+      return;
+    }
+
+    // Execute the action
+    setActionStates(prev => ({
+      ...prev,
+      [stepId]: { status: 'executing' }
+    }));
+    setConfirmingAction(null);
+    await hapticService.mediumTap();
+
+    try {
+      const response = await fetch(action.url, {
+        method: action.method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: action.body ? JSON.stringify(action.body) : undefined,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || `Request failed: ${response.status}`);
+      }
+
+      const data = await response.json().catch(() => ({}));
+
+      setActionStates(prev => ({
+        ...prev,
+        [stepId]: { status: 'success', message: data.message || 'Action completed' }
+      }));
+
+      // Mark step as completed
+      if (!completedSteps.includes(stepId)) {
+        const newCompletedSteps = [...completedSteps, stepId];
+        setCompletedSteps(newCompletedSteps);
+      }
+
+      await hapticService.success();
+      showSuccess(data.message || 'Action completed');
+
+      // Clear success state after 3 seconds
+      setTimeout(() => {
+        setActionStates(prev => ({
+          ...prev,
+          [stepId]: { status: 'idle' }
+        }));
+      }, 3000);
+    } catch (error: any) {
+      console.error('Action execution error:', error);
+      setActionStates(prev => ({
+        ...prev,
+        [stepId]: { status: 'error', message: error.message || 'Action failed' }
+      }));
+      await hapticService.error();
+      showError(error.message || 'Action failed');
+
+      // Clear error state after 5 seconds
+      setTimeout(() => {
+        setActionStates(prev => ({
+          ...prev,
+          [stepId]: { status: 'idle' }
+        }));
+      }, 5000);
+    }
+  };
+
+  const cancelActionConfirmation = (stepId: string) => {
+    setConfirmingAction(null);
+    setActionStates(prev => ({
+      ...prev,
+      [stepId]: { status: 'idle' }
+    }));
   };
 
   const handleAcknowledge = async () => {
@@ -720,28 +806,25 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                   {/* Runbook Metadata */}
                   {(runbook.author || runbook.lastUpdated || (runbook.tags && runbook.tags.length > 0)) && (
                     <View style={styles.runbookMeta}>
-                      {runbook.author && (
-                        <View style={styles.runbookMetaItem}>
-                          <MaterialCommunityIcons name="account" size={14} color={colors.textMuted} />
-                          <Text variant="labelSmall" style={styles.runbookMetaText}>
-                            {runbook.author.fullName}
+                      <View style={styles.runbookMetaRow}>
+                        {runbook.author && (
+                          <Text variant="bodySmall" style={styles.runbookMetaText}>
+                            By {runbook.author.fullName}
                           </Text>
-                        </View>
-                      )}
-                      {runbook.lastUpdated && (
-                        <View style={styles.runbookMetaItem}>
-                          <MaterialCommunityIcons name="update" size={14} color={colors.textMuted} />
-                          <Text variant="labelSmall" style={styles.runbookMetaText}>
+                        )}
+                        {runbook.author && runbook.lastUpdated && (
+                          <Text style={styles.runbookMetaSeparator}> • </Text>
+                        )}
+                        {runbook.lastUpdated && (
+                          <Text variant="bodySmall" style={styles.runbookMetaText}>
                             Updated {new Date(runbook.lastUpdated).toLocaleDateString()}
                           </Text>
-                        </View>
-                      )}
+                        )}
+                      </View>
                       {runbook.tags && runbook.tags.length > 0 && (
                         <View style={styles.runbookTagsRow}>
-                          {runbook.tags.slice(0, 3).map((tag, idx) => (
-                            <Chip key={idx} compact style={styles.runbookTag} textStyle={styles.runbookTagText}>
-                              {tag}
-                            </Chip>
+                          {runbook.tags.slice(0, 5).map((tag, idx) => (
+                            <Text key={idx} style={styles.runbookTagText}>#{tag}</Text>
                           ))}
                         </View>
                       )}
@@ -750,58 +833,161 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
                   {/* Runbook Steps */}
                   <View style={styles.runbookSteps}>
-                    {runbook.steps.map((step, index) => (
-                      <Pressable
-                        key={step.id}
-                        style={styles.runbookStep}
-                        onPress={() => incident.state !== 'resolved' && toggleStepCompleted(step.id)}
-                        disabled={incident.state === 'resolved'}
-                      >
-                        <View style={styles.runbookStepCheckbox}>
-                          <Checkbox
-                            status={completedSteps.includes(step.id) ? 'checked' : 'unchecked'}
-                            onPress={() => incident.state !== 'resolved' && toggleStepCompleted(step.id)}
-                            color={colors.success}
-                            disabled={incident.state === 'resolved'}
-                          />
-                        </View>
-                        <View style={styles.runbookStepContent}>
-                          <View style={styles.runbookStepTitleRow}>
-                            <Text
-                              variant="titleSmall"
-                              style={[
-                                styles.runbookStepTitle,
-                                completedSteps.includes(step.id) && styles.runbookStepCompleted,
-                              ]}
-                            >
-                              {index + 1}. {step.title}
-                            </Text>
-                            {step.isOptional && (
-                              <Chip compact style={styles.optionalChip} textStyle={styles.optionalChipText}>
-                                Optional
-                              </Chip>
+                    {runbook.steps.map((step, index) => {
+                      const isCompleted = completedSteps.includes(step.id);
+                      const canToggle = incident.state !== 'resolved';
+                      const hasAction = !!step.action;
+                      const actionState = actionStates[step.id];
+
+                      return (
+                        <View
+                          key={step.id}
+                          style={[
+                            styles.runbookStep,
+                            actionState?.status === 'success' && styles.runbookStepSuccess,
+                            actionState?.status === 'error' && styles.runbookStepError,
+                          ]}
+                        >
+                          <View style={styles.runbookStepHeader}>
+                            {/* Checkbox for non-action steps */}
+                            {!hasAction && (
+                              <Pressable
+                                style={styles.runbookStepCheckbox}
+                                onPress={() => canToggle && toggleStepCompleted(step.id)}
+                                disabled={!canToggle}
+                              >
+                                <Checkbox
+                                  status={isCompleted ? 'checked' : 'unchecked'}
+                                  color={colors.success}
+                                  onPress={() => canToggle && toggleStepCompleted(step.id)}
+                                  disabled={!canToggle}
+                                />
+                              </Pressable>
+                            )}
+
+                            {/* Step content */}
+                            <View style={[styles.runbookStepContent, hasAction && styles.runbookStepContentWithAction]}>
+                              <Text
+                                variant="titleSmall"
+                                style={[
+                                  styles.runbookStepTitle,
+                                  isCompleted && styles.runbookStepCompleted,
+                                ]}
+                              >
+                                {index + 1}. {step.title}
+                                {step.isOptional && (
+                                  <Text style={styles.optionalBadgeInline}> (Optional)</Text>
+                                )}
+                              </Text>
+                              <Text
+                                variant="bodySmall"
+                                style={[
+                                  styles.runbookStepDescription,
+                                  isCompleted && styles.runbookStepCompleted,
+                                ]}
+                              >
+                                {step.description}
+                              </Text>
+                              {step.estimatedMinutes != null && !isCompleted && (
+                                <View style={styles.runbookStepMeta}>
+                                  <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textMuted} />
+                                  <Text variant="labelSmall" style={styles.runbookStepTime}>
+                                    ~{step.estimatedMinutes} min
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+
+                            {/* Action button or completed check for action steps */}
+                            {hasAction && step.action && (
+                              <View style={styles.runbookActionContainer}>
+                                {actionState?.status === 'executing' ? (
+                                  <Button
+                                    mode="contained"
+                                    disabled
+                                    loading
+                                    compact
+                                    style={styles.runbookActionButton}
+                                  >
+                                    Running
+                                  </Button>
+                                ) : actionState?.status === 'success' ? (
+                                  <Button
+                                    mode="outlined"
+                                    disabled
+                                    compact
+                                    icon="check"
+                                    style={styles.runbookActionButton}
+                                    textColor={colors.success}
+                                  >
+                                    Done
+                                  </Button>
+                                ) : isCompleted ? (
+                                  <Button
+                                    mode="outlined"
+                                    compact
+                                    icon="check"
+                                    style={styles.runbookActionButton}
+                                    textColor={colors.success}
+                                    onPress={() => canToggle && executeAction(step.id, step.action!)}
+                                    disabled={!canToggle}
+                                  >
+                                    Redo
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    mode="contained"
+                                    compact
+                                    icon="play"
+                                    style={styles.runbookActionButton}
+                                    buttonColor={colors.accent}
+                                    onPress={() => canToggle && executeAction(step.id, step.action!)}
+                                    disabled={!canToggle}
+                                  >
+                                    {step.action.label}
+                                  </Button>
+                                )}
+                              </View>
                             )}
                           </View>
-                          <Text
-                            variant="bodySmall"
-                            style={[
-                              styles.runbookStepDescription,
-                              completedSteps.includes(step.id) && styles.runbookStepCompleted,
-                            ]}
-                          >
-                            {step.description}
-                          </Text>
-                          {step.estimatedMinutes && (
-                            <View style={styles.runbookStepMeta}>
-                              <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textMuted} />
-                              <Text variant="labelSmall" style={styles.runbookStepTime}>
-                                ~{step.estimatedMinutes} min
+
+                          {/* Confirmation prompt */}
+                          {actionState?.status === 'confirming' && step.action && (
+                            <View style={styles.runbookConfirmContainer}>
+                              <Text variant="bodySmall" style={styles.runbookConfirmText}>
+                                {actionState.message}
+                              </Text>
+                              <View style={styles.runbookConfirmButtons}>
+                                <Button
+                                  mode="contained"
+                                  compact
+                                  buttonColor={theme.colors.error}
+                                  onPress={() => executeAction(step.id, step.action!)}
+                                >
+                                  Confirm
+                                </Button>
+                                <Button
+                                  mode="outlined"
+                                  compact
+                                  onPress={() => cancelActionConfirmation(step.id)}
+                                >
+                                  Cancel
+                                </Button>
+                              </View>
+                            </View>
+                          )}
+
+                          {/* Error message */}
+                          {actionState?.status === 'error' && (
+                            <View style={styles.runbookErrorContainer}>
+                              <Text variant="bodySmall" style={styles.runbookErrorText}>
+                                {actionState.message}
                               </Text>
                             </View>
                           )}
                         </View>
-                      </Pressable>
-                    ))}
+                      );
+                    })}
                   </View>
 
                   {/* External Link */}
@@ -963,8 +1149,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </Card>
         )}
 
-        {/* Bottom padding to account for sticky action bar */}
-        <View style={[styles.bottomPadding, incident.state !== 'resolved' && styles.bottomPaddingWithActions]} />
+        {/* Bottom padding to account for sticky action bar - always show since all states have actions */}
+        <View style={styles.bottomPaddingWithActions} />
       </ScrollView>
 
       {/* Sticky Action Bar */}
@@ -1572,34 +1758,32 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   runbookMeta: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
+    marginBottom: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
-  runbookMetaItem: {
+  runbookMetaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 4,
   },
   runbookMetaText: {
     color: colors.textMuted,
+    fontSize: 13,
+  },
+  runbookMetaSeparator: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   runbookTagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-  },
-  runbookTag: {
-    backgroundColor: colors.surfaceSecondary,
-    height: 24,
+    gap: 8,
+    marginTop: 8,
   },
   runbookTagText: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textSecondary,
   },
   runbookDescription: {
@@ -1611,10 +1795,23 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   runbookStep: {
-    flexDirection: 'row',
     paddingVertical: 12,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  runbookStepSuccess: {
+    backgroundColor: colors.successLight,
+    borderColor: colors.success,
+  },
+  runbookStepError: {
+    backgroundColor: '#FED7D7',
+    borderColor: '#C53030',
+  },
+  runbookStepHeader: {
+    flexDirection: 'row',
     alignItems: 'flex-start',
   },
   runbookStepCheckbox: {
@@ -1626,16 +1823,42 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 4,
   },
-  runbookStepTitleRow: {
+  runbookStepContentWithAction: {
+    paddingRight: 8,
+  },
+  runbookActionContainer: {
+    flexShrink: 0,
+    marginLeft: 8,
+  },
+  runbookActionButton: {
+    minWidth: 90,
+  },
+  runbookConfirmContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#FAF089',
+    borderRadius: 8,
+  },
+  runbookConfirmText: {
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  runbookConfirmButtons: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     gap: 8,
   },
+  runbookErrorContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#FED7D7',
+    borderRadius: 6,
+  },
+  runbookErrorText: {
+    color: '#C53030',
+  },
   runbookStepTitle: {
-    flex: 1,
     color: colors.textPrimary,
     fontWeight: '600',
-    flexShrink: 1,
   },
   runbookStepDescription: {
     color: colors.textSecondary,
@@ -1655,15 +1878,11 @@ const styles = StyleSheet.create({
   runbookStepTime: {
     color: colors.textMuted,
   },
-  optionalChip: {
-    backgroundColor: colors.surfaceSecondary,
-    height: 22,
-    flexShrink: 0,
-  },
-  optionalChipText: {
+  optionalBadgeInline: {
     color: colors.textMuted,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 12,
+    fontWeight: '400',
+    fontStyle: 'italic',
   },
   externalLinkButton: {
     marginTop: 16,

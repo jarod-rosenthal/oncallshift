@@ -1,6 +1,15 @@
 import { config } from '../config';
 import { getAccessToken } from './authService';
 
+export interface RunbookStepAction {
+  type: 'webhook';
+  label: string;
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  body?: Record<string, unknown>;
+  confirmMessage?: string;
+}
+
 export interface RunbookStep {
   id: string;
   order: number;
@@ -8,6 +17,7 @@ export interface RunbookStep {
   description: string;
   isOptional: boolean;
   estimatedMinutes?: number;
+  action?: RunbookStepAction;
 }
 
 export interface Runbook {
@@ -55,6 +65,14 @@ const transformRunbook = (apiRunbook: any): Runbook => ({
     description: step.description,
     isOptional: step.isOptional || false,
     estimatedMinutes: step.estimatedMinutes,
+    action: step.action ? {
+      type: step.action.type || 'webhook',
+      label: step.action.label,
+      url: step.action.url,
+      method: step.action.method,
+      body: step.action.body,
+      confirmMessage: step.action.confirmMessage,
+    } : undefined,
   })),
   lastUpdated: apiRunbook.updatedAt || apiRunbook.lastUpdated || new Date().toISOString(),
   author: apiRunbook.createdBy ? {

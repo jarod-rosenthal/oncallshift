@@ -42,7 +42,7 @@ export function RelatedIncidents({ currentIncident }: RelatedIncidentsProps) {
           const bScore = getSimilarityScore(b, currentIncident);
           return bScore - aScore;
         })
-        .slice(0, 5);
+        .slice(0, 100);
 
       setRelatedIncidents(related);
     } catch (error) {

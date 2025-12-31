@@ -14,6 +14,8 @@ interface DashboardStats {
   resolved: number;
   critical: number;
   warning: number;
+  mttr: number; // Mean Time To Resolve (minutes)
+  mtta: number; // Mean Time To Acknowledge (minutes)
 }
 
 export function Dashboard() {
@@ -24,6 +26,8 @@ export function Dashboard() {
     resolved: 0,
     critical: 0,
     warning: 0,
+    mttr: 0,
+    mtta: 0,
   });
   const [recentIncidents, setRecentIncidents] = useState<Incident[]>([]);
   const [onCallData, setOnCallData] = useState<OnCallInfo[]>([]);
@@ -61,6 +65,29 @@ export function Dashboard() {
 
       const incidents = incidentsResponse.incidents;
 
+      // Calculate MTTA and MTTR
+      let totalAckTime = 0;
+      let ackCount = 0;
+      let totalResolveTime = 0;
+      let resolveCount = 0;
+
+      incidents.forEach(incident => {
+        const triggeredAt = new Date(incident.triggeredAt).getTime();
+        if (incident.acknowledgedAt) {
+          const ackAt = new Date(incident.acknowledgedAt).getTime();
+          totalAckTime += (ackAt - triggeredAt) / 60000; // Convert to minutes
+          ackCount++;
+        }
+        if (incident.resolvedAt) {
+          const resolvedAt = new Date(incident.resolvedAt).getTime();
+          totalResolveTime += (resolvedAt - triggeredAt) / 60000;
+          resolveCount++;
+        }
+      });
+
+      const mtta = ackCount > 0 ? Math.round(totalAckTime / ackCount) : 0;
+      const mttr = resolveCount > 0 ? Math.round(totalResolveTime / resolveCount) : 0;
+
       // Calculate stats
       const newStats: DashboardStats = {
         total: incidents.length,
@@ -69,6 +96,8 @@ export function Dashboard() {
         resolved: incidents.filter(i => i.state === 'resolved').length,
         critical: incidents.filter(i => i.severity === 'critical').length,
         warning: incidents.filter(i => i.severity === 'warning').length,
+        mttr,
+        mtta,
       };
 
       setStats(newStats);
@@ -106,6 +135,14 @@ export function Dashboard() {
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
+  };
+
+  const formatDuration = (minutes: number) => {
+    if (minutes === 0) return '-';
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   };
 
   return (
@@ -160,65 +197,122 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Who's On Call */}
         <div className="mb-8">
-          <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Link to="/incidents">
-              <Card className="hover:bg-accent transition-colors cursor-pointer">
-                <CardHeader>
-                  <CardTitle>Incidents</CardTitle>
-                  <CardDescription>
-                    View and manage active incidents
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">View Incidents</Button>
-                </CardContent>
-              </Card>
-            </Link>
+          <h3 className="text-xl font-semibold mb-4">Who's On Call</h3>
+          {onCallData.length === 0 ? (
+            <Card>
+              <CardContent className="py-6">
+                <div className="text-center">
+                  <p className="text-muted-foreground mb-2">No services with schedules configured</p>
+                  <Link to="/schedules">
+                    <Button variant="outline" size="sm">Create Schedule</Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {onCallData.map((item) => (
+                <Link
+                  key={`${item.service?.id || item.schedule.id}`}
+                  to={`/schedules/${item.schedule.id}`}
+                  className="block"
+                >
+                  <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-medium truncate">{item.service?.name || item.schedule.name}</p>
+                            {item.isOverride && (
+                              <span className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 px-1.5 py-0.5 rounded flex-shrink-0">
+                                OVERRIDE
+                              </span>
+                            )}
+                          </div>
+                          {item.oncallUser ? (
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                                  {item.oncallUser.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{item.oncallUser.fullName}</p>
+                                <p className="text-xs text-muted-foreground truncate">{item.schedule.name}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center flex-shrink-0">
+                                <span className="text-sm text-orange-600 dark:text-orange-400">?</span>
+                              </div>
+                              <p className="text-sm text-orange-600 dark:text-orange-400">No one on call</p>
+                            </div>
+                          )}
+                        </div>
+                        <svg className="w-5 h-5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
 
-            <Link to="/schedules">
-              <Card className="hover:bg-accent transition-colors cursor-pointer">
-                <CardHeader>
-                  <CardTitle>Schedules</CardTitle>
-                  <CardDescription>
-                    Manage on-call schedules and rotations
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">View Schedules</Button>
-                </CardContent>
-              </Card>
-            </Link>
+        {/* Incident Analytics */}
+        <div className="mb-8">
+          <h3 className="text-xl font-semibold mb-4">Incident Analytics</h3>
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Mean Time to Resolve</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-600">{formatDuration(stats.mttr)}</div>
+                <p className="text-xs text-muted-foreground mt-1">Average resolution time</p>
+              </CardContent>
+            </Card>
 
-            <Link to="/escalation-policies">
-              <Card className="hover:bg-accent transition-colors cursor-pointer">
-                <CardHeader>
-                  <CardTitle>Escalation Policies</CardTitle>
-                  <CardDescription>
-                    Configure multi-level escalation workflows
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">Manage Policies</Button>
-                </CardContent>
-              </Card>
-            </Link>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Mean Time to Acknowledge</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-indigo-600">{formatDuration(stats.mtta)}</div>
+                <p className="text-xs text-muted-foreground mt-1">Average response time</p>
+              </CardContent>
+            </Card>
 
-            <Link to="/availability">
-              <Card className="hover:bg-accent transition-colors cursor-pointer">
-                <CardHeader>
-                  <CardTitle>My Availability</CardTitle>
-                  <CardDescription>
-                    Set your on-call availability hours
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">Manage Availability</Button>
-                </CardContent>
-              </Card>
-            </Link>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Resolution Rate</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-green-600">
+                  {stats.total > 0 ? Math.round((stats.resolved / stats.total) * 100) : 0}%
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{stats.resolved} of {stats.total} incidents</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Open Incidents</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-orange-600">
+                  {stats.triggered + stats.acknowledged}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {stats.triggered} triggered, {stats.acknowledged} ack'd
+                </p>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
@@ -260,64 +354,6 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Who's On Call */}
-        <Card className="mb-8">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <div>
-                <CardTitle>Who's On Call</CardTitle>
-                <CardDescription>Current on-call assignments by service</CardDescription>
-              </div>
-              <Link to="/schedules">
-                <Button variant="outline" size="sm">Manage Schedules</Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {onCallData.length === 0 ? (
-              <div className="text-center py-6">
-                <p className="text-muted-foreground mb-2">No services with schedules configured</p>
-                <p className="text-sm text-muted-foreground">
-                  Create a schedule and assign it to a service to see on-call status here.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {onCallData.map((item) => (
-                  <div
-                    key={`${item.service?.id || item.schedule.id}`}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{item.service?.name || item.schedule.name}</p>
-                        {item.isOverride && (
-                          <span className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 px-2 py-0.5 rounded">
-                            OVERRIDE
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{item.schedule.name}</p>
-                      {item.oncallUser ? (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {item.oncallUser.fullName} • {item.oncallUser.email}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">
-                          No one currently on call
-                        </p>
-                      )}
-                    </div>
-                    <Link to={`/schedules/${item.schedule.id}`}>
-                      <Button variant="outline" size="sm">Manage</Button>
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Recent Incidents */}
         {recentIncidents.length > 0 && (
