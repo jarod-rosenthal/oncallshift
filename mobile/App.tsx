@@ -25,9 +25,17 @@ import TeamScreen from './src/screens/TeamScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import InboxScreen from './src/screens/InboxScreen';
 import MoreScreen from './src/screens/MoreScreen';
+import AvailabilityScreen from './src/screens/AvailabilityScreen';
+import OnCallCalendarScreen from './src/screens/OnCallCalendarScreen';
+import EscalationPoliciesScreen from './src/screens/EscalationPoliciesScreen';
+import ManageSchedulesScreen from './src/screens/ManageSchedulesScreen';
+import ManageServicesScreen from './src/screens/ManageServicesScreen';
+import ManageUsersScreen from './src/screens/ManageUsersScreen';
+import AIChatScreen from './src/screens/AIChatScreen';
+import SetupWizardScreen from './src/screens/SetupWizardScreen';
 
 // Components
-import { ToastProvider, OfflineBanner } from './src/components';
+import { ToastProvider, OfflineBanner, ConfettiProvider } from './src/components';
 
 // Services
 import { setupNotificationListeners, getLastNotificationResponse, registerForPushNotifications, setBadgeCount } from './src/services/notificationService';
@@ -71,7 +79,6 @@ const linking = {
       Team: 'team',
       Analytics: 'analytics',
       Settings: 'settings',
-      Profile: 'profile',
     },
   },
 };
@@ -177,6 +184,7 @@ function AppContent() {
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [checkingBiometric, setCheckingBiometric] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [incidentCount, setIncidentCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -248,6 +256,13 @@ function AppContent() {
         crashReporting.setUserContext(profile.id, profile.email, profile.fullName);
         crashReporting.addBreadcrumb('User logged in', 'auth', { userId: profile.id });
       }).catch(err => console.error('Failed to get user profile for crash reporting:', err));
+
+      // Check if setup wizard should be shown for new users
+      apiService.getSetupStatus().then((status) => {
+        if (!status.setupCompleted) {
+          setShowSetupWizard(true);
+        }
+      }).catch(err => console.log('Failed to get setup status:', err));
 
       // Register background refresh
       backgroundRefreshService.registerBackgroundFetch().then((registered) => {
@@ -384,6 +399,10 @@ function AppContent() {
     setShowOnboarding(false);
   };
 
+  const handleSetupWizardComplete = () => {
+    setShowSetupWizard(false);
+  };
+
   // Show loading while checking auth
   if (isLoggedIn === null) {
     return (
@@ -462,12 +481,24 @@ function AppContent() {
     );
   }
 
+  // Show setup wizard for new users
+  if (isLoggedIn && biometricVerified && showSetupWizard) {
+    return (
+      <PaperProvider theme={theme}>
+        <ToastProvider>
+          <SetupWizardScreen navigation={null} onComplete={handleSetupWizardComplete} />
+        </ToastProvider>
+      </PaperProvider>
+    );
+  }
+
   return (
     <PaperProvider theme={theme}>
-      <ToastProvider>
-        <View style={{ flex: 1 }}>
-          <OfflineBanner />
-          <NavigationContainer ref={navigationRef} linking={linking}>
+      <ConfettiProvider>
+        <ToastProvider>
+          <View style={{ flex: 1 }}>
+            <OfflineBanner />
+            <NavigationContainer ref={navigationRef} linking={linking}>
             <StatusBar style={isDark ? 'light' : 'dark'} />
             <Stack.Navigator
               screenOptions={{
@@ -531,16 +562,56 @@ function AppContent() {
                   />
                   <Stack.Screen
                     name="Settings"
+                    component={SettingsScreen}
                     options={{ title: 'Settings' }}
-                  >
-                    {(props) => <SettingsScreen {...props} onLogout={handleLogout} />}
-                  </Stack.Screen>
+                  />
+                  <Stack.Screen
+                    name="Availability"
+                    component={AvailabilityScreen}
+                    options={{ title: 'Availability' }}
+                  />
+                  <Stack.Screen
+                    name="OnCallCalendar"
+                    component={OnCallCalendarScreen}
+                    options={{ title: 'My On-Call Calendar' }}
+                  />
+                  <Stack.Screen
+                    name="EscalationPolicies"
+                    component={EscalationPoliciesScreen}
+                    options={{ title: 'Escalation Policies' }}
+                  />
+                  <Stack.Screen
+                    name="ManageSchedules"
+                    component={ManageSchedulesScreen}
+                    options={{ title: 'Manage Schedules' }}
+                  />
+                  <Stack.Screen
+                    name="ManageServices"
+                    component={ManageServicesScreen}
+                    options={{ title: 'Manage Services' }}
+                  />
+                  <Stack.Screen
+                    name="ManageUsers"
+                    component={ManageUsersScreen}
+                    options={{ title: 'Manage Users' }}
+                  />
+                  <Stack.Screen
+                    name="AIChat"
+                    component={AIChatScreen}
+                    options={{ title: 'AI Assistant', headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="SetupWizard"
+                    component={SetupWizardScreen}
+                    options={{ title: 'Setup Wizard', headerShown: false }}
+                  />
                 </>
               )}
             </Stack.Navigator>
           </NavigationContainer>
-        </View>
-      </ToastProvider>
+          </View>
+        </ToastProvider>
+      </ConfettiProvider>
     </PaperProvider>
   );
 }

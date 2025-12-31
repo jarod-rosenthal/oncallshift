@@ -12,7 +12,8 @@ export type IncidentEventType =
   | 'state_change'    // State changed
   | 'snooze'          // Incident snoozed
   | 'unsnooze'        // Snooze cancelled or expired
-  | 'reassign';       // Incident reassigned
+  | 'reassign'        // Incident reassigned
+  | 'ai_diagnosis';   // AI-powered diagnosis performed
 
 @Entity('incident_events')
 export class IncidentEvent {

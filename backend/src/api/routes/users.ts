@@ -5,6 +5,13 @@ import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import {
+  encryptCredential,
+  decryptCredential,
+  detectCredentialType,
+  generateCredentialHint,
+  validateCredential,
+} from '../../shared/services/credential-encryption-service';
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -35,6 +42,15 @@ router.get('/me', async (req: Request, res: Response) => {
           id: user.organization.id,
           name: user.organization.name,
           plan: user.organization.plan,
+        },
+        // AI Diagnosis credential status
+        aiCredentials: user.anthropicCredentialEncrypted ? {
+          configured: true,
+          type: user.anthropicCredentialType,
+          hint: user.anthropicCredentialHint,
+          updatedAt: user.anthropicCredentialUpdatedAt,
+        } : {
+          configured: false,
         },
         createdAt: user.createdAt,
       },
@@ -530,6 +546,180 @@ router.put(
     }
   }
 );
+
+// ============================================
+// AI Diagnosis Credential Management Endpoints
+// ============================================
+
+/**
+ * GET /api/v1/users/me/anthropic-credentials
+ * Get current user's Anthropic credential status
+ */
+router.get('/me/anthropic-credentials', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    if (!user.anthropicCredentialEncrypted) {
+      return res.json({
+        configured: false,
+        message: 'No Anthropic credentials configured. Set up in Settings to enable AI Diagnosis.',
+      });
+    }
+
+    return res.json({
+      configured: true,
+      type: user.anthropicCredentialType,
+      hint: user.anthropicCredentialHint,
+      hasRefreshToken: !!user.anthropicRefreshTokenEncrypted,
+      updatedAt: user.anthropicCredentialUpdatedAt,
+    });
+  } catch (error) {
+    logger.error('Error fetching credential status:', error);
+    return res.status(500).json({ error: 'Failed to fetch credential status' });
+  }
+});
+
+/**
+ * POST /api/v1/users/me/anthropic-credentials
+ * Add or update Anthropic credentials (API key or OAuth token)
+ */
+router.post(
+  '/me/anthropic-credentials',
+  [
+    body('credential')
+      .isString()
+      .notEmpty()
+      .withMessage('Credential is required')
+      .matches(/^sk-ant-/)
+      .withMessage('Invalid credential format. Must start with sk-ant-'),
+    body('refreshToken')
+      .optional()
+      .isString()
+      .matches(/^sk-ant-ort/)
+      .withMessage('Invalid refresh token format'),
+    body('skipValidation')
+      .optional()
+      .isBoolean()
+      .withMessage('skipValidation must be boolean'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { credential, refreshToken, skipValidation } = req.body;
+
+      // Detect credential type
+      const credentialType = detectCredentialType(credential);
+      if (!credentialType) {
+        return res.status(400).json({
+          error: 'Unknown credential type. Use an API key (sk-ant-api...) or OAuth token (sk-ant-oat...).',
+        });
+      }
+
+      // Validate credential unless skipped (useful for testing)
+      if (!skipValidation) {
+        logger.info('Validating Anthropic credential', { userId: user.id, type: credentialType });
+        const isValid = await validateCredential(credential);
+        if (!isValid) {
+          return res.status(400).json({
+            error: 'Invalid credential. Please check your API key or OAuth token and try again.',
+          });
+        }
+      }
+
+      // Encrypt and store
+      const encryptedCredential = await encryptCredential(credential);
+      const hint = generateCredentialHint(credential);
+
+      // Encrypt refresh token if provided
+      let encryptedRefreshToken: string | null = null;
+      if (refreshToken) {
+        encryptedRefreshToken = await encryptCredential(refreshToken);
+      }
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+
+      await userRepo.update(user.id, {
+        anthropicCredentialEncrypted: encryptedCredential,
+        anthropicCredentialType: credentialType,
+        anthropicCredentialHint: hint,
+        anthropicRefreshTokenEncrypted: encryptedRefreshToken,
+        anthropicCredentialUpdatedAt: new Date(),
+      });
+
+      logger.info('Anthropic credential saved', { userId: user.id, type: credentialType });
+
+      return res.json({
+        message: 'Anthropic credentials saved successfully',
+        credential: {
+          type: credentialType,
+          hint,
+          hasRefreshToken: !!refreshToken,
+          updatedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      logger.error('Error saving credential:', error);
+      return res.status(500).json({ error: 'Failed to save credentials' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/users/me/anthropic-credentials
+ * Remove Anthropic credentials
+ */
+router.delete('/me/anthropic-credentials', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    const dataSource = await getDataSource();
+    const userRepo = dataSource.getRepository(User);
+
+    await userRepo.update(user.id, {
+      anthropicCredentialEncrypted: null,
+      anthropicCredentialType: null,
+      anthropicCredentialHint: null,
+      anthropicRefreshTokenEncrypted: null,
+      anthropicCredentialUpdatedAt: null,
+    });
+
+    logger.info('Anthropic credentials removed', { userId: user.id });
+
+    return res.json({
+      message: 'Anthropic credentials removed successfully',
+    });
+  } catch (error) {
+    logger.error('Error removing credentials:', error);
+    return res.status(500).json({ error: 'Failed to remove credentials' });
+  }
+});
+
+/**
+ * Helper function to get a user's decrypted Anthropic credential
+ * Used internally by other services (AI diagnosis)
+ */
+export async function getUserAnthropicCredential(userId: string): Promise<string | null> {
+  try {
+    const dataSource = await getDataSource();
+    const userRepo = dataSource.getRepository(User);
+
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user?.anthropicCredentialEncrypted) {
+      return null;
+    }
+
+    return await decryptCredential(user.anthropicCredentialEncrypted);
+  } catch (error) {
+    logger.error('Error decrypting user credential:', error);
+    return null;
+  }
+}
 
 /**
  * Helper function to get default weekly hours (9-5, Mon-Fri)

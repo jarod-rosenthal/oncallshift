@@ -55,18 +55,34 @@ export const EscalationBadge: React.FC<EscalationBadgeProps> = ({
     return null;
   }
 
-  const isUrgent = timeRemaining < 300; // Less than 5 minutes
+  // Use teal accent for normal, amber only for <3 minutes (critical urgency)
+  const isCritical = timeRemaining < 180; // Less than 3 minutes
+  const isUrgent = timeRemaining < 300;   // Less than 5 minutes
+
+  // Color scheme: teal for info -> amber for urgent -> muted red for critical
+  const getColors = () => {
+    if (isCritical) {
+      return { bg: colors.errorLight, fg: colors.error };
+    }
+    if (isUrgent) {
+      return { bg: colors.warningLight, fg: colors.warning };
+    }
+    // Default: teal accent (calm, informational)
+    return { bg: '#E6FFFA', fg: colors.accent };
+  };
+
+  const { bg, fg } = getColors();
 
   return (
-    <View style={[styles.container, isUrgent && styles.urgent]}>
+    <View style={[styles.container, { backgroundColor: bg }]}>
       <MaterialCommunityIcons
-        name="arrow-up-circle"
+        name={isCritical ? 'alert' : 'arrow-up-circle'}
         size={12}
-        color={isUrgent ? colors.error : colors.warning}
+        color={fg}
       />
       <Text
         variant="labelSmall"
-        style={[styles.text, isUrgent && styles.urgentText]}
+        style={[styles.text, { color: fg }]}
       >
         Escalates in {formatTimeRemaining(timeRemaining)}
       </Text>
@@ -79,21 +95,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.warningLight,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 12,
   },
-  urgent: {
-    backgroundColor: colors.errorLight,
-  },
   text: {
-    color: colors.warning,
     fontWeight: '600',
     fontSize: 11,
-  },
-  urgentText: {
-    color: colors.error,
   },
 });
 

@@ -219,27 +219,17 @@ aws cognito-idp admin-set-user-password \
 
 ## Next Steps
 
-**Immediate (Current Priority):**
-1. Build mobile app (React Native/Expo)
-   - Implement authentication screens
-   - Create incident list and detail views
-   - Add push notification registration (FCM + APNs)
-   - Implement acknowledge/resolve actions
-   - Test end-to-end notification delivery
+See **[ROADMAP.md](ROADMAP.md)** for the complete feature roadmap and remaining work.
 
-**Short Term:**
-1. Complete push notification implementation
-2. Add SMS/Voice fallback notifications
-3. Implement email-to-incident parsing
-4. Create admin user management UI
-5. Add multi-tenant organization switching
+**Immediate Priority:**
+1. Complete mobile app testing and App Store submission
+2. Production hardening (rate limiting, webhook signatures)
 
-**Long Term:**
-1. Automatic schedule rotations
-2. Heartbeat monitoring
-3. Maintenance windows
-4. Analytics and reporting
-5. ChatOps integrations
+**Coming Soon:**
+- Voice call fallback
+- Notification delivery tracking
+- Slack integration
+- Analytics dashboard
 
 ## Cost Breakdown
 
@@ -258,22 +248,20 @@ aws cognito-idp admin-set-user-password \
 
 **Comparison:** PagerDuty costs $29-49/user/month → **87-90% cost savings**
 
-## Post-MVP Roadmap
+## Roadmap
 
-- **Phase 2 (Week 2-3)**: SMS/Voice fallback, email-to-incident, heartbeats
-- **Phase 3 (Week 4-5)**: Schedule rotations, multi-level escalation
-- **Phase 4 (Week 6)**: Teams, web admin interface, maintenance windows
-- **Phase 5 (Week 7-8)**: Stripe billing, usage metering, rate limiting
-- **Phase 6 (Week 9)**: Enhanced monitoring, audit logs, status page
-- **Phase 7 (Week 10+)**: ChatOps, analytics, AI features
-
-See [docs/MVP-ROADMAP.md](docs/MVP-ROADMAP.md) for complete roadmap with features and costs.
+See **[ROADMAP.md](ROADMAP.md)** for the complete prioritized roadmap including:
+- Mobile app completion
+- Production hardening
+- Enhanced features (voice, notifications, schedules)
+- DevOps features (Slack, CLI, heartbeats)
+- Enterprise features (SSO, billing, analytics)
 
 ## Documentation
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**: Complete architecture, data flows, and technical details
-- **[MVP-ROADMAP.md](docs/MVP-ROADMAP.md)**: MVP scope, exclusions, and 7-phase roadmap
-- **Terraform Modules**: Each module has inline documentation
+- **[ROADMAP.md](ROADMAP.md)**: Feature roadmap and remaining work
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**: Technical architecture and data flows
+- **[mobile/README.md](mobile/README.md)**: Mobile app development guide
 
 ## Troubleshooting
 

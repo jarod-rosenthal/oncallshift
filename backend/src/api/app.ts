@@ -1,4 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
+import path from 'path';
 import helmet from 'helmet';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
@@ -16,6 +17,11 @@ import deviceRoutes from './routes/devices';
 import userRoutes from './routes/users';
 import notificationRoutes from './routes/notifications';
 import demoRoutes from './routes/demo';
+import aiDiagnosisRoutes from './routes/ai-diagnosis';
+import runbookRoutes from './routes/runbooks';
+import actionsRoutes from './routes/actions';
+import setupRoutes from './routes/setup';
+import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
   const app = express();
@@ -28,7 +34,7 @@ export function createApp(): Express {
         "script-src": ["'self'", "'unsafe-inline'"],
         "style-src": ["'self'", "'unsafe-inline'"],
         "img-src": ["'self'", "data:", "blob:"],
-        "connect-src": ["'self'", "https://api.oncallshift.com", "http://localhost:3000"],
+        "connect-src": ["'self'", "https://api.oncallshift.com", "https://api.anthropic.com", "http://localhost:3000"],
         "upgrade-insecure-requests": null, // Disable for demo (no SSL certificate)
       },
     },
@@ -40,8 +46,8 @@ export function createApp(): Express {
     credentials: true,
   }));
 
-  // Body parsing
-  app.use(express.json({ limit: '10mb' }));
+  // Body parsing - capture raw body for webhook signature verification
+  app.use(express.json({ limit: '10mb', verify: captureRawBody }));
   app.use(express.urlencoded({ extended: true }));
 
   // Request logging
@@ -231,19 +237,23 @@ export function createApp(): Express {
   app.use('/api/v1/users', userRoutes);
   app.use('/api/v1/notifications', notificationRoutes);
   app.use('/api/v1/demo', demoRoutes);
+  app.use('/api/v1/incidents', aiDiagnosisRoutes); // AI diagnosis routes (adds /diagnose endpoint to incidents)
+  app.use('/api/v1/runbooks', runbookRoutes);
+  app.use('/api/v1/actions', actionsRoutes);
+  app.use('/api/v1/setup', setupRoutes);
 
-  // Non-API routes - frontend is served from CloudFront/S3
-  // This handles direct requests to the backend that should go to CloudFront
+  // Serve static frontend files
+  const frontendPath = path.join(__dirname, '../../frontend/dist');
+  app.use(express.static(frontendPath));
+
+  // SPA fallback - serve index.html for non-API routes
   app.get('*', (req, res, next) => {
     // Skip API routes and health checks
     if (req.path.startsWith('/api/') || req.path === '/health' || req.path === '/demo' || req.path === '/api-docs') {
       return next();
     }
-    // For non-API routes, return JSON indicating this is the API server
-    res.status(404).json({
-      error: 'Not found',
-      message: 'This is the API server. Frontend is served from CloudFront.',
-    });
+    // Serve the SPA
+    res.sendFile(path.join(frontendPath, 'index.html'));
   });
 
   // 404 handler for API routes

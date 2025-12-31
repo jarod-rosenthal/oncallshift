@@ -88,13 +88,17 @@ mobile/
 - ✅ Deep linking from notifications
 - ✅ Device token registration
 
-### Coming in Phase 2+
-- Schedule rotations view
-- Personal on-call calendar
-- Take on-call button
-- Quiet hours configuration
-- Biometric authentication
-- Offline caching
+### Phase 2 (Completed)
+- ✅ Schedule rotations view (with members list)
+- ✅ Personal on-call calendar
+- ✅ Take on-call button (override with duration)
+- ✅ Quiet hours configuration
+- ✅ Biometric authentication
+- ✅ Offline caching
+- ✅ User availability settings
+- ✅ Service filtering for incidents
+- ✅ Incident reassignment
+- ✅ Server-side snooze
 
 ## Push Notifications
 

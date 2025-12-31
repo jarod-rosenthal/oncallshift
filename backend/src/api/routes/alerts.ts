@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticateApiKey } from '../../shared/auth/middleware';
+import { webhookRateLimiter, verifyWebhookSignature } from '../../shared/middleware';
 import { sendAlertMessage } from '../../shared/queues/sqs-client';
 import { logger } from '../../shared/utils/logger';
 
@@ -9,10 +10,17 @@ const router = Router();
 /**
  * POST /api/v1/alerts/webhook
  * Receive webhook alert and queue for processing
+ *
+ * Security:
+ * - API key authentication (X-API-Key header)
+ * - Rate limiting (100 requests/minute per API key)
+ * - Optional HMAC-SHA256 signature verification (X-Signature header)
  */
 router.post(
   '/webhook',
   authenticateApiKey,
+  webhookRateLimiter,
+  verifyWebhookSignature,
   [
     body('summary').isString().notEmpty().withMessage('summary is required'),
     body('severity').isIn(['info', 'warning', 'error', 'critical']).withMessage('Invalid severity'),

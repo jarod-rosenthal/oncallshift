@@ -112,6 +112,9 @@ export function AdminUsers() {
             <Link to="/admin/services">
               <Button variant="outline">Services</Button>
             </Link>
+            <Link to="/admin/runbooks">
+              <Button variant="outline">Runbooks</Button>
+            </Link>
             <Button onClick={() => setShowInviteForm(!showInviteForm)}>
               {showInviteForm ? 'Cancel' : 'Invite User'}
             </Button>

@@ -116,11 +116,42 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
 };
 
 /**
- * Get access token for API requests
+ * Get access token for API requests (with automatic refresh)
  */
 export const getAccessToken = async (): Promise<string | null> => {
-  const user = await getCurrentUser();
-  return user?.accessToken || null;
+  try {
+    const cognitoUser = userPool.getCurrentUser();
+
+    if (!cognitoUser) {
+      // No active Cognito session, try stored tokens
+      const storedToken = await SecureStore.getItemAsync('auth_accessToken');
+      return storedToken || null;
+    }
+
+    // Get session with automatic token refresh
+    return new Promise((resolve) => {
+      cognitoUser.getSession(async (err: Error | null, session: CognitoUserSession | null) => {
+        if (err || !session || !session.isValid()) {
+          console.log('Session expired, signing out...');
+          await signOut();
+          notifyAuthStateChange(false);
+          resolve(null);
+          return;
+        }
+
+        const accessToken = session.getAccessToken().getJwtToken();
+
+        // Update stored tokens with refreshed values
+        await SecureStore.setItemAsync('auth_accessToken', accessToken);
+        await SecureStore.setItemAsync('auth_idToken', session.getIdToken().getJwtToken());
+
+        resolve(accessToken);
+      });
+    });
+  } catch (error) {
+    console.error('Error getting access token:', error);
+    return null;
+  }
 };
 
 /**

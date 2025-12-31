@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { Navigation } from '../components/Navigation';
-import { usersAPI } from '../lib/api-client';
+import { usersAPI, aiCredentialsAPI, type AnthropicCredentialStatus } from '../lib/api-client';
 import type { User, NotificationPreferences } from '../types/api';
 
 const TIMEZONES = [
@@ -50,8 +50,16 @@ export function Profile() {
   const [timezone, setTimezone] = useState('America/New_York');
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFS);
 
+  // AI Credentials state
+  const [aiCredentialStatus, setAiCredentialStatus] = useState<AnthropicCredentialStatus | null>(null);
+  const [showCredentialInput, setShowCredentialInput] = useState(false);
+  const [credentialInput, setCredentialInput] = useState('');
+  const [savingCredential, setSavingCredential] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+
   useEffect(() => {
     loadProfile();
+    loadCredentialStatus();
   }, []);
 
   const loadProfile = async () => {
@@ -79,6 +87,63 @@ export function Profile() {
       setError(err.response?.data?.error || 'Failed to load profile');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadCredentialStatus = async () => {
+    try {
+      const status = await aiCredentialsAPI.getStatus();
+      setAiCredentialStatus(status);
+    } catch (err) {
+      console.error('Failed to load credential status:', err);
+    }
+  };
+
+  const handleSaveCredential = async () => {
+    if (!credentialInput.trim()) {
+      setError('Please enter a credential');
+      return;
+    }
+
+    if (!credentialInput.startsWith('sk-ant-')) {
+      setError('Invalid credential format. Must start with sk-ant-');
+      return;
+    }
+
+    try {
+      setSavingCredential(true);
+      setError(null);
+      const result = await aiCredentialsAPI.save(credentialInput.trim());
+      setAiCredentialStatus({
+        configured: true,
+        type: result.credential.type,
+        hint: result.credential.hint,
+        hasRefreshToken: result.credential.hasRefreshToken,
+        updatedAt: result.credential.updatedAt,
+      });
+      setCredentialInput('');
+      setShowCredentialInput(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to save credentials');
+    } finally {
+      setSavingCredential(false);
+    }
+  };
+
+  const handleRemoveCredential = async () => {
+    if (!confirm('Are you sure you want to remove your Anthropic credentials?')) {
+      return;
+    }
+
+    try {
+      await aiCredentialsAPI.remove();
+      setAiCredentialStatus({ configured: false });
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to remove credentials');
     }
   };
 
@@ -336,6 +401,136 @@ export function Profile() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* AI Diagnosis Credentials Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                  AI Diagnosis
+                </CardTitle>
+                <CardDescription>
+                  Configure your Anthropic API credentials to enable AI-powered incident diagnosis
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {aiCredentialStatus?.configured ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-md">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+                      <div>
+                        <p className="font-medium text-green-800 dark:text-green-200">Credentials Configured</p>
+                        <p className="text-sm text-green-700 dark:text-green-300">
+                          {aiCredentialStatus.type === 'oauth' ? 'OAuth Token' : 'API Key'}: {aiCredentialStatus.hint}
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleRemoveCredential}>
+                      Remove Credentials
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-600"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                      <div>
+                        <p className="font-medium text-yellow-800 dark:text-yellow-200">Not Configured</p>
+                        <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                          Add your Anthropic credentials to enable AI diagnosis
+                        </p>
+                      </div>
+                    </div>
+
+                    {showCredentialInput ? (
+                      <div className="space-y-3">
+                        <div>
+                          <Label htmlFor="credential">API Key or OAuth Token</Label>
+                          <Input
+                            id="credential"
+                            type="password"
+                            value={credentialInput}
+                            onChange={(e) => setCredentialInput(e.target.value)}
+                            placeholder="sk-ant-..."
+                            className="font-mono"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button onClick={handleSaveCredential} disabled={savingCredential}>
+                            {savingCredential ? 'Saving...' : 'Save Credential'}
+                          </Button>
+                          <Button variant="outline" onClick={() => {
+                            setShowCredentialInput(false);
+                            setCredentialInput('');
+                          }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button onClick={() => setShowCredentialInput(true)}>
+                        Add Credentials
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                <div className="border-t pt-4 mt-4">
+                  <button
+                    onClick={() => setShowHelpModal(true)}
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+                    How do I get credentials?
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Help Modal */}
+            {showHelpModal && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-background rounded-lg shadow-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                  <div className="p-6">
+                    <h3 className="text-xl font-bold mb-4">How to Enable AI Diagnosis</h3>
+
+                    <div className="space-y-6">
+                      <div>
+                        <h4 className="font-semibold text-lg mb-2">Option 1: Anthropic API Key</h4>
+                        <p className="text-muted-foreground mb-3">Pay-per-use API access. Best for organizations.</p>
+                        <ol className="list-decimal list-inside space-y-1 text-sm">
+                          <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">console.anthropic.com</a></li>
+                          <li>Sign up or log in</li>
+                          <li>Navigate to API Keys</li>
+                          <li>Create a new key and copy it</li>
+                          <li>Paste it in the field above</li>
+                        </ol>
+                      </div>
+
+                      <hr />
+
+                      <div>
+                        <h4 className="font-semibold text-lg mb-2">Option 2: Claude Pro/Max Subscription</h4>
+                        <p className="text-muted-foreground mb-3">Use your existing Claude subscription. Requires Claude Code CLI.</p>
+                        <ol className="list-decimal list-inside space-y-1 text-sm">
+                          <li>Install Claude Code: <code className="bg-muted px-1 rounded">npm install -g @anthropic-ai/claude-code</code></li>
+                          <li>Run <code className="bg-muted px-1 rounded">claude</code> and type <code className="bg-muted px-1 rounded">/login</code></li>
+                          <li>Select "Claude app" and complete browser login</li>
+                          <li>Get your token: <code className="bg-muted px-1 rounded">claude config get oauthAccessToken</code></li>
+                          <li>Copy and paste the token above</li>
+                        </ol>
+                        <p className="text-xs text-muted-foreground mt-2 italic">
+                          Note: OAuth tokens expire every 8 hours but will be refreshed automatically.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 flex justify-end">
+                      <Button onClick={() => setShowHelpModal(false)}>Got it</Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Organization Card (Read-Only) */}
             <Card>

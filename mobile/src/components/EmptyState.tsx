@@ -78,11 +78,12 @@ export default function EmptyState({ icon, title, subtitle, action }: EmptyState
 
   return (
     <View style={styles.container}>
-      <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}15` }]}>
+      {/* Use accent (teal) with 10% opacity for more generous whitespace feel */}
+      <View style={[styles.iconCircle, { backgroundColor: `${colors.accent}18` }]}>
         <MaterialCommunityIcons
           name={icon as any}
           size={48}
-          color={colors.primary}
+          color={colors.accent}
         />
       </View>
       <Text variant="titleLarge" style={[styles.title, { color: colors.textPrimary }]}>
