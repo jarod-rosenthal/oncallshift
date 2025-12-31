@@ -2848,4 +2848,636 @@ function mapOpsgeniePriority(ogPriority: string): 'info' | 'warning' | 'error' |
   return mapping[ogPriority?.toUpperCase()] || null;
 }
 
+// ============================================================================
+// Direct Fetch API - Fetch data directly from PagerDuty/Opsgenie APIs
+// ============================================================================
+
+import { PagerDutyExportService, PagerDutyExportOptions } from '../../shared/services/PagerDutyExportService';
+import { OpsgenieExportService, OpsgenieExportOptions } from '../../shared/services/OpsgenieExportService';
+
+/**
+ * Test PagerDuty API connection
+ * POST /api/v1/import/fetch/pagerduty/test
+ */
+router.post('/fetch/pagerduty/test', async (req: Request, res: Response) => {
+  try {
+    const { apiKey } = req.body;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required',
+      });
+    }
+
+    const service = new PagerDutyExportService({ apiKey });
+    const result = await service.testConnection();
+
+    return res.json(result);
+  } catch (error: any) {
+    logger.error('PagerDuty connection test failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Test Opsgenie API connection
+ * POST /api/v1/import/fetch/opsgenie/test
+ */
+router.post('/fetch/opsgenie/test', async (req: Request, res: Response) => {
+  try {
+    const { apiKey, region } = req.body;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required',
+      });
+    }
+
+    const service = new OpsgenieExportService({ apiKey, region });
+    const result = await service.testConnection();
+
+    return res.json(result);
+  } catch (error: any) {
+    logger.error('Opsgenie connection test failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Fetch data from PagerDuty API
+ * POST /api/v1/import/fetch/pagerduty
+ */
+router.post('/fetch/pagerduty', async (req: Request, res: Response) => {
+  try {
+    const {
+      apiKey,
+      subdomain,
+      includeUsers = true,
+      includeTeams = true,
+      includeSchedules = true,
+      includeEscalationPolicies = true,
+      includeServices = true,
+      includeMaintenanceWindows = true,
+      includeRoutingRules = false,
+      includeServiceDependencies = false,
+      includeIncidents = false,
+      incidentDateRange,
+    } = req.body;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required',
+      });
+    }
+
+    const service = new PagerDutyExportService({ apiKey, subdomain });
+
+    const options: PagerDutyExportOptions = {
+      apiKey,
+      subdomain,
+      includeUsers,
+      includeTeams,
+      includeSchedules,
+      includeEscalationPolicies,
+      includeServices,
+      includeMaintenanceWindows,
+      includeRoutingRules,
+      includeServiceDependencies,
+      includeIncidents,
+      incidentDateRange,
+    };
+
+    const result = await service.exportAll(options);
+
+    logger.info('PagerDuty data fetch completed', {
+      users: result.users?.length || 0,
+      teams: result.teams?.length || 0,
+      schedules: result.schedules?.length || 0,
+      escalation_policies: result.escalation_policies?.length || 0,
+      services: result.services?.length || 0,
+      maintenance_windows: result.maintenance_windows?.length || 0,
+      routing_rules: result.routing_rules?.length || 0,
+      service_dependencies: result.service_dependencies?.length || 0,
+      incidents: result.incidents?.length || 0,
+      errors: result.errors.length,
+    });
+
+    return res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    logger.error('PagerDuty data fetch failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Fetch data from Opsgenie API
+ * POST /api/v1/import/fetch/opsgenie
+ */
+router.post('/fetch/opsgenie', async (req: Request, res: Response) => {
+  try {
+    const {
+      apiKey,
+      region = 'us',
+      includeUsers = true,
+      includeTeams = true,
+      includeSchedules = true,
+      includeEscalations = true,
+      includeServices = true,
+      includeHeartbeats = true,
+      includeMaintenanceWindows = true,
+      includeAlertPolicies = false,
+      includeAlerts = false,
+      alertDateRange,
+    } = req.body;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required',
+      });
+    }
+
+    const service = new OpsgenieExportService({ apiKey, region });
+
+    const options: OpsgenieExportOptions = {
+      apiKey,
+      region,
+      includeUsers,
+      includeTeams,
+      includeSchedules,
+      includeEscalations,
+      includeServices,
+      includeHeartbeats,
+      includeMaintenanceWindows,
+      includeAlertPolicies,
+      includeAlerts,
+      alertDateRange,
+    };
+
+    const result = await service.exportAll(options);
+
+    logger.info('Opsgenie data fetch completed', {
+      users: result.users?.length || 0,
+      teams: result.teams?.length || 0,
+      schedules: result.schedules?.length || 0,
+      escalations: result.escalations?.length || 0,
+      services: result.services?.length || 0,
+      heartbeats: result.heartbeats?.length || 0,
+      maintenance_windows: result.maintenance_windows?.length || 0,
+      alert_policies: result.alert_policies?.length || 0,
+      alerts: result.alerts?.length || 0,
+      errors: result.errors.length,
+    });
+
+    return res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    logger.error('Opsgenie data fetch failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// Migration Validation & Diff Report
+// ============================================================================
+
+interface ValidationDiff {
+  field: string;
+  source: any;
+  current: any;
+  severity: 'info' | 'warning' | 'error';
+}
+
+interface EntityValidation {
+  sourceId: string;
+  sourceName: string;
+  mappedId?: string;
+  status: 'matched' | 'missing' | 'different' | 'extra';
+  diffs: ValidationDiff[];
+}
+
+interface ValidationReport {
+  source: 'pagerduty' | 'opsgenie';
+  validatedAt: string;
+  summary: {
+    users: { matched: number; missing: number; different: number; extra: number };
+    teams: { matched: number; missing: number; different: number; extra: number };
+    schedules: { matched: number; missing: number; different: number; extra: number };
+    escalationPolicies: { matched: number; missing: number; different: number; extra: number };
+    services: { matched: number; missing: number; different: number; extra: number };
+  };
+  details: {
+    users: EntityValidation[];
+    teams: EntityValidation[];
+    schedules: EntityValidation[];
+    escalationPolicies: EntityValidation[];
+    services: EntityValidation[];
+  };
+  suggestions: string[];
+  configurationGaps: string[];
+}
+
+/**
+ * Validate migration - compare source data with current database state
+ * POST /api/v1/import/validate
+ */
+router.post('/validate', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const orgId = user.orgId;
+    const { source, data } = req.body;
+
+    if (!source || !['pagerduty', 'opsgenie'].includes(source)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Source must be "pagerduty" or "opsgenie"',
+      });
+    }
+
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Source data is required',
+      });
+    }
+
+    const dataSource = await getDataSource();
+
+    // Fetch current database state
+    const [
+      existingUsers,
+      existingTeams,
+      existingSchedules,
+      existingPolicies,
+      existingServices,
+    ] = await Promise.all([
+      dataSource.getRepository(User).find({ where: { orgId } }),
+      dataSource.getRepository(Team).find({ where: { orgId } }),
+      dataSource.getRepository(Schedule).find({
+        where: { orgId },
+        relations: ['layers', 'layers.members'],
+      }),
+      dataSource.getRepository(EscalationPolicy).find({
+        where: { orgId },
+        relations: ['steps', 'steps.targets'],
+      }),
+      dataSource.getRepository(Service).find({ where: { orgId } }),
+    ]);
+
+    // Build lookup maps for current state
+    const usersByEmail = new Map(existingUsers.map(u => [u.email.toLowerCase(), u]));
+    const teamsByName = new Map(existingTeams.map(t => [t.name.toLowerCase(), t]));
+    const schedulesByName = new Map(existingSchedules.map(s => [s.name.toLowerCase(), s]));
+    const policiesByName = new Map(existingPolicies.map(p => [p.name.toLowerCase(), p]));
+    const servicesByName = new Map(existingServices.map(s => [s.name.toLowerCase(), s]));
+
+    const report: ValidationReport = {
+      source,
+      validatedAt: new Date().toISOString(),
+      summary: {
+        users: { matched: 0, missing: 0, different: 0, extra: 0 },
+        teams: { matched: 0, missing: 0, different: 0, extra: 0 },
+        schedules: { matched: 0, missing: 0, different: 0, extra: 0 },
+        escalationPolicies: { matched: 0, missing: 0, different: 0, extra: 0 },
+        services: { matched: 0, missing: 0, different: 0, extra: 0 },
+      },
+      details: {
+        users: [],
+        teams: [],
+        schedules: [],
+        escalationPolicies: [],
+        services: [],
+      },
+      suggestions: [],
+      configurationGaps: [],
+    };
+
+    // Track matched IDs to find extras
+    const matchedUserEmails = new Set<string>();
+    const matchedTeamNames = new Set<string>();
+    const matchedScheduleNames = new Set<string>();
+    const matchedPolicyNames = new Set<string>();
+    const matchedServiceNames = new Set<string>();
+
+    // Validate users
+    const sourceUsers = source === 'pagerduty' ? data.users : data.users;
+    if (sourceUsers) {
+      for (const srcUser of sourceUsers) {
+        const email = (srcUser.email || '').toLowerCase();
+        const name = srcUser.name || srcUser.summary || email;
+        const existingUser = usersByEmail.get(email);
+
+        const validation: EntityValidation = {
+          sourceId: srcUser.id,
+          sourceName: name,
+          mappedId: existingUser?.id,
+          status: 'matched',
+          diffs: [],
+        };
+
+        if (!existingUser) {
+          validation.status = 'missing';
+          report.summary.users.missing++;
+          report.suggestions.push(`User "${name}" (${email}) needs to be invited`);
+        } else {
+          matchedUserEmails.add(email);
+
+          // Compare user fields
+          if (existingUser.fullName !== name) {
+            validation.diffs.push({
+              field: 'name',
+              source: name,
+              current: existingUser.fullName,
+              severity: 'info',
+            });
+          }
+
+          if (validation.diffs.length > 0) {
+            validation.status = 'different';
+            report.summary.users.different++;
+          } else {
+            report.summary.users.matched++;
+          }
+        }
+
+        report.details.users.push(validation);
+      }
+    }
+
+    // Find extra users (in DB but not in source)
+    for (const [email, user] of usersByEmail) {
+      if (!matchedUserEmails.has(email)) {
+        report.details.users.push({
+          sourceId: '',
+          sourceName: user.fullName || user.email,
+          mappedId: user.id,
+          status: 'extra',
+          diffs: [],
+        });
+        report.summary.users.extra++;
+      }
+    }
+
+    // Validate teams
+    const sourceTeams = source === 'pagerduty' ? data.teams : data.teams;
+    if (sourceTeams) {
+      for (const srcTeam of sourceTeams) {
+        const name = (srcTeam.name || srcTeam.summary || '').toLowerCase();
+        const displayName = srcTeam.name || srcTeam.summary;
+        const existingTeam = teamsByName.get(name);
+
+        const validation: EntityValidation = {
+          sourceId: srcTeam.id,
+          sourceName: displayName,
+          mappedId: existingTeam?.id,
+          status: 'matched',
+          diffs: [],
+        };
+
+        if (!existingTeam) {
+          validation.status = 'missing';
+          report.summary.teams.missing++;
+        } else {
+          matchedTeamNames.add(name);
+
+          // Compare team fields
+          if (existingTeam.description !== (srcTeam.description || null)) {
+            validation.diffs.push({
+              field: 'description',
+              source: srcTeam.description,
+              current: existingTeam.description,
+              severity: 'info',
+            });
+          }
+
+          if (validation.diffs.length > 0) {
+            validation.status = 'different';
+            report.summary.teams.different++;
+          } else {
+            report.summary.teams.matched++;
+          }
+        }
+
+        report.details.teams.push(validation);
+      }
+    }
+
+    // Validate schedules
+    const sourceSchedules = source === 'pagerduty' ? data.schedules : data.schedules;
+    if (sourceSchedules) {
+      for (const srcSchedule of sourceSchedules) {
+        const name = (srcSchedule.name || srcSchedule.summary || '').toLowerCase();
+        const displayName = srcSchedule.name || srcSchedule.summary;
+        const existingSchedule = schedulesByName.get(name);
+
+        const validation: EntityValidation = {
+          sourceId: srcSchedule.id,
+          sourceName: displayName,
+          mappedId: existingSchedule?.id,
+          status: 'matched',
+          diffs: [],
+        };
+
+        if (!existingSchedule) {
+          validation.status = 'missing';
+          report.summary.schedules.missing++;
+        } else {
+          matchedScheduleNames.add(name);
+
+          // Compare layer count
+          const sourceLayers = source === 'pagerduty'
+            ? srcSchedule.schedule_layers?.length || 0
+            : srcSchedule.rotations?.length || 0;
+          const currentLayers = existingSchedule.layers?.length || 0;
+
+          if (sourceLayers !== currentLayers) {
+            validation.diffs.push({
+              field: 'layerCount',
+              source: sourceLayers,
+              current: currentLayers,
+              severity: 'warning',
+            });
+            report.configurationGaps.push(
+              `Schedule "${displayName}" has ${sourceLayers} rotations in source but ${currentLayers} in system`
+            );
+          }
+
+          if (validation.diffs.length > 0) {
+            validation.status = 'different';
+            report.summary.schedules.different++;
+          } else {
+            report.summary.schedules.matched++;
+          }
+        }
+
+        report.details.schedules.push(validation);
+      }
+    }
+
+    // Validate escalation policies
+    const sourcePolicies = source === 'pagerduty'
+      ? data.escalation_policies
+      : data.escalations;
+    if (sourcePolicies) {
+      for (const srcPolicy of sourcePolicies) {
+        const name = (srcPolicy.name || srcPolicy.summary || '').toLowerCase();
+        const displayName = srcPolicy.name || srcPolicy.summary;
+        const existingPolicy = policiesByName.get(name);
+
+        const validation: EntityValidation = {
+          sourceId: srcPolicy.id,
+          sourceName: displayName,
+          mappedId: existingPolicy?.id,
+          status: 'matched',
+          diffs: [],
+        };
+
+        if (!existingPolicy) {
+          validation.status = 'missing';
+          report.summary.escalationPolicies.missing++;
+        } else {
+          matchedPolicyNames.add(name);
+
+          // Compare step count
+          const sourceSteps = source === 'pagerduty'
+            ? srcPolicy.escalation_rules?.length || 0
+            : srcPolicy.rules?.length || 0;
+          const currentSteps = existingPolicy.steps?.length || 0;
+
+          if (sourceSteps !== currentSteps) {
+            validation.diffs.push({
+              field: 'stepCount',
+              source: sourceSteps,
+              current: currentSteps,
+              severity: 'warning',
+            });
+            report.configurationGaps.push(
+              `Escalation policy "${displayName}" has ${sourceSteps} steps in source but ${currentSteps} in system`
+            );
+          }
+
+          if (validation.diffs.length > 0) {
+            validation.status = 'different';
+            report.summary.escalationPolicies.different++;
+          } else {
+            report.summary.escalationPolicies.matched++;
+          }
+        }
+
+        report.details.escalationPolicies.push(validation);
+      }
+    }
+
+    // Validate services
+    const sourceServices = source === 'pagerduty' ? data.services : data.services;
+    if (sourceServices) {
+      for (const srcService of sourceServices) {
+        const name = (srcService.name || srcService.summary || '').toLowerCase();
+        const displayName = srcService.name || srcService.summary;
+        const existingService = servicesByName.get(name);
+
+        const validation: EntityValidation = {
+          sourceId: srcService.id,
+          sourceName: displayName,
+          mappedId: existingService?.id,
+          status: 'matched',
+          diffs: [],
+        };
+
+        if (!existingService) {
+          validation.status = 'missing';
+          report.summary.services.missing++;
+        } else {
+          matchedServiceNames.add(name);
+
+          // Check if integration key was preserved
+          const sourceKey = source === 'pagerduty'
+            ? srcService.integration_key
+            : srcService.apiKey;
+          if (sourceKey) {
+            const hasExternalKey = existingService.externalKeys &&
+              (existingService.externalKeys.pagerduty === sourceKey ||
+               existingService.externalKeys.opsgenie === sourceKey);
+
+            if (!hasExternalKey) {
+              validation.diffs.push({
+                field: 'integrationKey',
+                source: sourceKey,
+                current: null,
+                severity: 'warning',
+              });
+              report.suggestions.push(
+                `Service "${displayName}" integration key not preserved - webhooks may need reconfiguration`
+              );
+            }
+          }
+
+          if (validation.diffs.length > 0) {
+            validation.status = 'different';
+            report.summary.services.different++;
+          } else {
+            report.summary.services.matched++;
+          }
+        }
+
+        report.details.services.push(validation);
+      }
+    }
+
+    // Generate overall suggestions
+    if (report.summary.users.missing > 0) {
+      report.suggestions.unshift(
+        `${report.summary.users.missing} users need to be invited to the organization`
+      );
+    }
+    if (report.summary.schedules.missing > 0) {
+      report.suggestions.push(
+        `${report.summary.schedules.missing} schedules need to be imported`
+      );
+    }
+    if (report.summary.services.missing > 0) {
+      report.suggestions.push(
+        `${report.summary.services.missing} services need to be imported`
+      );
+    }
+
+    logger.info('Migration validation completed', {
+      source,
+      orgId,
+      summary: report.summary,
+    });
+
+    return res.json({
+      success: true,
+      report,
+    });
+  } catch (error: any) {
+    logger.error('Migration validation failed:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 export default router;

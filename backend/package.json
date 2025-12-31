@@ -12,6 +12,7 @@
     "migrate": "ts-node src/shared/db/migrate.ts",
     "migrate:create": "ts-node src/shared/db/create-migration.ts",
     "seed": "ts-node src/shared/db/seed.ts",
+    "setup-contoso": "ts-node src/shared/db/setup-contoso-schedule.ts",
     "lint": "eslint src --ext .ts",
     "test": "jest"
   },

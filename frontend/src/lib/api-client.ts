@@ -1358,6 +1358,62 @@ export interface ImportResult {
   warnings: string[];
 }
 
+export interface FetchTestResult {
+  success: boolean;
+  account?: any;
+  error?: string;
+}
+
+export interface PagerDutyFetchOptions {
+  apiKey: string;
+  subdomain?: string;
+  includeUsers?: boolean;
+  includeTeams?: boolean;
+  includeSchedules?: boolean;
+  includeEscalationPolicies?: boolean;
+  includeServices?: boolean;
+  includeMaintenanceWindows?: boolean;
+  includeRoutingRules?: boolean;
+  includeServiceDependencies?: boolean;
+  includeIncidents?: boolean;
+  incidentDateRange?: { since?: string; until?: string };
+}
+
+export interface OpsgenieFetchOptions {
+  apiKey: string;
+  region?: 'us' | 'eu';
+  includeUsers?: boolean;
+  includeTeams?: boolean;
+  includeSchedules?: boolean;
+  includeEscalations?: boolean;
+  includeServices?: boolean;
+  includeHeartbeats?: boolean;
+  includeMaintenanceWindows?: boolean;
+  includeAlertPolicies?: boolean;
+  includeAlerts?: boolean;
+  alertDateRange?: { since?: string; until?: string };
+}
+
+export interface FetchResult {
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
+export interface ValidationReport {
+  source: 'pagerduty' | 'opsgenie';
+  validatedAt: string;
+  summary: {
+    users: { matched: number; missing: number; different: number; extra: number };
+    teams: { matched: number; missing: number; different: number; extra: number };
+    schedules: { matched: number; missing: number; different: number; extra: number };
+    escalationPolicies: { matched: number; missing: number; different: number; extra: number };
+    services: { matched: number; missing: number; different: number; extra: number };
+  };
+  suggestions: string[];
+  configurationGaps: string[];
+}
+
 export const importAPI = {
   preview: async (source: 'pagerduty' | 'opsgenie', data: any): Promise<ImportPreviewResult> => {
     const response = await apiClient.post<ImportPreviewResult>('/import/preview', {
@@ -1367,13 +1423,55 @@ export const importAPI = {
     return response.data;
   },
 
-  importPagerDuty: async (data: any): Promise<ImportResult> => {
-    const response = await apiClient.post<ImportResult>('/import/pagerduty', data);
+  importPagerDuty: async (data: any, options?: { preserveKeys?: boolean }): Promise<ImportResult> => {
+    const response = await apiClient.post<ImportResult>('/import/pagerduty', data, {
+      params: options,
+    });
     return response.data;
   },
 
-  importOpsgenie: async (data: any): Promise<ImportResult> => {
-    const response = await apiClient.post<ImportResult>('/import/opsgenie', data);
+  importOpsgenie: async (data: any, options?: { preserveKeys?: boolean }): Promise<ImportResult> => {
+    const response = await apiClient.post<ImportResult>('/import/opsgenie', data, {
+      params: options,
+    });
+    return response.data;
+  },
+
+  // Test PagerDuty API connection
+  testPagerDuty: async (apiKey: string): Promise<FetchTestResult> => {
+    const response = await apiClient.post<FetchTestResult>('/import/fetch/pagerduty/test', {
+      apiKey,
+    });
+    return response.data;
+  },
+
+  // Test Opsgenie API connection
+  testOpsgenie: async (apiKey: string, region: 'us' | 'eu' = 'us'): Promise<FetchTestResult> => {
+    const response = await apiClient.post<FetchTestResult>('/import/fetch/opsgenie/test', {
+      apiKey,
+      region,
+    });
+    return response.data;
+  },
+
+  // Fetch data from PagerDuty
+  fetchPagerDuty: async (options: PagerDutyFetchOptions): Promise<FetchResult> => {
+    const response = await apiClient.post<FetchResult>('/import/fetch/pagerduty', options);
+    return response.data;
+  },
+
+  // Fetch data from Opsgenie
+  fetchOpsgenie: async (options: OpsgenieFetchOptions): Promise<FetchResult> => {
+    const response = await apiClient.post<FetchResult>('/import/fetch/opsgenie', options);
+    return response.data;
+  },
+
+  // Validate migration
+  validate: async (source: 'pagerduty' | 'opsgenie', data: any): Promise<{ success: boolean; report: ValidationReport }> => {
+    const response = await apiClient.post<{ success: boolean; report: ValidationReport }>('/import/validate', {
+      source,
+      data,
+    });
     return response.data;
   },
 };
