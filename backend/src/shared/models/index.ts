@@ -25,6 +25,7 @@ export * from './Notification';
 export * from './DeviceToken';
 export * from './Runbook';
 export * from './MaintenanceWindow';
+export * from './Heartbeat';
 export * from './Integration';
 export * from './IntegrationEvent';
 export * from './IntegrationOAuthToken';

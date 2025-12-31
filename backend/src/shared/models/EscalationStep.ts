@@ -4,6 +4,7 @@ import { Schedule } from './Schedule';
 import { EscalationTarget } from './EscalationTarget';
 
 export type EscalationTargetType = 'schedule' | 'users';
+export type NotifyStrategy = 'all' | 'round_robin';
 
 @Entity('escalation_steps')
 export class EscalationStep {
@@ -27,6 +28,9 @@ export class EscalationStep {
 
   @Column({ name: 'timeout_seconds', type: 'int', default: 300 })
   timeoutSeconds: number; // Default 5 minutes
+
+  @Column({ name: 'notify_strategy', type: 'varchar', length: 20, default: 'all' })
+  notifyStrategy: NotifyStrategy; // 'all' notifies all targets simultaneously, 'round_robin' rotates
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

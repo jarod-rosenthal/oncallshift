@@ -29,6 +29,7 @@ import businessServicesRoutes from './routes/business-services';
 import tagsRoutes from './routes/tags';
 import webhooksRoutes from './routes/webhooks';
 import importRoutes from './routes/import';
+import heartbeatsRoutes from './routes/heartbeats';
 import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
@@ -257,6 +258,7 @@ export function createApp(): Express {
   app.use('/api/v1/tags', tagsRoutes);
   app.use('/api/v1/webhooks', webhooksRoutes);
   app.use('/api/v1/import', importRoutes);
+  app.use('/api/v1/heartbeats', heartbeatsRoutes);
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');
