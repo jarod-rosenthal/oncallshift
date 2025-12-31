@@ -172,11 +172,11 @@ export function EscalationPolicies() {
     for (let i = 0; i < formData.steps.length; i++) {
       const step = formData.steps[i] as EscalationStep;
       if (step.targetType === 'schedule' && !step.scheduleId) {
-        alert(`Step ${i + 1}: Please select a schedule`);
+        alert(`Level ${i + 1}: Please select a schedule`);
         return;
       }
       if (step.targetType === 'users' && (!step.userIds || step.userIds.length === 0)) {
-        alert(`Step ${i + 1}: Please select at least one user`);
+        alert(`Level ${i + 1}: Please select at least one user`);
         return;
       }
     }
@@ -327,7 +327,7 @@ export function EscalationPolicies() {
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>{editingPolicy ? 'Edit' : 'Create'} Escalation Policy</CardTitle>
-              <CardDescription>Define a multi-step escalation workflow</CardDescription>
+              <CardDescription>Define who gets notified and when if an incident isn't acknowledged</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSavePolicy} className="space-y-4">
@@ -352,12 +352,15 @@ export function EscalationPolicies() {
                 </div>
 
                 <div>
-                  <Label>Escalation Steps</Label>
+                  <Label>Escalation Levels</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    If the incident isn't acknowledged, it will escalate through these levels in order
+                  </p>
                   {formData.steps.map((step, index) => (
                     <Card key={index} className="mb-4 mt-2">
                       <CardHeader>
                         <div className="flex justify-between items-center">
-                          <CardTitle className="text-sm">Step {index + 1}</CardTitle>
+                          <CardTitle className="text-sm">Level {index + 1}</CardTitle>
                           {formData.steps.length > 1 && (
                             <Button
                               type="button"
@@ -372,7 +375,7 @@ export function EscalationPolicies() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div>
-                          <Label>Target Type</Label>
+                          <Label>Notify</Label>
                           <select
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             value={step.targetType}
@@ -380,8 +383,8 @@ export function EscalationPolicies() {
                               updateStep(index, 'targetType', e.target.value as 'schedule' | 'users')
                             }
                           >
-                            <option value="schedule">Schedule (Current On-Call)</option>
-                            <option value="users">Specific Users</option>
+                            <option value="schedule">On-Call Schedule</option>
+                            <option value="users">Specific User(s)</option>
                           </select>
                         </div>
 
@@ -435,17 +438,17 @@ export function EscalationPolicies() {
                         )}
 
                         <div>
-                          <Label>Timeout (seconds)</Label>
+                          <Label>Escalate after (minutes)</Label>
                           <Input
                             type="number"
-                            value={step.timeoutSeconds}
+                            value={Math.round(step.timeoutSeconds / 60)}
                             onChange={(e) =>
-                              updateStep(index, 'timeoutSeconds', parseInt(e.target.value))
+                              updateStep(index, 'timeoutSeconds', parseInt(e.target.value) * 60)
                             }
-                            min={0}
+                            min={1}
                           />
                           <p className="text-xs text-muted-foreground mt-1">
-                            Time to wait before escalating to next step
+                            If not acknowledged, escalate to the next level after this time
                           </p>
                         </div>
                       </CardContent>
@@ -453,7 +456,7 @@ export function EscalationPolicies() {
                   ))}
 
                   <Button type="button" variant="outline" onClick={addStep} className="mt-2">
-                    Add Step
+                    + Add Escalation Level
                   </Button>
                 </div>
 
@@ -522,10 +525,10 @@ export function EscalationPolicies() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Escalation Steps:</p>
+                    <p className="text-sm font-medium">Escalation Levels:</p>
                     {policy.steps.map((step) => (
                       <div key={step.id} className="flex items-center gap-2 text-sm border-l-2 border-blue-500 pl-3 py-1">
-                        <span className="font-medium">Step {step.stepOrder}:</span>
+                        <span className="font-medium">Level {step.stepOrder}:</span>
                         {step.targetType === 'schedule' ? (
                           <span>
                             Notify on-call from <strong>{step.schedule?.name || 'Unknown Schedule'}</strong>
@@ -536,7 +539,7 @@ export function EscalationPolicies() {
                           </span>
                         )}
                         <span className="text-muted-foreground">
-                          (wait {step.timeoutSeconds}s)
+                          → {Math.round(step.timeoutSeconds / 60)} min
                         </span>
                       </div>
                     ))}
