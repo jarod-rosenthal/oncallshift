@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   ScrollView,
@@ -30,13 +30,32 @@ import {
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import * as apiService from '../services/apiService';
 import * as runbookService from '../services/runbookService';
-import type { Incident, IncidentEvent, User, AIDiagnosisResponse, UserProfile } from '../services/apiService';
+import { getAccessToken } from '../services/authService';
+import { config } from '../config';
+import type { Incident, IncidentEvent, User, AIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary } from '../services/apiService';
 import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '../services/runbookService';
 import { severityColors, statusColors, colors } from '../theme';
 import * as hapticService from '../services/hapticService';
 import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel } from '../components';
+
+// Skeleton placeholder component for loading states
+const SkeletonBox = ({ width, height, style }: { width: number | string; height: number; style?: any }) => (
+  <View
+    style={[
+      {
+        width,
+        height,
+        backgroundColor: colors.border,
+        borderRadius: 6,
+        opacity: 0.5,
+      },
+      style,
+    ]}
+  />
+);
 
 export default function AlertDetailScreen({ route, navigation }: any) {
   const theme = useTheme();
@@ -74,6 +93,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [actionStates, setActionStates] = useState<Record<string, { status: 'idle' | 'confirming' | 'executing' | 'success' | 'error'; message?: string }>>({});
   const [confirmingAction, setConfirmingAction] = useState<{ stepId: string; action: RunbookStepAction } | null>(null);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [notificationSummary, setNotificationSummary] = useState<NotificationSummary | null>(null);
+  const [showNotifications, setShowNotifications] = useState(true);
+  const [loadingNotifications, setLoadingNotifications] = useState(true);
+  const isInitialMount = useRef(true);
 
   // Dynamic styles based on current theme
   const dynamicStyles = {
@@ -145,6 +169,21 @@ export default function AlertDetailScreen({ route, navigation }: any) {
       .catch(() => {}); // Ignore errors - admin features just won't show
   }, []);
 
+  // Auto-refresh when screen comes back into focus (e.g., returning from AI Chat)
+  useFocusEffect(
+    useCallback(() => {
+      // Skip initial mount - the useEffect above handles that
+      if (isInitialMount.current) {
+        isInitialMount.current = false;
+        return;
+      }
+
+      // Refresh incident details when returning to this screen
+      console.log('[AlertDetail] Screen refocused, refreshing data...');
+      fetchIncidentDetails();
+    }, [incident.id])
+  );
+
   const fetchIncidentDetails = async () => {
     try {
       const data = await apiService.getIncidentDetails(incident.id);
@@ -153,10 +192,27 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
       // Fetch runbook for this service
       fetchRunbook(data.incident.service.id, data.incident.service.name, data.incident.severity);
+
+      // Fetch notification statuses
+      fetchNotifications();
     } catch (error) {
       console.error('Error fetching incident details:', error);
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    setLoadingNotifications(true);
+    try {
+      const data = await apiService.getIncidentNotifications(incident.id);
+      setNotifications(data.notifications || []);
+      setNotificationSummary(data.summary || null);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      // Don't show error - notifications are optional
+    } finally {
+      setLoadingNotifications(false);
     }
   };
 
@@ -247,24 +303,43 @@ export default function AlertDetailScreen({ route, navigation }: any) {
     await hapticService.mediumTap();
 
     try {
-      const response = await fetch(action.url, {
+      // Build full URL - action.url may be relative (e.g., /api/v1/actions/kill-queries)
+      const fullUrl = action.url.startsWith('http')
+        ? action.url
+        : `${config.apiUrl}${action.url.replace('/api', '')}`;
+
+      // Get auth token
+      const accessToken = await getAccessToken();
+
+      const response = await fetch(fullUrl, {
         method: action.method,
         headers: {
           'Content-Type': 'application/json',
+          ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {}),
         },
         body: action.body ? JSON.stringify(action.body) : undefined,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || errorData.error || `Request failed: ${response.status}`);
+      // Try to parse response as JSON, but handle non-JSON responses
+      let data: any = {};
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+        } catch {
+          // JSON parse failed, use empty object
+        }
       }
 
-      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || data.error || `Request failed: ${response.status}`);
+      }
+
+      const successMessage = data.message || 'Action completed successfully';
 
       setActionStates(prev => ({
         ...prev,
-        [stepId]: { status: 'success', message: data.message || 'Action completed' }
+        [stepId]: { status: 'success', message: successMessage }
       }));
 
       // Mark step as completed
@@ -273,8 +348,23 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         setCompletedSteps(newCompletedSteps);
       }
 
+      // Add note to incident timeline
+      try {
+        const noteContent = `**Runbook Action Executed:** ${action.label}\n\n` +
+          `- **Endpoint:** \`${action.method} ${action.url}\`\n` +
+          (action.body ? `- **Parameters:** \`${JSON.stringify(action.body)}\`\n` : '') +
+          `- **Result:** ${successMessage}`;
+
+        await apiService.addIncidentNote(incident.id, noteContent);
+        // Refresh to show the new note
+        fetchIncidentDetails();
+      } catch (noteError) {
+        console.warn('Failed to add action note to incident:', noteError);
+        // Don't fail the action if note fails
+      }
+
       await hapticService.success();
-      showSuccess(data.message || 'Action completed');
+      showSuccess(successMessage);
 
       // Clear success state after 3 seconds
       setTimeout(() => {
@@ -285,12 +375,28 @@ export default function AlertDetailScreen({ route, navigation }: any) {
       }, 3000);
     } catch (error: any) {
       console.error('Action execution error:', error);
+      const errorMessage = error.message || 'Action failed';
+
       setActionStates(prev => ({
         ...prev,
-        [stepId]: { status: 'error', message: error.message || 'Action failed' }
+        [stepId]: { status: 'error', message: errorMessage }
       }));
+
+      // Add note about failed action attempt
+      try {
+        const noteContent = `**Runbook Action Failed:** ${action.label}\n\n` +
+          `- **Endpoint:** \`${action.method} ${action.url}\`\n` +
+          (action.body ? `- **Parameters:** \`${JSON.stringify(action.body)}\`\n` : '') +
+          `- **Error:** ${errorMessage}`;
+
+        await apiService.addIncidentNote(incident.id, noteContent);
+        fetchIncidentDetails();
+      } catch (noteError) {
+        console.warn('Failed to add error note to incident:', noteError);
+      }
+
       await hapticService.error();
-      showError(error.message || 'Action failed');
+      showError(errorMessage);
 
       // Clear error state after 5 seconds
       setTimeout(() => {
@@ -704,8 +810,66 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </Card.Content>
         </Card>
 
+        {/* Loading Skeletons */}
+        {loadingDetails && (
+          <>
+            {/* Owner/Responders Skeleton */}
+            <Card style={dynamicStyles.card} mode="elevated">
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <SkeletonBox width={20} height={20} />
+                  <SkeletonBox width={100} height={18} style={{ marginLeft: 8 }} />
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+                  <SkeletonBox width={40} height={40} style={{ borderRadius: 20 }} />
+                  <View style={{ marginLeft: 12 }}>
+                    <SkeletonBox width={120} height={16} />
+                    <SkeletonBox width={80} height={12} style={{ marginTop: 4 }} />
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+
+            {/* Timeline Skeleton */}
+            <Card style={dynamicStyles.card} mode="elevated">
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <SkeletonBox width={20} height={20} />
+                  <SkeletonBox width={80} height={18} style={{ marginLeft: 8 }} />
+                </View>
+                {[1, 2, 3].map((i) => (
+                  <View key={i} style={{ flexDirection: 'row', marginTop: 16 }}>
+                    <SkeletonBox width={32} height={32} style={{ borderRadius: 16 }} />
+                    <View style={{ marginLeft: 12, flex: 1 }}>
+                      <SkeletonBox width={100} height={14} />
+                      <SkeletonBox width={150} height={12} style={{ marginTop: 6 }} />
+                      <SkeletonBox width={80} height={10} style={{ marginTop: 6 }} />
+                    </View>
+                  </View>
+                ))}
+              </Card.Content>
+            </Card>
+
+            {/* Runbook Skeleton */}
+            <Card style={dynamicStyles.card} mode="elevated">
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <SkeletonBox width={20} height={20} />
+                  <SkeletonBox width={120} height={18} style={{ marginLeft: 8 }} />
+                </View>
+                {[1, 2].map((i) => (
+                  <View key={i} style={{ marginTop: 12, padding: 12, backgroundColor: colors.surfaceSecondary, borderRadius: 8 }}>
+                    <SkeletonBox width="80%" height={16} />
+                    <SkeletonBox width="60%" height={12} style={{ marginTop: 8 }} />
+                  </View>
+                ))}
+              </Card.Content>
+            </Card>
+          </>
+        )}
+
         {/* Details Card */}
-        {incident.details && (
+        {!loadingDetails && incident.details && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
               <View style={styles.sectionHeader}>
@@ -722,7 +886,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         )}
 
         {/* AI Diagnosis Section */}
-        {!diagnosis && !diagnosisLoading && incident.state !== 'resolved' && (
+        {!loadingDetails && !diagnosis && !diagnosisLoading && incident.state !== 'resolved' && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
               <View style={styles.diagnoseButtonContainer}>
@@ -961,7 +1125,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                                 <Button
                                   mode="contained"
                                   compact
-                                  buttonColor={theme.colors.error}
+                                  buttonColor="#C53030"
                                   onPress={() => executeAction(step.id, step.action!)}
                                 >
                                   Confirm
@@ -1008,26 +1172,185 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         )}
 
         {/* Responders Card */}
-        <Card style={dynamicStyles.card} mode="elevated">
-          <Card.Content>
-            <RespondersSection
-              responders={[]}
-              acknowledgedBy={incident.acknowledgedBy}
-            />
-          </Card.Content>
-        </Card>
+        {!loadingDetails && (
+          <Card style={dynamicStyles.card} mode="elevated">
+            <Card.Content>
+              <RespondersSection
+                responders={[]}
+                acknowledgedBy={incident.acknowledgedBy}
+              />
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Notification Status Card */}
+        {!loadingDetails && (
+          <Card style={dynamicStyles.card} mode="elevated">
+            <Card.Content>
+              <Pressable
+                onPress={() => setShowNotifications(!showNotifications)}
+                style={styles.notificationHeader}
+              >
+                <View style={styles.sectionHeader}>
+                  <MaterialCommunityIcons name="bell-ring-outline" size={20} color={theme.colors.primary} />
+                  <Text variant="titleMedium" style={styles.sectionTitle}>Notification Status</Text>
+                </View>
+                <View style={styles.notificationHeaderRight}>
+                  {notificationSummary && (
+                    <View style={styles.notificationSummaryChips}>
+                      {notificationSummary.delivered > 0 && (
+                        <Chip
+                          compact
+                          style={[styles.summaryChip, { backgroundColor: colors.successLight }]}
+                          textStyle={[styles.summaryChipText, { color: colors.success }]}
+                        >
+                          {notificationSummary.delivered} delivered
+                        </Chip>
+                      )}
+                      {notificationSummary.sent > 0 && (
+                        <Chip
+                          compact
+                          style={[styles.summaryChip, { backgroundColor: colors.infoLight }]}
+                          textStyle={[styles.summaryChipText, { color: colors.info }]}
+                        >
+                          {notificationSummary.sent} sent
+                        </Chip>
+                      )}
+                      {notificationSummary.pending > 0 && (
+                        <Chip
+                          compact
+                          style={[styles.summaryChip, { backgroundColor: colors.warningLight }]}
+                          textStyle={[styles.summaryChipText, { color: colors.warning }]}
+                        >
+                          {notificationSummary.pending} pending
+                        </Chip>
+                      )}
+                      {notificationSummary.failed > 0 && (
+                        <Chip
+                          compact
+                          style={[styles.summaryChip, { backgroundColor: '#FED7D7' }]}
+                          textStyle={[styles.summaryChipText, { color: '#C53030' }]}
+                        >
+                          {notificationSummary.failed} failed
+                        </Chip>
+                      )}
+                    </View>
+                  )}
+                  <MaterialCommunityIcons
+                    name={showNotifications ? 'chevron-up' : 'chevron-down'}
+                    size={24}
+                    color={colors.textSecondary}
+                  />
+                </View>
+              </Pressable>
+
+              {showNotifications && (
+                <>
+                  {loadingNotifications ? (
+                    <View style={styles.notificationLoading}>
+                      <ActivityIndicator size="small" color={theme.colors.primary} />
+                      <Text variant="bodySmall" style={styles.notificationLoadingText}>
+                        Loading notification status...
+                      </Text>
+                    </View>
+                  ) : notifications.length === 0 ? (
+                    <Text variant="bodyMedium" style={styles.noNotificationsText}>
+                      No notifications sent yet
+                    </Text>
+                  ) : (
+                    <View style={styles.notificationsList}>
+                      {notifications.map((userNotif) => (
+                        <View key={userNotif.userId} style={styles.notificationUserCard}>
+                          <View style={styles.notificationUserHeader}>
+                            <View style={styles.notificationUserAvatar}>
+                              <Text style={styles.notificationUserAvatarText}>
+                                {userNotif.userName.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View style={styles.notificationUserInfo}>
+                              <Text variant="titleSmall" style={styles.notificationUserName}>
+                                {userNotif.userName}
+                              </Text>
+                              <Text variant="bodySmall" style={styles.notificationUserEmail}>
+                                {userNotif.userEmail}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.notificationChannels}>
+                            {userNotif.channels.map((channel, idx) => {
+                              const getChannelIcon = (ch: string): keyof typeof MaterialCommunityIcons.glyphMap => {
+                                switch (ch) {
+                                  case 'push': return 'cellphone';
+                                  case 'email': return 'email-outline';
+                                  case 'sms': return 'message-text-outline';
+                                  case 'voice': return 'phone-outline';
+                                  default: return 'bell-outline';
+                                }
+                              };
+                              const getStatusStyle = (status: string) => {
+                                switch (status) {
+                                  case 'delivered': return { bg: colors.successLight, text: colors.success, icon: 'check' };
+                                  case 'sent': return { bg: colors.infoLight, text: colors.info, icon: 'arrow-top-right' };
+                                  case 'pending': return { bg: colors.warningLight, text: colors.warning, icon: 'clock-outline' };
+                                  case 'failed': return { bg: '#FED7D7', text: '#C53030', icon: 'close' };
+                                  default: return { bg: colors.surfaceSecondary, text: colors.textSecondary, icon: 'help' };
+                                }
+                              };
+                              const statusStyle = getStatusStyle(channel.status);
+                              return (
+                                <View
+                                  key={idx}
+                                  style={[styles.notificationChannel, { backgroundColor: statusStyle.bg }]}
+                                >
+                                  <MaterialCommunityIcons
+                                    name={getChannelIcon(channel.channel)}
+                                    size={14}
+                                    color={statusStyle.text}
+                                  />
+                                  <Text style={[styles.notificationChannelText, { color: statusStyle.text }]}>
+                                    {channel.channel}
+                                  </Text>
+                                  <MaterialCommunityIcons
+                                    name={statusStyle.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                                    size={14}
+                                    color={statusStyle.text}
+                                  />
+                                </View>
+                              );
+                            })}
+                          </View>
+                          {/* Show error messages */}
+                          {userNotif.channels.some(c => c.errorMessage) && (
+                            <View style={styles.notificationErrors}>
+                              {userNotif.channels
+                                .filter(c => c.errorMessage)
+                                .map((c, idx) => (
+                                  <Text key={idx} variant="bodySmall" style={styles.notificationErrorText}>
+                                    {c.channel}: {c.errorMessage}
+                                  </Text>
+                                ))}
+                            </View>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Timeline Card */}
-        <Card style={dynamicStyles.card} mode="elevated">
-          <Card.Content>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="timeline-clock-outline" size={20} color={theme.colors.primary} />
-              <Text variant="titleMedium" style={styles.sectionTitle}>Timeline</Text>
-            </View>
+        {!loadingDetails && (
+          <Card style={dynamicStyles.card} mode="elevated">
+            <Card.Content>
+              <View style={styles.sectionHeader}>
+                <MaterialCommunityIcons name="timeline-clock-outline" size={20} color={theme.colors.primary} />
+                <Text variant="titleMedium" style={styles.sectionTitle}>Timeline</Text>
+              </View>
 
-            {loadingDetails ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
-            ) : events.length > 0 ? (
+            {events.length > 0 ? (
               <View style={styles.timeline}>
                 {events.map((event, index) => {
                   const { icon, color } = getEventIcon(event.type);
@@ -1066,11 +1389,12 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 No timeline events
               </Text>
             )}
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Add Note Card */}
-        {incident.state !== 'resolved' && (
+        {!loadingDetails && incident.state !== 'resolved' && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
               <View style={styles.sectionHeader}>
@@ -1131,14 +1455,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           <Card style={[dynamicStyles.card, styles.dangerCard]} mode="elevated">
             <Card.Content>
               <View style={styles.sectionHeader}>
-                <MaterialCommunityIcons name="shield-account" size={20} color={colors.error} />
-                <Text variant="titleMedium" style={[styles.sectionTitle, { color: colors.error }]}>
+                <MaterialCommunityIcons name="shield-account" size={20} color="#C53030" />
+                <Text variant="titleMedium" style={[styles.sectionTitle, { color: '#C53030' }]}>
                   Admin Actions
                 </Text>
               </View>
               <Button
                 mode="contained"
-                buttonColor={colors.error}
+                buttonColor="#C53030"
                 onPress={() => setShowDeleteModal(true)}
                 icon="delete"
                 style={styles.deleteButton}
@@ -1366,7 +1690,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           contentContainerStyle={styles.modalContainer}
         >
           <View style={dynamicStyles.modalContent}>
-            <MaterialCommunityIcons name="delete-alert" size={48} color={colors.error} />
+            <MaterialCommunityIcons name="delete-alert" size={48} color="#C53030" />
             <Text variant="titleLarge" style={styles.modalTitle}>
               Delete Incident?
             </Text>
@@ -1385,7 +1709,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               <Button
                 mode="contained"
                 onPress={handleDelete}
-                buttonColor={colors.error}
+                buttonColor="#C53030"
                 style={styles.modalButton}
                 loading={isDeleting}
                 disabled={isDeleting}
@@ -1475,7 +1799,7 @@ const styles = StyleSheet.create({
   },
   dangerCard: {
     borderWidth: 1,
-    borderColor: `${colors.error}40`,
+    borderColor: '#C5303040',
   },
   deleteButton: {
     borderRadius: 8,
@@ -1910,5 +2234,108 @@ const styles = StyleSheet.create({
   },
   diagnoseButton: {
     borderRadius: 8,
+  },
+  // Notification Status styles
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notificationHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notificationSummaryChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  summaryChip: {
+    height: 24,
+  },
+  summaryChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  notificationLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 16,
+  },
+  notificationLoadingText: {
+    color: colors.textSecondary,
+  },
+  noNotificationsText: {
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  notificationsList: {
+    marginTop: 12,
+    gap: 12,
+  },
+  notificationUserCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+    padding: 12,
+  },
+  notificationUserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  notificationUserAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.infoLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notificationUserAvatarText: {
+    color: colors.info,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notificationUserInfo: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  notificationUserName: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  notificationUserEmail: {
+    color: colors.textSecondary,
+  },
+  notificationChannels: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  notificationChannel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  notificationChannelText: {
+    fontSize: 12,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  notificationErrors: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  notificationErrorText: {
+    color: '#C53030',
+    fontSize: 12,
   },
 });
