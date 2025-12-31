@@ -587,42 +587,56 @@ export default function SettingsScreen() {
         </View>
 
         <View style={dynamicStyles.settingCard}>
-          <Text variant="titleSmall" style={styles.radioGroupTitle}>
-            Theme
-          </Text>
-          <RadioButton.Group
-            value={settings.theme}
-            onValueChange={(value) => updateSetting('theme', value as AppSettings['theme'])}
+          <Pressable
+            style={styles.themeOption}
+            onPress={() => updateSetting('theme', 'system')}
           >
-            <View style={styles.radioOption}>
-              <RadioButton.Item
-                label="System Default"
+            <View style={styles.themeOptionLeft}>
+              <RadioButton
                 value="system"
-                position="leading"
-                labelStyle={styles.radioLabel}
+                status={settings.theme === 'system' ? 'checked' : 'unchecked'}
+                onPress={() => updateSetting('theme', 'system')}
+                color={colors.primary}
               />
-              <MaterialCommunityIcons name="cellphone" size={20} color={colors.textSecondary} />
+              <MaterialCommunityIcons name="cellphone" size={22} color={colors.textSecondary} style={styles.themeIcon} />
+              <Text variant="bodyLarge" style={{ color: colors.textPrimary }}>System Default</Text>
             </View>
-            <View style={styles.radioOption}>
-              <RadioButton.Item
-                label="Light"
+          </Pressable>
+          <Divider style={styles.themeOptionDivider} />
+
+          <Pressable
+            style={styles.themeOption}
+            onPress={() => updateSetting('theme', 'light')}
+          >
+            <View style={styles.themeOptionLeft}>
+              <RadioButton
                 value="light"
-                position="leading"
-                labelStyle={styles.radioLabel}
+                status={settings.theme === 'light' ? 'checked' : 'unchecked'}
+                onPress={() => updateSetting('theme', 'light')}
+                color={colors.primary}
               />
-              <MaterialCommunityIcons name="white-balance-sunny" size={20} color={colors.warning} />
+              <MaterialCommunityIcons name="white-balance-sunny" size={22} color={colors.warning} style={styles.themeIcon} />
+              <Text variant="bodyLarge" style={{ color: colors.textPrimary }}>Light</Text>
             </View>
-            <View style={styles.radioOption}>
-              <RadioButton.Item
-                label="Dark"
+          </Pressable>
+          <Divider style={styles.themeOptionDivider} />
+
+          <Pressable
+            style={styles.themeOption}
+            onPress={() => updateSetting('theme', 'dark')}
+          >
+            <View style={styles.themeOptionLeft}>
+              <RadioButton
                 value="dark"
-                position="leading"
-                labelStyle={styles.radioLabel}
+                status={settings.theme === 'dark' ? 'checked' : 'unchecked'}
+                onPress={() => updateSetting('theme', 'dark')}
+                color={colors.primary}
               />
-              <MaterialCommunityIcons name="moon-waning-crescent" size={20} color={colors.textSecondary} />
+              <MaterialCommunityIcons name="moon-waning-crescent" size={22} color={colors.textSecondary} style={styles.themeIcon} />
+              <Text variant="bodyLarge" style={{ color: colors.textPrimary }}>Dark</Text>
             </View>
-          </RadioButton.Group>
-          <Divider style={styles.dividerSpaced} />
+          </Pressable>
+          <Divider />
 
           <List.Item
             title="Compact Mode"
@@ -1016,23 +1030,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
-  radioGroupTitle: {
-    color: colors.textPrimary,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+  themeOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
   },
-  radioOption: {
+  themeOptionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingRight: 16,
   },
-  radioLabel: {
-    color: colors.textPrimary,
+  themeIcon: {
+    marginRight: 12,
   },
-  dividerSpaced: {
-    marginVertical: 8,
+  themeOptionDivider: {
+    marginLeft: 56,
   },
   appInfo: {
     alignItems: 'center',

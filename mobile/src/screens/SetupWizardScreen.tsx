@@ -73,6 +73,7 @@ const getIconName = (icon: string): keyof typeof MaterialCommunityIcons.glyphMap
     'shield-lock': 'shield-lock',
     'credit-card': 'credit-card',
     // Action icons
+    aws: 'aws',
     restart: 'restart',
     'arrow-up-bold': 'arrow-up-bold',
     'undo-variant': 'undo-variant',

@@ -203,7 +203,16 @@ export const startRunbookExecution = async (
       return null;
     }
 
-    return await response.json();
+    // Safely parse JSON response
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        return await response.json();
+      } catch {
+        return null;
+      }
+    }
+    return null;
   } catch (error) {
     console.error('[RunbookService] Error starting execution:', error);
     return null;
@@ -261,7 +270,16 @@ export const getExecutionForIncident = async (incidentId: string): Promise<Runbo
       return null;
     }
 
-    return await response.json();
+    // Safely parse JSON response
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        return await response.json();
+      } catch {
+        return null;
+      }
+    }
+    return null;
   } catch (error) {
     console.error('[RunbookService] Error fetching execution:', error);
     return null;
