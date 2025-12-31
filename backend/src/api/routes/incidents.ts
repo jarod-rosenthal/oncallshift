@@ -230,6 +230,7 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
 router.put('/:id/resolve', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const { note } = req.body || {};
     const orgId = req.orgId!;
     const user = req.user!;
 
@@ -256,7 +257,7 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
     incident.resolvedBy = user.id;
     await incidentRepo.save(incident);
 
-    // Create event
+    // Create resolve event
     const event = eventRepo.create({
       incidentId: incident.id,
       type: 'resolve',
@@ -265,10 +266,22 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
     });
     await eventRepo.save(event);
 
+    // If a resolution note was provided, create a note event
+    if (note && typeof note === 'string' && note.trim()) {
+      const noteEvent = eventRepo.create({
+        incidentId: incident.id,
+        type: 'note',
+        actorId: user.id,
+        message: `[Resolution Note] ${note.trim()}`,
+      });
+      await eventRepo.save(noteEvent);
+    }
+
     logger.info('Incident resolved', {
       incidentId: incident.id,
       userId: user.id,
       incidentNumber: incident.incidentNumber,
+      hasNote: !!note,
     });
 
     return res.json({
