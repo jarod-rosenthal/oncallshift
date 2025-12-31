@@ -103,6 +103,16 @@ interface PagerDutyService {
   status?: string;
   escalation_policy?: { id: string };
   teams?: Array<{ id: string }>;
+  // Integration key for zero-config migration (from service integrations)
+  integration_key?: string;
+}
+
+interface ImportOptions {
+  /**
+   * When true, preserves original PagerDuty/Opsgenie integration keys
+   * so existing monitoring tools can send webhooks without reconfiguration.
+   */
+  preserveKeys?: boolean;
 }
 
 /**
@@ -116,7 +126,10 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
   const user = (req as any).user;
   const orgId = user.orgId;
 
-  const importData: PagerDutyImportData = req.body;
+  const { data: importData, options = {} }: { data: PagerDutyImportData; options?: ImportOptions } =
+    req.body.data ? req.body : { data: req.body, options: req.body.options || {} };
+  const { preserveKeys = false } = options;
+
   const results = {
     users: { imported: 0, skipped: 0, errors: [] as string[] },
     teams: { imported: 0, skipped: 0, errors: [] as string[] },
@@ -374,6 +387,11 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
               ? teamIdMap.get(pdService.teams[0].id)
               : null;
 
+            // Build external keys for zero-config migration
+            const externalKeys = preserveKeys && pdService.integration_key
+              ? { pagerduty: pdService.integration_key }
+              : null;
+
             service = serviceRepo.create({
               orgId,
               name: pdService.name,
@@ -382,10 +400,29 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
               escalationPolicyId,
               teamId,
               apiKey: crypto.randomUUID(),
+              externalKeys,
             });
             await serviceRepo.save(service);
             results.services.imported++;
+
+            if (externalKeys) {
+              logger.info('Service imported with preserved PagerDuty key', {
+                serviceName: pdService.name,
+                hasExternalKey: true,
+              });
+            }
           } else {
+            // Update external keys on existing service if preserveKeys is enabled
+            if (preserveKeys && pdService.integration_key && !service.externalKeys?.pagerduty) {
+              service.externalKeys = {
+                ...service.externalKeys,
+                pagerduty: pdService.integration_key,
+              };
+              await serviceRepo.save(service);
+              logger.info('Updated existing service with PagerDuty key', {
+                serviceName: pdService.name,
+              });
+            }
             results.services.skipped++;
           }
         } catch (error: any) {
@@ -508,6 +545,8 @@ interface OpsgenieService {
   name: string;
   description?: string;
   teamId?: string;
+  // API key for zero-config migration (from integrations)
+  apiKey?: string;
 }
 
 /**
@@ -521,7 +560,10 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
   const user = (req as any).user;
   const orgId = user.orgId;
 
-  const importData: OpsgenieImportData = req.body;
+  const { data: importData, options = {} }: { data: OpsgenieImportData; options?: ImportOptions } =
+    req.body.data ? req.body : { data: req.body, options: req.body.options || {} };
+  const { preserveKeys = false } = options;
+
   const results = {
     users: { imported: 0, skipped: 0, errors: [] as string[] },
     teams: { imported: 0, skipped: 0, errors: [] as string[] },
@@ -770,16 +812,40 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           if (!service) {
             const teamId = ogService.teamId ? teamIdMap.get(ogService.teamId) : null;
 
+            // Build external keys for zero-config migration
+            const externalKeys = preserveKeys && ogService.apiKey
+              ? { opsgenie: ogService.apiKey }
+              : null;
+
             service = serviceRepo.create({
               orgId,
               name: ogService.name,
               description: ogService.description,
               teamId,
               apiKey: crypto.randomUUID(),
+              externalKeys,
             });
             await serviceRepo.save(service);
             results.services.imported++;
+
+            if (externalKeys) {
+              logger.info('Service imported with preserved Opsgenie key', {
+                serviceName: ogService.name,
+                hasExternalKey: true,
+              });
+            }
           } else {
+            // Update external keys on existing service if preserveKeys is enabled
+            if (preserveKeys && ogService.apiKey && !service.externalKeys?.opsgenie) {
+              service.externalKeys = {
+                ...service.externalKeys,
+                opsgenie: ogService.apiKey,
+              };
+              await serviceRepo.save(service);
+              logger.info('Updated existing service with Opsgenie key', {
+                serviceName: ogService.name,
+              });
+            }
             results.services.skipped++;
           }
         } catch (error: any) {
@@ -828,7 +894,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
 router.post('/preview', async (req: Request, res: Response) => {
   const user = (req as any).user;
   const orgId = user.orgId;
-  const { source, data } = req.body;
+  const { source, data, options = {} } = req.body;
+  const { preserveKeys = false } = options as ImportOptions;
 
   if (!source || !['pagerduty', 'opsgenie'].includes(source)) {
     return res.status(400).json({
@@ -852,12 +919,13 @@ router.post('/preview', async (req: Request, res: Response) => {
 
     const preview = {
       source,
+      options: { preserveKeys },
       summary: {
         users: { total: 0, existing: 0, new: 0, unmapped: 0 },
         teams: { total: 0, existing: 0, new: 0 },
         schedules: { total: 0, existing: 0, new: 0 },
         escalation_policies: { total: 0, existing: 0, new: 0 },
-        services: { total: 0, existing: 0, new: 0 },
+        services: { total: 0, existing: 0, new: 0, withExternalKeys: 0 },
       },
       details: {
         users: [] as any[],
@@ -941,12 +1009,30 @@ router.post('/preview', async (req: Request, res: Response) => {
       for (const s of services) {
         const existing = await serviceRepo.findOne({ where: { name: s.name, orgId } });
         preview.summary.services.total++;
+
+        // Check for external key based on source
+        const externalKey = source === 'pagerduty' ? s.integration_key : s.apiKey;
+        const hasExternalKey = preserveKeys && !!externalKey;
+
+        if (hasExternalKey) {
+          preview.summary.services.withExternalKeys++;
+        }
+
         if (existing) {
           preview.summary.services.existing++;
-          preview.details.services.push({ name: s.name, status: 'existing', id: existing.id });
+          preview.details.services.push({
+            name: s.name,
+            status: 'existing',
+            id: existing.id,
+            externalKeyPreserved: hasExternalKey && !existing.externalKeys?.[source as 'pagerduty' | 'opsgenie'],
+          });
         } else {
           preview.summary.services.new++;
-          preview.details.services.push({ name: s.name, status: 'new' });
+          preview.details.services.push({
+            name: s.name,
+            status: 'new',
+            externalKeyPreserved: hasExternalKey,
+          });
         }
       }
     }
