@@ -156,13 +156,13 @@ export default function EscalationPoliciesScreen() {
         targetId: stepTargetId.trim(),
       });
       hapticService.success();
-      showToast({ message: 'Escalation step added', type: 'success' });
+      showToast({ message: 'Escalation level added', type: 'success' });
       setShowStepModal(false);
       resetStepForm();
       fetchPolicies();
     } catch (error: any) {
-      console.error('Failed to add step:', error);
-      showToast({ message: error.message || 'Failed to add step', type: 'error' });
+      console.error('Failed to add level:', error);
+      showToast({ message: error.message || 'Failed to add level', type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -171,7 +171,7 @@ export default function EscalationPoliciesScreen() {
   const handleRemoveStep = async (policy: EscalationPolicy, step: EscalationStep) => {
     hapticService.warning();
     Alert.alert(
-      'Remove Step',
+      'Remove Level',
       `Remove level ${step.escalationLevel} from "${policy.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -182,10 +182,10 @@ export default function EscalationPoliciesScreen() {
             try {
               await apiService.deleteEscalationStep(policy.id, step.id);
               hapticService.success();
-              showToast({ message: 'Step removed', type: 'success' });
+              showToast({ message: 'Level removed', type: 'success' });
               fetchPolicies();
             } catch (error: any) {
-              showToast({ message: error.message || 'Failed to remove step', type: 'error' });
+              showToast({ message: error.message || 'Failed to remove level', type: 'error' });
             }
           },
         },
@@ -268,7 +268,7 @@ export default function EscalationPoliciesScreen() {
                         style={[styles.metaChip, { backgroundColor: `${colors.primary}15` }]}
                         textStyle={{ color: colors.primary, fontSize: 11 }}
                       >
-                        {policy.steps?.length || 0} steps
+                        {policy.steps?.length || 0} {policy.steps?.length === 1 ? 'level' : 'levels'}
                       </Chip>
                       {policy.servicesCount !== undefined && policy.servicesCount > 0 && (
                         <Chip
@@ -299,7 +299,7 @@ export default function EscalationPoliciesScreen() {
                     />
                     <Menu.Item
                       onPress={() => openStepModal(policy)}
-                      title="Add Step"
+                      title="Add Level"
                       leadingIcon="plus"
                     />
                     <Divider />
@@ -467,13 +467,13 @@ export default function EscalationPoliciesScreen() {
           contentContainerStyle={[styles.modal, { backgroundColor: colors.surface }]}
         >
           <Text variant="titleLarge" style={[styles.modalTitle, { color: colors.textPrimary }]}>
-            Add Escalation Step
+            Add Escalation Level
           </Text>
           <Text variant="bodyMedium" style={{ color: colors.textSecondary, marginBottom: 16 }}>
             Adding to: {selectedPolicy?.name}
           </Text>
           <TextInput
-            label="Delay (minutes)"
+            label="Escalate after (minutes)"
             value={stepDelay}
             onChangeText={setStepDelay}
             mode="outlined"
@@ -534,7 +534,7 @@ export default function EscalationPoliciesScreen() {
               Cancel
             </Button>
             <Button mode="contained" onPress={handleAddStep} loading={saving} disabled={saving}>
-              Add Step
+              Add Level
             </Button>
           </View>
         </Modal>
