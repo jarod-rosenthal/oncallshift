@@ -33,6 +33,15 @@ import ManageServicesScreen from './src/screens/ManageServicesScreen';
 import ManageUsersScreen from './src/screens/ManageUsersScreen';
 import AIChatScreen from './src/screens/AIChatScreen';
 import SetupWizardScreen from './src/screens/SetupWizardScreen';
+import TeamsScreen from './src/screens/TeamsScreen';
+import TeamDetailScreen from './src/screens/TeamDetailScreen';
+import IntegrationsScreen from './src/screens/IntegrationsScreen';
+import IntegrationDetailScreen from './src/screens/IntegrationDetailScreen';
+import RoutingRulesScreen from './src/screens/RoutingRulesScreen';
+import ScheduleLayersScreen from './src/screens/ScheduleLayersScreen';
+import ContactMethodsScreen from './src/screens/ContactMethodsScreen';
+import ServiceSettingsScreen from './src/screens/ServiceSettingsScreen';
+import DashboardScreen from './src/screens/DashboardScreen';
 
 // Components
 import { ToastProvider, OfflineBanner, ConfettiProvider } from './src/components';
@@ -52,9 +61,10 @@ import * as backgroundRefreshService from './src/services/backgroundRefreshServi
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-type TabIconName = 'alert-circle' | 'alert-circle-outline' | 'phone-in-talk' | 'phone-in-talk-outline' | 'inbox' | 'inbox-outline' | 'dots-horizontal-circle' | 'dots-horizontal-circle-outline';
+type TabIconName = 'view-dashboard' | 'view-dashboard-outline' | 'alert-circle' | 'alert-circle-outline' | 'phone-in-talk' | 'phone-in-talk-outline' | 'inbox' | 'inbox-outline' | 'dots-horizontal-circle' | 'dots-horizontal-circle-outline';
 
 const tabIcons: Record<string, { focused: TabIconName; unfocused: TabIconName }> = {
+  Dashboard: { focused: 'view-dashboard', unfocused: 'view-dashboard-outline' },
   Incidents: { focused: 'alert-circle', unfocused: 'alert-circle-outline' },
   OnCall: { focused: 'phone-in-talk', unfocused: 'phone-in-talk-outline' },
   Inbox: { focused: 'inbox', unfocused: 'inbox-outline' },
@@ -68,6 +78,7 @@ const linking = {
     screens: {
       Main: {
         screens: {
+          Dashboard: 'dashboard',
           Incidents: 'incidents',
           OnCall: 'oncall',
           Inbox: 'inbox',
@@ -131,6 +142,11 @@ function MainTabs({ onLogout, incidentCount, unreadCount }: { navigation: any; o
         },
       })}
     >
+      <Tab.Screen
+        name="Dashboard"
+        component={DashboardScreen}
+        options={{ title: 'Home' }}
+      />
       <Tab.Screen
         name="Incidents"
         component={AlertListScreen}
@@ -604,6 +620,46 @@ function AppContent() {
                     name="SetupWizard"
                     component={SetupWizardScreen}
                     options={{ title: 'Setup Wizard', headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="Teams"
+                    component={TeamsScreen}
+                    options={{ title: 'Teams' }}
+                  />
+                  <Stack.Screen
+                    name="TeamDetail"
+                    component={TeamDetailScreen}
+                    options={{ title: 'Team Details' }}
+                  />
+                  <Stack.Screen
+                    name="Integrations"
+                    component={IntegrationsScreen}
+                    options={{ title: 'Integrations' }}
+                  />
+                  <Stack.Screen
+                    name="IntegrationDetail"
+                    component={IntegrationDetailScreen}
+                    options={{ title: 'Integration' }}
+                  />
+                  <Stack.Screen
+                    name="RoutingRules"
+                    component={RoutingRulesScreen}
+                    options={{ title: 'Routing Rules' }}
+                  />
+                  <Stack.Screen
+                    name="ScheduleLayers"
+                    component={ScheduleLayersScreen}
+                    options={{ title: 'Schedule Layers' }}
+                  />
+                  <Stack.Screen
+                    name="ContactMethods"
+                    component={ContactMethodsScreen}
+                    options={{ title: 'Contact Methods' }}
+                  />
+                  <Stack.Screen
+                    name="ServiceSettings"
+                    component={ServiceSettingsScreen}
+                    options={{ title: 'Service Settings' }}
                   />
                 </>
               )}

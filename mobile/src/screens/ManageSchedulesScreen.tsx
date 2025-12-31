@@ -289,6 +289,17 @@ export default function ManageSchedulesScreen({ navigation }: { navigation: any 
                       title="Rotation Settings"
                       leadingIcon="rotate-3d-variant"
                     />
+                    <Menu.Item
+                      onPress={() => {
+                        setMenuVisible(null);
+                        navigation.navigate('ScheduleLayers', {
+                          scheduleId: schedule.id,
+                          scheduleName: schedule.name,
+                        });
+                      }}
+                      title="Manage Layers"
+                      leadingIcon="layers"
+                    />
                     <Divider />
                     <Menu.Item
                       onPress={() => {

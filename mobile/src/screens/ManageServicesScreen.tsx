@@ -314,6 +314,17 @@ export default function ManageServicesScreen() {
                       title="API Key"
                       leadingIcon="key"
                     />
+                    <Menu.Item
+                      onPress={() => {
+                        setMenuVisible(null);
+                        navigation.navigate('ServiceSettings', {
+                          serviceId: service.id,
+                          serviceName: service.name,
+                        });
+                      }}
+                      title="Alert Grouping"
+                      leadingIcon="group"
+                    />
                     <Divider />
                     <Menu.Item
                       onPress={() => {

@@ -409,21 +409,6 @@ export const incidentsAPI = {
     return response.data;
   },
 
-  snooze: async (id: string, durationMinutes: number, reason?: string): Promise<{ incident: Incident; message: string }> => {
-    const response = await apiClient.post<{ incident: Incident; message: string }>(
-      `/incidents/${id}/snooze`,
-      { durationMinutes, reason }
-    );
-    return response.data;
-  },
-
-  cancelSnooze: async (id: string): Promise<{ incident: Incident; message: string }> => {
-    const response = await apiClient.delete<{ incident: Incident; message: string }>(
-      `/incidents/${id}/snooze`
-    );
-    return response.data;
-  },
-
   escalate: async (id: string, reason?: string): Promise<{ incident: Incident; message: string }> => {
     const response = await apiClient.post<{ incident: Incident; message: string }>(
       `/incidents/${id}/escalate`,
@@ -1327,6 +1312,68 @@ export const tagsAPI = {
     const response = await apiClient.delete<{ message: string }>(
       `/tags/${tagId}/entities/${entityType}/${entityId}`
     );
+    return response.data;
+  },
+};
+
+// Import API for migrating from PagerDuty/Opsgenie
+export interface ImportPreviewResult {
+  source: 'pagerduty' | 'opsgenie';
+  preview: {
+    users: Array<{ email: string; name: string; role: string; action: 'create' | 'match' }>;
+    teams: Array<{ name: string; memberCount: number }>;
+    schedules: Array<{ name: string; type: string; layerCount: number }>;
+    escalationPolicies: Array<{ name: string; stepCount: number }>;
+    services: Array<{ name: string; description: string }>;
+  };
+  warnings: string[];
+  estimatedChanges: {
+    usersToCreate: number;
+    usersToMatch: number;
+    teamsToCreate: number;
+    schedulesToCreate: number;
+    policiesToCreate: number;
+    servicesToCreate: number;
+  };
+}
+
+export interface ImportResult {
+  success: boolean;
+  message: string;
+  imported: {
+    users: number;
+    teams: number;
+    schedules: number;
+    escalationPolicies: number;
+    services: number;
+  };
+  idMappings: {
+    users: Record<string, string>;
+    teams: Record<string, string>;
+    schedules: Record<string, string>;
+    escalationPolicies: Record<string, string>;
+    services: Record<string, string>;
+  };
+  errors: string[];
+  warnings: string[];
+}
+
+export const importAPI = {
+  preview: async (source: 'pagerduty' | 'opsgenie', data: any): Promise<ImportPreviewResult> => {
+    const response = await apiClient.post<ImportPreviewResult>('/import/preview', {
+      source,
+      data,
+    });
+    return response.data;
+  },
+
+  importPagerDuty: async (data: any): Promise<ImportResult> => {
+    const response = await apiClient.post<ImportResult>('/import/pagerduty', data);
+    return response.data;
+  },
+
+  importOpsgenie: async (data: any): Promise<ImportResult> => {
+    const response = await apiClient.post<ImportResult>('/import/opsgenie', data);
     return response.data;
   },
 };

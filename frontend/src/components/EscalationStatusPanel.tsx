@@ -4,12 +4,10 @@ import type { EscalationStatus } from '../types/api';
 
 interface EscalationStatusPanelProps {
   escalation: EscalationStatus | null;
-  isSnoozed: boolean;
-  snoozedUntil: string | null;
   onEscalateNow?: () => void;
 }
 
-export function EscalationStatusPanel({ escalation, isSnoozed, snoozedUntil, onEscalateNow }: EscalationStatusPanelProps) {
+export function EscalationStatusPanel({ escalation, onEscalateNow }: EscalationStatusPanelProps) {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   useEffect(() => {
@@ -60,14 +58,7 @@ export function EscalationStatusPanel({ escalation, isSnoozed, snoozedUntil, onE
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg flex items-center justify-between">
-          <span>Escalation Status</span>
-          {isSnoozed && (
-            <span className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-              SNOOZED
-            </span>
-          )}
-        </CardTitle>
+        <CardTitle className="text-lg">Escalation Status</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Policy Name */}
@@ -162,15 +153,6 @@ export function EscalationStatusPanel({ escalation, isSnoozed, snoozedUntil, onE
           </div>
         )}
 
-        {/* Snooze Info */}
-        {isSnoozed && snoozedUntil && (
-          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3">
-            <p className="text-sm text-purple-800 dark:text-purple-200">
-              Snoozed until {new Date(snoozedUntil).toLocaleString()}
-            </p>
-          </div>
-        )}
-
         {/* Current Targets */}
         {escalation.currentTargets.length > 0 && (
           <div>
@@ -205,7 +187,7 @@ export function EscalationStatusPanel({ escalation, isSnoozed, snoozedUntil, onE
         )}
 
         {/* Not Escalating State */}
-        {!escalation.isEscalating && !isSnoozed && (
+        {!escalation.isEscalating && (
           <p className="text-sm text-green-600 dark:text-green-400">
             Escalation paused (incident acknowledged or resolved)
           </p>

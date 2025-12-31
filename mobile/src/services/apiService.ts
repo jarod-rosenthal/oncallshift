@@ -497,39 +497,6 @@ export const escalateIncident = async (
 };
 
 /**
- * Snooze an incident (server-side)
- */
-export const snoozeIncident = async (
-  incidentId: string,
-  durationMinutes: number,
-  reason?: string
-): Promise<{ incident: Incident; message: string }> => {
-  try {
-    const response = await apiClient.post(`/v1/incidents/${incidentId}/snooze`, {
-      durationMinutes,
-      reason,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error snoozing incident:', error);
-    throw error;
-  }
-};
-
-/**
- * Cancel snooze on an incident
- */
-export const unsnoozeIncident = async (incidentId: string): Promise<{ incident: Incident; message: string }> => {
-  try {
-    const response = await apiClient.delete(`/v1/incidents/${incidentId}/snooze`);
-    return response.data;
-  } catch (error) {
-    console.error('Error unsnoozing incident:', error);
-    throw error;
-  }
-};
-
-/**
  * Reassign an incident to another user
  */
 export const reassignIncident = async (
@@ -1295,6 +1262,1137 @@ export const completeSetup = async (data: SetupCompleteInput): Promise<SetupComp
     return response.data;
   } catch (error) {
     console.error('Error completing setup:', error);
+    throw error;
+  }
+};
+
+// ============ TEAMS ============
+
+export interface TeamMember {
+  id: string;
+  userId: string;
+  role: 'manager' | 'member';
+  user: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  createdAt: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  slug: string;
+  memberCount: number;
+  members: TeamMember[];
+  resources?: {
+    schedules: Array<{ id: string; name: string }>;
+    escalationPolicies: Array<{ id: string; name: string }>;
+    services: Array<{ id: string; name: string }>;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Get all teams in the organization
+ */
+export const getTeams = async (): Promise<Team[]> => {
+  try {
+    const response = await apiClient.get('/v1/teams');
+    return response.data.teams;
+  } catch (error) {
+    console.error('Error fetching teams:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific team with details
+ */
+export const getTeam = async (teamId: string): Promise<Team> => {
+  try {
+    const response = await apiClient.get(`/v1/teams/${teamId}`);
+    return response.data.team;
+  } catch (error) {
+    console.error('Error fetching team:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new team (admin only)
+ */
+export const createTeam = async (data: {
+  name: string;
+  description?: string;
+}): Promise<Team> => {
+  try {
+    const response = await apiClient.post('/v1/teams', data);
+    return response.data.team;
+  } catch (error) {
+    console.error('Error creating team:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a team (admin only)
+ */
+export const updateTeam = async (
+  teamId: string,
+  data: { name?: string; description?: string }
+): Promise<Team> => {
+  try {
+    const response = await apiClient.put(`/v1/teams/${teamId}`, data);
+    return response.data.team;
+  } catch (error) {
+    console.error('Error updating team:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a team (admin only)
+ */
+export const deleteTeam = async (teamId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/teams/${teamId}`);
+  } catch (error) {
+    console.error('Error deleting team:', error);
+    throw error;
+  }
+};
+
+/**
+ * Add a member to a team (admin only)
+ */
+export const addTeamMember = async (
+  teamId: string,
+  userId: string,
+  role: 'manager' | 'member' = 'member'
+): Promise<TeamMember> => {
+  try {
+    const response = await apiClient.post(`/v1/teams/${teamId}/members`, { userId, role });
+    return response.data.member;
+  } catch (error) {
+    console.error('Error adding team member:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a team member's role (admin only)
+ */
+export const updateTeamMemberRole = async (
+  teamId: string,
+  userId: string,
+  role: 'manager' | 'member'
+): Promise<TeamMember> => {
+  try {
+    const response = await apiClient.put(`/v1/teams/${teamId}/members/${userId}`, { role });
+    return response.data.member;
+  } catch (error) {
+    console.error('Error updating team member role:', error);
+    throw error;
+  }
+};
+
+/**
+ * Remove a member from a team (admin only)
+ */
+export const removeTeamMember = async (teamId: string, userId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/teams/${teamId}/members/${userId}`);
+  } catch (error) {
+    console.error('Error removing team member:', error);
+    throw error;
+  }
+};
+
+// ============ ROUTING RULES ============
+
+export interface RoutingRuleCondition {
+  field: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'regex' | 'in' | 'not_in' | 'exists' | 'not_exists';
+  value?: string | string[];
+}
+
+export interface RoutingRule {
+  id: string;
+  name: string;
+  description?: string;
+  ruleOrder: number;
+  enabled: boolean;
+  matchType: 'all' | 'any';
+  conditions: RoutingRuleCondition[];
+  targetServiceId?: string;
+  targetService?: {
+    id: string;
+    name: string;
+  } | null;
+  setSeverity?: 'info' | 'warning' | 'error' | 'critical';
+  createdBy?: {
+    id: string;
+    fullName: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Get all routing rules
+ */
+export const getRoutingRules = async (): Promise<RoutingRule[]> => {
+  try {
+    const response = await apiClient.get('/v1/routing-rules');
+    return response.data.rules;
+  } catch (error) {
+    console.error('Error fetching routing rules:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific routing rule
+ */
+export const getRoutingRule = async (ruleId: string): Promise<RoutingRule> => {
+  try {
+    const response = await apiClient.get(`/v1/routing-rules/${ruleId}`);
+    return response.data.rule;
+  } catch (error) {
+    console.error('Error fetching routing rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new routing rule
+ */
+export const createRoutingRule = async (data: {
+  name: string;
+  description?: string;
+  matchType?: 'all' | 'any';
+  conditions?: RoutingRuleCondition[];
+  targetServiceId?: string;
+  setSeverity?: 'info' | 'warning' | 'error' | 'critical';
+  enabled?: boolean;
+}): Promise<RoutingRule> => {
+  try {
+    const response = await apiClient.post('/v1/routing-rules', data);
+    return response.data.rule;
+  } catch (error) {
+    console.error('Error creating routing rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a routing rule
+ */
+export const updateRoutingRule = async (
+  ruleId: string,
+  data: {
+    name?: string;
+    description?: string;
+    matchType?: 'all' | 'any';
+    conditions?: RoutingRuleCondition[];
+    targetServiceId?: string | null;
+    setSeverity?: 'info' | 'warning' | 'error' | 'critical' | null;
+    enabled?: boolean;
+    ruleOrder?: number;
+  }
+): Promise<RoutingRule> => {
+  try {
+    const response = await apiClient.put(`/v1/routing-rules/${ruleId}`, data);
+    return response.data.rule;
+  } catch (error) {
+    console.error('Error updating routing rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a routing rule
+ */
+export const deleteRoutingRule = async (ruleId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/routing-rules/${ruleId}`);
+  } catch (error) {
+    console.error('Error deleting routing rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Test a routing rule against a sample payload
+ */
+export const testRoutingRule = async (
+  ruleId: string,
+  payload: Record<string, unknown>
+): Promise<{ matches: boolean; result: any }> => {
+  try {
+    const response = await apiClient.post(`/v1/routing-rules/${ruleId}/test`, { payload });
+    return response.data;
+  } catch (error) {
+    console.error('Error testing routing rule:', error);
+    throw error;
+  }
+};
+
+// ============ INTEGRATIONS ============
+
+export type IntegrationType = 'slack' | 'teams' | 'jira' | 'servicenow' | 'webhook' | 'pagerduty_import';
+export type IntegrationStatus = 'pending' | 'active' | 'error' | 'disabled';
+
+export interface Integration {
+  id: string;
+  type: IntegrationType;
+  name: string;
+  status: IntegrationStatus;
+  config?: Record<string, unknown>;
+  features?: {
+    incident_sync?: boolean;
+    bidirectional?: boolean;
+    auto_create_channel?: boolean;
+    auto_resolve?: boolean;
+    sync_comments?: boolean;
+    sync_status?: boolean;
+  };
+  // Slack-specific
+  slackWorkspaceId?: string;
+  slackWorkspaceName?: string;
+  slackDefaultChannelId?: string;
+  // Jira-specific
+  jiraSiteUrl?: string;
+  jiraProjectKey?: string;
+  jiraIssueType?: string;
+  // Webhook
+  webhookUrl?: string;
+  // Error info
+  lastError?: string;
+  lastErrorAt?: string;
+  errorCount?: number;
+  // Timestamps
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IntegrationEvent {
+  id: string;
+  eventType: string;
+  direction: 'inbound' | 'outbound';
+  status: 'success' | 'failed' | 'pending' | 'retrying';
+  errorMessage?: string;
+  incidentId?: string;
+  externalId?: string;
+  externalUrl?: string;
+  createdAt: string;
+}
+
+/**
+ * Get all integrations
+ */
+export const getIntegrations = async (type?: IntegrationType): Promise<Integration[]> => {
+  try {
+    const params = type ? { type } : {};
+    const response = await apiClient.get('/v1/integrations', { params });
+    return response.data.integrations;
+  } catch (error) {
+    console.error('Error fetching integrations:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific integration
+ */
+export const getIntegration = async (integrationId: string): Promise<Integration> => {
+  try {
+    const response = await apiClient.get(`/v1/integrations/${integrationId}`);
+    return response.data.integration;
+  } catch (error) {
+    console.error('Error fetching integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new integration
+ */
+export const createIntegration = async (data: {
+  type: IntegrationType;
+  name: string;
+  config?: Record<string, unknown>;
+  features?: Integration['features'];
+}): Promise<Integration> => {
+  try {
+    const response = await apiClient.post('/v1/integrations', data);
+    return response.data.integration;
+  } catch (error) {
+    console.error('Error creating integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update an integration
+ */
+export const updateIntegration = async (
+  integrationId: string,
+  data: {
+    name?: string;
+    config?: Record<string, unknown>;
+    features?: Integration['features'];
+    status?: 'active' | 'disabled';
+  }
+): Promise<Integration> => {
+  try {
+    const response = await apiClient.put(`/v1/integrations/${integrationId}`, data);
+    return response.data.integration;
+  } catch (error) {
+    console.error('Error updating integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete an integration
+ */
+export const deleteIntegration = async (integrationId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/integrations/${integrationId}`);
+  } catch (error) {
+    console.error('Error deleting integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get integration events/activity
+ */
+export const getIntegrationEvents = async (
+  integrationId: string,
+  limit: number = 50
+): Promise<IntegrationEvent[]> => {
+  try {
+    const response = await apiClient.get(`/v1/integrations/${integrationId}/events`, {
+      params: { limit },
+    });
+    return response.data.events;
+  } catch (error) {
+    console.error('Error fetching integration events:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get services linked to an integration
+ */
+export const getIntegrationServices = async (
+  integrationId: string
+): Promise<Array<{ id: string; name: string; status: string }>> => {
+  try {
+    const response = await apiClient.get(`/v1/integrations/${integrationId}/services`);
+    return response.data.services;
+  } catch (error) {
+    console.error('Error fetching integration services:', error);
+    throw error;
+  }
+};
+
+/**
+ * Link a service to an integration
+ */
+export const linkServiceToIntegration = async (
+  integrationId: string,
+  serviceId: string,
+  configOverrides?: Record<string, unknown>
+): Promise<void> => {
+  try {
+    await apiClient.post(`/v1/integrations/${integrationId}/services/${serviceId}`, {
+      config_overrides: configOverrides,
+    });
+  } catch (error) {
+    console.error('Error linking service to integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Unlink a service from an integration
+ */
+export const unlinkServiceFromIntegration = async (
+  integrationId: string,
+  serviceId: string
+): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/integrations/${integrationId}/services/${serviceId}`);
+  } catch (error) {
+    console.error('Error unlinking service from integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Test a Slack integration
+ */
+export const testSlackIntegration = async (
+  integrationId: string,
+  channelId: string
+): Promise<{ message: string; messageTs?: string }> => {
+  try {
+    const response = await apiClient.post(`/v1/integrations/${integrationId}/slack/test`, {
+      channel_id: channelId,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error testing Slack integration:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get available Slack channels
+ */
+export const getSlackChannels = async (
+  integrationId: string
+): Promise<Array<{ id: string; name: string }>> => {
+  try {
+    const response = await apiClient.get(`/v1/integrations/${integrationId}/slack/channels`);
+    return response.data.channels;
+  } catch (error) {
+    console.error('Error fetching Slack channels:', error);
+    throw error;
+  }
+};
+
+// ============ SCHEDULE LAYERS ============
+
+export type RotationType = 'daily' | 'weekly' | 'custom';
+
+export interface LayerRestrictions {
+  type: 'weekly';
+  intervals: Array<{
+    startDay: number;
+    startTime: string;
+    endDay: number;
+    endTime: string;
+  }>;
+}
+
+export interface ScheduleLayerMember {
+  id: string;
+  userId: string;
+  position: number;
+  user: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+}
+
+export interface ScheduleLayer {
+  id: string;
+  scheduleId: string;
+  name: string;
+  rotationType: RotationType;
+  startDate: string;
+  endDate: string | null;
+  handoffTime: string;
+  handoffDay: number | null;
+  rotationLength: number;
+  layerOrder: number;
+  restrictions: LayerRestrictions | null;
+  members: ScheduleLayerMember[];
+  currentOncallUserId: string | null;
+  createdAt: string;
+}
+
+export interface ScheduleOverride {
+  id: string;
+  scheduleId: string;
+  userId: string;
+  user: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  startTime: string;
+  endTime: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+/**
+ * Get all layers for a schedule
+ */
+export const getScheduleLayers = async (scheduleId: string): Promise<ScheduleLayer[]> => {
+  try {
+    const response = await apiClient.get(`/v1/schedules/${scheduleId}/layers`);
+    return response.data.layers;
+  } catch (error) {
+    console.error('Error fetching schedule layers:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a new layer for a schedule
+ */
+export const createScheduleLayer = async (
+  scheduleId: string,
+  data: {
+    name: string;
+    rotationType?: RotationType;
+    startDate: string;
+    endDate?: string;
+    handoffTime?: string;
+    handoffDay?: number;
+    rotationLength?: number;
+    layerOrder?: number;
+    restrictions?: LayerRestrictions;
+    userIds?: string[];
+  }
+): Promise<ScheduleLayer> => {
+  try {
+    const response = await apiClient.post(`/v1/schedules/${scheduleId}/layers`, data);
+    return response.data.layer;
+  } catch (error) {
+    console.error('Error creating schedule layer:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a schedule layer
+ */
+export const updateScheduleLayer = async (
+  scheduleId: string,
+  layerId: string,
+  data: {
+    name?: string;
+    rotationType?: RotationType;
+    startDate?: string;
+    endDate?: string | null;
+    handoffTime?: string;
+    handoffDay?: number | null;
+    rotationLength?: number;
+    layerOrder?: number;
+    restrictions?: LayerRestrictions | null;
+  }
+): Promise<ScheduleLayer> => {
+  try {
+    const response = await apiClient.put(`/v1/schedules/${scheduleId}/layers/${layerId}`, data);
+    return response.data.layer;
+  } catch (error) {
+    console.error('Error updating schedule layer:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a schedule layer
+ */
+export const deleteScheduleLayer = async (scheduleId: string, layerId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/schedules/${scheduleId}/layers/${layerId}`);
+  } catch (error) {
+    console.error('Error deleting schedule layer:', error);
+    throw error;
+  }
+};
+
+/**
+ * Set members for a schedule layer
+ */
+export const setScheduleLayerMembers = async (
+  scheduleId: string,
+  layerId: string,
+  userIds: string[]
+): Promise<ScheduleLayerMember[]> => {
+  try {
+    const response = await apiClient.put(`/v1/schedules/${scheduleId}/layers/${layerId}/members`, {
+      userIds,
+    });
+    return response.data.members;
+  } catch (error) {
+    console.error('Error setting layer members:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get schedule overrides
+ */
+export const getScheduleOverrides = async (scheduleId: string): Promise<{
+  active: ScheduleOverride[];
+  upcoming: ScheduleOverride[];
+  recent: ScheduleOverride[];
+}> => {
+  try {
+    const response = await apiClient.get(`/v1/schedules/${scheduleId}/overrides`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching schedule overrides:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a schedule layer override (with time range)
+ */
+export const createLayerOverride = async (
+  scheduleId: string,
+  data: {
+    userId: string;
+    startTime: string;
+    endTime: string;
+    reason?: string;
+  }
+): Promise<ScheduleOverride> => {
+  try {
+    const response = await apiClient.post(`/v1/schedules/${scheduleId}/overrides`, data);
+    return response.data.override;
+  } catch (error) {
+    console.error('Error creating schedule override:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a schedule layer override
+ */
+export const updateLayerOverride = async (
+  scheduleId: string,
+  overrideId: string,
+  data: {
+    userId?: string;
+    startTime?: string;
+    endTime?: string;
+    reason?: string;
+  }
+): Promise<ScheduleOverride> => {
+  try {
+    const response = await apiClient.put(`/v1/schedules/${scheduleId}/overrides/${overrideId}`, data);
+    return response.data.override;
+  } catch (error) {
+    console.error('Error updating schedule override:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a schedule layer override
+ */
+export const deleteLayerOverride = async (scheduleId: string, overrideId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/schedules/${scheduleId}/overrides/${overrideId}`);
+  } catch (error) {
+    console.error('Error deleting schedule override:', error);
+    throw error;
+  }
+};
+
+// ============ UPCOMING SHIFTS ============
+
+export interface UpcomingShift {
+  scheduleId: string;
+  scheduleName: string;
+  serviceId: string;
+  serviceName: string;
+  startTime: string;
+  endTime: string;
+  isOverride: boolean;
+}
+
+/**
+ * Get current user's upcoming on-call shifts
+ * Returns shifts for the next 30 days
+ */
+export const getUpcomingShifts = async (): Promise<UpcomingShift[]> => {
+  try {
+    // Try to fetch from dedicated endpoint first
+    const response = await apiClient.get('/v1/schedules/my-shifts');
+    return response.data.shifts || [];
+  } catch (error: any) {
+    // If endpoint doesn't exist yet, compute from schedules
+    if (error.response?.status === 404) {
+      console.log('Upcoming shifts endpoint not available, computing locally');
+      return computeUpcomingShiftsLocally();
+    }
+    console.error('Error fetching upcoming shifts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Compute upcoming shifts locally from schedule data
+ * This is a fallback when the server endpoint isn't available
+ */
+const computeUpcomingShiftsLocally = async (): Promise<UpcomingShift[]> => {
+  try {
+    const [schedules, profile] = await Promise.all([
+      getSchedules(),
+      getUserProfile().catch(() => null),
+    ]);
+
+    if (!profile) return [];
+
+    const shifts: UpcomingShift[] = [];
+    const now = new Date();
+    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    for (const schedule of schedules) {
+      try {
+        const layers = await getScheduleLayers(schedule.id);
+
+        for (const layer of layers) {
+          // Check if current user is in this layer
+          const userMember = layer.members.find(m => m.userId === profile.id);
+          if (!userMember) continue;
+
+          // Calculate upcoming shifts based on rotation
+          const userPosition = userMember.position;
+          const totalMembers = layer.members.length;
+
+          if (totalMembers === 0) continue;
+
+          // Parse handoff time
+          const handoffParts = layer.handoffTime.split(':');
+          const handoffHour = parseInt(handoffParts[0]) || 9;
+          const handoffMinute = parseInt(handoffParts[1]) || 0;
+
+          // Calculate shift duration based on rotation type
+          let shiftDurationMs: number;
+          switch (layer.rotationType) {
+            case 'daily':
+              shiftDurationMs = 24 * 60 * 60 * 1000;
+              break;
+            case 'weekly':
+              shiftDurationMs = 7 * 24 * 60 * 60 * 1000;
+              break;
+            case 'custom':
+              shiftDurationMs = (layer.rotationLength || 1) * 24 * 60 * 60 * 1000;
+              break;
+            default:
+              shiftDurationMs = 24 * 60 * 60 * 1000;
+          }
+
+          // Rotation cycle length
+          const cycleLength = shiftDurationMs * totalMembers;
+
+          // Find start of rotation
+          const rotationStart = new Date(layer.startDate);
+          rotationStart.setHours(handoffHour, handoffMinute, 0, 0);
+
+          // Calculate when user's shifts occur
+          const userOffsetMs = userPosition * shiftDurationMs;
+
+          // Find the first shift that ends after now
+          let currentCycleStart = new Date(rotationStart.getTime());
+          while (currentCycleStart.getTime() + cycleLength < now.getTime()) {
+            currentCycleStart = new Date(currentCycleStart.getTime() + cycleLength);
+          }
+
+          // Generate shifts for next 30 days
+          let checkTime = currentCycleStart.getTime();
+          while (checkTime < thirtyDaysLater.getTime()) {
+            const shiftStart = new Date(checkTime + userOffsetMs);
+            const shiftEnd = new Date(shiftStart.getTime() + shiftDurationMs);
+
+            // Only include future shifts or currently active shifts
+            if (shiftEnd.getTime() > now.getTime()) {
+              shifts.push({
+                scheduleId: schedule.id,
+                scheduleName: schedule.name,
+                serviceId: '', // Would need service association
+                serviceName: layer.name || schedule.name,
+                startTime: shiftStart.toISOString(),
+                endTime: shiftEnd.toISOString(),
+                isOverride: false,
+              });
+            }
+
+            checkTime += cycleLength;
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to compute shifts for schedule ${schedule.id}:`, err);
+      }
+    }
+
+    // Sort by start time
+    shifts.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+    // Return first 10 shifts
+    return shifts.slice(0, 10);
+  } catch (error) {
+    console.error('Error computing upcoming shifts locally:', error);
+    return [];
+  }
+};
+
+// ============ USER CONTACT METHODS ============
+
+export type ContactMethodType = 'email' | 'sms' | 'phone' | 'push';
+
+export interface UserContactMethod {
+  id: string;
+  type: ContactMethodType;
+  address: string;
+  label: string | null;
+  verified: boolean;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+/**
+ * Get current user's contact methods
+ */
+export const getContactMethods = async (): Promise<UserContactMethod[]> => {
+  try {
+    const response = await apiClient.get('/v1/users/me/contact-methods');
+    return response.data.contactMethods;
+  } catch (error) {
+    console.error('Error fetching contact methods:', error);
+    throw error;
+  }
+};
+
+/**
+ * Add a new contact method
+ */
+export const addContactMethod = async (data: {
+  type: ContactMethodType;
+  address: string;
+  label?: string;
+}): Promise<UserContactMethod> => {
+  try {
+    const response = await apiClient.post('/v1/users/me/contact-methods', data);
+    return response.data.contactMethod;
+  } catch (error) {
+    console.error('Error adding contact method:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a contact method
+ */
+export const updateContactMethod = async (
+  contactMethodId: string,
+  data: {
+    label?: string;
+    isDefault?: boolean;
+  }
+): Promise<UserContactMethod> => {
+  try {
+    const response = await apiClient.put(`/v1/users/me/contact-methods/${contactMethodId}`, data);
+    return response.data.contactMethod;
+  } catch (error) {
+    console.error('Error updating contact method:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a contact method
+ */
+export const deleteContactMethod = async (contactMethodId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/users/me/contact-methods/${contactMethodId}`);
+  } catch (error) {
+    console.error('Error deleting contact method:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send verification code for a contact method
+ */
+export const sendVerificationCode = async (contactMethodId: string): Promise<{ sentAt: string }> => {
+  try {
+    const response = await apiClient.post(`/v1/users/me/contact-methods/${contactMethodId}/verify`);
+    return response.data;
+  } catch (error) {
+    console.error('Error sending verification code:', error);
+    throw error;
+  }
+};
+
+/**
+ * Verify a contact method with a code
+ */
+export const verifyContactMethod = async (
+  contactMethodId: string,
+  code: string
+): Promise<{ verified: boolean }> => {
+  try {
+    const response = await apiClient.post(`/v1/users/me/contact-methods/${contactMethodId}/verify`, {
+      code,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error verifying contact method:', error);
+    throw error;
+  }
+};
+
+// ============ USER NOTIFICATION RULES ============
+
+export type NotificationUrgency = 'high' | 'low' | 'any';
+
+export interface UserNotificationRule {
+  id: string;
+  contactMethodId: string;
+  contactMethod: {
+    id: string;
+    type: ContactMethodType;
+    address: string;
+    label: string | null;
+  } | null;
+  urgency: NotificationUrgency;
+  startDelayMinutes: number;
+  ruleOrder: number;
+  enabled: boolean;
+  createdAt: string;
+}
+
+/**
+ * Get current user's notification rules
+ */
+export const getNotificationRules = async (): Promise<UserNotificationRule[]> => {
+  try {
+    const response = await apiClient.get('/v1/users/me/notification-rules');
+    return response.data.notificationRules;
+  } catch (error) {
+    console.error('Error fetching notification rules:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a notification rule
+ */
+export const createNotificationRule = async (data: {
+  contactMethodId: string;
+  urgency: NotificationUrgency;
+  startDelayMinutes?: number;
+}): Promise<UserNotificationRule> => {
+  try {
+    const response = await apiClient.post('/v1/users/me/notification-rules', data);
+    return response.data.notificationRule;
+  } catch (error) {
+    console.error('Error creating notification rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a notification rule
+ */
+export const updateNotificationRule = async (
+  ruleId: string,
+  data: {
+    urgency?: NotificationUrgency;
+    startDelayMinutes?: number;
+    enabled?: boolean;
+  }
+): Promise<UserNotificationRule> => {
+  try {
+    const response = await apiClient.put(`/v1/users/me/notification-rules/${ruleId}`, data);
+    return response.data.notificationRule;
+  } catch (error) {
+    console.error('Error updating notification rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a notification rule
+ */
+export const deleteNotificationRule = async (ruleId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/users/me/notification-rules/${ruleId}`);
+  } catch (error) {
+    console.error('Error deleting notification rule:', error);
+    throw error;
+  }
+};
+
+// ============ ALERT GROUPING RULES ============
+
+export type GroupingType = 'intelligent' | 'time' | 'content' | 'disabled';
+
+export interface AlertGroupingRule {
+  id: string;
+  serviceId: string;
+  groupingType: GroupingType;
+  timeWindowMinutes: number;
+  contentFields: string[];
+  dedupKeyTemplate: string | null;
+  maxAlertsPerIncident: number;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertGroupingDefaults {
+  groupingType: GroupingType;
+  timeWindowMinutes: number;
+  contentFields: string[];
+  maxAlertsPerIncident: number;
+}
+
+/**
+ * Get alert grouping rule for a service
+ */
+export const getAlertGroupingRule = async (serviceId: string): Promise<{
+  groupingRule: AlertGroupingRule | null;
+  defaults: AlertGroupingDefaults;
+}> => {
+  try {
+    const response = await apiClient.get(`/v1/services/${serviceId}/grouping-rule`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching alert grouping rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update alert grouping rule for a service
+ */
+export const updateAlertGroupingRule = async (
+  serviceId: string,
+  data: {
+    groupingType?: GroupingType;
+    timeWindowMinutes?: number;
+    contentFields?: string[];
+    dedupKeyTemplate?: string | null;
+    maxAlertsPerIncident?: number;
+  }
+): Promise<AlertGroupingRule> => {
+  try {
+    const response = await apiClient.put(`/v1/services/${serviceId}/grouping-rule`, data);
+    return response.data.groupingRule;
+  } catch (error) {
+    console.error('Error updating alert grouping rule:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete alert grouping rule for a service (revert to defaults)
+ */
+export const deleteAlertGroupingRule = async (serviceId: string): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/services/${serviceId}/grouping-rule`);
+  } catch (error) {
+    console.error('Error deleting alert grouping rule:', error);
     throw error;
   }
 };

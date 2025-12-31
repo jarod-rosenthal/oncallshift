@@ -298,11 +298,6 @@ export function IncidentDetail() {
                   <span className={`px-2 py-1 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
                     {incident.state.toUpperCase()}
                   </span>
-                  {incident.isSnoozed && (
-                    <span className="px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                      SNOOZED
-                    </span>
-                  )}
                   <span className="text-sm text-muted-foreground">
                     #{incident.incidentNumber}
                   </span>
@@ -375,8 +370,6 @@ export function IncidentDetail() {
             {/* Escalation Status */}
             <EscalationStatusPanel
               escalation={escalation}
-              isSnoozed={incident.isSnoozed}
-              snoozedUntil={incident.snoozedUntil}
               onEscalateNow={() => handleEscalate('Manual escalation from incident detail')}
             />
 

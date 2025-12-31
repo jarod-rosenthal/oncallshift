@@ -62,46 +62,6 @@ async function processIncidentEscalation(
   incidentRepo: any,
   eventRepo: any
 ): Promise<void> {
-  // Check if snooze has expired
-  if (incident.snoozedUntil !== null) {
-    if (incident.isSnoozed()) {
-      // Still snoozed - skip escalation
-      logger.debug('Skipping escalation for snoozed incident', {
-        incidentId: incident.id,
-        incidentNumber: incident.incidentNumber,
-        snoozedUntil: incident.snoozedUntil,
-      });
-      return;
-    } else {
-      // Snooze expired - clear snooze and reset escalation timer
-      logger.info('Snooze expired, resuming escalation', {
-        incidentId: incident.id,
-        incidentNumber: incident.incidentNumber,
-      });
-
-      // Create snooze expired event
-      const snoozeExpiredEvent = eventRepo.create({
-        incidentId: incident.id,
-        type: 'unsnooze',
-        message: 'Snooze expired, resuming escalation',
-        payload: {
-          expiredAt: incident.snoozedUntil,
-          reason: 'expired',
-        },
-      });
-      await eventRepo.save(snoozeExpiredEvent);
-
-      // Clear snooze and reset escalation timer
-      incident.snoozedUntil = null;
-      incident.snoozedBy = null;
-      incident.escalationStartedAt = new Date();
-      await incidentRepo.save(incident);
-
-      // Continue with escalation check but timeout resets
-      return;
-    }
-  }
-
   // Get service with escalation policy
   const service = await serviceRepo.findOne({
     where: { id: incident.serviceId },

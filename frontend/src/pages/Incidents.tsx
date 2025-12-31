@@ -157,16 +157,6 @@ export function Incidents() {
     }
   };
 
-  const formatSnoozeTime = (snoozedUntil: string) => {
-    const date = new Date(snoozedUntil);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffMins = Math.round(diffMs / 60000);
-    if (diffMins < 60) return `${diffMins}m`;
-    const diffHours = Math.round(diffMins / 60);
-    return `${diffHours}h`;
-  };
-
   return (
     <div>
       <main className="container mx-auto">
@@ -219,11 +209,6 @@ export function Incidents() {
                         <span className={`px-2 py-1 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
                           {incident.state.toUpperCase()}
                         </span>
-                        {incident.isSnoozed && incident.snoozedUntil && (
-                          <span className="px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                            SNOOZED ({formatSnoozeTime(incident.snoozedUntil)})
-                          </span>
-                        )}
                         <span className="text-sm text-muted-foreground">
                           #{incident.incidentNumber}
                         </span>

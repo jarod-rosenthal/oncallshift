@@ -1,20 +1,58 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, Animated, AppState, AppStateStatus } from 'react-native';
-import { Text } from 'react-native-paper';
+import { View, StyleSheet, Animated, AppState, AppStateStatus, Pressable } from 'react-native';
+import { Text, Badge } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
+import * as offlineService from '../services/offlineService';
 
 interface OfflineBannerProps {
   isOffline?: boolean;
   message?: string;
+  showPendingActions?: boolean;
+  onPress?: () => void;
 }
 
 export default function OfflineBanner({
-  isOffline = false,
-  message = "You're offline. Actions will sync when connected."
+  isOffline: isOfflineProp,
+  message,
+  showPendingActions = true,
+  onPress,
 }: OfflineBannerProps) {
-  const { colors } = useAppTheme();
+  const { colors: themeColors } = useAppTheme();
   const slideAnim = useRef(new Animated.Value(-60)).current;
+  const [offlineStatus, setOfflineStatus] = useState<offlineService.OfflineStatus | null>(null);
+
+  // Use prop if provided, otherwise use service
+  const isOffline = isOfflineProp ?? !offlineStatus?.isConnected;
+  const pendingActions = offlineStatus?.pendingActions ?? 0;
+
+  // Get dynamic message
+  const displayMessage = message || (
+    pendingActions > 0
+      ? `Offline. ${pendingActions} action${pendingActions !== 1 ? 's' : ''} pending`
+      : "You're offline. Actions will sync when connected."
+  );
+
+  useEffect(() => {
+    // Initialize offline service and get initial status
+    const initAndListen = async () => {
+      await offlineService.initOfflineService();
+      const status = await offlineService.getOfflineStatus();
+      setOfflineStatus(status);
+    };
+
+    initAndListen();
+
+    // Listen for connection changes
+    const unsubscribe = offlineService.addConnectionListener((status) => {
+      setOfflineStatus(status);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     Animated.spring(slideAnim, {
@@ -27,85 +65,133 @@ export default function OfflineBanner({
 
   if (!isOffline) return null;
 
-  // Use slate gray background with teal icon - conveys information, not alarm
+  const BannerContent = (
+    <>
+      <MaterialCommunityIcons name="wifi-off" size={18} color={themeColors.accent} />
+      <Text variant="labelMedium" style={[styles.text, { color: themeColors.textPrimary }]}>
+        {displayMessage}
+      </Text>
+      {showPendingActions && pendingActions > 0 && (
+        <Badge size={20} style={styles.badge}>
+          {pendingActions}
+        </Badge>
+      )}
+      {onPress && (
+        <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textMuted} />
+      )}
+    </>
+  );
+
   return (
     <Animated.View
       style={[
         styles.container,
         {
-          backgroundColor: colors.surfaceSecondary,
+          backgroundColor: themeColors.surfaceSecondary,
           transform: [{ translateY: slideAnim }],
         },
       ]}
     >
-      <MaterialCommunityIcons name="wifi-off" size={18} color={colors.accent} />
-      <Text variant="labelMedium" style={[styles.text, { color: colors.textPrimary }]}>
-        {message}
-      </Text>
+      {onPress ? (
+        <Pressable style={styles.pressable} onPress={onPress}>
+          {BannerContent}
+        </Pressable>
+      ) : (
+        <View style={styles.content}>
+          {BannerContent}
+        </View>
+      )}
     </Animated.View>
   );
 }
 
-// Simple hook to check offline status using fetch
+// Hook to check offline status using the offline service
 export function useOfflineStatus() {
-  const [isOffline, setIsOffline] = useState(false);
-  const appState = useRef(AppState.currentState);
+  const [status, setStatus] = useState<offlineService.OfflineStatus>({
+    isConnected: true,
+    isInternetReachable: true,
+    pendingActions: 0,
+  });
 
   useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        // Try to fetch a small resource to check connectivity
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        await fetch('https://www.google.com/favicon.ico', {
-          method: 'HEAD',
-          signal: controller.signal,
-          cache: 'no-cache'
-        });
-
-        clearTimeout(timeoutId);
-        setIsOffline(false);
-      } catch {
-        setIsOffline(true);
-      }
+    // Get initial status
+    const init = async () => {
+      await offlineService.initOfflineService();
+      const currentStatus = await offlineService.getOfflineStatus();
+      setStatus(currentStatus);
     };
 
-    // Check on mount
-    checkConnection();
+    init();
 
-    // Check when app comes to foreground
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        checkConnection();
-      }
-      appState.current = nextAppState;
+    // Listen for changes
+    const unsubscribe = offlineService.addConnectionListener((newStatus) => {
+      setStatus(newStatus);
     });
 
-    // Periodic check every 30 seconds
-    const interval = setInterval(checkConnection, 30000);
-
     return () => {
-      subscription.remove();
-      clearInterval(interval);
+      unsubscribe();
     };
   }, []);
 
-  return isOffline;
+  return !status.isConnected;
+}
+
+// Extended hook that returns full offline status
+export function useOfflineStatusFull() {
+  const [status, setStatus] = useState<offlineService.OfflineStatus>({
+    isConnected: true,
+    isInternetReachable: true,
+    pendingActions: 0,
+  });
+
+  useEffect(() => {
+    const init = async () => {
+      await offlineService.initOfflineService();
+      const currentStatus = await offlineService.getOfflineStatus();
+      setStatus(currentStatus);
+    };
+
+    init();
+
+    const unsubscribe = offlineService.addConnectionListener((newStatus) => {
+      setStatus(newStatus);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  return status;
 }
 
 const styles = StyleSheet.create({
   container: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  content: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
     paddingHorizontal: 16,
     gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+  },
+  pressable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 8,
   },
   text: {
     fontWeight: '500',
+    flex: 1,
+  },
+  badge: {
+    backgroundColor: colors.warning,
+    color: '#fff',
   },
 });
