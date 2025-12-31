@@ -22,7 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAppTheme } from '../context/ThemeContext';
-import { colors, severityColors } from '../theme';
+import { severityColors } from '../theme';
 import * as apiService from '../services/apiService';
 import type { Incident, Service, UserProfile } from '../services/apiService';
 import { OwnerAvatar } from './OwnerAvatar';
@@ -167,7 +167,7 @@ export function GlobalSearch({
 
       // Search users
       if (selectedCategory === 'all' || selectedCategory === 'users') {
-        const users = await apiService.getOrganizationUsers().catch(() => []);
+        const users = await apiService.getUsers().catch(() => []);
         const matchedUsers = users.filter(user =>
           user.fullName?.toLowerCase().includes(queryLower) ||
           user.email?.toLowerCase().includes(queryLower)
@@ -238,20 +238,20 @@ export function GlobalSearch({
             <MaterialCommunityIcons
               name="alert-circle"
               size={20}
-              color={severityColors[severity as keyof typeof severityColors] || colors.error}
+              color={severityColors[severity as keyof typeof severityColors] || themeColors.error}
             />
           </View>
         );
       case 'service':
         return (
-          <View style={[styles.resultIcon, { backgroundColor: colors.primary + '20' }]}>
-            <MaterialCommunityIcons name="server" size={20} color={colors.primary} />
+          <View style={[styles.resultIcon, { backgroundColor: themeColors.primary + '20' }]}>
+            <MaterialCommunityIcons name="server" size={20} color={themeColors.primary} />
           </View>
         );
       case 'user':
         return (
-          <View style={[styles.resultIcon, { backgroundColor: colors.accent + '20' }]}>
-            <MaterialCommunityIcons name="account" size={20} color={colors.accent} />
+          <View style={[styles.resultIcon, { backgroundColor: themeColors.accent + '20' }]}>
+            <MaterialCommunityIcons name="account" size={20} color={themeColors.accent} />
           </View>
         );
       default:
@@ -274,13 +274,13 @@ export function GlobalSearch({
       {item.state && (
         <Chip
           compact
-          style={[styles.stateChip, { backgroundColor: item.state === 'triggered' ? colors.errorLight : colors.warningLight }]}
-          textStyle={{ color: item.state === 'triggered' ? colors.error : colors.warning, fontSize: 10 }}
+          style={[styles.stateChip, { backgroundColor: item.state === 'triggered' ? themeColors.errorLight : themeColors.warningLight }]}
+          textStyle={{ color: item.state === 'triggered' ? themeColors.error : themeColors.warning, fontSize: 10 }}
         >
-          {item.state}
+          {item.state === 'triggered' ? 'Active' : item.state}
         </Chip>
       )}
-      <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textMuted} />
+      <MaterialCommunityIcons name="chevron-right" size={20} color={themeColors.textMuted} />
     </Pressable>
   );
 
@@ -309,12 +309,12 @@ export function GlobalSearch({
         >
           {/* Search Input */}
           <View style={styles.searchContainer}>
-            <MaterialCommunityIcons name="magnify" size={22} color={colors.textMuted} />
+            <MaterialCommunityIcons name="magnify" size={22} color={themeColors.textMuted} />
             <TextInput
               ref={inputRef}
-              style={[styles.searchInput, { color: themeColors.onSurface }]}
+              style={[styles.searchInput, { color: themeColors.textPrimary }]}
               placeholder={placeholder}
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={themeColors.textMuted}
               value={query}
               onChangeText={setQuery}
               autoCapitalize="none"
@@ -326,7 +326,7 @@ export function GlobalSearch({
                 icon="close-circle"
                 size={18}
                 onPress={() => setQuery('')}
-                iconColor={colors.textMuted}
+                iconColor={themeColors.textMuted}
               />
             )}
           </View>
@@ -375,7 +375,7 @@ export function GlobalSearch({
           {/* Loading State */}
           {loading && (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={colors.accent} />
+              <ActivityIndicator size="small" color={themeColors.accent} />
             </View>
           )}
 
@@ -389,7 +389,7 @@ export function GlobalSearch({
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <MaterialCommunityIcons name="magnify-close" size={48} color={colors.textMuted} />
+                  <MaterialCommunityIcons name="magnify-close" size={48} color={themeColors.textMuted} />
                   <Text style={styles.emptyText}>No results found</Text>
                   <Text style={styles.emptySubtext}>Try a different search term</Text>
                 </View>
@@ -412,7 +412,7 @@ export function GlobalSearch({
                   style={styles.recentItem}
                   onPress={() => handleRecentSearchPress(search)}
                 >
-                  <MaterialCommunityIcons name="history" size={18} color={colors.textMuted} />
+                  <MaterialCommunityIcons name="history" size={18} color={themeColors.textMuted} />
                   <Text style={styles.recentText}>{search}</Text>
                 </Pressable>
               ))}
@@ -422,7 +422,7 @@ export function GlobalSearch({
           {/* Quick Tips */}
           {!loading && query.length === 0 && recentSearches.length === 0 && (
             <View style={styles.tipsContainer}>
-              <MaterialCommunityIcons name="lightbulb-outline" size={32} color={colors.textMuted} />
+              <MaterialCommunityIcons name="lightbulb-outline" size={32} color={themeColors.textMuted} />
               <Text style={styles.tipsTitle}>Search Tips</Text>
               <Text style={styles.tipsText}>
                 Search by incident number, title, service name, or team member
@@ -440,9 +440,9 @@ export function SearchButton({ onPress }: { onPress: () => void }) {
   const { colors: themeColors } = useAppTheme();
 
   return (
-    <Pressable style={[styles.searchButton, { backgroundColor: themeColors.surfaceVariant }]} onPress={onPress}>
-      <MaterialCommunityIcons name="magnify" size={20} color={colors.textMuted} />
-      <Text style={styles.searchButtonText}>Search...</Text>
+    <Pressable style={[styles.searchButton, { backgroundColor: themeColors.surfaceSecondary }]} onPress={onPress}>
+      <MaterialCommunityIcons name="magnify" size={20} color={themeColors.textMuted} />
+      <Text style={[styles.searchButtonText, { color: themeColors.textMuted }]}>Search...</Text>
     </Pressable>
   );
 }
@@ -491,7 +491,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    borderBottomColor: '#E2E8F0',
     gap: 12,
   },
   resultIcon: {
@@ -507,11 +507,9 @@ const styles = StyleSheet.create({
   resultTitle: {
     fontSize: 15,
     fontWeight: '500',
-    color: colors.textPrimary,
   },
   resultSubtitle: {
     fontSize: 13,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   stateChip: {
@@ -525,12 +523,10 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.textMuted,
     marginTop: 12,
   },
   emptySubtext: {
     fontSize: 14,
-    color: colors.textMuted,
     marginTop: 4,
   },
   recentContainer: {
@@ -545,12 +541,10 @@ const styles = StyleSheet.create({
   recentTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textSecondary,
     textTransform: 'uppercase',
   },
   clearText: {
     fontSize: 13,
-    color: colors.accent,
   },
   recentItem: {
     flexDirection: 'row',
@@ -560,7 +554,6 @@ const styles = StyleSheet.create({
   },
   recentText: {
     fontSize: 15,
-    color: colors.textPrimary,
   },
   tipsContainer: {
     padding: 40,
@@ -569,12 +562,10 @@ const styles = StyleSheet.create({
   tipsTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.textMuted,
     marginTop: 12,
   },
   tipsText: {
     fontSize: 14,
-    color: colors.textMuted,
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
@@ -589,7 +580,6 @@ const styles = StyleSheet.create({
   },
   searchButtonText: {
     fontSize: 15,
-    color: colors.textMuted,
   },
 });
 

@@ -3,6 +3,7 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { Text, Surface } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 

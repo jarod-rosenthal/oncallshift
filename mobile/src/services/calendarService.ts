@@ -1,9 +1,25 @@
-import * as Calendar from 'expo-calendar';
 import { Platform, Alert, Linking } from 'react-native';
 import type { UpcomingShift } from './apiService';
 
 const CALENDAR_NAME = 'OnCallShift';
 const CALENDAR_COLOR = '#6366F1'; // Accent color
+
+// Lazy-load expo-calendar to handle cases where it's not available (Expo Go)
+let _Calendar: typeof import('expo-calendar') | null = null;
+let _calendarChecked = false;
+
+async function getCalendar(): Promise<typeof import('expo-calendar') | null> {
+  if (_calendarChecked) return _Calendar;
+  _calendarChecked = true;
+
+  try {
+    _Calendar = await import('expo-calendar');
+    return _Calendar;
+  } catch (error) {
+    console.log('[Calendar] expo-calendar not available (requires development build)');
+    return null;
+  }
+}
 
 export interface CalendarExportResult {
   success: boolean;
@@ -12,10 +28,21 @@ export interface CalendarExportResult {
 }
 
 /**
+ * Check if calendar is available
+ */
+export async function isCalendarAvailable(): Promise<boolean> {
+  const Calendar = await getCalendar();
+  return Calendar !== null;
+}
+
+/**
  * Request calendar permissions
  */
 export async function requestCalendarPermissions(): Promise<boolean> {
   try {
+    const Calendar = await getCalendar();
+    if (!Calendar) return false;
+
     const { status } = await Calendar.requestCalendarPermissionsAsync();
     return status === 'granted';
   } catch (error) {
@@ -29,6 +56,9 @@ export async function requestCalendarPermissions(): Promise<boolean> {
  */
 export async function hasCalendarPermissions(): Promise<boolean> {
   try {
+    const Calendar = await getCalendar();
+    if (!Calendar) return false;
+
     const { status } = await Calendar.getCalendarPermissionsAsync();
     return status === 'granted';
   } catch (error) {
@@ -42,6 +72,9 @@ export async function hasCalendarPermissions(): Promise<boolean> {
  */
 async function getOrCreateOnCallCalendar(): Promise<string | null> {
   try {
+    const Calendar = await getCalendar();
+    if (!Calendar) return null;
+
     // Get all calendars
     const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
 
@@ -52,7 +85,7 @@ async function getOrCreateOnCallCalendar(): Promise<string | null> {
     }
 
     // Create new calendar
-    let defaultCalendarSource: Calendar.Source | undefined;
+    let defaultCalendarSource: any;
 
     if (Platform.OS === 'ios') {
       // On iOS, find the default calendar source (usually iCloud or local)
@@ -106,6 +139,14 @@ export async function exportShiftsToCalendar(
   shifts: UpcomingShift[]
 ): Promise<CalendarExportResult> {
   try {
+    const Calendar = await getCalendar();
+    if (!Calendar) {
+      return {
+        success: false,
+        message: 'Calendar export requires a development build. This feature is not available in Expo Go.',
+      };
+    }
+
     // Check/request permissions
     let hasPermission = await hasCalendarPermissions();
     if (!hasPermission) {

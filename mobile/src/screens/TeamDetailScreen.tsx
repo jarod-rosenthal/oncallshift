@@ -26,6 +26,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 import { useToast, OwnerAvatar } from '../components';
 import * as apiService from '../services/apiService';
 import type { Team, TeamMember, User, UserProfile } from '../services/apiService';

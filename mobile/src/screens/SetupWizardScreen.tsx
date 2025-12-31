@@ -22,6 +22,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 import { useToast } from '../components';
 import {
   SERVICE_TEMPLATES,

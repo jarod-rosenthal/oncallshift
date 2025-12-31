@@ -17,6 +17,7 @@ import {
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 import * as apiService from '../services/apiService';
 import * as hapticService from '../services/hapticService';
 
