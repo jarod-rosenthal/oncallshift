@@ -11,24 +11,24 @@
 > **Goal**: Enable complete account migration with zero webhook reconfiguration
 
 ### 1.1 Import User Contact Methods & Notification Rules
-**Effort**: 3-5 days | **Status**: Not Started
+**Effort**: 3-5 days | **Status**: Complete
 
-- [ ] Extend PagerDuty import to fetch `contact_methods` for each user
-- [ ] Map PagerDuty contact method types to OnCallShift format
-  - [ ] `phone_contact_method` → `phone`
-  - [ ] `email_contact_method` → `email`
-  - [ ] `push_notification_contact_method` → `push`
-  - [ ] `sms_contact_method` → `sms`
-- [ ] Extend PagerDuty import to fetch `notification_rules` for each user
-- [ ] Map notification rule fields
-  - [ ] `start_delay_in_minutes` → `delayMinutes`
-  - [ ] `urgency` → `urgency` (high/low)
-  - [ ] `contact_method.type` → `method`
-- [ ] Extend Opsgenie import to fetch user contacts
-- [ ] Map Opsgenie notification rules
-- [ ] Add contact methods to import preview
-- [ ] Handle merging contact methods for existing users
-- [ ] Write tests for contact method import
+- [x] Extend PagerDuty import to fetch `contact_methods` for each user
+- [x] Map PagerDuty contact method types to OnCallShift format
+  - [x] `phone_contact_method` → `phone`
+  - [x] `email_contact_method` → `email`
+  - [x] `push_notification_contact_method` → `push`
+  - [x] `sms_contact_method` → `sms`
+- [x] Extend PagerDuty import to fetch `notification_rules` for each user
+- [x] Map notification rule fields
+  - [x] `start_delay_in_minutes` → `delayMinutes`
+  - [x] `urgency` → `urgency` (high/low)
+  - [x] `contact_method.type` → `method`
+- [x] Extend Opsgenie import to fetch user contacts
+- [x] Map Opsgenie notification rules
+- [x] Add contact methods to import preview
+- [x] Handle merging contact methods for existing users
+- [x] Write tests for contact method import
 
 ### 1.2 Multi-Target Escalation Steps
 **Effort**: 2-3 days | **Status**: Not Started
@@ -236,11 +236,11 @@
 
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
-| Phase 1: Critical | 37 | 9 | 24% |
+| Phase 1: Critical | 37 | 21 | 57% |
 | Phase 2: Important | 28 | 0 | 0% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **110** | **9** | **8%** |
+| **Total** | **110** | **21** | **19%** |
 
 ---
 
@@ -257,7 +257,8 @@
 
 ### Completed Sessions
 - **Dec 31, 2024**: Initial analysis and plan creation
-- **Dec 31, 2024**: Implemented Phase 1.3 - Preserve Integration Keys (8/9 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.3 - Preserve Integration Keys (9/9 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.1 - Import User Contact Methods & Notification Rules (12/12 tasks)
 
 ---
 
