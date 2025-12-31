@@ -253,6 +253,50 @@ export const addIncidentNote = async (incidentId: string, content: string): Prom
   }
 };
 
+// ============ INCIDENT NOTIFICATIONS ============
+
+export interface NotificationChannel {
+  channel: 'push' | 'email' | 'sms' | 'voice';
+  status: 'pending' | 'sent' | 'delivered' | 'failed';
+  sentAt: string | null;
+  deliveredAt: string | null;
+  failedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface UserNotification {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  channels: NotificationChannel[];
+}
+
+export interface NotificationSummary {
+  total: number;
+  pending: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+}
+
+export interface IncidentNotificationsResponse {
+  notifications: UserNotification[];
+  summary: NotificationSummary;
+}
+
+/**
+ * Get notification statuses for an incident
+ */
+export const getIncidentNotifications = async (incidentId: string): Promise<IncidentNotificationsResponse> => {
+  try {
+    const response = await apiClient.get<IncidentNotificationsResponse>(`/v1/incidents/${incidentId}/notifications`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching incident notifications:', error);
+    throw error;
+  }
+};
+
 // ============ USER PROFILE ============
 
 /**
