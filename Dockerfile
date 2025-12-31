@@ -33,7 +33,7 @@ COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
 
 # Install all dependencies (need devDependencies for build)
-RUN npm ci
+RUN echo "npm version:" && npm --version && echo "node version:" && node --version && npm ci
 
 # Copy backend source code
 COPY backend/src ./src
