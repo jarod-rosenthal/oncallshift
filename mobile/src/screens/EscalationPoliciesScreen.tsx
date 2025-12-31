@@ -25,7 +25,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { useToast } from '../components';
 import * as apiService from '../services/apiService';
-import type { EscalationPolicy, EscalationStep } from '../services/apiService';
+import type { EscalationPolicy, EscalationStep, EscalationTarget } from '../services/apiService';
 import * as hapticService from '../services/hapticService';
 
 export default function EscalationPoliciesScreen() {
@@ -219,6 +219,37 @@ export default function EscalationPoliciesScreen() {
     setStepTargetId('');
   };
 
+  // Helper to get step target description for display
+  const getStepTargetDescription = (step: EscalationStep): string => {
+    // Check for new multi-target format first
+    if (step.targets && step.targets.length > 0) {
+      return step.targets.map(target => {
+        if (target.targetType === 'user') {
+          return target.user?.fullName || 'Unknown User';
+        } else {
+          return target.schedule?.name || 'Unknown Schedule';
+        }
+      }).join(', ');
+    }
+
+    // Fall back to old format
+    if (step.targetName) return step.targetName;
+    if (step.schedule?.name) return step.schedule.name;
+    return step.targetId;
+  };
+
+  // Helper to get delay in minutes (handle both old delayMinutes and new timeoutSeconds)
+  const getStepDelayMinutes = (step: EscalationStep): number => {
+    if (step.delayMinutes) return step.delayMinutes;
+    if (step.timeoutSeconds) return Math.round(step.timeoutSeconds / 60);
+    return 0;
+  };
+
+  // Helper to get step level (handle both old escalationLevel and new stepOrder)
+  const getStepLevel = (step: EscalationStep): number => {
+    return step.escalationLevel || step.stepOrder || 1;
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
@@ -270,6 +301,16 @@ export default function EscalationPoliciesScreen() {
                       >
                         {policy.steps?.length || 0} {policy.steps?.length === 1 ? 'level' : 'levels'}
                       </Chip>
+                      {policy.repeatEnabled && (
+                        <Chip
+                          compact
+                          icon="repeat"
+                          style={[styles.metaChip, { backgroundColor: `${colors.info || colors.primary}15` }]}
+                          textStyle={{ color: colors.info || colors.primary, fontSize: 11 }}
+                        >
+                          {policy.repeatCount === 0 ? 'Repeats' : `${policy.repeatCount}x`}
+                        </Chip>
+                      )}
                       {policy.servicesCount !== undefined && policy.servicesCount > 0 && (
                         <Chip
                           compact
@@ -322,18 +363,21 @@ export default function EscalationPoliciesScreen() {
                       ESCALATION PATH
                     </Text>
                     {policy.steps
-                      .sort((a, b) => a.escalationLevel - b.escalationLevel)
+                      .sort((a, b) => getStepLevel(a) - getStepLevel(b))
                       .map((step, index) => (
                         <View key={step.id} style={styles.stepRow}>
                           <View style={[styles.stepNumber, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.stepNumberText}>{step.escalationLevel}</Text>
+                            <Text style={styles.stepNumberText}>{getStepLevel(step)}</Text>
                           </View>
                           <View style={styles.stepInfo}>
                             <Text variant="bodyMedium" style={{ color: colors.textPrimary }}>
-                              {step.targetName || step.targetId}
+                              {getStepTargetDescription(step)}
                             </Text>
                             <Text variant="bodySmall" style={{ color: colors.textSecondary }}>
-                              {step.targetType === 'user' ? 'User' : 'Schedule'} • {step.delayMinutes}min delay
+                              {step.targets && step.targets.length > 1
+                                ? `${step.targets.length} targets`
+                                : step.targetType === 'user' ? 'User' : 'Schedule'
+                              } • {getStepDelayMinutes(step)}min delay
                             </Text>
                           </View>
                           <IconButton

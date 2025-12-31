@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { EscalationPolicy, EscalationStep } from '../../shared/models';
+import { EscalationPolicy, EscalationStep, EscalationTarget } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
@@ -36,7 +36,7 @@ router.get(
 
       const [policies, total] = await policyRepo.findAndCount({
         where: { orgId },
-        relations: ['steps', 'steps.schedule'],
+        relations: ['steps', 'steps.schedule', 'steps.targets', 'steps.targets.user', 'steps.targets.schedule'],
         order: { createdAt: 'DESC' },
         take: limit,
         skip: offset,
@@ -84,7 +84,7 @@ router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) =
 
     const policy = await policyRepo.findOne({
       where: { id, orgId },
-      relations: ['steps', 'steps.schedule'],
+      relations: ['steps', 'steps.schedule', 'steps.targets', 'steps.targets.user', 'steps.targets.schedule'],
     });
 
     if (!policy) {
@@ -112,6 +112,8 @@ router.post(
   [
     body('name').isString().trim().notEmpty().isLength({ max: 255 }),
     body('description').optional().isString().trim(),
+    body('repeatEnabled').optional().isBoolean(),
+    body('repeatCount').optional().isInt({ min: 0 }),
     body('steps').isArray({ min: 1 }).withMessage('At least one escalation step is required'),
     body('steps.*.targetType').isIn(['schedule', 'users']),
     body('steps.*.scheduleId').optional({ nullable: true }).isUUID(),
@@ -122,6 +124,11 @@ router.post(
     }),
     body('steps.*.userIds.*').optional().isUUID(),
     body('steps.*.timeoutSeconds').isInt({ min: 0 }),
+    // New: Support for multiple targets per step
+    body('steps.*.targets').optional().isArray(),
+    body('steps.*.targets.*.targetType').optional().isIn(['user', 'schedule']),
+    body('steps.*.targets.*.userId').optional({ nullable: true }).isUUID(),
+    body('steps.*.targets.*.scheduleId').optional({ nullable: true }).isUUID(),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -149,14 +156,18 @@ router.post(
       }
 
       // Create policy
+      const { repeatEnabled, repeatCount } = req.body;
       const policy = policyRepo.create({
         orgId,
         name,
         description,
+        repeatEnabled: repeatEnabled ?? false,
+        repeatCount: repeatCount ?? 0,
       });
       await policyRepo.save(policy);
 
       // Create steps
+      const targetRepo = dataSource.getRepository(EscalationTarget);
       const createdSteps = [];
       for (let i = 0; i < steps.length; i++) {
         const stepData = steps[i];
@@ -175,6 +186,23 @@ router.post(
         }
 
         await stepRepo.save(step);
+
+        // Create EscalationTarget records if targets array is provided
+        if (stepData.targets && Array.isArray(stepData.targets)) {
+          const createdTargets = [];
+          for (const targetData of stepData.targets) {
+            const target = targetRepo.create({
+              escalationStepId: step.id,
+              targetType: targetData.targetType,
+              userId: targetData.userId || null,
+              scheduleId: targetData.scheduleId || null,
+            });
+            await targetRepo.save(target);
+            createdTargets.push(target);
+          }
+          step.targets = createdTargets;
+        }
+
         createdSteps.push(step);
       }
 
@@ -204,6 +232,8 @@ router.put(
     param('id').isUUID(),
     body('name').optional().isString().trim().notEmpty().isLength({ max: 255 }),
     body('description').optional().isString().trim(),
+    body('repeatEnabled').optional().isBoolean(),
+    body('repeatCount').optional().isInt({ min: 0 }),
     body('steps').optional().isArray({ min: 1 }),
     body('steps.*.targetType').optional().isIn(['schedule', 'users']),
     body('steps.*.scheduleId').optional({ nullable: true }).isUUID(),
@@ -214,6 +244,11 @@ router.put(
     }),
     body('steps.*.userIds.*').optional().isUUID(),
     body('steps.*.timeoutSeconds').optional().isInt({ min: 0 }),
+    // Support for multiple targets per step
+    body('steps.*.targets').optional().isArray(),
+    body('steps.*.targets.*.targetType').optional().isIn(['user', 'schedule']),
+    body('steps.*.targets.*.userId').optional({ nullable: true }).isUUID(),
+    body('steps.*.targets.*.scheduleId').optional({ nullable: true }).isUUID(),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -225,16 +260,17 @@ router.put(
     try {
       const { id } = req.params;
       const orgId = req.orgId!;
-      const { name, description, steps } = req.body;
-      logger.info('PUT escalation policy', { id, name, description, stepsCount: steps?.length, steps: JSON.stringify(steps) });
+      const { name, description, repeatEnabled, repeatCount, steps } = req.body;
+      logger.info('PUT escalation policy', { id, name, description, repeatEnabled, repeatCount, stepsCount: steps?.length, steps: JSON.stringify(steps) });
 
       const dataSource = await getDataSource();
       const policyRepo = dataSource.getRepository(EscalationPolicy);
       const stepRepo = dataSource.getRepository(EscalationStep);
+      const targetRepo = dataSource.getRepository(EscalationTarget);
 
       const policy = await policyRepo.findOne({
         where: { id, orgId },
-        relations: ['steps'],
+        relations: ['steps', 'steps.targets'],
       });
 
       if (!policy) {
@@ -244,6 +280,8 @@ router.put(
       // Update metadata
       if (name !== undefined) policy.name = name;
       if (description !== undefined) policy.description = description;
+      if (repeatEnabled !== undefined) policy.repeatEnabled = repeatEnabled;
+      if (repeatCount !== undefined) policy.repeatCount = repeatCount;
 
       // If steps are provided, replace all existing steps
       if (steps !== undefined) {
@@ -285,6 +323,23 @@ router.put(
 
           await stepRepo.save(step);
           logger.info('Step saved', { stepId: step.id, userIds: step.userIds });
+
+          // Create EscalationTarget records if targets array is provided
+          if (stepData.targets && Array.isArray(stepData.targets)) {
+            const createdTargets = [];
+            for (const targetData of stepData.targets) {
+              const target = targetRepo.create({
+                escalationStepId: step.id,
+                targetType: targetData.targetType,
+                userId: targetData.userId || null,
+                scheduleId: targetData.scheduleId || null,
+              });
+              await targetRepo.save(target);
+              createdTargets.push(target);
+            }
+            step.targets = createdTargets;
+          }
+
           createdSteps.push(step);
         }
 
@@ -296,7 +351,7 @@ router.put(
       // Reload with relations
       const updatedPolicy = await policyRepo.findOne({
         where: { id },
-        relations: ['steps', 'steps.schedule'],
+        relations: ['steps', 'steps.schedule', 'steps.targets', 'steps.targets.user', 'steps.targets.schedule'],
       });
 
       logger.info('Escalation policy updated', { policyId: policy.id, orgId, stepsUpdated: steps !== undefined });
@@ -645,6 +700,8 @@ function formatPolicy(policy: EscalationPolicy) {
     orgId: policy.orgId,
     name: policy.name,
     description: policy.description,
+    repeatEnabled: policy.repeatEnabled,
+    repeatCount: policy.repeatCount,
     steps: policy.steps?.map(formatStep) || [],
     createdAt: policy.createdAt,
     updatedAt: policy.updatedAt,
@@ -664,8 +721,28 @@ function formatStep(step: EscalationStep) {
     } : null,
     userIds: step.userIds,
     timeoutSeconds: step.timeoutSeconds,
+    // Multi-target support
+    targets: step.targets?.map(formatTarget) || [],
     createdAt: step.createdAt,
     updatedAt: step.updatedAt,
+  };
+}
+
+function formatTarget(target: EscalationTarget) {
+  return {
+    id: target.id,
+    targetType: target.targetType,
+    userId: target.userId,
+    user: target.user ? {
+      id: target.user.id,
+      fullName: target.user.fullName,
+      email: target.user.email,
+    } : null,
+    scheduleId: target.scheduleId,
+    schedule: target.schedule ? {
+      id: target.schedule.id,
+      name: target.schedule.name,
+    } : null,
   };
 }
 
