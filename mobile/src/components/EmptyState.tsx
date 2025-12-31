@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 
 interface EmptyStateProps {
   icon: string;
@@ -20,7 +21,7 @@ const emptyStateMessages: Record<string, { icon: string; title: string; subtitle
   incidents_triggered: {
     icon: 'shield-check',
     title: 'Nothing on fire',
-    subtitle: 'No triggered incidents right now.',
+    subtitle: 'No active incidents right now.',
   },
   incidents_acknowledged: {
     icon: 'clipboard-check',

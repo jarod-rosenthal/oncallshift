@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { AppState, AppStateStatus } from 'react-native';
 import type { Incident } from './apiService';
 import * as apiService from './apiService';
@@ -17,6 +16,9 @@ const CACHE_TTL = {
   users: 30 * 60 * 1000, // 30 minutes
   profile: 60 * 60 * 1000, // 1 hour
 };
+
+// Network check interval
+const NETWORK_CHECK_INTERVAL = 30000; // 30 seconds
 
 export type CacheKey = keyof typeof CACHE_TTL;
 
@@ -46,17 +48,55 @@ export interface OfflineStatus {
 let isConnected = true;
 let syncQueueListeners: ((queue: SyncQueueItem[]) => void)[] = [];
 let connectionListeners: ((status: OfflineStatus) => void)[] = [];
+let networkCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Check network connectivity using fetch
+ */
+async function checkNetworkState(): Promise<void> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    await fetch('https://www.google.com/favicon.ico', {
+      method: 'HEAD',
+      signal: controller.signal,
+      cache: 'no-cache',
+    });
+
+    clearTimeout(timeoutId);
+
+    const wasConnected = isConnected;
+    isConnected = true;
+
+    if (wasConnected !== isConnected) {
+      notifyConnectionListeners();
+      if (!wasConnected && isConnected) {
+        console.log('[Offline] Network restored, processing sync queue');
+        processSyncQueue();
+      }
+    }
+  } catch (error) {
+    const wasConnected = isConnected;
+    isConnected = false;
+
+    if (wasConnected !== isConnected) {
+      notifyConnectionListeners();
+    }
+  }
+}
 
 /**
  * Initialize offline service
  */
 export async function initOfflineService(): Promise<void> {
-  // Subscribe to network state changes
-  NetInfo.addEventListener(handleNetworkChange);
-
   // Check initial state
-  const state = await NetInfo.fetch();
-  handleNetworkChange(state);
+  await checkNetworkState();
+
+  // Set up periodic network checks
+  if (!networkCheckInterval) {
+    networkCheckInterval = setInterval(checkNetworkState, NETWORK_CHECK_INTERVAL);
+  }
 
   // Listen for app state changes to sync when coming to foreground
   AppState.addEventListener('change', handleAppStateChange);
@@ -66,28 +106,12 @@ export async function initOfflineService(): Promise<void> {
 }
 
 /**
- * Handle network state changes
- */
-function handleNetworkChange(state: NetInfoState): void {
-  const wasConnected = isConnected;
-  isConnected = state.isConnected ?? false;
-
-  // Notify listeners
-  notifyConnectionListeners();
-
-  // If we just came online, process sync queue
-  if (!wasConnected && isConnected) {
-    console.log('[Offline] Network restored, processing sync queue');
-    processSyncQueue();
-  }
-}
-
-/**
  * Handle app state changes
  */
 function handleAppStateChange(nextAppState: AppStateStatus): void {
-  if (nextAppState === 'active' && isConnected) {
-    processSyncQueue();
+  if (nextAppState === 'active') {
+    // Check network when app comes to foreground
+    checkNetworkState();
   }
 }
 
@@ -96,11 +120,11 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
  */
 export async function getOfflineStatus(): Promise<OfflineStatus> {
   const queue = await getSyncQueue();
-  const state = await NetInfo.fetch();
+  await checkNetworkState();
 
   return {
-    isConnected: state.isConnected ?? false,
-    isInternetReachable: state.isInternetReachable,
+    isConnected,
+    isInternetReachable: isConnected,
     pendingActions: queue.length,
   };
 }

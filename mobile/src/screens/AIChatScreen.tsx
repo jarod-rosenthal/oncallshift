@@ -55,8 +55,29 @@ RESPONSE FORMAT:
 - Include specific commands or steps when applicable`;
 
 export default function AIChatScreen({ route, navigation }: AIChatScreenProps) {
-  const { incident } = route.params;
+  const incident = route.params?.incident;
   const theme = useTheme();
+
+  // If no incident provided, show error state
+  if (!incident) {
+    return (
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <MaterialCommunityIcons name="robot-confused" size={64} color="#718096" />
+        <Text style={{ fontSize: 18, fontWeight: '600', marginTop: 16, textAlign: 'center' }}>
+          No Incident Selected
+        </Text>
+        <Text style={{ fontSize: 14, color: '#718096', marginTop: 8, textAlign: 'center' }}>
+          Open an incident and tap "AI Chat" to start a conversation about that incident.
+        </Text>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#3182CE', borderRadius: 8 }}
+        >
+          <Text style={{ color: 'white', fontWeight: '600' }}>Go Back</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
   const { showSuccess, showError } = useToast();
   const flatListRef = useRef<FlatList>(null);
 
@@ -100,7 +121,7 @@ export default function AIChatScreen({ route, navigation }: AIChatScreenProps) {
     try {
       // First try to get from server (stored encrypted)
       const status = await apiService.getAnthropicCredentialStatus();
-      if (status.hasCredential && status.hint) {
+      if (status.configured && status.hint) {
         // We have a server-side key, but we need the actual key for direct API calls
         // Fall back to local storage for direct Anthropic calls
       }

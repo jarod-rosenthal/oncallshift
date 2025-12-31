@@ -21,7 +21,8 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import * as apiService from '../services/apiService';
 import type { Incident, OnCallData, UserProfile } from '../services/apiService';
-import { colors, severityColors } from '../theme';
+import { severityColors } from '../theme';
+import { useAppTheme } from '../context/ThemeContext';
 import { OwnerAvatar, useToast, GlobalSearch, SearchButton } from '../components';
 import * as hapticService from '../services/hapticService';
 
@@ -36,6 +37,8 @@ interface IncidentSummary {
 
 export default function DashboardScreen() {
   const theme = useTheme();
+  const { colors } = useAppTheme();
+  const themedStyles = styles(colors);
   const navigation = useNavigation<StackNavigationProp<any>>();
   const { showSuccess, showError } = useToast();
 
@@ -119,10 +122,7 @@ export default function DashboardScreen() {
     try {
       await apiService.acknowledgeIncident(incidentId);
       await hapticService.success();
-      showSuccess({
-        title: 'Acknowledged',
-        message: 'Incident has been acknowledged',
-      });
+      showSuccess('Incident has been acknowledged');
       fetchDashboardData();
     } catch (err: any) {
       await hapticService.error();
@@ -152,9 +152,9 @@ export default function DashboardScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centerContent, { backgroundColor: theme.colors.background }]}>
+      <View style={[themedStyles.container, themedStyles.centerContent, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text variant="bodyLarge" style={styles.loadingText}>
+        <Text variant="bodyLarge" style={themedStyles.loadingText}>
           Loading dashboard...
         </Text>
       </View>
@@ -163,7 +163,7 @@ export default function DashboardScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      style={[themedStyles.container, { backgroundColor: theme.colors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -171,16 +171,16 @@ export default function DashboardScreen() {
           colors={[theme.colors.primary]}
         />
       }
-      contentContainerStyle={styles.scrollContent}
+      contentContainerStyle={themedStyles.scrollContent}
     >
       {/* Greeting & Search */}
-      <View style={styles.greetingSection}>
-        <View style={styles.greetingRow}>
-          <View style={styles.greetingText}>
-            <Text variant="headlineSmall" style={styles.greeting}>
+      <View style={themedStyles.greetingSection}>
+        <View style={themedStyles.greetingRow}>
+          <View style={themedStyles.greetingText}>
+            <Text variant="headlineSmall" style={themedStyles.greeting}>
               {getGreeting()}, {currentUser?.fullName?.split(' ')[0] || 'there'}
             </Text>
-            <Text variant="bodyMedium" style={styles.greetingSubtext}>
+            <Text variant="bodyMedium" style={themedStyles.greetingSubtext}>
               {isOnCall ? "You're on-call" : 'Not currently on-call'}
             </Text>
           </View>
@@ -195,14 +195,14 @@ export default function DashboardScreen() {
       />
 
       {/* Incident Summary Card */}
-      <Card style={styles.summaryCard} mode="elevated">
+      <Card style={themedStyles.summaryCard} mode="elevated">
         <Card.Content>
-          <View style={styles.summaryHeader}>
-            <Text variant="titleMedium" style={styles.sectionTitle}>Active Incidents</Text>
+          <View style={themedStyles.summaryHeader}>
+            <Text variant="titleMedium" style={themedStyles.sectionTitle}>Active Incidents</Text>
             <Badge
               size={24}
               style={[
-                styles.totalBadge,
+                themedStyles.totalBadge,
                 { backgroundColor: totalActiveIncidents > 0 ? colors.error : colors.success }
               ]}
             >
@@ -213,51 +213,51 @@ export default function DashboardScreen() {
           {totalActiveIncidents > 0 ? (
             <>
               {/* Status breakdown */}
-              <View style={styles.statusRow}>
-                <View style={styles.statusItem}>
-                  <View style={[styles.statusDot, { backgroundColor: colors.error }]} />
-                  <Text style={styles.statusLabel}>Triggered</Text>
-                  <Text style={styles.statusCount}>{incidentSummary.triggered}</Text>
+              <View style={themedStyles.statusRow}>
+                <View style={themedStyles.statusItem}>
+                  <View style={[themedStyles.statusDot, { backgroundColor: colors.error }]} />
+                  <Text style={themedStyles.statusLabel}>Active</Text>
+                  <Text style={themedStyles.statusCount}>{incidentSummary.triggered}</Text>
                 </View>
-                <View style={styles.statusItem}>
-                  <View style={[styles.statusDot, { backgroundColor: colors.warning }]} />
-                  <Text style={styles.statusLabel}>Acknowledged</Text>
-                  <Text style={styles.statusCount}>{incidentSummary.acknowledged}</Text>
+                <View style={themedStyles.statusItem}>
+                  <View style={[themedStyles.statusDot, { backgroundColor: colors.warning }]} />
+                  <Text style={themedStyles.statusLabel}>Acknowledged</Text>
+                  <Text style={themedStyles.statusCount}>{incidentSummary.acknowledged}</Text>
                 </View>
               </View>
 
-              <Divider style={styles.divider} />
+              <Divider style={themedStyles.divider} />
 
               {/* Severity breakdown */}
-              <View style={styles.severityRow}>
+              <View style={themedStyles.severityRow}>
                 {incidentSummary.critical > 0 && (
-                  <View style={[styles.severityChip, { backgroundColor: severityColors.critical + '20' }]}>
-                    <View style={[styles.severityDot, { backgroundColor: severityColors.critical }]} />
-                    <Text style={[styles.severityText, { color: severityColors.critical }]}>
+                  <View style={[themedStyles.severityChip, { backgroundColor: severityColors.critical + '20' }]}>
+                    <View style={[themedStyles.severityDot, { backgroundColor: severityColors.critical }]} />
+                    <Text style={[themedStyles.severityText, { color: severityColors.critical }]}>
                       {incidentSummary.critical} Critical
                     </Text>
                   </View>
                 )}
                 {incidentSummary.high > 0 && (
-                  <View style={[styles.severityChip, { backgroundColor: severityColors.high + '20' }]}>
-                    <View style={[styles.severityDot, { backgroundColor: severityColors.high }]} />
-                    <Text style={[styles.severityText, { color: severityColors.high }]}>
+                  <View style={[themedStyles.severityChip, { backgroundColor: severityColors.high + '20' }]}>
+                    <View style={[themedStyles.severityDot, { backgroundColor: severityColors.high }]} />
+                    <Text style={[themedStyles.severityText, { color: severityColors.high }]}>
                       {incidentSummary.high} High
                     </Text>
                   </View>
                 )}
                 {incidentSummary.medium > 0 && (
-                  <View style={[styles.severityChip, { backgroundColor: severityColors.medium + '20' }]}>
-                    <View style={[styles.severityDot, { backgroundColor: severityColors.medium }]} />
-                    <Text style={[styles.severityText, { color: severityColors.medium }]}>
+                  <View style={[themedStyles.severityChip, { backgroundColor: severityColors.medium + '20' }]}>
+                    <View style={[themedStyles.severityDot, { backgroundColor: severityColors.medium }]} />
+                    <Text style={[themedStyles.severityText, { color: severityColors.medium }]}>
                       {incidentSummary.medium} Medium
                     </Text>
                   </View>
                 )}
                 {incidentSummary.low > 0 && (
-                  <View style={[styles.severityChip, { backgroundColor: severityColors.low + '20' }]}>
-                    <View style={[styles.severityDot, { backgroundColor: severityColors.low }]} />
-                    <Text style={[styles.severityText, { color: severityColors.low }]}>
+                  <View style={[themedStyles.severityChip, { backgroundColor: severityColors.low + '20' }]}>
+                    <View style={[themedStyles.severityDot, { backgroundColor: severityColors.low }]} />
+                    <Text style={[themedStyles.severityText, { color: severityColors.low }]}>
                       {incidentSummary.low} Low
                     </Text>
                   </View>
@@ -265,10 +265,10 @@ export default function DashboardScreen() {
               </View>
             </>
           ) : (
-            <View style={styles.allClearContainer}>
+            <View style={themedStyles.allClearContainer}>
               <MaterialCommunityIcons name="check-circle" size={48} color={colors.success} />
-              <Text variant="titleMedium" style={styles.allClearText}>All Clear</Text>
-              <Text variant="bodySmall" style={styles.allClearSubtext}>
+              <Text variant="titleMedium" style={themedStyles.allClearText}>All Clear</Text>
+              <Text variant="bodySmall" style={themedStyles.allClearSubtext}>
                 No active incidents
               </Text>
             </View>
@@ -277,9 +277,9 @@ export default function DashboardScreen() {
           <Button
             mode="contained"
             onPress={() => navigation.navigate('Main', { screen: 'Incidents' })}
-            style={styles.viewAllButton}
+            style={themedStyles.viewAllButton}
             icon="arrow-right"
-            contentStyle={styles.viewAllButtonContent}
+            contentStyle={themedStyles.viewAllButtonContent}
           >
             View All Incidents
           </Button>
@@ -288,29 +288,29 @@ export default function DashboardScreen() {
 
       {/* Recent Triggered Incidents */}
       {recentIncidents.length > 0 && (
-        <View style={styles.recentSection}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>Needs Attention</Text>
+        <View style={themedStyles.recentSection}>
+          <Text variant="titleMedium" style={themedStyles.sectionTitle}>Needs Attention</Text>
           {recentIncidents.map((incident) => (
             <Pressable
               key={incident.id}
               onPress={() => navigation.navigate('AlertDetail', { alert: incident })}
             >
-              <Card style={styles.incidentCard} mode="elevated">
-                <View style={[styles.incidentSeverityBar, { backgroundColor: getSeverityColor(incident.severity) }]} />
-                <Card.Content style={styles.incidentContent}>
-                  <View style={styles.incidentHeader}>
-                    <Text variant="labelSmall" style={styles.incidentNumber}>
+              <Card style={themedStyles.incidentCard} mode="elevated">
+                <View style={[themedStyles.incidentSeverityBar, { backgroundColor: getSeverityColor(incident.severity) }]} />
+                <Card.Content style={themedStyles.incidentContent}>
+                  <View style={themedStyles.incidentHeader}>
+                    <Text variant="labelSmall" style={themedStyles.incidentNumber}>
                       #{incident.incidentNumber}
                     </Text>
-                    <Text style={styles.incidentTime}>{formatTimeSince(incident.triggeredAt)}</Text>
+                    <Text style={themedStyles.incidentTime}>{formatTimeSince(incident.triggeredAt)}</Text>
                   </View>
-                  <Text variant="titleSmall" style={styles.incidentTitle} numberOfLines={1}>
+                  <Text variant="titleSmall" style={themedStyles.incidentTitle} numberOfLines={1}>
                     {incident.summary}
                   </Text>
-                  <View style={styles.incidentFooter}>
-                    <View style={styles.serviceTag}>
+                  <View style={themedStyles.incidentFooter}>
+                    <View style={themedStyles.serviceTag}>
                       <MaterialCommunityIcons name="server" size={12} color={colors.textSecondary} />
-                      <Text style={styles.serviceName}>{incident.service.name}</Text>
+                      <Text style={themedStyles.serviceName}>{incident.service.name}</Text>
                     </View>
                     <Button
                       mode="contained"
@@ -323,8 +323,8 @@ export default function DashboardScreen() {
                       }}
                       loading={acknowledging === incident.id}
                       disabled={acknowledging === incident.id}
-                      style={styles.ackButton}
-                      labelStyle={styles.ackButtonLabel}
+                      style={themedStyles.ackButton}
+                      labelStyle={themedStyles.ackButtonLabel}
                     >
                       Ack
                     </Button>
@@ -337,45 +337,45 @@ export default function DashboardScreen() {
       )}
 
       {/* On-Call Status */}
-      <View style={styles.onCallSection}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>Your On-Call Status</Text>
-        <Card style={styles.onCallCard} mode="elevated">
+      <View style={themedStyles.onCallSection}>
+        <Text variant="titleMedium" style={themedStyles.sectionTitle}>Your On-Call Status</Text>
+        <Card style={themedStyles.onCallCard} mode="elevated">
           <Card.Content>
             {isOnCall ? (
               <>
-                <View style={styles.onCallHeader}>
-                  <View style={styles.onCallLive}>
-                    <View style={styles.livePulse} />
-                    <Text style={styles.liveText}>ON-CALL</Text>
+                <View style={themedStyles.onCallHeader}>
+                  <View style={themedStyles.onCallLive}>
+                    <View style={themedStyles.livePulse} />
+                    <Text style={themedStyles.liveText}>ON-CALL</Text>
                   </View>
-                  <Text style={styles.onCallCount}>
+                  <Text style={themedStyles.onCallCount}>
                     {myOnCall.length} service{myOnCall.length !== 1 ? 's' : ''}
                   </Text>
                 </View>
-                <View style={styles.onCallServices}>
+                <View style={themedStyles.onCallServices}>
                   {myOnCall.slice(0, 3).map((item) => (
-                    <View key={`${item.service.id}-${item.schedule.id}`} style={styles.onCallServiceItem}>
+                    <View key={`${item.service.id}-${item.schedule.id}`} style={themedStyles.onCallServiceItem}>
                       <MaterialCommunityIcons name="server" size={16} color={colors.success} />
-                      <Text style={styles.onCallServiceName}>{item.service.name}</Text>
+                      <Text style={themedStyles.onCallServiceName}>{item.service.name}</Text>
                       {item.isOverride && (
-                        <View style={styles.overrideBadge}>
-                          <Text style={styles.overrideBadgeText}>Override</Text>
+                        <View style={themedStyles.overrideBadge}>
+                          <Text style={themedStyles.overrideBadgeText}>Override</Text>
                         </View>
                       )}
                     </View>
                   ))}
                   {myOnCall.length > 3 && (
-                    <Text style={styles.moreServices}>+{myOnCall.length - 3} more</Text>
+                    <Text style={themedStyles.moreServices}>+{myOnCall.length - 3} more</Text>
                   )}
                 </View>
               </>
             ) : (
-              <View style={styles.notOnCallContainer}>
+              <View style={themedStyles.notOnCallContainer}>
                 <MaterialCommunityIcons name="phone-off" size={32} color={colors.textMuted} />
-                <Text variant="titleSmall" style={styles.notOnCallText}>
+                <Text variant="titleSmall" style={themedStyles.notOnCallText}>
                   Not currently on-call
                 </Text>
-                <Text variant="bodySmall" style={styles.notOnCallSubtext}>
+                <Text variant="bodySmall" style={themedStyles.notOnCallSubtext}>
                   Check the On-Call tab for schedules
                 </Text>
               </View>
@@ -383,7 +383,7 @@ export default function DashboardScreen() {
             <Button
               mode="outlined"
               onPress={() => navigation.navigate('Main', { screen: 'OnCall' })}
-              style={styles.viewOnCallButton}
+              style={themedStyles.viewOnCallButton}
               textColor={colors.accent}
             >
               {isOnCall ? 'Manage On-Call' : 'View Schedules'}
@@ -393,47 +393,47 @@ export default function DashboardScreen() {
       </View>
 
       {/* Quick Actions */}
-      <View style={styles.quickActionsSection}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.quickActionsGrid}>
+      <View style={themedStyles.quickActionsSection}>
+        <Text variant="titleMedium" style={themedStyles.sectionTitle}>Quick Actions</Text>
+        <View style={themedStyles.quickActionsGrid}>
           <Pressable
-            style={styles.quickActionItem}
-            onPress={() => navigation.navigate('AIChat')}
+            style={themedStyles.quickActionItem}
+            onPress={() => navigation.navigate('Incidents')}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: colors.accent + '20' }]}>
+            <View style={[themedStyles.quickActionIcon, { backgroundColor: colors.accent + '20' }]}>
               <MaterialCommunityIcons name="robot" size={24} color={colors.accent} />
             </View>
-            <Text style={styles.quickActionLabel}>AI Assistant</Text>
+            <Text style={themedStyles.quickActionLabel}>AI Assistant</Text>
           </Pressable>
 
           <Pressable
-            style={styles.quickActionItem}
+            style={themedStyles.quickActionItem}
             onPress={() => navigation.navigate('OnCallCalendar')}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: colors.success + '20' }]}>
+            <View style={[themedStyles.quickActionIcon, { backgroundColor: colors.success + '20' }]}>
               <MaterialCommunityIcons name="calendar-month" size={24} color={colors.success} />
             </View>
-            <Text style={styles.quickActionLabel}>My Calendar</Text>
+            <Text style={themedStyles.quickActionLabel}>My Calendar</Text>
           </Pressable>
 
           <Pressable
-            style={styles.quickActionItem}
+            style={themedStyles.quickActionItem}
             onPress={() => navigation.navigate('Analytics')}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: colors.warning + '20' }]}>
+            <View style={[themedStyles.quickActionIcon, { backgroundColor: colors.warning + '20' }]}>
               <MaterialCommunityIcons name="chart-bar" size={24} color={colors.warning} />
             </View>
-            <Text style={styles.quickActionLabel}>Analytics</Text>
+            <Text style={themedStyles.quickActionLabel}>Analytics</Text>
           </Pressable>
 
           <Pressable
-            style={styles.quickActionItem}
+            style={themedStyles.quickActionItem}
             onPress={() => navigation.navigate('Team')}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: colors.primary + '20' }]}>
+            <View style={[themedStyles.quickActionIcon, { backgroundColor: colors.primary + '20' }]}>
               <MaterialCommunityIcons name="account-group" size={24} color={colors.primary} />
             </View>
-            <Text style={styles.quickActionLabel}>Team</Text>
+            <Text style={themedStyles.quickActionLabel}>Team</Text>
           </Pressable>
         </View>
       </View>
@@ -448,7 +448,7 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
   },

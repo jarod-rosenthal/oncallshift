@@ -22,6 +22,7 @@ import type { UserProfile } from '../services/apiService';
 import { signOut } from '../services/authService';
 import * as hapticService from '../services/hapticService';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 import { OwnerAvatar } from '../components';
 
 interface MoreScreenProps {

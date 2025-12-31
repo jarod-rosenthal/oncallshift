@@ -19,8 +19,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.oncallshift.mobile",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": ["remote-notification", "audio"],
         "NSFaceIDUsageDescription": "Use Face ID to quickly unlock the app"
+      },
+      "entitlements": {
+        "com.apple.developer.usernotifications.critical-alerts": true
       }
     },
     "android": {
@@ -33,11 +36,20 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "USE_BIOMETRIC",
-        "USE_FINGERPRINT"
+        "USE_FINGERPRINT",
+        "ACCESS_NOTIFICATION_POLICY",
+        "USE_FULL_SCREEN_INTENT"
       ]
     },
     "plugins": [
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "sounds": ["./assets/sounds/critical-alert.wav"],
+          "icon": "./assets/notification-icon.png",
+          "color": "#E53E3E"
+        }
+      ],
       [
         "expo-local-authentication",
         {

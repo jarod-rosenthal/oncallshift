@@ -1,18 +1,78 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import axios from 'axios';
 import { config } from '../config';
 import { getAccessToken } from './authService';
 
-// Configure notification handling
+// Critical alert channel ID for Android
+const CRITICAL_CHANNEL_ID = 'critical-incidents';
+const HIGH_PRIORITY_CHANNEL_ID = 'high-priority-incidents';
+const DEFAULT_CHANNEL_ID = 'incidents';
+
+// Configure notification handling - always show alerts with sound
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    // Check if this is a critical/high priority notification
+    const priority = notification.request.content.data?.priority as string;
+    const isCritical = priority === 'critical' || priority === 'high';
+
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      // iOS 15+ interruption level for critical alerts
+      priority: isCritical
+        ? Notifications.AndroidNotificationPriority.MAX
+        : Notifications.AndroidNotificationPriority.HIGH,
+    };
+  },
 });
+
+/**
+ * Set up Android notification channels with different priority levels
+ * Critical channel can bypass DND on Android
+ */
+async function setupAndroidNotificationChannels() {
+  if (Platform.OS !== 'android') return;
+
+  // Critical incidents channel - bypasses DND
+  await Notifications.setNotificationChannelAsync(CRITICAL_CHANNEL_ID, {
+    name: 'Critical Incidents',
+    description: 'Critical alerts that require immediate attention. These will sound even when Do Not Disturb is enabled.',
+    importance: Notifications.AndroidImportance.MAX,
+    bypassDnd: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    sound: 'critical_alert',
+    enableVibrate: true,
+    vibrationPattern: [0, 500, 200, 500, 200, 500], // Aggressive vibration pattern
+    enableLights: true,
+    lightColor: '#FF0000',
+  });
+
+  // High priority incidents channel
+  await Notifications.setNotificationChannelAsync(HIGH_PRIORITY_CHANNEL_ID, {
+    name: 'High Priority Incidents',
+    description: 'High priority alerts that need prompt attention.',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+    enableVibrate: true,
+    vibrationPattern: [0, 400, 200, 400],
+    enableLights: true,
+    lightColor: '#FFA500',
+  });
+
+  // Default incidents channel
+  await Notifications.setNotificationChannelAsync(DEFAULT_CHANNEL_ID, {
+    name: 'Incidents',
+    description: 'Standard incident notifications.',
+    importance: Notifications.AndroidImportance.DEFAULT,
+    sound: 'default',
+    enableVibrate: true,
+  });
+
+  console.log('[Notifications] Android notification channels configured');
+}
 
 // Set up notification categories with actions
 async function setupNotificationCategories() {
@@ -40,10 +100,41 @@ async function setupNotificationCategories() {
       },
     },
   ]);
+
+  // Also set up critical incident category
+  await Notifications.setNotificationCategoryAsync('critical-incident', [
+    {
+      identifier: 'acknowledge',
+      buttonTitle: 'Acknowledge',
+      options: {
+        opensAppToForeground: false,
+      },
+    },
+    {
+      identifier: 'call-responder',
+      buttonTitle: 'Call Responder',
+      options: {
+        opensAppToForeground: true,
+      },
+    },
+  ]);
 }
 
-// Initialize categories on module load
-setupNotificationCategories().catch(console.error);
+/**
+ * Initialize all notification configuration
+ */
+async function initializeNotificationConfig() {
+  try {
+    await setupAndroidNotificationChannels();
+    await setupNotificationCategories();
+    console.log('[Notifications] Configuration complete');
+  } catch (error) {
+    console.error('[Notifications] Configuration failed:', error);
+  }
+}
+
+// Initialize on module load
+initializeNotificationConfig();
 
 /**
  * Request permission and get push token
@@ -207,27 +298,120 @@ export async function clearAllNotifications(): Promise<void> {
 }
 
 /**
- * Schedule a local notification (for snooze reminders)
+ * Notification priority levels
+ */
+export type NotificationPriority = 'critical' | 'high' | 'default' | 'low';
+
+/**
+ * Schedule a local notification with priority support
+ * Critical notifications will attempt to bypass DND
  */
 export async function scheduleLocalNotification(
   title: string,
   body: string,
   data: Record<string, any>,
-  triggerSeconds: number
+  triggerSeconds: number,
+  priority: NotificationPriority = 'high'
 ): Promise<string> {
+  // Determine channel and category based on priority
+  const isCritical = priority === 'critical';
+  const channelId = isCritical
+    ? CRITICAL_CHANNEL_ID
+    : priority === 'high'
+    ? HIGH_PRIORITY_CHANNEL_ID
+    : DEFAULT_CHANNEL_ID;
+
   const id = await Notifications.scheduleNotificationAsync({
     content: {
       title,
       body,
-      data,
-      sound: true,
-      categoryIdentifier: 'incident',
+      data: { ...data, priority },
+      sound: 'default',
+      categoryIdentifier: isCritical ? 'critical-incident' : 'incident',
+      // For critical alerts on iOS, we set interruptionLevel
+      // The actual critical sound configuration is handled by iOS when the entitlement is approved
+      ...(isCritical && {
+        // @ts-ignore - iOS specific property for critical alerts
+        interruptionLevel: 'critical',
+      }),
     },
     trigger: {
       seconds: triggerSeconds,
+      channelId, // Android channel
     },
   });
   return id;
+}
+
+/**
+ * Send an immediate critical notification (for testing)
+ */
+export async function sendCriticalTestNotification(): Promise<string> {
+  return scheduleLocalNotification(
+    '🚨 Critical Alert Test',
+    'This is a test of the critical alert system. This notification should sound even if DND is enabled.',
+    { type: 'test', priority: 'critical' },
+    1, // 1 second delay
+    'critical'
+  );
+}
+
+/**
+ * Check if the app has permission to bypass DND (Android only)
+ */
+export async function checkDndBypassPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') {
+    // iOS handles this through Critical Alerts entitlement
+    return true;
+  }
+
+  try {
+    // On Android, we need to check if we have notification policy access
+    const channels = await Notifications.getNotificationChannelsAsync();
+    const criticalChannel = channels?.find((c: any) => c.id === CRITICAL_CHANNEL_ID);
+    return criticalChannel?.bypassDnd === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Open system settings for notification configuration
+ */
+export async function openNotificationSettings(): Promise<void> {
+  if (Platform.OS === 'android') {
+    // Open Android notification settings
+    await Linking.openSettings();
+  } else {
+    // Open iOS settings
+    await Linking.openURL('app-settings:');
+  }
+}
+
+/**
+ * Request iOS critical alerts permission
+ * Note: Requires com.apple.developer.usernotifications.critical-alerts entitlement
+ */
+export async function requestCriticalAlertsPermission(): Promise<boolean> {
+  if (Platform.OS !== 'ios') {
+    return true;
+  }
+
+  try {
+    const { status } = await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+        allowCriticalAlerts: true, // Request critical alerts permission
+      },
+    });
+
+    return status === 'granted';
+  } catch (error) {
+    console.error('[Notifications] Failed to request critical alerts permission:', error);
+    return false;
+  }
 }
 
 /**

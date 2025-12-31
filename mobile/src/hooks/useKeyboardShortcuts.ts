@@ -15,6 +15,7 @@ interface KeyboardEvent {
   metaKey?: boolean;
   altKey?: boolean;
   shiftKey?: boolean;
+  preventDefault?: () => void;
 }
 
 interface UseKeyboardShortcutsOptions {

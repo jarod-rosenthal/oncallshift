@@ -227,7 +227,7 @@ export default function AlertListScreen({ navigation }: any) {
 
   // Check if user is on-call
   const userOnCall = useMemo(() => {
-    return onCallData.find(oc => oc.oncallUser.email === currentUserEmail);
+    return onCallData.find(oc => oc.oncallUser?.email === currentUserEmail);
   }, [onCallData, currentUserEmail]);
 
   const handleQuickAction = async (incident: Incident, action: 'acknowledge' | 'resolve') => {
@@ -255,10 +255,7 @@ export default function AlertListScreen({ navigation }: any) {
     await hapticService.lightTap();
 
     try {
-      // Call server-side snooze API
-      await apiService.snoozeIncident(selectedIncident.id, minutes);
-
-      // Also store locally and schedule reminder notification for offline/UX
+      // Store locally and schedule reminder notification
       await settingsService.snoozeIncident(selectedIncident.id, minutes);
       await notificationService.scheduleLocalNotification(
         'Snoozed Incident Reminder',
@@ -270,7 +267,7 @@ export default function AlertListScreen({ navigation }: any) {
       setShowSnoozeModal(false);
       loadSnoozedIncidents();
       await hapticService.success();
-      showSuccess({ title: 'Snoozed', message: `Incident snoozed for ${minutes} minutes` });
+      showSuccess(`Incident snoozed for ${minutes} minutes`);
     } catch (error: any) {
       await hapticService.error();
       showError(error.message || 'Failed to snooze incident');
@@ -311,7 +308,7 @@ export default function AlertListScreen({ navigation }: any) {
     });
 
     if (toAcknowledge.length === 0) {
-      showError('No triggered incidents selected');
+      showError('No active incidents selected');
       return;
     }
 
@@ -618,7 +615,7 @@ export default function AlertListScreen({ navigation }: any) {
                   <View style={[styles(colors).statusBadge, { backgroundColor: getStatusColor(item.state) + '20' }]}>
                     <View style={[styles(colors).statusDot, { backgroundColor: getStatusColor(item.state) }]} />
                     <Text style={[styles(colors).statusText, { color: getStatusColor(item.state) }]}>
-                      {item.state}
+                      {item.state === 'triggered' ? 'Active' : item.state}
                     </Text>
                   </View>
                   {item.state === 'triggered' && (
