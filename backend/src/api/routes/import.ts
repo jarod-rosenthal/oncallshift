@@ -17,6 +17,7 @@ import {
   AlertRoutingRule,
   Heartbeat,
   MaintenanceWindow,
+  ServiceDependency,
 } from '../../shared/models';
 import { RoutingCondition, ConditionOperator, MatchType } from '../../shared/models/AlertRoutingRule';
 import { authenticateUser } from '../../shared/auth/middleware';
@@ -39,6 +40,22 @@ interface PagerDutyImportData {
   services?: PagerDutyService[];
   routing_rules?: PagerDutyEventRule[];
   maintenance_windows?: PagerDutyMaintenanceWindow[];
+  service_dependencies?: PagerDutyServiceDependency[];
+}
+
+interface PagerDutyServiceDependency {
+  id: string;
+  type?: string;
+  supporting_service: {
+    id: string;
+    type?: string;
+    summary?: string;
+  };
+  dependent_service: {
+    id: string;
+    type?: string;
+    summary?: string;
+  };
 }
 
 interface PagerDutyMaintenanceWindow {
@@ -190,6 +207,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
     services: { imported: 0, skipped: 0, errors: [] as string[] },
     routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
     maintenance_windows: { imported: 0, skipped: 0, errors: [] as string[] },
+    service_dependencies: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   // Maps to track PagerDuty ID -> OnCallShift ID mappings
@@ -798,6 +816,67 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
         } catch (error: any) {
           results.maintenance_windows.errors.push(
             `Window ${pdWindow.summary || pdWindow.id}: ${error.message}`
+          );
+        }
+      }
+    }
+
+    // 8. Import Service Dependencies
+    if (importData.service_dependencies && importData.service_dependencies.length > 0) {
+      const dependencyRepo = dataSource.getRepository(ServiceDependency);
+
+      for (const pdDep of importData.service_dependencies) {
+        try {
+          // Map PagerDuty service IDs to OnCallShift service IDs
+          const supportingServiceId = serviceIdMap.get(pdDep.supporting_service.id);
+          const dependentServiceId = serviceIdMap.get(pdDep.dependent_service.id);
+
+          if (!supportingServiceId) {
+            results.service_dependencies.errors.push(
+              `Dependency ${pdDep.id}: Supporting service not found (${pdDep.supporting_service.summary || pdDep.supporting_service.id})`
+            );
+            continue;
+          }
+
+          if (!dependentServiceId) {
+            results.service_dependencies.errors.push(
+              `Dependency ${pdDep.id}: Dependent service not found (${pdDep.dependent_service.summary || pdDep.dependent_service.id})`
+            );
+            continue;
+          }
+
+          // Check if dependency already exists
+          const existing = await dependencyRepo.findOne({
+            where: {
+              orgId,
+              supportingServiceId,
+              dependentServiceId,
+            },
+          });
+
+          if (!existing) {
+            const dependency = dependencyRepo.create({
+              orgId,
+              supportingServiceId,
+              dependentServiceId,
+              dependencyType: 'required', // PagerDuty doesn't have types, default to required
+              impactLevel: 'high', // Default to high impact
+              description: null,
+            });
+            await dependencyRepo.save(dependency);
+            results.service_dependencies.imported++;
+
+            logger.info('Service dependency imported', {
+              dependencyId: dependency.id,
+              supporting: pdDep.supporting_service.summary || pdDep.supporting_service.id,
+              dependent: pdDep.dependent_service.summary || pdDep.dependent_service.id,
+            });
+          } else {
+            results.service_dependencies.skipped++;
+          }
+        } catch (error: any) {
+          results.service_dependencies.errors.push(
+            `Dependency ${pdDep.id}: ${error.message}`
           );
         }
       }
@@ -1784,6 +1863,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         routing_rules: { total: 0, existing: 0, new: 0, totalConditions: 0 },
         heartbeats: { total: 0, existing: 0, new: 0 },
         maintenance_windows: { total: 0, existing: 0, new: 0, skippedPast: 0 },
+        service_dependencies: { total: 0, existing: 0, new: 0, unmappedServices: 0 },
       },
       details: {
         users: [] as any[],
@@ -1796,6 +1876,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         routing_rules: [] as any[],
         heartbeats: [] as any[],
         maintenance_windows: [] as any[],
+        service_dependencies: [] as any[],
       },
     };
 
@@ -2196,6 +2277,70 @@ router.post('/preview', async (req: Request, res: Response) => {
             startTime: startTime.toISOString(),
             endTime: endTime.toISOString(),
             note: 'Will be associated with first imported service',
+          });
+        }
+      }
+    }
+
+    // Analyze service dependencies (PagerDuty only)
+    if (source === 'pagerduty' && data.service_dependencies) {
+      const dependencyRepo = dataSource.getRepository(ServiceDependency);
+
+      // Build a map of service names to IDs for lookup
+      const serviceNameMap = new Map<string, string>();
+      const services = data.services || [];
+      for (const s of services) {
+        const existingService = await serviceRepo.findOne({ where: { name: s.name, orgId } });
+        if (existingService) {
+          serviceNameMap.set(s.id, existingService.id);
+        }
+      }
+
+      for (const dep of data.service_dependencies) {
+        preview.summary.service_dependencies.total++;
+
+        const supportingServiceId = serviceNameMap.get(dep.supporting_service.id);
+        const dependentServiceId = serviceNameMap.get(dep.dependent_service.id);
+
+        // Check if either service is unmapped
+        if (!supportingServiceId || !dependentServiceId) {
+          preview.summary.service_dependencies.unmappedServices++;
+          preview.details.service_dependencies.push({
+            supporting: dep.supporting_service.summary || dep.supporting_service.id,
+            dependent: dep.dependent_service.summary || dep.dependent_service.id,
+            status: 'unmapped',
+            reason: !supportingServiceId && !dependentServiceId
+              ? 'Both services not found'
+              : !supportingServiceId
+                ? 'Supporting service not found'
+                : 'Dependent service not found',
+          });
+          continue;
+        }
+
+        // Check if dependency already exists
+        const existing = await dependencyRepo.findOne({
+          where: {
+            orgId,
+            supportingServiceId,
+            dependentServiceId,
+          },
+        });
+
+        if (existing) {
+          preview.summary.service_dependencies.existing++;
+          preview.details.service_dependencies.push({
+            supporting: dep.supporting_service.summary || dep.supporting_service.id,
+            dependent: dep.dependent_service.summary || dep.dependent_service.id,
+            status: 'existing',
+            id: existing.id,
+          });
+        } else {
+          preview.summary.service_dependencies.new++;
+          preview.details.service_dependencies.push({
+            supporting: dep.supporting_service.summary || dep.supporting_service.id,
+            dependent: dep.dependent_service.summary || dep.dependent_service.id,
+            status: 'new',
           });
         }
       }

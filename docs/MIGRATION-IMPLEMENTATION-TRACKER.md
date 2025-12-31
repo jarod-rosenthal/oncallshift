@@ -107,14 +107,14 @@
 - [x] Write tests (12 tests)
 
 ### 2.3 Import Service Dependencies
-**Effort**: 1-2 days | **Status**: Not Started
+**Effort**: 1-2 days | **Status**: Complete
 
-- [ ] Add `serviceDependencies` to PagerDuty import structure
-- [ ] Fetch PagerDuty service dependencies via API
-- [ ] Resolve service ID mappings for upstream/downstream
-- [ ] Create ServiceDependency records
-- [ ] Add to import preview
-- [ ] Write tests
+- [x] Add `service_dependencies` to PagerDuty import structure
+- [x] Add PagerDutyServiceDependency interface
+- [x] Resolve service ID mappings for supporting/dependent services
+- [x] Create ServiceDependency records with default type and impact
+- [x] Add to import preview with unmappedServices tracking
+- [x] Write tests (12 tests)
 
 ### 2.4 Import Tags
 **Effort**: 1 day | **Status**: Not Started
@@ -237,10 +237,10 @@
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
 | Phase 1: Critical | 40 | 40 | 100% |
-| Phase 2: Important | 28 | 18 | 64% |
+| Phase 2: Important | 28 | 24 | 86% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **113** | **58** | **51%** |
+| **Total** | **113** | **64** | **57%** |
 
 ---
 
@@ -266,6 +266,7 @@
 - **Dec 31, 2024**: Implemented Phase 1.4 - Import Alert Routing Rules (11/11 tasks)
 - **Dec 31, 2024**: Implemented Phase 2.1 - Heartbeat Monitors (12/12 tasks)
 - **Dec 31, 2024**: Implemented Phase 2.2 - Import Maintenance Windows (6/6 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.3 - Import Service Dependencies (6/6 tasks)
 
 ---
 

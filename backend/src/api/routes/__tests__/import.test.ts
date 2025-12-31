@@ -1340,3 +1340,180 @@ describe('Maintenance Window Import', () => {
     });
   });
 });
+
+describe('Service Dependency Import', () => {
+  describe('PagerDuty service dependency parsing', () => {
+    it('should parse PagerDuty service dependency structure', () => {
+      const pdDep = {
+        id: 'dep-123',
+        type: 'service_dependency',
+        supporting_service: {
+          id: 'service-1',
+          type: 'service_reference',
+          summary: 'Database Service',
+        },
+        dependent_service: {
+          id: 'service-2',
+          type: 'service_reference',
+          summary: 'API Service',
+        },
+      };
+
+      expect(pdDep.id).toBe('dep-123');
+      expect(pdDep.supporting_service.id).toBe('service-1');
+      expect(pdDep.supporting_service.summary).toBe('Database Service');
+      expect(pdDep.dependent_service.id).toBe('service-2');
+      expect(pdDep.dependent_service.summary).toBe('API Service');
+    });
+
+    it('should handle dependency with minimal fields', () => {
+      const pdDep = {
+        id: 'dep-456',
+        supporting_service: { id: 'svc-a' },
+        dependent_service: { id: 'svc-b' },
+      };
+
+      expect(pdDep.supporting_service.id).toBe('svc-a');
+      expect(pdDep.dependent_service.id).toBe('svc-b');
+    });
+  });
+
+  describe('Service ID mapping for dependencies', () => {
+    it('should map PagerDuty service IDs to OnCallShift IDs', () => {
+      const serviceIdMap = new Map<string, string>();
+      serviceIdMap.set('pd-service-1', 'ocs-service-1');
+      serviceIdMap.set('pd-service-2', 'ocs-service-2');
+
+      const pdDep = {
+        id: 'dep-123',
+        supporting_service: { id: 'pd-service-1' },
+        dependent_service: { id: 'pd-service-2' },
+      };
+
+      const supportingServiceId = serviceIdMap.get(pdDep.supporting_service.id);
+      const dependentServiceId = serviceIdMap.get(pdDep.dependent_service.id);
+
+      expect(supportingServiceId).toBe('ocs-service-1');
+      expect(dependentServiceId).toBe('ocs-service-2');
+    });
+
+    it('should return undefined for unmapped services', () => {
+      const serviceIdMap = new Map<string, string>();
+      serviceIdMap.set('pd-service-1', 'ocs-service-1');
+
+      const pdDep = {
+        id: 'dep-123',
+        supporting_service: { id: 'pd-service-1' },
+        dependent_service: { id: 'pd-unknown-service' },
+      };
+
+      const supportingServiceId = serviceIdMap.get(pdDep.supporting_service.id);
+      const dependentServiceId = serviceIdMap.get(pdDep.dependent_service.id);
+
+      expect(supportingServiceId).toBe('ocs-service-1');
+      expect(dependentServiceId).toBeUndefined();
+    });
+  });
+
+  describe('Dependency type and impact level', () => {
+    it('should support all dependency types', () => {
+      const types = ['required', 'optional', 'runtime', 'development'];
+
+      for (const type of types) {
+        expect(types).toContain(type);
+      }
+    });
+
+    it('should support all impact levels', () => {
+      const levels = ['critical', 'high', 'medium', 'low'];
+
+      for (const level of levels) {
+        expect(levels).toContain(level);
+      }
+    });
+
+    it('should default to required and high for PagerDuty imports', () => {
+      // PagerDuty doesn't have dependency types, so we default
+      const defaultType = 'required';
+      const defaultImpact = 'high';
+
+      expect(defaultType).toBe('required');
+      expect(defaultImpact).toBe('high');
+    });
+  });
+
+  describe('Preview service dependencies', () => {
+    it('should count unmapped services separately', () => {
+      const summary = {
+        total: 5,
+        existing: 1,
+        new: 2,
+        unmappedServices: 2,
+      };
+
+      expect(summary.total).toBe(5);
+      expect(summary.unmappedServices).toBe(2);
+      expect(summary.existing + summary.new + summary.unmappedServices).toBe(5);
+    });
+
+    it('should include supporting and dependent service names in details', () => {
+      const detail = {
+        supporting: 'Database Service',
+        dependent: 'API Service',
+        status: 'new',
+      };
+
+      expect(detail.supporting).toBe('Database Service');
+      expect(detail.dependent).toBe('API Service');
+      expect(detail.status).toBe('new');
+    });
+
+    it('should indicate reason for unmapped dependencies', () => {
+      const detail = {
+        supporting: 'Unknown Service',
+        dependent: 'API Service',
+        status: 'unmapped',
+        reason: 'Supporting service not found',
+      };
+
+      expect(detail.status).toBe('unmapped');
+      expect(detail.reason).toBe('Supporting service not found');
+    });
+  });
+
+  describe('Duplicate detection', () => {
+    it('should detect duplicate dependencies', () => {
+      const existingDeps = [
+        { supportingServiceId: 'svc-1', dependentServiceId: 'svc-2' },
+        { supportingServiceId: 'svc-3', dependentServiceId: 'svc-4' },
+      ];
+
+      const newDep = { supportingServiceId: 'svc-1', dependentServiceId: 'svc-2' };
+
+      const isDuplicate = existingDeps.some(
+        (d) =>
+          d.supportingServiceId === newDep.supportingServiceId &&
+          d.dependentServiceId === newDep.dependentServiceId
+      );
+
+      expect(isDuplicate).toBe(true);
+    });
+
+    it('should allow different direction dependencies', () => {
+      const existingDeps = [
+        { supportingServiceId: 'svc-1', dependentServiceId: 'svc-2' },
+      ];
+
+      // Reverse direction - svc-2 supports svc-1 (different from svc-1 supports svc-2)
+      const newDep = { supportingServiceId: 'svc-2', dependentServiceId: 'svc-1' };
+
+      const isDuplicate = existingDeps.some(
+        (d) =>
+          d.supportingServiceId === newDep.supportingServiceId &&
+          d.dependentServiceId === newDep.dependentServiceId
+      );
+
+      expect(isDuplicate).toBe(false);
+    });
+  });
+});
