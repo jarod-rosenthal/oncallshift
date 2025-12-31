@@ -27,7 +27,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from '../theme';
 import * as hapticService from '../services/hapticService';
 import * as apiService from '../services/apiService';
-import { useToast } from '../components';
+import { useToast, DNDControls, useDNDStatus } from '../components';
+import type { DNDSettings } from '../components';
 
 // Settings interface
 interface AppSettings {
@@ -577,6 +578,29 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      {/* Do Not Disturb Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <MaterialCommunityIcons name="bell-off-outline" size={20} color={colors.primary} />
+          <Text variant="titleMedium" style={dynamicStyles.sectionTitle}>
+            Do Not Disturb
+          </Text>
+        </View>
+
+        <View style={dynamicStyles.settingCard}>
+          <View style={styles.dndContainer}>
+            <DNDControls />
+          </View>
+        </View>
+
+        <View style={styles.dndInfo}>
+          <MaterialCommunityIcons name="information-outline" size={16} color={colors.textMuted} />
+          <Text variant="bodySmall" style={styles.dndInfoText}>
+            DND temporarily silences all notifications. Critical and high severity alerts can optionally override this setting.
+          </Text>
+        </View>
+      </View>
+
       {/* Appearance Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
@@ -1109,6 +1133,24 @@ const styles = StyleSheet.create({
   quietHoursInfoText: {
     color: colors.textMuted,
     flex: 1,
+  },
+  // DND styles
+  dndContainer: {
+    padding: 16,
+  },
+  dndInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    marginTop: 8,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 8,
+  },
+  dndInfoText: {
+    color: colors.textMuted,
+    flex: 1,
+    lineHeight: 18,
   },
   // AI Credentials styles
   aiCredentialInfo: {

@@ -7,6 +7,13 @@ import { logger } from '../../shared/utils/logger';
 
 const router = Router();
 
+// UUID regex that accepts any valid UUID format (not just v4)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isValidUUID = (value: any) => {
+  if (value === null || value === undefined || value === '') return true;
+  return UUID_REGEX.test(value);
+};
+
 // All routes require authentication
 router.use(authenticateUser);
 
@@ -128,19 +135,19 @@ router.post(
     body('repeatCount').optional().isInt({ min: 0 }),
     body('steps').isArray({ min: 1 }).withMessage('At least one escalation step is required'),
     body('steps.*.targetType').isIn(['schedule', 'users']),
-    body('steps.*.scheduleId').optional({ nullable: true }).isUUID(),
+    body('steps.*.scheduleId').optional({ nullable: true }).custom(isValidUUID),
     body('steps.*.userIds').optional({ nullable: true }).custom((value) => {
       if (value === null || value === undefined) return true;
       if (!Array.isArray(value)) throw new Error('Must be an array');
       return true;
     }),
-    body('steps.*.userIds.*').optional().isUUID(),
+    body('steps.*.userIds.*').optional().custom(isValidUUID),
     body('steps.*.timeoutSeconds').isInt({ min: 0 }),
     // New: Support for multiple targets per step
     body('steps.*.targets').optional().isArray(),
     body('steps.*.targets.*.targetType').optional().isIn(['user', 'schedule']),
-    body('steps.*.targets.*.userId').optional({ nullable: true }).isUUID(),
-    body('steps.*.targets.*.scheduleId').optional({ nullable: true }).isUUID(),
+    body('steps.*.targets.*.userId').optional({ nullable: true }).custom(isValidUUID),
+    body('steps.*.targets.*.scheduleId').optional({ nullable: true }).custom(isValidUUID),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -248,19 +255,19 @@ router.put(
     body('repeatCount').optional().isInt({ min: 0 }),
     body('steps').optional().isArray({ min: 1 }),
     body('steps.*.targetType').optional().isIn(['schedule', 'users']),
-    body('steps.*.scheduleId').optional({ nullable: true }).isUUID(),
+    body('steps.*.scheduleId').optional({ nullable: true }).custom(isValidUUID),
     body('steps.*.userIds').optional({ nullable: true }).custom((value) => {
       if (value === null || value === undefined) return true;
       if (!Array.isArray(value)) throw new Error('Must be an array');
       return true;
     }),
-    body('steps.*.userIds.*').optional().isUUID(),
+    body('steps.*.userIds.*').optional().custom(isValidUUID),
     body('steps.*.timeoutSeconds').optional().isInt({ min: 0 }),
     // Support for multiple targets per step
     body('steps.*.targets').optional().isArray(),
     body('steps.*.targets.*.targetType').optional().isIn(['user', 'schedule']),
-    body('steps.*.targets.*.userId').optional({ nullable: true }).isUUID(),
-    body('steps.*.targets.*.scheduleId').optional({ nullable: true }).isUUID(),
+    body('steps.*.targets.*.userId').optional({ nullable: true }).custom(isValidUUID),
+    body('steps.*.targets.*.scheduleId').optional({ nullable: true }).custom(isValidUUID),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -430,9 +437,9 @@ router.post(
   [
     param('id').isUUID(),
     body('targetType').isIn(['schedule', 'users']),
-    body('scheduleId').optional().isUUID(),
+    body('scheduleId').optional().custom(isValidUUID),
     body('userIds').optional().isArray(),
-    body('userIds.*').optional().isUUID(),
+    body('userIds.*').optional().custom(isValidUUID),
     body('timeoutSeconds').isInt({ min: 0 }),
     body('position').optional().isInt({ min: 1 }),
   ],
@@ -515,9 +522,9 @@ router.put(
     param('policyId').isUUID(),
     param('stepId').isUUID(),
     body('targetType').optional().isIn(['schedule', 'users']),
-    body('scheduleId').optional().isUUID(),
+    body('scheduleId').optional().custom(isValidUUID),
     body('userIds').optional().isArray(),
-    body('userIds.*').optional().isUUID(),
+    body('userIds.*').optional().custom(isValidUUID),
     body('timeoutSeconds').optional().isInt({ min: 0 }),
   ],
   async (req: Request, res: Response) => {
@@ -648,7 +655,7 @@ router.put(
   [
     param('id').isUUID(),
     body('stepIds').isArray({ min: 1 }),
-    body('stepIds.*').isUUID(),
+    body('stepIds.*').custom(isValidUUID),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);

@@ -156,13 +156,13 @@ export default function EscalationPoliciesScreen() {
         targetId: stepTargetId.trim(),
       });
       hapticService.success();
-      showToast({ message: 'Escalation level added', type: 'success' });
+      showToast({ message: 'Escalation rule added', type: 'success' });
       setShowStepModal(false);
       resetStepForm();
       fetchPolicies();
     } catch (error: any) {
-      console.error('Failed to add level:', error);
-      showToast({ message: error.message || 'Failed to add level', type: 'error' });
+      console.error('Failed to add rule:', error);
+      showToast({ message: error.message || 'Failed to add rule', type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -171,8 +171,8 @@ export default function EscalationPoliciesScreen() {
   const handleRemoveStep = async (policy: EscalationPolicy, step: EscalationStep) => {
     hapticService.warning();
     Alert.alert(
-      'Remove Level',
-      `Remove level ${step.escalationLevel} from "${policy.name}"?`,
+      'Remove Rule',
+      `Remove rule ${step.escalationLevel || step.stepOrder || 1} from "${policy.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -182,10 +182,10 @@ export default function EscalationPoliciesScreen() {
             try {
               await apiService.deleteEscalationStep(policy.id, step.id);
               hapticService.success();
-              showToast({ message: 'Level removed', type: 'success' });
+              showToast({ message: 'Rule removed', type: 'success' });
               fetchPolicies();
             } catch (error: any) {
-              showToast({ message: error.message || 'Failed to remove level', type: 'error' });
+              showToast({ message: error.message || 'Failed to remove rule', type: 'error' });
             }
           },
         },
@@ -311,7 +311,7 @@ export default function EscalationPoliciesScreen() {
                         style={[styles.metaChip, { backgroundColor: `${colors.primary}15` }]}
                         textStyle={{ color: colors.primary, fontSize: 11 }}
                       >
-                        {policy.steps?.length || 0} {policy.steps?.length === 1 ? 'level' : 'levels'}
+                        {policy.steps?.length || 0} {policy.steps?.length === 1 ? 'rule' : 'rules'}
                       </Chip>
                       {policy.repeatEnabled && (
                         <Chip
@@ -352,7 +352,7 @@ export default function EscalationPoliciesScreen() {
                     />
                     <Menu.Item
                       onPress={() => openStepModal(policy)}
-                      title="Add Level"
+                      title="Add Rule"
                       leadingIcon="plus"
                     />
                     <Divider />
@@ -523,13 +523,13 @@ export default function EscalationPoliciesScreen() {
           contentContainerStyle={[styles.modal, { backgroundColor: colors.surface }]}
         >
           <Text variant="titleLarge" style={[styles.modalTitle, { color: colors.textPrimary }]}>
-            Add Escalation Level
+            Add Escalation Rule
           </Text>
           <Text variant="bodyMedium" style={{ color: colors.textSecondary, marginBottom: 16 }}>
             Adding to: {selectedPolicy?.name}
           </Text>
           <TextInput
-            label="Escalate after (minutes)"
+            label="Wait before next rule (minutes)"
             value={stepDelay}
             onChangeText={setStepDelay}
             mode="outlined"
@@ -590,7 +590,7 @@ export default function EscalationPoliciesScreen() {
               Cancel
             </Button>
             <Button mode="contained" onPress={handleAddStep} loading={saving} disabled={saving}>
-              Add Level
+              Add Rule
             </Button>
           </View>
         </Modal>

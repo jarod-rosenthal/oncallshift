@@ -4,6 +4,8 @@ import { Service } from './Service';
 import { User } from './User';
 import { IncidentEvent } from './IncidentEvent';
 import { Notification } from './Notification';
+import { Alert } from './Alert';
+import { PriorityLevel } from './PriorityLevel';
 
 export type IncidentState = 'triggered' | 'acknowledged' | 'resolved';
 export type IncidentSeverity = 'info' | 'warning' | 'error' | 'critical';
@@ -71,16 +73,13 @@ export class Incident {
   @Column({ name: 'assigned_at', type: 'timestamp', nullable: true })
   assignedAt: Date | null;
 
-  // Snooze functionality
-  @Column({ name: 'snoozed_until', type: 'timestamp', nullable: true })
-  snoozedUntil: Date | null;
-
-  @Column({ name: 'snoozed_by', type: 'uuid', nullable: true })
-  snoozedBy: string | null;
-
   // Merged incident tracking
   @Column({ name: 'merged_into_incident_id', type: 'uuid', nullable: true })
   mergedIntoIncidentId: string | null;
+
+  // Priority level
+  @Column({ name: 'priority_id', type: 'uuid', nullable: true })
+  priorityId: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
@@ -109,19 +108,23 @@ export class Incident {
   @JoinColumn({ name: 'assigned_to_user_id' })
   assignedToUser: User | null;
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'snoozed_by' })
-  snoozedByUser: User | null;
 
   @ManyToOne(() => Incident, { nullable: true })
   @JoinColumn({ name: 'merged_into_incident_id' })
   mergedIntoIncident: Incident | null;
+
+  @ManyToOne(() => PriorityLevel, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'priority_id' })
+  priority: PriorityLevel | null;
 
   @OneToMany(() => IncidentEvent, event => event.incident)
   events: IncidentEvent[];
 
   @OneToMany(() => Notification, notification => notification.incident)
   notifications: Notification[];
+
+  @OneToMany(() => Alert, alert => alert.incident)
+  alerts: Alert[];
 
   // Helper methods
   isOpen(): boolean {
@@ -140,17 +143,11 @@ export class Incident {
     return this.state !== 'resolved';
   }
 
-  canSnooze(): boolean {
-    return this.state === 'triggered' && !this.isSnoozed();
-  }
 
   canEscalate(): boolean {
     return this.state === 'triggered';
   }
 
-  isSnoozed(): boolean {
-    return this.snoozedUntil !== null && new Date(this.snoozedUntil) > new Date();
-  }
 
   isMerged(): boolean {
     return this.mergedIntoIncidentId !== null;

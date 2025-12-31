@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Navigation } from '../components/Navigation';
 import { runbooksAPI, servicesAPI } from '../lib/api-client';
 import type { Runbook, RunbookStep, Service } from '../types/api';
 
@@ -245,34 +243,17 @@ export function AdminRunbooks() {
   }, {} as Record<string, Runbook[]>);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8 max-w-6xl">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">
-            &larr; Back to Dashboard
-          </Button>
-        </Link>
-
+    <div className="max-w-6xl mx-auto">
         <div className="mb-8 flex justify-between items-start">
           <div>
-            <h2 className="text-3xl font-bold mb-2">Admin: Runbooks</h2>
+            <h2 className="text-3xl font-bold mb-2">Runbooks</h2>
             <p className="text-muted-foreground">
               Create and manage incident response runbooks for your services
             </p>
           </div>
-          <div className="flex gap-2">
-            <Link to="/admin/users">
-              <Button variant="outline">Users</Button>
-            </Link>
-            <Link to="/admin/services">
-              <Button variant="outline">Services</Button>
-            </Link>
-            <Button onClick={showForm ? resetForm : handleStartCreate}>
-              {showForm ? 'Cancel' : 'Create Runbook'}
-            </Button>
-          </div>
+          <Button onClick={showForm ? resetForm : handleStartCreate}>
+            {showForm ? 'Cancel' : 'Create Runbook'}
+          </Button>
         </div>
 
         {error && (
@@ -648,9 +629,8 @@ export function AdminRunbooks() {
             )}
           </CardContent>
         </Card>
-      </main>
 
-      {/* Delete Confirmation Dialog */}
+        {/* Delete Confirmation Dialog */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md mx-4">

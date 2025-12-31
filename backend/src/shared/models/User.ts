@@ -2,6 +2,8 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { Organization } from './Organization';
 import { DeviceToken } from './DeviceToken';
 import { Notification } from './Notification';
+import { UserContactMethod } from './UserContactMethod';
+import { UserNotificationRule } from './UserNotificationRule';
 
 @Entity('users')
 export class User {
@@ -64,4 +66,10 @@ export class User {
 
   @OneToMany(() => Notification, notification => notification.user)
   notifications: Notification[];
+
+  @OneToMany(() => UserContactMethod, method => method.user)
+  contactMethods: UserContactMethod[];
+
+  @OneToMany(() => UserNotificationRule, rule => rule.user)
+  notificationRules: UserNotificationRule[];
 }

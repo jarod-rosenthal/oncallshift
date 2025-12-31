@@ -3,7 +3,7 @@ import { body, query, validationResult } from 'express-validator';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminDisableUserCommand, AdminEnableUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { User } from '../../shared/models';
+import { User, UserContactMethod, UserNotificationRule } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 import {
   encryptCredential,
@@ -735,5 +735,509 @@ function getDefaultWeeklyHours() {
     sunday: { available: false, start: '09:00', end: '17:00' },
   };
 }
+
+// ============================================
+// User Contact Methods Endpoints
+// ============================================
+
+/**
+ * GET /api/v1/users/me/contact-methods
+ * Get current user's contact methods
+ */
+router.get('/me/contact-methods', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    const dataSource = await getDataSource();
+    const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+    const contactMethods = await contactMethodRepo.find({
+      where: { userId: user.id },
+      order: { type: 'ASC', createdAt: 'ASC' },
+    });
+
+    return res.json({
+      contactMethods: contactMethods.map(cm => ({
+        id: cm.id,
+        type: cm.type,
+        address: cm.address,
+        label: cm.label,
+        verified: cm.verified,
+        isDefault: cm.isDefault,
+        createdAt: cm.createdAt,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error fetching contact methods:', error);
+    return res.status(500).json({ error: 'Failed to fetch contact methods' });
+  }
+});
+
+/**
+ * POST /api/v1/users/me/contact-methods
+ * Add a new contact method
+ */
+router.post(
+  '/me/contact-methods',
+  [
+    body('type').isIn(['email', 'sms', 'phone', 'push']).withMessage('Type must be email, sms, phone, or push'),
+    body('address').isString().notEmpty().withMessage('Address is required'),
+    body('label').optional().isString().isLength({ max: 100 }).withMessage('Label max 100 characters'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { type, address, label } = req.body;
+
+      const dataSource = await getDataSource();
+      const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+      // Check for duplicate
+      const existing = await contactMethodRepo.findOne({
+        where: { userId: user.id, type, address },
+      });
+      if (existing) {
+        return res.status(400).json({ error: 'This contact method already exists' });
+      }
+
+      // Check if this is the first of its type (make it default)
+      const countOfType = await contactMethodRepo.count({
+        where: { userId: user.id, type },
+      });
+
+      const contactMethod = contactMethodRepo.create({
+        userId: user.id,
+        type,
+        address,
+        label: label || null,
+        verified: type === 'push', // Push methods are auto-verified
+        isDefault: countOfType === 0,
+      });
+
+      await contactMethodRepo.save(contactMethod);
+
+      logger.info('Contact method added', { userId: user.id, type, methodId: contactMethod.id });
+
+      return res.status(201).json({
+        message: 'Contact method added successfully',
+        contactMethod: {
+          id: contactMethod.id,
+          type: contactMethod.type,
+          address: contactMethod.address,
+          label: contactMethod.label,
+          verified: contactMethod.verified,
+          isDefault: contactMethod.isDefault,
+          createdAt: contactMethod.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error adding contact method:', error);
+      return res.status(500).json({ error: 'Failed to add contact method' });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/users/me/contact-methods/:id
+ * Update a contact method
+ */
+router.put(
+  '/me/contact-methods/:id',
+  [
+    body('label').optional().isString().isLength({ max: 100 }).withMessage('Label max 100 characters'),
+    body('isDefault').optional().isBoolean().withMessage('isDefault must be a boolean'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { id } = req.params;
+      const { label, isDefault } = req.body;
+
+      const dataSource = await getDataSource();
+      const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+      const contactMethod = await contactMethodRepo.findOne({
+        where: { id, userId: user.id },
+      });
+
+      if (!contactMethod) {
+        return res.status(404).json({ error: 'Contact method not found' });
+      }
+
+      if (label !== undefined) {
+        contactMethod.label = label || null;
+      }
+
+      if (isDefault === true) {
+        // Unset default for other methods of same type
+        await contactMethodRepo.update(
+          { userId: user.id, type: contactMethod.type },
+          { isDefault: false }
+        );
+        contactMethod.isDefault = true;
+      }
+
+      await contactMethodRepo.save(contactMethod);
+
+      logger.info('Contact method updated', { userId: user.id, methodId: id });
+
+      return res.json({
+        message: 'Contact method updated successfully',
+        contactMethod: {
+          id: contactMethod.id,
+          type: contactMethod.type,
+          address: contactMethod.address,
+          label: contactMethod.label,
+          verified: contactMethod.verified,
+          isDefault: contactMethod.isDefault,
+          createdAt: contactMethod.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating contact method:', error);
+      return res.status(500).json({ error: 'Failed to update contact method' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/users/me/contact-methods/:id
+ * Delete a contact method
+ */
+router.delete('/me/contact-methods/:id', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+
+    const dataSource = await getDataSource();
+    const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+    const contactMethod = await contactMethodRepo.findOne({
+      where: { id, userId: user.id },
+    });
+
+    if (!contactMethod) {
+      return res.status(404).json({ error: 'Contact method not found' });
+    }
+
+    await contactMethodRepo.remove(contactMethod);
+
+    logger.info('Contact method deleted', { userId: user.id, methodId: id });
+
+    return res.json({ message: 'Contact method deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting contact method:', error);
+    return res.status(500).json({ error: 'Failed to delete contact method' });
+  }
+});
+
+/**
+ * POST /api/v1/users/me/contact-methods/:id/verify
+ * Send or confirm verification for a contact method
+ */
+router.post(
+  '/me/contact-methods/:id/verify',
+  [
+    body('code').optional().isString().isLength({ min: 6, max: 6 }).withMessage('Code must be 6 characters'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { id } = req.params;
+      const { code } = req.body;
+
+      const dataSource = await getDataSource();
+      const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+      const contactMethod = await contactMethodRepo.findOne({
+        where: { id, userId: user.id },
+      });
+
+      if (!contactMethod) {
+        return res.status(404).json({ error: 'Contact method not found' });
+      }
+
+      if (contactMethod.verified) {
+        return res.json({ message: 'Contact method is already verified', verified: true });
+      }
+
+      if (code) {
+        // Verify with code
+        const isValid = contactMethod.verify(code);
+        if (!isValid) {
+          return res.status(400).json({ error: 'Invalid verification code' });
+        }
+
+        await contactMethodRepo.save(contactMethod);
+
+        logger.info('Contact method verified', { userId: user.id, methodId: id });
+
+        return res.json({
+          message: 'Contact method verified successfully',
+          verified: true,
+        });
+      } else {
+        // Send verification code
+        // TODO: Use verificationCode to actually send verification email/SMS
+        contactMethod.generateVerificationCode();
+        await contactMethodRepo.save(contactMethod);
+
+        // TODO: Actually send verification email/SMS
+        // For now, just return success
+        logger.info('Verification code generated', {
+          userId: user.id,
+          methodId: id,
+          type: contactMethod.type,
+          // Don't log the actual code in production
+        });
+
+        return res.json({
+          message: 'Verification code sent',
+          sentAt: contactMethod.verificationSentAt,
+        });
+      }
+    } catch (error) {
+      logger.error('Error verifying contact method:', error);
+      return res.status(500).json({ error: 'Failed to verify contact method' });
+    }
+  }
+);
+
+// ============================================
+// User Notification Rules Endpoints
+// ============================================
+
+/**
+ * GET /api/v1/users/me/notification-rules
+ * Get current user's notification rules
+ */
+router.get('/me/notification-rules', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    const dataSource = await getDataSource();
+    const ruleRepo = dataSource.getRepository(UserNotificationRule);
+
+    const rules = await ruleRepo.find({
+      where: { userId: user.id },
+      relations: ['contactMethod'],
+      order: { urgency: 'ASC', ruleOrder: 'ASC' },
+    });
+
+    return res.json({
+      notificationRules: rules.map(r => ({
+        id: r.id,
+        contactMethodId: r.contactMethodId,
+        contactMethod: r.contactMethod ? {
+          id: r.contactMethod.id,
+          type: r.contactMethod.type,
+          address: r.contactMethod.address,
+          label: r.contactMethod.label,
+        } : null,
+        urgency: r.urgency,
+        startDelayMinutes: r.startDelayMinutes,
+        ruleOrder: r.ruleOrder,
+        enabled: r.enabled,
+        createdAt: r.createdAt,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error fetching notification rules:', error);
+    return res.status(500).json({ error: 'Failed to fetch notification rules' });
+  }
+});
+
+/**
+ * POST /api/v1/users/me/notification-rules
+ * Create a new notification rule
+ */
+router.post(
+  '/me/notification-rules',
+  [
+    body('contactMethodId').isUUID().withMessage('Valid contact method ID is required'),
+    body('urgency').isIn(['high', 'low', 'any']).withMessage('Urgency must be high, low, or any'),
+    body('startDelayMinutes').optional().isInt({ min: 0 }).withMessage('Delay must be a non-negative integer'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { contactMethodId, urgency, startDelayMinutes = 0 } = req.body;
+
+      const dataSource = await getDataSource();
+      const ruleRepo = dataSource.getRepository(UserNotificationRule);
+      const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+      // Verify contact method belongs to user
+      const contactMethod = await contactMethodRepo.findOne({
+        where: { id: contactMethodId, userId: user.id },
+      });
+
+      if (!contactMethod) {
+        return res.status(404).json({ error: 'Contact method not found' });
+      }
+
+      // Get max rule order for this urgency
+      const maxOrderResult = await ruleRepo
+        .createQueryBuilder('rule')
+        .select('MAX(rule.ruleOrder)', 'max')
+        .where('rule.userId = :userId AND rule.urgency = :urgency', { userId: user.id, urgency })
+        .getRawOne();
+      const ruleOrder = (maxOrderResult?.max ?? -1) + 1;
+
+      const rule = ruleRepo.create({
+        userId: user.id,
+        contactMethodId,
+        urgency,
+        startDelayMinutes,
+        ruleOrder,
+        enabled: true,
+      });
+
+      await ruleRepo.save(rule);
+
+      logger.info('Notification rule created', { userId: user.id, ruleId: rule.id });
+
+      return res.status(201).json({
+        message: 'Notification rule created successfully',
+        notificationRule: {
+          id: rule.id,
+          contactMethodId: rule.contactMethodId,
+          contactMethod: {
+            id: contactMethod.id,
+            type: contactMethod.type,
+            address: contactMethod.address,
+            label: contactMethod.label,
+          },
+          urgency: rule.urgency,
+          startDelayMinutes: rule.startDelayMinutes,
+          ruleOrder: rule.ruleOrder,
+          enabled: rule.enabled,
+          createdAt: rule.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error creating notification rule:', error);
+      return res.status(500).json({ error: 'Failed to create notification rule' });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/users/me/notification-rules/:id
+ * Update a notification rule
+ */
+router.put(
+  '/me/notification-rules/:id',
+  [
+    body('urgency').optional().isIn(['high', 'low', 'any']).withMessage('Urgency must be high, low, or any'),
+    body('startDelayMinutes').optional().isInt({ min: 0 }).withMessage('Delay must be a non-negative integer'),
+    body('enabled').optional().isBoolean().withMessage('Enabled must be a boolean'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { id } = req.params;
+      const { urgency, startDelayMinutes, enabled } = req.body;
+
+      const dataSource = await getDataSource();
+      const ruleRepo = dataSource.getRepository(UserNotificationRule);
+
+      const rule = await ruleRepo.findOne({
+        where: { id, userId: user.id },
+        relations: ['contactMethod'],
+      });
+
+      if (!rule) {
+        return res.status(404).json({ error: 'Notification rule not found' });
+      }
+
+      if (urgency !== undefined) rule.urgency = urgency;
+      if (startDelayMinutes !== undefined) rule.startDelayMinutes = startDelayMinutes;
+      if (enabled !== undefined) rule.enabled = enabled;
+
+      await ruleRepo.save(rule);
+
+      logger.info('Notification rule updated', { userId: user.id, ruleId: id });
+
+      return res.json({
+        message: 'Notification rule updated successfully',
+        notificationRule: {
+          id: rule.id,
+          contactMethodId: rule.contactMethodId,
+          contactMethod: rule.contactMethod ? {
+            id: rule.contactMethod.id,
+            type: rule.contactMethod.type,
+            address: rule.contactMethod.address,
+            label: rule.contactMethod.label,
+          } : null,
+          urgency: rule.urgency,
+          startDelayMinutes: rule.startDelayMinutes,
+          ruleOrder: rule.ruleOrder,
+          enabled: rule.enabled,
+          createdAt: rule.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating notification rule:', error);
+      return res.status(500).json({ error: 'Failed to update notification rule' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/users/me/notification-rules/:id
+ * Delete a notification rule
+ */
+router.delete('/me/notification-rules/:id', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const { id } = req.params;
+
+    const dataSource = await getDataSource();
+    const ruleRepo = dataSource.getRepository(UserNotificationRule);
+
+    const rule = await ruleRepo.findOne({
+      where: { id, userId: user.id },
+    });
+
+    if (!rule) {
+      return res.status(404).json({ error: 'Notification rule not found' });
+    }
+
+    await ruleRepo.remove(rule);
+
+    logger.info('Notification rule deleted', { userId: user.id, ruleId: id });
+
+    return res.json({ message: 'Notification rule deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting notification rule:', error);
+    return res.status(500).json({ error: 'Failed to delete notification rule' });
+  }
+});
 
 export default router;

@@ -35,7 +35,6 @@ export const toastMessages = {
   acknowledge: "Got it. You're on it.",
   resolve: "Incident resolved. Nice work!",
   escalate: "Escalated. Help is on the way.",
-  snooze: "Snoozed. We'll remind you later.",
   note_added: "Note added.",
   copied: "Copied to clipboard.",
   offline_action: "Saved. Will sync when online.",

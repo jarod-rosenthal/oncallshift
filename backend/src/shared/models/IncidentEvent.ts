@@ -10,8 +10,6 @@ export type IncidentEventType =
   | 'escalate'        // Escalation triggered
   | 'notification'    // Notification sent
   | 'state_change'    // State changed
-  | 'snooze'          // Incident snoozed
-  | 'unsnooze'        // Snooze cancelled or expired
   | 'reassign'        // Incident reassigned
   | 'ai_diagnosis';   // AI-powered diagnosis performed
 

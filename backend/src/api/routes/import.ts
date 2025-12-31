@@ -1,0 +1,1027 @@
+import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
+import { getDataSource } from '../../shared/db/data-source';
+import {
+  User,
+  Team,
+  TeamMembership,
+  Schedule,
+  ScheduleLayer,
+  ScheduleLayerMember,
+  EscalationPolicy,
+  EscalationStep,
+  Service,
+} from '../../shared/models';
+import { authenticateUser } from '../../shared/auth/middleware';
+import { logger } from '../../shared/utils/logger';
+
+const router = Router();
+
+// All import routes require authentication
+router.use(authenticateUser);
+
+// ============================================================================
+// PagerDuty Import API
+// ============================================================================
+
+interface PagerDutyImportData {
+  users?: PagerDutyUser[];
+  teams?: PagerDutyTeam[];
+  schedules?: PagerDutySchedule[];
+  escalation_policies?: PagerDutyEscalationPolicy[];
+  services?: PagerDutyService[];
+}
+
+interface PagerDutyUser {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+  time_zone?: string;
+  contact_methods?: Array<{
+    type: string;
+    address: string;
+    label?: string;
+  }>;
+  notification_rules?: Array<{
+    start_delay_in_minutes: number;
+    urgency: string;
+    contact_method: { type: string };
+  }>;
+}
+
+interface PagerDutyTeam {
+  id: string;
+  name: string;
+  description?: string;
+  members?: Array<{
+    user: { id: string; email?: string };
+    role: string;
+  }>;
+}
+
+interface PagerDutySchedule {
+  id: string;
+  name: string;
+  description?: string;
+  time_zone: string;
+  schedule_layers?: Array<{
+    id: string;
+    name: string;
+    start: string;
+    rotation_virtual_start: string;
+    rotation_turn_length_seconds: number;
+    users: Array<{ user: { id: string; email?: string } }>;
+    restrictions?: Array<{
+      type: string;
+      start_time_of_day: string;
+      duration_seconds: number;
+      start_day_of_week?: number;
+    }>;
+  }>;
+}
+
+interface PagerDutyEscalationPolicy {
+  id: string;
+  name: string;
+  description?: string;
+  num_loops?: number;
+  escalation_rules: Array<{
+    escalation_delay_in_minutes: number;
+    targets: Array<{
+      id: string;
+      type: string;
+      summary?: string;
+    }>;
+  }>;
+}
+
+interface PagerDutyService {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  escalation_policy?: { id: string };
+  teams?: Array<{ id: string }>;
+}
+
+/**
+ * Import from PagerDuty
+ * POST /api/v1/import/pagerduty
+ *
+ * Accepts PagerDuty REST API export data and creates corresponding entities.
+ */
+router.post('/pagerduty', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const user = (req as any).user;
+  const orgId = user.orgId;
+
+  const importData: PagerDutyImportData = req.body;
+  const results = {
+    users: { imported: 0, skipped: 0, errors: [] as string[] },
+    teams: { imported: 0, skipped: 0, errors: [] as string[] },
+    schedules: { imported: 0, skipped: 0, errors: [] as string[] },
+    escalation_policies: { imported: 0, skipped: 0, errors: [] as string[] },
+    services: { imported: 0, skipped: 0, errors: [] as string[] },
+  };
+
+  // Maps to track PagerDuty ID -> OnCallShift ID mappings
+  const userIdMap = new Map<string, string>();
+  const teamIdMap = new Map<string, string>();
+  const scheduleIdMap = new Map<string, string>();
+  const policyIdMap = new Map<string, string>();
+
+  try {
+    const dataSource = await getDataSource();
+
+    // 1. Import Users (match by email or create placeholder)
+    if (importData.users && importData.users.length > 0) {
+      const userRepo = dataSource.getRepository(User);
+
+      for (const pdUser of importData.users) {
+        try {
+          // Check if user already exists by email
+          let existingUser = await userRepo.findOne({
+            where: { email: pdUser.email, orgId },
+          });
+
+          if (existingUser) {
+            userIdMap.set(pdUser.id, existingUser.id);
+            results.users.skipped++;
+            logger.info('User already exists, mapped', { pdId: pdUser.id, email: pdUser.email });
+          } else {
+            // For now, we just track the mapping - users need to be invited separately
+            // Store the PagerDuty ID for reference
+            results.users.skipped++;
+            logger.info('User not found, will need to be invited', { pdId: pdUser.id, email: pdUser.email });
+          }
+        } catch (error: any) {
+          results.users.errors.push(`User ${pdUser.email}: ${error.message}`);
+        }
+      }
+    }
+
+    // 2. Import Teams
+    if (importData.teams && importData.teams.length > 0) {
+      const teamRepo = dataSource.getRepository(Team);
+      const membershipRepo = dataSource.getRepository(TeamMembership);
+
+      for (const pdTeam of importData.teams) {
+        try {
+          // Check if team already exists
+          let team = await teamRepo.findOne({
+            where: { name: pdTeam.name, orgId },
+          });
+
+          if (!team) {
+            team = teamRepo.create({
+              orgId,
+              name: pdTeam.name,
+              description: pdTeam.description,
+              slug: pdTeam.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            });
+            await teamRepo.save(team);
+            results.teams.imported++;
+          } else {
+            results.teams.skipped++;
+          }
+
+          teamIdMap.set(pdTeam.id, team.id);
+
+          // Import team members
+          if (pdTeam.members) {
+            for (const member of pdTeam.members) {
+              const userId = userIdMap.get(member.user.id);
+              if (userId) {
+                const existingMembership = await membershipRepo.findOne({
+                  where: { teamId: team.id, userId },
+                });
+
+                if (!existingMembership) {
+                  const membership = membershipRepo.create({
+                    teamId: team.id,
+                    userId,
+                    role: member.role === 'manager' ? 'manager' : 'member',
+                  });
+                  await membershipRepo.save(membership);
+                }
+              }
+            }
+          }
+        } catch (error: any) {
+          results.teams.errors.push(`Team ${pdTeam.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 3. Import Schedules
+    if (importData.schedules && importData.schedules.length > 0) {
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const layerRepo = dataSource.getRepository(ScheduleLayer);
+      const layerMemberRepo = dataSource.getRepository(ScheduleLayerMember);
+
+      for (const pdSchedule of importData.schedules) {
+        try {
+          // Check if schedule already exists
+          let schedule = await scheduleRepo.findOne({
+            where: { name: pdSchedule.name, orgId },
+          });
+
+          if (!schedule) {
+            schedule = scheduleRepo.create({
+              orgId,
+              name: pdSchedule.name,
+              description: pdSchedule.description,
+              timezone: pdSchedule.time_zone || 'UTC',
+              type: 'weekly',
+            });
+            await scheduleRepo.save(schedule);
+            results.schedules.imported++;
+
+            // Import schedule layers
+            if (pdSchedule.schedule_layers) {
+              for (let i = 0; i < pdSchedule.schedule_layers.length; i++) {
+                const pdLayer = pdSchedule.schedule_layers[i];
+
+                // Convert rotation length to type
+                const rotationType = getRotationType(pdLayer.rotation_turn_length_seconds);
+
+                const layer = layerRepo.create({
+                  scheduleId: schedule.id,
+                  name: pdLayer.name || `Layer ${i + 1}`,
+                  rotationType,
+                  startDate: new Date(pdLayer.rotation_virtual_start || pdLayer.start),
+                  handoffTime: extractTimeFromISO(pdLayer.rotation_virtual_start),
+                  rotationLength: Math.ceil(pdLayer.rotation_turn_length_seconds / 86400),
+                  layerOrder: i,
+                  restrictions: pdLayer.restrictions ? convertRestrictions(pdLayer.restrictions) : null,
+                });
+                await layerRepo.save(layer);
+
+                // Add layer members
+                if (pdLayer.users) {
+                  for (let j = 0; j < pdLayer.users.length; j++) {
+                    const pdLayerUser = pdLayer.users[j];
+                    const userId = userIdMap.get(pdLayerUser.user.id);
+
+                    if (userId) {
+                      const layerMember = layerMemberRepo.create({
+                        layerId: layer.id,
+                        userId,
+                        position: j,
+                      });
+                      await layerMemberRepo.save(layerMember);
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            results.schedules.skipped++;
+          }
+
+          scheduleIdMap.set(pdSchedule.id, schedule.id);
+        } catch (error: any) {
+          results.schedules.errors.push(`Schedule ${pdSchedule.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 4. Import Escalation Policies
+    if (importData.escalation_policies && importData.escalation_policies.length > 0) {
+      const policyRepo = dataSource.getRepository(EscalationPolicy);
+      const stepRepo = dataSource.getRepository(EscalationStep);
+
+      for (const pdPolicy of importData.escalation_policies) {
+        try {
+          // Check if policy already exists
+          let policy = await policyRepo.findOne({
+            where: { name: pdPolicy.name, orgId },
+          });
+
+          if (!policy) {
+            policy = policyRepo.create({
+              orgId,
+              name: pdPolicy.name,
+              description: pdPolicy.description,
+              repeatEnabled: (pdPolicy.num_loops || 0) > 0,
+              repeatCount: pdPolicy.num_loops || 0,
+            });
+            await policyRepo.save(policy);
+            results.escalation_policies.imported++;
+
+            // Import escalation rules as steps
+            if (pdPolicy.escalation_rules) {
+              for (let i = 0; i < pdPolicy.escalation_rules.length; i++) {
+                const pdRule = pdPolicy.escalation_rules[i];
+
+                // Get first target (simplified - PD supports multiple targets per level)
+                const firstTarget = pdRule.targets[0];
+                if (!firstTarget) continue;
+
+                let targetType: 'schedule' | 'users' = 'users';
+                let scheduleId: string | null = null;
+                let userIds: string[] | null = null;
+
+                if (firstTarget.type === 'schedule_reference' || firstTarget.type === 'schedule') {
+                  targetType = 'schedule';
+                  scheduleId = scheduleIdMap.get(firstTarget.id) || null;
+                } else if (firstTarget.type === 'user_reference' || firstTarget.type === 'user') {
+                  targetType = 'users';
+                  const userId = userIdMap.get(firstTarget.id);
+                  userIds = userId ? [userId] : [];
+                }
+
+                const step = stepRepo.create({
+                  escalationPolicyId: policy.id,
+                  stepOrder: i + 1,
+                  targetType,
+                  scheduleId,
+                  userIds,
+                  timeoutSeconds: pdRule.escalation_delay_in_minutes * 60,
+                });
+                await stepRepo.save(step);
+              }
+            }
+          } else {
+            results.escalation_policies.skipped++;
+          }
+
+          policyIdMap.set(pdPolicy.id, policy.id);
+        } catch (error: any) {
+          results.escalation_policies.errors.push(`Policy ${pdPolicy.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 5. Import Services
+    if (importData.services && importData.services.length > 0) {
+      const serviceRepo = dataSource.getRepository(Service);
+
+      for (const pdService of importData.services) {
+        try {
+          // Check if service already exists
+          let service = await serviceRepo.findOne({
+            where: { name: pdService.name, orgId },
+          });
+
+          if (!service) {
+            const escalationPolicyId = pdService.escalation_policy?.id
+              ? policyIdMap.get(pdService.escalation_policy.id)
+              : null;
+
+            const teamId = pdService.teams?.[0]?.id
+              ? teamIdMap.get(pdService.teams[0].id)
+              : null;
+
+            service = serviceRepo.create({
+              orgId,
+              name: pdService.name,
+              description: pdService.description,
+              status: pdService.status === 'active' ? 'active' : 'inactive',
+              escalationPolicyId,
+              teamId,
+              apiKey: crypto.randomUUID(),
+            });
+            await serviceRepo.save(service);
+            results.services.imported++;
+          } else {
+            results.services.skipped++;
+          }
+        } catch (error: any) {
+          results.services.errors.push(`Service ${pdService.name}: ${error.message}`);
+        }
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    logger.info('PagerDuty import completed', {
+      orgId,
+      userId: user.id,
+      duration,
+      results,
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Import completed',
+      duration_ms: duration,
+      results,
+      id_mappings: {
+        users: Object.fromEntries(userIdMap),
+        teams: Object.fromEntries(teamIdMap),
+        schedules: Object.fromEntries(scheduleIdMap),
+        escalation_policies: Object.fromEntries(policyIdMap),
+      },
+    });
+  } catch (error: any) {
+    logger.error('PagerDuty import failed:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: error.message,
+      results,
+    });
+  }
+});
+
+// ============================================================================
+// Opsgenie Import API
+// ============================================================================
+
+interface OpsgenieImportData {
+  users?: OpsgenieUser[];
+  teams?: OpsgenieTeam[];
+  schedules?: OpsgenieSchedule[];
+  escalations?: OpsgenieEscalation[];
+  services?: OpsgenieService[];
+}
+
+interface OpsgenieUser {
+  id: string;
+  username: string;
+  fullName: string;
+  role?: { name: string };
+  timezone?: string;
+}
+
+interface OpsgenieTeam {
+  id: string;
+  name: string;
+  description?: string;
+  members?: Array<{
+    user: { id: string; username?: string };
+    role: string;
+  }>;
+}
+
+interface OpsgenieSchedule {
+  id: string;
+  name: string;
+  description?: string;
+  timezone: string;
+  ownerTeam?: { id: string };
+  rotations?: Array<{
+    id: string;
+    name: string;
+    startDate: string;
+    endDate?: string;
+    type: 'daily' | 'weekly' | 'hourly';
+    length: number;
+    participants: Array<{
+      type: string;
+      id?: string;
+      username?: string;
+    }>;
+    timeRestriction?: {
+      type: string;
+      restriction?: any;
+      restrictions?: any[];
+    };
+  }>;
+}
+
+interface OpsgenieEscalation {
+  id: string;
+  name: string;
+  description?: string;
+  ownerTeam?: { id: string };
+  rules: Array<{
+    condition: string;
+    notifyType: string;
+    delay: { timeAmount: number };
+    recipient: {
+      type: string;
+      id?: string;
+      name?: string;
+      username?: string;
+    };
+  }>;
+  repeat?: {
+    count: number;
+    waitInterval: number;
+  };
+}
+
+interface OpsgenieService {
+  id: string;
+  name: string;
+  description?: string;
+  teamId?: string;
+}
+
+/**
+ * Import from Opsgenie
+ * POST /api/v1/import/opsgenie
+ *
+ * Accepts Opsgenie REST API export data and creates corresponding entities.
+ */
+router.post('/opsgenie', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const user = (req as any).user;
+  const orgId = user.orgId;
+
+  const importData: OpsgenieImportData = req.body;
+  const results = {
+    users: { imported: 0, skipped: 0, errors: [] as string[] },
+    teams: { imported: 0, skipped: 0, errors: [] as string[] },
+    schedules: { imported: 0, skipped: 0, errors: [] as string[] },
+    escalations: { imported: 0, skipped: 0, errors: [] as string[] },
+    services: { imported: 0, skipped: 0, errors: [] as string[] },
+  };
+
+  const userIdMap = new Map<string, string>();
+  const teamIdMap = new Map<string, string>();
+  const scheduleIdMap = new Map<string, string>();
+  const escalationIdMap = new Map<string, string>();
+
+  try {
+    const dataSource = await getDataSource();
+
+    // 1. Import Users
+    if (importData.users && importData.users.length > 0) {
+      const userRepo = dataSource.getRepository(User);
+
+      for (const ogUser of importData.users) {
+        try {
+          let existingUser = await userRepo.findOne({
+            where: { email: ogUser.username, orgId },
+          });
+
+          if (existingUser) {
+            userIdMap.set(ogUser.id, existingUser.id);
+            results.users.skipped++;
+          } else {
+            results.users.skipped++;
+            logger.info('User not found, will need to be invited', { ogId: ogUser.id, email: ogUser.username });
+          }
+        } catch (error: any) {
+          results.users.errors.push(`User ${ogUser.username}: ${error.message}`);
+        }
+      }
+    }
+
+    // 2. Import Teams
+    if (importData.teams && importData.teams.length > 0) {
+      const teamRepo = dataSource.getRepository(Team);
+      const membershipRepo = dataSource.getRepository(TeamMembership);
+
+      for (const ogTeam of importData.teams) {
+        try {
+          let team = await teamRepo.findOne({
+            where: { name: ogTeam.name, orgId },
+          });
+
+          if (!team) {
+            team = teamRepo.create({
+              orgId,
+              name: ogTeam.name,
+              description: ogTeam.description,
+              slug: ogTeam.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+            });
+            await teamRepo.save(team);
+            results.teams.imported++;
+          } else {
+            results.teams.skipped++;
+          }
+
+          teamIdMap.set(ogTeam.id, team.id);
+
+          if (ogTeam.members) {
+            for (const member of ogTeam.members) {
+              const userId = userIdMap.get(member.user.id);
+              if (userId) {
+                const existingMembership = await membershipRepo.findOne({
+                  where: { teamId: team.id, userId },
+                });
+
+                if (!existingMembership) {
+                  const membership = membershipRepo.create({
+                    teamId: team.id,
+                    userId,
+                    role: member.role === 'admin' ? 'manager' : 'member',
+                  });
+                  await membershipRepo.save(membership);
+                }
+              }
+            }
+          }
+        } catch (error: any) {
+          results.teams.errors.push(`Team ${ogTeam.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 3. Import Schedules
+    if (importData.schedules && importData.schedules.length > 0) {
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const layerRepo = dataSource.getRepository(ScheduleLayer);
+      const layerMemberRepo = dataSource.getRepository(ScheduleLayerMember);
+
+      for (const ogSchedule of importData.schedules) {
+        try {
+          let schedule = await scheduleRepo.findOne({
+            where: { name: ogSchedule.name, orgId },
+          });
+
+          if (!schedule) {
+            const teamId = ogSchedule.ownerTeam?.id ? teamIdMap.get(ogSchedule.ownerTeam.id) : null;
+
+            schedule = scheduleRepo.create({
+              orgId,
+              name: ogSchedule.name,
+              description: ogSchedule.description,
+              timezone: ogSchedule.timezone || 'UTC',
+              type: 'weekly',
+              teamId,
+            });
+            await scheduleRepo.save(schedule);
+            results.schedules.imported++;
+
+            // Import rotations as layers
+            if (ogSchedule.rotations) {
+              for (let i = 0; i < ogSchedule.rotations.length; i++) {
+                const ogRotation = ogSchedule.rotations[i];
+
+                // Map Opsgenie rotation type to our system
+                const rotationType = mapOpsgenieRotationType(ogRotation.type);
+
+                const layer = layerRepo.create({
+                  scheduleId: schedule.id,
+                  name: ogRotation.name || `Rotation ${i + 1}`,
+                  rotationType,
+                  startDate: new Date(ogRotation.startDate),
+                  endDate: ogRotation.endDate ? new Date(ogRotation.endDate) : undefined,
+                  rotationLength: ogRotation.length || 1,
+                  layerOrder: i,
+                  restrictions: ogRotation.timeRestriction ? convertOpsgenieRestrictions(ogRotation.timeRestriction) : null,
+                });
+                await layerRepo.save(layer);
+
+                // Add participants
+                if (ogRotation.participants) {
+                  let position = 0;
+                  for (const participant of ogRotation.participants) {
+                    if (participant.type === 'user' && participant.id) {
+                      const userId = userIdMap.get(participant.id);
+                      if (userId) {
+                        const layerMember = layerMemberRepo.create({
+                          layerId: layer.id,
+                          userId,
+                          position: position++,
+                        });
+                        await layerMemberRepo.save(layerMember);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            results.schedules.skipped++;
+          }
+
+          scheduleIdMap.set(ogSchedule.id, schedule.id);
+        } catch (error: any) {
+          results.schedules.errors.push(`Schedule ${ogSchedule.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 4. Import Escalations
+    if (importData.escalations && importData.escalations.length > 0) {
+      const policyRepo = dataSource.getRepository(EscalationPolicy);
+      const stepRepo = dataSource.getRepository(EscalationStep);
+
+      for (const ogEscalation of importData.escalations) {
+        try {
+          let policy = await policyRepo.findOne({
+            where: { name: ogEscalation.name, orgId },
+          });
+
+          if (!policy) {
+            const teamId = ogEscalation.ownerTeam?.id ? teamIdMap.get(ogEscalation.ownerTeam.id) : null;
+
+            policy = policyRepo.create({
+              orgId,
+              name: ogEscalation.name,
+              description: ogEscalation.description,
+              teamId,
+              repeatEnabled: (ogEscalation.repeat?.count || 0) > 0,
+              repeatCount: ogEscalation.repeat?.count || 0,
+            });
+            await policyRepo.save(policy);
+            results.escalations.imported++;
+
+            // Import rules as steps
+            if (ogEscalation.rules) {
+              for (let i = 0; i < ogEscalation.rules.length; i++) {
+                const ogRule = ogEscalation.rules[i];
+
+                let targetType: 'schedule' | 'users' = 'users';
+                let scheduleId: string | null = null;
+                let userIds: string[] | null = null;
+
+                if (ogRule.recipient.type === 'schedule') {
+                  targetType = 'schedule';
+                  if (ogRule.recipient.id) {
+                    scheduleId = scheduleIdMap.get(ogRule.recipient.id) || null;
+                  }
+                } else if (ogRule.recipient.type === 'user') {
+                  targetType = 'users';
+                  if (ogRule.recipient.id) {
+                    const userId = userIdMap.get(ogRule.recipient.id);
+                    userIds = userId ? [userId] : [];
+                  }
+                }
+
+                const step = stepRepo.create({
+                  escalationPolicyId: policy.id,
+                  stepOrder: i + 1,
+                  targetType,
+                  scheduleId,
+                  userIds,
+                  timeoutSeconds: (ogRule.delay?.timeAmount || 5) * 60,
+                });
+                await stepRepo.save(step);
+              }
+            }
+          } else {
+            results.escalations.skipped++;
+          }
+
+          escalationIdMap.set(ogEscalation.id, policy.id);
+        } catch (error: any) {
+          results.escalations.errors.push(`Escalation ${ogEscalation.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 5. Import Services
+    if (importData.services && importData.services.length > 0) {
+      const serviceRepo = dataSource.getRepository(Service);
+
+      for (const ogService of importData.services) {
+        try {
+          let service = await serviceRepo.findOne({
+            where: { name: ogService.name, orgId },
+          });
+
+          if (!service) {
+            const teamId = ogService.teamId ? teamIdMap.get(ogService.teamId) : null;
+
+            service = serviceRepo.create({
+              orgId,
+              name: ogService.name,
+              description: ogService.description,
+              teamId,
+              apiKey: crypto.randomUUID(),
+            });
+            await serviceRepo.save(service);
+            results.services.imported++;
+          } else {
+            results.services.skipped++;
+          }
+        } catch (error: any) {
+          results.services.errors.push(`Service ${ogService.name}: ${error.message}`);
+        }
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    logger.info('Opsgenie import completed', {
+      orgId,
+      userId: user.id,
+      duration,
+      results,
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Import completed',
+      duration_ms: duration,
+      results,
+      id_mappings: {
+        users: Object.fromEntries(userIdMap),
+        teams: Object.fromEntries(teamIdMap),
+        schedules: Object.fromEntries(scheduleIdMap),
+        escalations: Object.fromEntries(escalationIdMap),
+      },
+    });
+  } catch (error: any) {
+    logger.error('Opsgenie import failed:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: error.message,
+      results,
+    });
+  }
+});
+
+/**
+ * Preview import (dry-run)
+ * POST /api/v1/import/preview
+ *
+ * Analyzes import data and returns what would be created without making changes.
+ */
+router.post('/preview', async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const orgId = user.orgId;
+  const { source, data } = req.body;
+
+  if (!source || !['pagerduty', 'opsgenie'].includes(source)) {
+    return res.status(400).json({
+      error: 'source must be "pagerduty" or "opsgenie"',
+    });
+  }
+
+  if (!data) {
+    return res.status(400).json({
+      error: 'data is required',
+    });
+  }
+
+  try {
+    const dataSource = await getDataSource();
+    const userRepo = dataSource.getRepository(User);
+    const teamRepo = dataSource.getRepository(Team);
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const policyRepo = dataSource.getRepository(EscalationPolicy);
+    const serviceRepo = dataSource.getRepository(Service);
+
+    const preview = {
+      source,
+      summary: {
+        users: { total: 0, existing: 0, new: 0, unmapped: 0 },
+        teams: { total: 0, existing: 0, new: 0 },
+        schedules: { total: 0, existing: 0, new: 0 },
+        escalation_policies: { total: 0, existing: 0, new: 0 },
+        services: { total: 0, existing: 0, new: 0 },
+      },
+      details: {
+        users: [] as any[],
+        teams: [] as any[],
+        schedules: [] as any[],
+        escalation_policies: [] as any[],
+        services: [] as any[],
+      },
+    };
+
+    // Analyze users
+    const users = source === 'pagerduty' ? data.users : data.users;
+    if (users) {
+      for (const u of users) {
+        const email = source === 'pagerduty' ? u.email : u.username;
+        const existing = await userRepo.findOne({ where: { email, orgId } });
+        preview.summary.users.total++;
+        if (existing) {
+          preview.summary.users.existing++;
+          preview.details.users.push({ email, status: 'existing', id: existing.id });
+        } else {
+          preview.summary.users.unmapped++;
+          preview.details.users.push({ email, status: 'unmapped', note: 'User needs to be invited' });
+        }
+      }
+    }
+
+    // Analyze teams
+    const teams = data.teams;
+    if (teams) {
+      for (const t of teams) {
+        const existing = await teamRepo.findOne({ where: { name: t.name, orgId } });
+        preview.summary.teams.total++;
+        if (existing) {
+          preview.summary.teams.existing++;
+          preview.details.teams.push({ name: t.name, status: 'existing', id: existing.id });
+        } else {
+          preview.summary.teams.new++;
+          preview.details.teams.push({ name: t.name, status: 'new' });
+        }
+      }
+    }
+
+    // Analyze schedules
+    const schedules = data.schedules;
+    if (schedules) {
+      for (const s of schedules) {
+        const existing = await scheduleRepo.findOne({ where: { name: s.name, orgId } });
+        preview.summary.schedules.total++;
+        if (existing) {
+          preview.summary.schedules.existing++;
+          preview.details.schedules.push({ name: s.name, status: 'existing', id: existing.id });
+        } else {
+          preview.summary.schedules.new++;
+          const layers = source === 'pagerduty' ? s.schedule_layers?.length : s.rotations?.length;
+          preview.details.schedules.push({ name: s.name, status: 'new', layers: layers || 0 });
+        }
+      }
+    }
+
+    // Analyze escalation policies
+    const policies = source === 'pagerduty' ? data.escalation_policies : data.escalations;
+    if (policies) {
+      for (const p of policies) {
+        const existing = await policyRepo.findOne({ where: { name: p.name, orgId } });
+        preview.summary.escalation_policies.total++;
+        if (existing) {
+          preview.summary.escalation_policies.existing++;
+          preview.details.escalation_policies.push({ name: p.name, status: 'existing', id: existing.id });
+        } else {
+          preview.summary.escalation_policies.new++;
+          const steps = source === 'pagerduty' ? p.escalation_rules?.length : p.rules?.length;
+          preview.details.escalation_policies.push({ name: p.name, status: 'new', steps: steps || 0 });
+        }
+      }
+    }
+
+    // Analyze services
+    const services = data.services;
+    if (services) {
+      for (const s of services) {
+        const existing = await serviceRepo.findOne({ where: { name: s.name, orgId } });
+        preview.summary.services.total++;
+        if (existing) {
+          preview.summary.services.existing++;
+          preview.details.services.push({ name: s.name, status: 'existing', id: existing.id });
+        } else {
+          preview.summary.services.new++;
+          preview.details.services.push({ name: s.name, status: 'new' });
+        }
+      }
+    }
+
+    return res.status(200).json(preview);
+  } catch (error: any) {
+    logger.error('Import preview failed:', error);
+    return res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+function getRotationType(turnLengthSeconds: number): 'daily' | 'weekly' | 'custom' {
+  if (turnLengthSeconds === 86400) return 'daily';
+  if (turnLengthSeconds === 604800) return 'weekly';
+  return 'custom';
+}
+
+function mapOpsgenieRotationType(ogType: string): 'daily' | 'weekly' | 'custom' {
+  switch (ogType?.toLowerCase()) {
+    case 'daily':
+      return 'daily';
+    case 'weekly':
+      return 'weekly';
+    case 'hourly':
+      return 'custom'; // Map hourly to custom with rotationLength
+    default:
+      return 'weekly';
+  }
+}
+
+function extractTimeFromISO(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    return `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}:00`;
+  } catch {
+    return '09:00:00';
+  }
+}
+
+function convertRestrictions(pdRestrictions: any[]): any {
+  return {
+    type: 'weekly',
+    intervals: pdRestrictions.map(r => ({
+      type: r.type,
+      startTime: r.start_time_of_day,
+      durationSeconds: r.duration_seconds,
+      startDayOfWeek: r.start_day_of_week,
+    })),
+  };
+}
+
+function convertOpsgenieRestrictions(timeRestriction: any): any {
+  if (timeRestriction.type === 'time-of-day') {
+    return {
+      type: 'daily',
+      intervals: [{
+        startHour: timeRestriction.restriction?.startHour,
+        startMin: timeRestriction.restriction?.startMin,
+        endHour: timeRestriction.restriction?.endHour,
+        endMin: timeRestriction.restriction?.endMin,
+      }],
+    };
+  } else if (timeRestriction.type === 'weekday-and-time-of-day') {
+    return {
+      type: 'weekly',
+      intervals: timeRestriction.restrictions || [],
+    };
+  }
+  return null;
+}
+
+export default router;
