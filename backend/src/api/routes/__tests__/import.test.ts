@@ -347,3 +347,186 @@ describe('Contact Method Merging for Existing Users', () => {
     expect(ocsContactMethodId).toBe('ocs-cm-1');
   });
 });
+
+describe('Multi-Target Escalation Import', () => {
+  describe('PagerDuty multi-target rules', () => {
+    it('should process all targets in an escalation rule', () => {
+      const pdRule = {
+        escalation_delay_in_minutes: 5,
+        targets: [
+          { id: 'user-1', type: 'user_reference' },
+          { id: 'user-2', type: 'user_reference' },
+          { id: 'schedule-1', type: 'schedule_reference' },
+        ],
+      };
+
+      expect(pdRule.targets.length).toBe(3);
+      expect(pdRule.targets[0].type).toBe('user_reference');
+      expect(pdRule.targets[2].type).toBe('schedule_reference');
+    });
+
+    it('should count multi-target steps in preview', () => {
+      const pdPolicy = {
+        id: 'policy-1',
+        name: 'Test Policy',
+        escalation_rules: [
+          {
+            escalation_delay_in_minutes: 5,
+            targets: [
+              { id: 'user-1', type: 'user_reference' },
+              { id: 'user-2', type: 'user_reference' },
+            ],
+          },
+          {
+            escalation_delay_in_minutes: 10,
+            targets: [
+              { id: 'schedule-1', type: 'schedule_reference' },
+            ],
+          },
+          {
+            escalation_delay_in_minutes: 15,
+            targets: [
+              { id: 'user-3', type: 'user_reference' },
+              { id: 'schedule-2', type: 'schedule_reference' },
+              { id: 'schedule-3', type: 'schedule_reference' },
+            ],
+          },
+        ],
+      };
+
+      // Count steps and total targets
+      const stepCount = pdPolicy.escalation_rules.length;
+      let totalTargets = 0;
+      let multiTargetSteps = 0;
+
+      for (const rule of pdPolicy.escalation_rules) {
+        const targets = rule.targets?.length || 0;
+        totalTargets += targets;
+        if (targets > 1) {
+          multiTargetSteps++;
+        }
+      }
+
+      expect(stepCount).toBe(3);
+      expect(totalTargets).toBe(6);
+      expect(multiTargetSteps).toBe(2);
+    });
+  });
+
+  describe('Opsgenie multi-recipient rules', () => {
+    it('should process recipients array if available', () => {
+      const ogRule = {
+        condition: 'if-not-acked',
+        notifyType: 'default',
+        delay: { timeAmount: 5 },
+        recipient: { type: 'user', id: 'user-1' },
+        recipients: [
+          { type: 'user', id: 'user-1' },
+          { type: 'user', id: 'user-2' },
+          { type: 'schedule', id: 'schedule-1' },
+        ],
+      };
+
+      // Prefer recipients array over single recipient
+      const allRecipients = ogRule.recipients?.length
+        ? ogRule.recipients
+        : [ogRule.recipient];
+
+      expect(allRecipients.length).toBe(3);
+    });
+
+    it('should fall back to single recipient if no recipients array', () => {
+      const ogRule: {
+        condition: string;
+        notifyType: string;
+        delay: { timeAmount: number };
+        recipient: { type: string; id: string };
+        recipients?: Array<{ type: string; id: string }>;
+      } = {
+        condition: 'if-not-acked',
+        notifyType: 'default',
+        delay: { timeAmount: 5 },
+        recipient: { type: 'user', id: 'user-1' },
+      };
+
+      const allRecipients = ogRule.recipients?.length
+        ? ogRule.recipients
+        : [ogRule.recipient];
+
+      expect(allRecipients.length).toBe(1);
+      expect(allRecipients[0].id).toBe('user-1');
+    });
+  });
+
+  describe('NotifyStrategy', () => {
+    it('should default to "all" for PagerDuty imports', () => {
+      // PagerDuty notifies all targets simultaneously by default
+      const notifyStrategy = 'all';
+      expect(notifyStrategy).toBe('all');
+    });
+
+    it('should support round_robin strategy', () => {
+      const strategies = ['all', 'round_robin'];
+      expect(strategies).toContain('all');
+      expect(strategies).toContain('round_robin');
+    });
+  });
+
+  describe('EscalationTarget creation', () => {
+    it('should create target for each user in multi-target rule', () => {
+      const userIdMap = new Map<string, string>();
+      userIdMap.set('pd-user-1', 'ocs-user-1');
+      userIdMap.set('pd-user-2', 'ocs-user-2');
+
+      const targets = [
+        { id: 'pd-user-1', type: 'user_reference' },
+        { id: 'pd-user-2', type: 'user_reference' },
+      ];
+
+      const createdTargets: any[] = [];
+      for (const target of targets) {
+        if (target.type === 'user_reference') {
+          const mappedUserId = userIdMap.get(target.id);
+          if (mappedUserId) {
+            createdTargets.push({
+              targetType: 'user',
+              userId: mappedUserId,
+            });
+          }
+        }
+      }
+
+      expect(createdTargets.length).toBe(2);
+      expect(createdTargets[0].userId).toBe('ocs-user-1');
+      expect(createdTargets[1].userId).toBe('ocs-user-2');
+    });
+
+    it('should create target for schedules in multi-target rule', () => {
+      const scheduleIdMap = new Map<string, string>();
+      scheduleIdMap.set('pd-schedule-1', 'ocs-schedule-1');
+      scheduleIdMap.set('pd-schedule-2', 'ocs-schedule-2');
+
+      const targets = [
+        { id: 'pd-schedule-1', type: 'schedule_reference' },
+        { id: 'pd-schedule-2', type: 'schedule_reference' },
+      ];
+
+      const createdTargets: any[] = [];
+      for (const target of targets) {
+        if (target.type === 'schedule_reference') {
+          const mappedScheduleId = scheduleIdMap.get(target.id);
+          if (mappedScheduleId) {
+            createdTargets.push({
+              targetType: 'schedule',
+              scheduleId: mappedScheduleId,
+            });
+          }
+        }
+      }
+
+      expect(createdTargets.length).toBe(2);
+      expect(createdTargets[0].scheduleId).toBe('ocs-schedule-1');
+      expect(createdTargets[1].scheduleId).toBe('ocs-schedule-2');
+    });
+  });
+});

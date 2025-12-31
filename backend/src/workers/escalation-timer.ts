@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { getDataSource } from '../shared/db/data-source';
 import { sendNotificationMessage } from '../shared/queues/sqs-client';
-import { Incident, IncidentEvent, Service, EscalationStep, Schedule, User } from '../shared/models';
+import { Incident, IncidentEvent, Service, EscalationStep, EscalationTarget, Schedule, User } from '../shared/models';
 import { logger } from '../shared/utils/logger';
 import { In } from 'typeorm';
 
@@ -21,6 +21,7 @@ async function checkAndEscalateIncidents(): Promise<void> {
     const eventRepo = dataSource.getRepository(IncidentEvent);
     const serviceRepo = dataSource.getRepository(Service);
     const scheduleRepo = dataSource.getRepository(Schedule);
+    const targetRepo = dataSource.getRepository(EscalationTarget);
 
     // Find all triggered incidents (not acknowledged or resolved)
     const triggeredIncidents = await incidentRepo.find({
@@ -41,7 +42,8 @@ async function checkAndEscalateIncidents(): Promise<void> {
           serviceRepo,
           scheduleRepo,
           incidentRepo,
-          eventRepo
+          eventRepo,
+          targetRepo
         );
       } catch (error) {
         logger.error('Error processing escalation for incident:', {
@@ -60,7 +62,8 @@ async function processIncidentEscalation(
   serviceRepo: any,
   scheduleRepo: any,
   incidentRepo: any,
-  eventRepo: any
+  eventRepo: any,
+  targetRepo: any
 ): Promise<void> {
   // Get service with escalation policy
   const service = await serviceRepo.findOne({
@@ -164,7 +167,7 @@ async function processIncidentEscalation(
   await eventRepo.save(escalateEvent);
 
   // Get target users for next step and send notifications
-  const targetUserIds = await getStepTargetUsers(nextStep, scheduleRepo);
+  const targetUserIds = await getStepTargetUsers(nextStep, scheduleRepo, targetRepo);
 
   if (targetUserIds.length === 0) {
     logger.warn('No target users found for escalation step', {
@@ -220,8 +223,43 @@ async function processIncidentEscalation(
 
 async function getStepTargetUsers(
   step: EscalationStep,
-  scheduleRepo: any
+  scheduleRepo: any,
+  targetRepo?: any
 ): Promise<string[]> {
+  const targetUsers: string[] = [];
+
+  // First check new multi-target relation (EscalationTarget table)
+  if (targetRepo) {
+    const targets = await targetRepo.find({
+      where: { escalationStepId: step.id },
+    });
+
+    if (targets && targets.length > 0) {
+      for (const target of targets) {
+        if (target.targetType === 'user' && target.userId) {
+          targetUsers.push(target.userId);
+        } else if (target.targetType === 'schedule' && target.scheduleId) {
+          const schedule = await scheduleRepo.findOne({
+            where: { id: target.scheduleId },
+            relations: ['layers', 'layers.members', 'overrides'],
+          });
+
+          if (schedule) {
+            const oncallUserId = schedule.getEffectiveOncallUserId(new Date());
+            if (oncallUserId && !targetUsers.includes(oncallUserId)) {
+              targetUsers.push(oncallUserId);
+            }
+          }
+        }
+      }
+
+      if (targetUsers.length > 0) {
+        return targetUsers;
+      }
+    }
+  }
+
+  // Fall back to legacy fields for backward compatibility
   if (step.targetType === 'users' && step.userIds) {
     // Direct user targeting
     return step.userIds;

@@ -10,6 +10,7 @@ import {
   ScheduleLayerMember,
   EscalationPolicy,
   EscalationStep,
+  EscalationTarget,
   Service,
   UserContactMethod,
   UserNotificationRule,
@@ -437,6 +438,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
     if (importData.escalation_policies && importData.escalation_policies.length > 0) {
       const policyRepo = dataSource.getRepository(EscalationPolicy);
       const stepRepo = dataSource.getRepository(EscalationStep);
+      const targetRepo = dataSource.getRepository(EscalationTarget);
 
       for (const pdPolicy of importData.escalation_policies) {
         try {
@@ -456,15 +458,15 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
             await policyRepo.save(policy);
             results.escalation_policies.imported++;
 
-            // Import escalation rules as steps
+            // Import escalation rules as steps with ALL targets
             if (pdPolicy.escalation_rules) {
               for (let i = 0; i < pdPolicy.escalation_rules.length; i++) {
                 const pdRule = pdPolicy.escalation_rules[i];
 
-                // Get first target (simplified - PD supports multiple targets per level)
-                const firstTarget = pdRule.targets[0];
-                if (!firstTarget) continue;
+                if (!pdRule.targets || pdRule.targets.length === 0) continue;
 
+                // Determine primary target type for backward compatibility
+                const firstTarget = pdRule.targets[0];
                 let targetType: 'schedule' | 'users' = 'users';
                 let scheduleId: string | null = null;
                 let userIds: string[] | null = null;
@@ -478,6 +480,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
                   userIds = userId ? [userId] : [];
                 }
 
+                // Create the step with notifyStrategy 'all' (PagerDuty default)
                 const step = stepRepo.create({
                   escalationPolicyId: policy.id,
                   stepOrder: i + 1,
@@ -485,8 +488,40 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
                   scheduleId,
                   userIds,
                   timeoutSeconds: pdRule.escalation_delay_in_minutes * 60,
+                  notifyStrategy: 'all', // PagerDuty notifies all targets simultaneously
                 });
                 await stepRepo.save(step);
+
+                // Create EscalationTarget entries for ALL targets (multi-target support)
+                for (const target of pdRule.targets) {
+                  if (target.type === 'schedule_reference' || target.type === 'schedule') {
+                    const mappedScheduleId = scheduleIdMap.get(target.id);
+                    if (mappedScheduleId) {
+                      const escalationTarget = targetRepo.create({
+                        escalationStepId: step.id,
+                        targetType: 'schedule',
+                        scheduleId: mappedScheduleId,
+                      });
+                      await targetRepo.save(escalationTarget);
+                    }
+                  } else if (target.type === 'user_reference' || target.type === 'user') {
+                    const mappedUserId = userIdMap.get(target.id);
+                    if (mappedUserId) {
+                      const escalationTarget = targetRepo.create({
+                        escalationStepId: step.id,
+                        targetType: 'user',
+                        userId: mappedUserId,
+                      });
+                      await targetRepo.save(escalationTarget);
+                    }
+                  }
+                }
+
+                logger.info('Escalation step imported with targets', {
+                  policyName: pdPolicy.name,
+                  stepOrder: i + 1,
+                  targetCount: pdRule.targets.length,
+                });
               }
             }
           } else {
@@ -678,12 +713,20 @@ interface OpsgenieEscalation {
     condition: string;
     notifyType: string;
     delay: { timeAmount: number };
+    // Single recipient (legacy)
     recipient: {
       type: string;
       id?: string;
       name?: string;
       username?: string;
     };
+    // Multiple recipients (multi-target support)
+    recipients?: Array<{
+      type: string;
+      id?: string;
+      name?: string;
+      username?: string;
+    }>;
   }>;
   repeat?: {
     count: number;
@@ -1002,6 +1045,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
     if (importData.escalations && importData.escalations.length > 0) {
       const policyRepo = dataSource.getRepository(EscalationPolicy);
       const stepRepo = dataSource.getRepository(EscalationStep);
+      const targetRepo = dataSource.getRepository(EscalationTarget);
 
       for (const ogEscalation of importData.escalations) {
         try {
@@ -1023,28 +1067,38 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
             await policyRepo.save(policy);
             results.escalations.imported++;
 
-            // Import rules as steps
+            // Import rules as steps with ALL targets
             if (ogEscalation.rules) {
               for (let i = 0; i < ogEscalation.rules.length; i++) {
                 const ogRule = ogEscalation.rules[i];
 
+                // Get all recipients (prefer recipients array, fall back to single recipient)
+                const allRecipients = ogRule.recipients?.length
+                  ? ogRule.recipients
+                  : [ogRule.recipient];
+
+                if (!allRecipients || allRecipients.length === 0) continue;
+
+                // Determine primary target type for backward compatibility
+                const firstRecipient = allRecipients[0];
                 let targetType: 'schedule' | 'users' = 'users';
                 let scheduleId: string | null = null;
                 let userIds: string[] | null = null;
 
-                if (ogRule.recipient.type === 'schedule') {
+                if (firstRecipient.type === 'schedule') {
                   targetType = 'schedule';
-                  if (ogRule.recipient.id) {
-                    scheduleId = scheduleIdMap.get(ogRule.recipient.id) || null;
+                  if (firstRecipient.id) {
+                    scheduleId = scheduleIdMap.get(firstRecipient.id) || null;
                   }
-                } else if (ogRule.recipient.type === 'user') {
+                } else if (firstRecipient.type === 'user') {
                   targetType = 'users';
-                  if (ogRule.recipient.id) {
-                    const userId = userIdMap.get(ogRule.recipient.id);
+                  if (firstRecipient.id) {
+                    const userId = userIdMap.get(firstRecipient.id);
                     userIds = userId ? [userId] : [];
                   }
                 }
 
+                // Create the step with notifyStrategy 'all' (Opsgenie default)
                 const step = stepRepo.create({
                   escalationPolicyId: policy.id,
                   stepOrder: i + 1,
@@ -1052,8 +1106,44 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
                   scheduleId,
                   userIds,
                   timeoutSeconds: (ogRule.delay?.timeAmount || 5) * 60,
+                  notifyStrategy: 'all', // Opsgenie notifies all targets simultaneously
                 });
                 await stepRepo.save(step);
+
+                // Create EscalationTarget entries for ALL recipients (multi-target support)
+                for (const recipient of allRecipients) {
+                  if (recipient.type === 'schedule') {
+                    if (recipient.id) {
+                      const mappedScheduleId = scheduleIdMap.get(recipient.id);
+                      if (mappedScheduleId) {
+                        const escalationTarget = targetRepo.create({
+                          escalationStepId: step.id,
+                          targetType: 'schedule',
+                          scheduleId: mappedScheduleId,
+                        });
+                        await targetRepo.save(escalationTarget);
+                      }
+                    }
+                  } else if (recipient.type === 'user') {
+                    if (recipient.id) {
+                      const mappedUserId = userIdMap.get(recipient.id);
+                      if (mappedUserId) {
+                        const escalationTarget = targetRepo.create({
+                          escalationStepId: step.id,
+                          targetType: 'user',
+                          userId: mappedUserId,
+                        });
+                        await targetRepo.save(escalationTarget);
+                      }
+                    }
+                  }
+                }
+
+                logger.info('Escalation step imported with targets', {
+                  escalationName: ogEscalation.name,
+                  stepOrder: i + 1,
+                  targetCount: allRecipients.length,
+                });
               }
             }
           } else {
@@ -1331,13 +1421,45 @@ router.post('/preview', async (req: Request, res: Response) => {
       for (const p of policies) {
         const existing = await policyRepo.findOne({ where: { name: p.name, orgId } });
         preview.summary.escalation_policies.total++;
+
+        // Count steps and total targets
+        const rules = source === 'pagerduty' ? p.escalation_rules : p.rules;
+        const stepCount = rules?.length || 0;
+        let totalTargets = 0;
+        let multiTargetSteps = 0;
+
+        if (rules) {
+          for (const rule of rules) {
+            const targets = source === 'pagerduty'
+              ? rule.targets?.length || 0
+              : (rule.recipients?.length || 1); // Opsgenie: use recipients or count 1 for single recipient
+
+            totalTargets += targets;
+            if (targets > 1) {
+              multiTargetSteps++;
+            }
+          }
+        }
+
         if (existing) {
           preview.summary.escalation_policies.existing++;
-          preview.details.escalation_policies.push({ name: p.name, status: 'existing', id: existing.id });
+          preview.details.escalation_policies.push({
+            name: p.name,
+            status: 'existing',
+            id: existing.id,
+            steps: stepCount,
+            totalTargets,
+            multiTargetSteps,
+          });
         } else {
           preview.summary.escalation_policies.new++;
-          const steps = source === 'pagerduty' ? p.escalation_rules?.length : p.rules?.length;
-          preview.details.escalation_policies.push({ name: p.name, status: 'new', steps: steps || 0 });
+          preview.details.escalation_policies.push({
+            name: p.name,
+            status: 'new',
+            steps: stepCount,
+            totalTargets,
+            multiTargetSteps,
+          });
         }
       }
     }
