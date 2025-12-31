@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Navigation } from '../components/Navigation';
-import { incidentsAPI, schedulesAPI, setupAPI } from '../lib/api-client';
+import { WeeklyCalendar } from '../components/WeeklyCalendar';
+import { incidentsAPI, setupAPI } from '../lib/api-client';
 import { useAuthStore } from '../store/auth-store';
-import type { Incident, OnCallInfo } from '../types/api';
+import type { Incident } from '../types/api';
 
 interface DashboardStats {
   total: number;
@@ -30,7 +31,6 @@ export function Dashboard() {
     mtta: 0,
   });
   const [recentIncidents, setRecentIncidents] = useState<Incident[]>([]);
-  const [onCallData, setOnCallData] = useState<OnCallInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [showSetupBanner, setShowSetupBanner] = useState(false);
@@ -58,11 +58,7 @@ export function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      const [incidentsResponse, onCallResponse] = await Promise.all([
-        incidentsAPI.list(),
-        schedulesAPI.getOnCall(),
-      ]);
-
+      const incidentsResponse = await incidentsAPI.list();
       const incidents = incidentsResponse.incidents;
 
       // Calculate MTTA and MTTR
@@ -102,7 +98,6 @@ export function Dashboard() {
 
       setStats(newStats);
       setRecentIncidents(incidents.slice(0, 5)); // Show 5 most recent
-      setOnCallData(onCallResponse.oncall);
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
@@ -197,71 +192,9 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Who's On Call */}
+        {/* Weekly On-Call Calendar */}
         <div className="mb-8">
-          <h3 className="text-xl font-semibold mb-4">Who's On Call</h3>
-          {onCallData.length === 0 ? (
-            <Card>
-              <CardContent className="py-6">
-                <div className="text-center">
-                  <p className="text-muted-foreground mb-2">No services with schedules configured</p>
-                  <Link to="/schedules">
-                    <Button variant="outline" size="sm">Create Schedule</Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {onCallData.map((item) => (
-                <Link
-                  key={`${item.service?.id || item.schedule.id}`}
-                  to={`/schedules/${item.schedule.id}`}
-                  className="block"
-                >
-                  <Card className="hover:bg-accent transition-colors cursor-pointer h-full">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium truncate">{item.service?.name || item.schedule.name}</p>
-                            {item.isOverride && (
-                              <span className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 px-1.5 py-0.5 rounded flex-shrink-0">
-                                OVERRIDE
-                              </span>
-                            )}
-                          </div>
-                          {item.oncallUser ? (
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
-                                <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                                  {item.oncallUser.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium truncate">{item.oncallUser.fullName}</p>
-                                <p className="text-xs text-muted-foreground truncate">{item.schedule.name}</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center flex-shrink-0">
-                                <span className="text-sm text-orange-600 dark:text-orange-400">?</span>
-                              </div>
-                              <p className="text-sm text-orange-600 dark:text-orange-400">No one on call</p>
-                            </div>
-                          )}
-                        </div>
-                        <svg className="w-5 h-5 text-muted-foreground flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          )}
+          <WeeklyCalendar />
         </div>
 
         {/* Incident Analytics */}

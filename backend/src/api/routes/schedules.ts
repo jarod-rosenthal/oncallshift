@@ -124,6 +124,141 @@ router.get('/oncall', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/v1/schedules/weekly-forecast
+ * Get who's on-call for each day of the current week (and next week)
+ */
+router.get('/weekly-forecast', async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const userRepo = dataSource.getRepository(User);
+
+    // Get all schedules with rotation config
+    const schedules = await scheduleRepo.find({
+      where: { orgId },
+      order: { name: 'ASC' },
+    });
+
+    // Calculate dates for current week (Mon-Sun) and next week
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+
+    // Generate 14 days (2 weeks)
+    const dates: Date[] = [];
+    for (let i = 0; i < 14; i++) {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + i);
+      dates.push(date);
+    }
+
+    const forecast: Array<{
+      schedule: { id: string; name: string; type: string };
+      days: Array<{
+        date: string;
+        dayOfWeek: string;
+        isToday: boolean;
+        oncallUser: { id: string; fullName: string; email: string } | null;
+      }>;
+    }> = [];
+
+    for (const schedule of schedules) {
+      const days = await Promise.all(dates.map(async (date) => {
+        const oncallUserId = calculateOncallForDate(schedule, date);
+        let oncallUser = null;
+
+        if (oncallUserId) {
+          const user = await userRepo.findOne({ where: { id: oncallUserId } });
+          if (user) {
+            oncallUser = {
+              id: user.id,
+              fullName: user.fullName || user.email,
+              email: user.email,
+            };
+          }
+        }
+
+        const isToday = date.toDateString() === today.toDateString();
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        return {
+          date: date.toISOString().split('T')[0],
+          dayOfWeek: dayNames[date.getDay()],
+          isToday,
+          oncallUser,
+        };
+      }));
+
+      forecast.push({
+        schedule: {
+          id: schedule.id,
+          name: schedule.name,
+          type: schedule.type,
+        },
+        days,
+      });
+    }
+
+    return res.json({
+      forecast,
+      weekStart: monday.toISOString().split('T')[0],
+      generated: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Error fetching weekly forecast:', error);
+    return res.status(500).json({ error: 'Failed to fetch weekly forecast' });
+  }
+});
+
+/**
+ * Calculate who's on-call for a specific date based on schedule rotation
+ */
+function calculateOncallForDate(
+  schedule: Schedule,
+  targetDate: Date
+): string | null {
+  // If manual schedule, just return current on-call
+  if (schedule.type === 'manual' || !schedule.rotation_config) {
+    return schedule.getCurrentOncallUserId();
+  }
+
+  const rotationConfig = schedule.rotation_config as {
+    userIds: string[];
+    startDate: string;
+    rotationHour: number;
+    weekday?: number;
+  };
+
+  const { userIds, startDate, rotationHour } = rotationConfig;
+  if (!userIds || userIds.length === 0) {
+    return schedule.getCurrentOncallUserId();
+  }
+
+  const start = new Date(startDate);
+  const target = new Date(targetDate);
+  target.setHours(rotationHour, 0, 0, 0); // Set to rotation hour
+
+  if (schedule.type === 'daily') {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysSinceStart = Math.floor((target.getTime() - start.getTime()) / msPerDay);
+    const rotationIndex = Math.max(0, daysSinceStart) % userIds.length;
+    return userIds[rotationIndex];
+  } else if (schedule.type === 'weekly') {
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    const weeksSinceStart = Math.floor((target.getTime() - start.getTime()) / msPerWeek);
+    const rotationIndex = Math.max(0, weeksSinceStart) % userIds.length;
+    return userIds[rotationIndex];
+  }
+
+  return schedule.getCurrentOncallUserId();
+}
+
+/**
  * GET /api/v1/schedules/:id
  * Get schedule details
  */

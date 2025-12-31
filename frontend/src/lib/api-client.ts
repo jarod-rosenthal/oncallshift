@@ -96,6 +96,23 @@ export const schedulesAPI = {
     return response.data;
   },
 
+  getWeeklyForecast: async (): Promise<{
+    forecast: Array<{
+      schedule: { id: string; name: string; type: string };
+      days: Array<{
+        date: string;
+        dayOfWeek: string;
+        isToday: boolean;
+        oncallUser: { id: string; fullName: string; email: string } | null;
+      }>;
+    }>;
+    weekStart: string;
+    generated: string;
+  }> => {
+    const response = await apiClient.get('/schedules/weekly-forecast');
+    return response.data;
+  },
+
   create: async (data: {
     name: string;
     description?: string;
