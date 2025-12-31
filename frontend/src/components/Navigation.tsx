@@ -54,8 +54,8 @@ export function Navigation() {
           </nav>
 
           <Button
-            variant="outline"
-            className="border-white text-white hover:bg-white/10"
+            variant="ghost"
+            className="border border-white/50 text-white hover:bg-white/20 hover:text-white"
             onClick={handleLogout}
           >
             Logout
