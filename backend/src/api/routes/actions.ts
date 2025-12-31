@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { logger } from '../../shared/utils/logger';
+
+const execAsync = promisify(exec);
 
 const router = Router();
 
@@ -298,5 +302,137 @@ router.post('/docker-prune', async (req: Request, res: Response) => {
 
   res.json(result);
 });
+
+/**
+ * POST /api/v1/actions/aws-identity
+ * REAL ACTION: Runs aws sts get-caller-identity to show authenticated AWS identity
+ */
+router.post('/aws-identity', async (req: Request, res: Response) => {
+  logger.info('Executing AWS identity check', {
+    userId: req.user!.id,
+    orgId: req.user!.orgId,
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    const { stdout, stderr } = await execAsync('aws sts get-caller-identity --output json', {
+      timeout: 10000, // 10 second timeout
+    });
+
+    if (stderr) {
+      logger.warn('AWS CLI stderr:', { stderr });
+    }
+
+    const identity = JSON.parse(stdout);
+
+    logger.info('AWS identity retrieved successfully', {
+      userId: req.user!.id,
+      account: identity.Account,
+      arn: identity.Arn,
+    });
+
+    res.json({
+      success: true,
+      message: `AWS Identity: ${identity.Arn}`,
+      details: {
+        account: identity.Account,
+        userId: identity.UserId,
+        arn: identity.Arn,
+        executedAt: new Date().toISOString(),
+        executedBy: req.user!.id,
+      },
+    });
+  } catch (error: any) {
+    logger.error('AWS identity check failed', {
+      error: error.message,
+      userId: req.user!.id,
+    });
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get AWS identity',
+      error: error.stderr || error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/v1/actions/shell-command
+ * REAL ACTION: Executes a whitelisted shell command (for demo purposes)
+ * Only allows safe, read-only commands
+ */
+router.post(
+  '/shell-command',
+  [body('command').isString().notEmpty()],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({ errors: errors.array() });
+      return;
+    }
+
+    const { command } = req.body;
+
+    // Whitelist of allowed commands (read-only, safe commands)
+    const allowedCommands: Record<string, string> = {
+      'whoami': 'whoami',
+      'hostname': 'hostname',
+      'uptime': 'uptime',
+      'date': 'date',
+      'aws-identity': 'aws sts get-caller-identity --output json',
+      'aws-region': 'aws configure get region',
+      'disk-usage': 'df -h',
+      'memory': 'free -h',
+      'node-version': 'node --version',
+      'npm-version': 'npm --version',
+    };
+
+    const actualCommand = allowedCommands[command];
+    if (!actualCommand) {
+      res.status(400).json({
+        success: false,
+        message: `Command "${command}" is not allowed. Allowed commands: ${Object.keys(allowedCommands).join(', ')}`,
+      });
+      return;
+    }
+
+    logger.info('Executing shell command', {
+      command,
+      actualCommand,
+      userId: req.user!.id,
+      orgId: req.user!.orgId,
+    });
+
+    try {
+      const { stdout, stderr } = await execAsync(actualCommand, {
+        timeout: 10000,
+      });
+
+      res.json({
+        success: true,
+        message: `Command "${command}" executed successfully`,
+        details: {
+          command,
+          output: stdout.trim(),
+          stderr: stderr?.trim() || undefined,
+          executedAt: new Date().toISOString(),
+          executedBy: req.user!.id,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Shell command failed', {
+        command,
+        error: error.message,
+        userId: req.user!.id,
+      });
+
+      res.status(500).json({
+        success: false,
+        message: `Command "${command}" failed: ${error.message}`,
+        error: error.stderr || error.message,
+      });
+    }
+  }
+);
 
 export default router;
