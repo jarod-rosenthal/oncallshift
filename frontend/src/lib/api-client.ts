@@ -195,6 +195,32 @@ export const incidentsAPI = {
     return response.data;
   },
 
+  getNotifications: async (id: string): Promise<{
+    notifications: Array<{
+      userId: string;
+      userName: string;
+      userEmail: string;
+      channels: Array<{
+        channel: string;
+        status: string;
+        sentAt: string | null;
+        deliveredAt: string | null;
+        failedAt: string | null;
+        errorMessage: string | null;
+      }>;
+    }>;
+    summary: {
+      total: number;
+      pending: number;
+      sent: number;
+      delivered: number;
+      failed: number;
+    };
+  }> => {
+    const response = await apiClient.get(`/incidents/${id}/notifications`);
+    return response.data;
+  },
+
   addNote: async (id: string, content: string): Promise<{ event: { id: string; type: string; message: string; createdAt: string }; message: string }> => {
     const response = await apiClient.post(`/incidents/${id}/notes`, { content });
     return response.data;
