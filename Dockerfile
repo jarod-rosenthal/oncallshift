@@ -33,13 +33,7 @@ COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
 
 # Install all dependencies (need devDependencies for build)
-RUN echo "=== DEBUG ===" && \
-    echo "npm version: $(npm --version)" && \
-    echo "node version: $(node --version)" && \
-    echo "package.json exists: $(ls -la package.json)" && \
-    echo "package-lock.json exists: $(ls -la package-lock.json)" && \
-    echo "=== Running npm ci ===" && \
-    npm ci --verbose
+RUN npm ci
 
 # Copy backend source code
 COPY backend/src ./src
