@@ -8,6 +8,63 @@ import { logger } from '../../shared/utils/logger';
 const router = Router();
 
 /**
+ * Look up service by API key, checking both native and external keys.
+ * This enables zero-config migration from PagerDuty/Opsgenie.
+ *
+ * @param apiKey - The API key to look up (native or external)
+ * @param source - The source platform ('pagerduty' | 'opsgenie' | 'generic')
+ * @returns The service if found, null otherwise
+ */
+async function findServiceByKey(
+  apiKey: string,
+  source: 'pagerduty' | 'opsgenie' | 'generic'
+): Promise<Service | null> {
+  const dataSource = await getDataSource();
+  const serviceRepo = dataSource.getRepository(Service);
+
+  // First, try to find by native OnCallShift API key
+  let service = await serviceRepo.findOne({
+    where: { apiKey },
+  });
+
+  if (service) {
+    return service;
+  }
+
+  // If not found, try external keys based on source
+  if (source === 'pagerduty') {
+    // Look for PagerDuty external key using raw query for JSONB
+    service = await serviceRepo
+      .createQueryBuilder('service')
+      .where("service.external_keys->>'pagerduty' = :key", { key: apiKey })
+      .getOne();
+  } else if (source === 'opsgenie') {
+    // Look for Opsgenie external key
+    service = await serviceRepo
+      .createQueryBuilder('service')
+      .where("service.external_keys->>'opsgenie' = :key", { key: apiKey })
+      .getOne();
+  } else {
+    // Generic: try both external key types
+    service = await serviceRepo
+      .createQueryBuilder('service')
+      .where("service.external_keys->>'pagerduty' = :key", { key: apiKey })
+      .orWhere("service.external_keys->>'opsgenie' = :key", { key: apiKey })
+      .getOne();
+  }
+
+  if (service) {
+    logger.info('Service found via external key', {
+      source,
+      serviceId: service.id,
+      serviceName: service.name,
+    });
+  }
+
+  return service;
+}
+
+/**
  * @swagger
  * tags:
  *   - name: Webhooks
@@ -177,13 +234,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
       });
     }
 
-    // Look up service by API key (routing_key)
-    const dataSource = await getDataSource();
-    const serviceRepo = dataSource.getRepository(Service);
-
-    const service = await serviceRepo.findOne({
-      where: { apiKey: event.routing_key },
-    });
+    // Look up service by API key (routing_key) - supports both native and external keys
+    const service = await findServiceByKey(event.routing_key, 'pagerduty');
 
     if (!service) {
       return res.status(400).json({
@@ -472,13 +524,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
       });
     }
 
-    // Look up service by API key
-    const dataSource = await getDataSource();
-    const serviceRepo = dataSource.getRepository(Service);
-
-    const service = await serviceRepo.findOne({
-      where: { apiKey },
-    });
+    // Look up service by API key - supports both native and external keys
+    const service = await findServiceByKey(apiKey, 'opsgenie');
 
     if (!service) {
       return res.status(401).json({
@@ -559,12 +606,8 @@ router.post('/opsgenie/:identifier/acknowledge', async (req: Request, res: Respo
       });
     }
 
-    const dataSource = await getDataSource();
-    const serviceRepo = dataSource.getRepository(Service);
-
-    const service = await serviceRepo.findOne({
-      where: { apiKey },
-    });
+    // Look up service by API key - supports both native and external keys
+    const service = await findServiceByKey(apiKey, 'opsgenie');
 
     if (!service) {
       return res.status(401).json({
@@ -609,12 +652,8 @@ router.post('/opsgenie/:identifier/close', async (req: Request, res: Response) =
       });
     }
 
-    const dataSource = await getDataSource();
-    const serviceRepo = dataSource.getRepository(Service);
-
-    const service = await serviceRepo.findOne({
-      where: { apiKey },
-    });
+    // Look up service by API key - supports both native and external keys
+    const service = await findServiceByKey(apiKey, 'opsgenie');
 
     if (!service) {
       return res.status(401).json({
@@ -738,13 +777,8 @@ router.post('/generic', async (req: Request, res: Response) => {
       });
     }
 
-    // Look up service by API key
-    const dataSource = await getDataSource();
-    const serviceRepo = dataSource.getRepository(Service);
-
-    const service = await serviceRepo.findOne({
-      where: { apiKey },
-    });
+    // Look up service by API key - supports both native and external keys
+    const service = await findServiceByKey(apiKey, 'generic');
 
     if (!service) {
       return res.status(400).json({

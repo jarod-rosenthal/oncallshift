@@ -52,6 +52,17 @@ export class Service {
   @Column({ type: 'jsonb', nullable: true })
   settings: Record<string, any> | null;
 
+  /**
+   * External integration keys from PagerDuty/Opsgenie for zero-config migration.
+   * Allows webhooks to be received using original integration keys without reconfiguration.
+   * Format: { pagerduty?: string, opsgenie?: string }
+   */
+  @Column({ name: 'external_keys', type: 'jsonb', nullable: true })
+  externalKeys: {
+    pagerduty?: string;
+    opsgenie?: string;
+  } | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

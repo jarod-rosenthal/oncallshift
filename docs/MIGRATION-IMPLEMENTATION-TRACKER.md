@@ -43,16 +43,16 @@
 - [ ] Write tests for multi-target escalation
 
 ### 1.3 Preserve Integration Keys (Zero-Config Migration)
-**Effort**: 1-2 days | **Status**: Not Started
+**Effort**: 1-2 days | **Status**: Complete
 
-- [ ] Add `preserveKeys` option to import API
-- [ ] Modify Service creation to accept external integration key
-- [ ] Add `externalKeys` JSONB field to Service model (store original PD/OG keys)
-- [ ] Create database migration for `externalKeys` field
-- [ ] Update webhook endpoints to lookup by external key as fallback
-- [ ] Fetch integration keys from PagerDuty service integrations API
-- [ ] Fetch integration keys from Opsgenie integrations API
-- [ ] Add key preservation to import preview
+- [x] Add `preserveKeys` option to import API
+- [x] Modify Service creation to accept external integration key
+- [x] Add `externalKeys` JSONB field to Service model (store original PD/OG keys)
+- [x] Create database migration for `externalKeys` field
+- [x] Update webhook endpoints to lookup by external key as fallback
+- [x] Fetch integration keys from PagerDuty service integrations API
+- [x] Fetch integration keys from Opsgenie integrations API
+- [x] Add key preservation to import preview
 - [ ] Write tests for key preservation
 
 ### 1.4 Import Alert Routing Rules
@@ -236,24 +236,28 @@
 
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
-| Phase 1: Critical | 37 | 0 | 0% |
+| Phase 1: Critical | 37 | 8 | 22% |
 | Phase 2: Important | 28 | 0 | 0% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **110** | **0** | **0%** |
+| **Total** | **110** | **8** | **7%** |
 
 ---
 
 ## Notes & Decisions
 
 ### Technical Decisions
-- *None yet*
+- External keys stored in `externalKeys` JSONB field on Service model
+- Webhook lookup checks native `apiKey` first, then falls back to external keys
+- Import accepts `options.preserveKeys` flag to control key preservation
+- Both PagerDuty and Opsgenie keys can be stored per service
 
 ### Blockers
-- *None yet*
+- *None*
 
 ### Completed Sessions
 - **Dec 31, 2024**: Initial analysis and plan creation
+- **Dec 31, 2024**: Implemented Phase 1.3 - Preserve Integration Keys (8/9 tasks)
 
 ---
 
