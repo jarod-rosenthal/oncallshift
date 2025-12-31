@@ -53,7 +53,7 @@
 - [x] Fetch integration keys from PagerDuty service integrations API
 - [x] Fetch integration keys from Opsgenie integrations API
 - [x] Add key preservation to import preview
-- [ ] Write tests for key preservation
+- [x] Write tests for key preservation
 
 ### 1.4 Import Alert Routing Rules
 **Effort**: 3-4 days | **Status**: Not Started
@@ -236,11 +236,11 @@
 
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
-| Phase 1: Critical | 37 | 8 | 22% |
+| Phase 1: Critical | 37 | 9 | 24% |
 | Phase 2: Important | 28 | 0 | 0% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **110** | **8** | **7%** |
+| **Total** | **110** | **9** | **8%** |
 
 ---
 
