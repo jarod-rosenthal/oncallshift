@@ -1,5 +1,5 @@
 # Frontend build stage
-FROM node:20-alpine AS frontend-builder
+FROM node:20.18-alpine AS frontend-builder
 
 WORKDIR /frontend
 
@@ -24,7 +24,7 @@ COPY frontend/.env.production ./
 RUN npm run build
 
 # Backend build stage
-FROM node:20-alpine AS backend-builder
+FROM node:20.18-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -33,7 +33,13 @@ COPY backend/package*.json ./
 COPY backend/tsconfig.json ./
 
 # Install all dependencies (need devDependencies for build)
-RUN echo "npm version:" && npm --version && echo "node version:" && node --version && npm ci
+RUN echo "=== DEBUG ===" && \
+    echo "npm version: $(npm --version)" && \
+    echo "node version: $(node --version)" && \
+    echo "package.json exists: $(ls -la package.json)" && \
+    echo "package-lock.json exists: $(ls -la package-lock.json)" && \
+    echo "=== Running npm ci ===" && \
+    npm ci --verbose
 
 # Copy backend source code
 COPY backend/src ./src
@@ -42,7 +48,7 @@ COPY backend/src ./src
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20.18-alpine
 
 WORKDIR /app
 
