@@ -56,19 +56,19 @@
 - [x] Write tests for key preservation
 
 ### 1.4 Import Alert Routing Rules
-**Effort**: 3-4 days | **Status**: Not Started
+**Effort**: 3-4 days | **Status**: Complete
 
-- [ ] Add `routingRules` to PagerDuty import data structure
-- [ ] Fetch PagerDuty Global Event Rules via API
-- [ ] Map PagerDuty event rule conditions to OnCallShift format
-- [ ] Map PagerDuty event rule actions (route, severity, etc.)
-- [ ] Add `alertPolicies` to Opsgenie import data structure
-- [ ] Fetch Opsgenie Alert Policies via API
-- [ ] Map Opsgenie policy conditions
-- [ ] Map Opsgenie policy responders to routing targets
-- [ ] Link imported rules to services via ID mappings
-- [ ] Add routing rules to import preview
-- [ ] Write tests for routing rule import
+- [x] Add `routingRules` to PagerDuty import data structure
+- [x] Fetch PagerDuty Global Event Rules via API
+- [x] Map PagerDuty event rule conditions to OnCallShift format
+- [x] Map PagerDuty event rule actions (route, severity, etc.)
+- [x] Add `alertPolicies` to Opsgenie import data structure
+- [x] Fetch Opsgenie Alert Policies via API
+- [x] Map Opsgenie policy conditions
+- [x] Map Opsgenie policy responders to routing targets
+- [x] Link imported rules to services via ID mappings
+- [x] Add routing rules to import preview
+- [x] Write tests for routing rule import
 
 ---
 
@@ -236,11 +236,11 @@
 
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
-| Phase 1: Critical | 37 | 29 | 78% |
+| Phase 1: Critical | 40 | 40 | 100% |
 | Phase 2: Important | 28 | 0 | 0% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **110** | **29** | **26%** |
+| **Total** | **113** | **40** | **35%** |
 
 ---
 
@@ -251,6 +251,9 @@
 - Webhook lookup checks native `apiKey` first, then falls back to external keys
 - Import accepts `options.preserveKeys` flag to control key preservation
 - Both PagerDuty and Opsgenie keys can be stored per service
+- Routing rules use existing `AlertRoutingRule` model with JSONB conditions
+- PagerDuty event rules map to AlertRoutingRule with operator/field/value conditions
+- Opsgenie alert policies map to AlertRoutingRule with priority-to-severity mapping
 
 ### Blockers
 - *None*
@@ -260,6 +263,7 @@
 - **Dec 31, 2024**: Implemented Phase 1.3 - Preserve Integration Keys (9/9 tasks)
 - **Dec 31, 2024**: Implemented Phase 1.1 - Import User Contact Methods & Notification Rules (12/12 tasks)
 - **Dec 31, 2024**: Implemented Phase 1.2 - Multi-Target Escalation Steps (8/8 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.4 - Import Alert Routing Rules (11/11 tasks)
 
 ---
 

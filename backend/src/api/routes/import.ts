@@ -14,7 +14,9 @@ import {
   Service,
   UserContactMethod,
   UserNotificationRule,
+  AlertRoutingRule,
 } from '../../shared/models';
+import { RoutingCondition, ConditionOperator, MatchType } from '../../shared/models/AlertRoutingRule';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { logger } from '../../shared/utils/logger';
 
@@ -33,6 +35,34 @@ interface PagerDutyImportData {
   schedules?: PagerDutySchedule[];
   escalation_policies?: PagerDutyEscalationPolicy[];
   services?: PagerDutyService[];
+  routing_rules?: PagerDutyEventRule[];
+}
+
+interface PagerDutyEventRule {
+  id: string;
+  label?: string;
+  disabled?: boolean;
+  catch_all?: boolean;
+  conditions?: {
+    operator: 'and' | 'or';
+    subconditions?: Array<{
+      operator: string;
+      path: string;
+      value?: string | string[];
+    }>;
+  };
+  actions?: {
+    route?: { type: string; value: string }; // Route to service
+    severity?: { type: string; value: string };
+    event_action?: { value: string };
+    extractions?: Array<{
+      target: string;
+      source: string;
+      regex?: string;
+    }>;
+  };
+  // Alternative structure for service-level event rules
+  service?: { id: string };
 }
 
 interface PagerDutyUser {
@@ -143,6 +173,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
     schedules: { imported: 0, skipped: 0, errors: [] as string[] },
     escalation_policies: { imported: 0, skipped: 0, errors: [] as string[] },
     services: { imported: 0, skipped: 0, errors: [] as string[] },
+    routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   // Maps to track PagerDuty ID -> OnCallShift ID mappings
@@ -151,6 +182,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
   const teamIdMap = new Map<string, string>();
   const scheduleIdMap = new Map<string, string>();
   const policyIdMap = new Map<string, string>();
+  const serviceIdMap = new Map<string, string>();
 
   try {
     const dataSource = await getDataSource();
@@ -571,6 +603,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
               externalKeys,
             });
             await serviceRepo.save(service);
+            serviceIdMap.set(pdService.id, service.id);
             results.services.imported++;
 
             if (externalKeys) {
@@ -580,6 +613,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
               });
             }
           } else {
+            serviceIdMap.set(pdService.id, service.id);
             // Update external keys on existing service if preserveKeys is enabled
             if (preserveKeys && pdService.integration_key && !service.externalKeys?.pagerduty) {
               service.externalKeys = {
@@ -595,6 +629,78 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
           }
         } catch (error: any) {
           results.services.errors.push(`Service ${pdService.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 6. Import Routing Rules (Event Rules)
+    if (importData.routing_rules && importData.routing_rules.length > 0) {
+      const routingRuleRepo = dataSource.getRepository(AlertRoutingRule);
+
+      for (let i = 0; i < importData.routing_rules.length; i++) {
+        const pdRule = importData.routing_rules[i];
+        try {
+          // Check if rule already exists by name
+          const ruleName = pdRule.label || `Imported Rule ${i + 1}`;
+          let rule = await routingRuleRepo.findOne({
+            where: { name: ruleName, orgId },
+          });
+
+          if (!rule) {
+            // Map PagerDuty conditions to OnCallShift format
+            const conditions: RoutingCondition[] = [];
+            if (pdRule.conditions?.subconditions) {
+              for (const subcond of pdRule.conditions.subconditions) {
+                const operator = mapPagerDutyOperator(subcond.operator);
+                if (operator) {
+                  conditions.push({
+                    field: mapPagerDutyPath(subcond.path),
+                    operator,
+                    value: subcond.value || null,
+                  });
+                }
+              }
+            }
+
+            // Map match type
+            const matchType: MatchType = pdRule.conditions?.operator === 'or' ? 'any' : 'all';
+
+            // Get target service
+            const targetServiceId = pdRule.actions?.route?.value
+              ? serviceIdMap.get(pdRule.actions.route.value) || null
+              : pdRule.service?.id
+                ? serviceIdMap.get(pdRule.service.id) || null
+                : null;
+
+            // Map severity
+            const setSeverity = pdRule.actions?.severity?.value
+              ? mapPagerDutySeverity(pdRule.actions.severity.value)
+              : null;
+
+            rule = routingRuleRepo.create({
+              orgId,
+              name: ruleName,
+              description: pdRule.catch_all ? 'Catch-all rule (imported from PagerDuty)' : null,
+              ruleOrder: i,
+              enabled: !pdRule.disabled,
+              matchType,
+              conditions,
+              targetServiceId,
+              setSeverity,
+            });
+            await routingRuleRepo.save(rule);
+            results.routing_rules.imported++;
+
+            logger.info('Routing rule imported', {
+              ruleName,
+              conditionCount: conditions.length,
+              hasTargetService: !!targetServiceId,
+            });
+          } else {
+            results.routing_rules.skipped++;
+          }
+        } catch (error: any) {
+          results.routing_rules.errors.push(`Rule ${pdRule.label || pdRule.id}: ${error.message}`);
         }
       }
     }
@@ -640,6 +746,33 @@ interface OpsgenieImportData {
   schedules?: OpsgenieSchedule[];
   escalations?: OpsgenieEscalation[];
   services?: OpsgenieService[];
+  alert_policies?: OpsgenieAlertPolicy[];
+}
+
+interface OpsgenieAlertPolicy {
+  id: string;
+  name: string;
+  enabled?: boolean;
+  policyDescription?: string;
+  filter?: {
+    type: string;
+    conditions?: Array<{
+      field: string;
+      operation: string;
+      expectedValue?: string;
+      not?: boolean;
+    }>;
+    conditionMatchType?: 'match-all' | 'match-any-condition' | 'match-all-conditions';
+  };
+  message?: string;
+  responders?: Array<{
+    type: string;
+    id?: string;
+    name?: string;
+    username?: string;
+  }>;
+  priority?: string;
+  order?: number;
 }
 
 interface OpsgenieUser {
@@ -766,6 +899,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
     schedules: { imported: 0, skipped: 0, errors: [] as string[] },
     escalations: { imported: 0, skipped: 0, errors: [] as string[] },
     services: { imported: 0, skipped: 0, errors: [] as string[] },
+    routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   const userIdMap = new Map<string, string>();
@@ -773,6 +907,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
   const teamIdMap = new Map<string, string>();
   const scheduleIdMap = new Map<string, string>();
   const escalationIdMap = new Map<string, string>();
+  const serviceIdMap = new Map<string, string>();
 
   try {
     const dataSource = await getDataSource();
@@ -1184,6 +1319,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
               externalKeys,
             });
             await serviceRepo.save(service);
+            serviceIdMap.set(ogService.id, service.id);
             results.services.imported++;
 
             if (externalKeys) {
@@ -1193,6 +1329,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
               });
             }
           } else {
+            serviceIdMap.set(ogService.id, service.id);
             // Update external keys on existing service if preserveKeys is enabled
             if (preserveKeys && ogService.apiKey && !service.externalKeys?.opsgenie) {
               service.externalKeys = {
@@ -1208,6 +1345,72 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           }
         } catch (error: any) {
           results.services.errors.push(`Service ${ogService.name}: ${error.message}`);
+        }
+      }
+    }
+
+    // 6. Import Alert Policies (Routing Rules)
+    if (importData.alert_policies && importData.alert_policies.length > 0) {
+      const routingRuleRepo = dataSource.getRepository(AlertRoutingRule);
+
+      for (let i = 0; i < importData.alert_policies.length; i++) {
+        const ogPolicy = importData.alert_policies[i];
+        try {
+          // Check if rule already exists by name
+          let rule = await routingRuleRepo.findOne({
+            where: { name: ogPolicy.name, orgId },
+          });
+
+          if (!rule) {
+            // Map Opsgenie conditions to OnCallShift format
+            const conditions: RoutingCondition[] = [];
+            if (ogPolicy.filter?.conditions) {
+              for (const cond of ogPolicy.filter.conditions) {
+                const operator = mapOpsgenieOperator(cond.operation);
+                if (operator) {
+                  conditions.push({
+                    field: mapOpsgenieField(cond.field),
+                    operator,
+                    value: cond.expectedValue || null,
+                  });
+                }
+              }
+            }
+
+            // Map match type
+            let matchType: MatchType = 'all';
+            if (ogPolicy.filter?.conditionMatchType === 'match-any-condition') {
+              matchType = 'any';
+            }
+
+            // Map severity from priority
+            const setSeverity = ogPolicy.priority
+              ? mapOpsgeniePriority(ogPolicy.priority)
+              : null;
+
+            rule = routingRuleRepo.create({
+              orgId,
+              name: ogPolicy.name,
+              description: ogPolicy.policyDescription || null,
+              ruleOrder: ogPolicy.order ?? i,
+              enabled: ogPolicy.enabled !== false,
+              matchType,
+              conditions,
+              targetServiceId: null, // Opsgenie policies don't typically route to services
+              setSeverity,
+            });
+            await routingRuleRepo.save(rule);
+            results.routing_rules.imported++;
+
+            logger.info('Alert policy imported', {
+              policyName: ogPolicy.name,
+              conditionCount: conditions.length,
+            });
+          } else {
+            results.routing_rules.skipped++;
+          }
+        } catch (error: any) {
+          results.routing_rules.errors.push(`Policy ${ogPolicy.name}: ${error.message}`);
         }
       }
     }
@@ -1286,6 +1489,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         schedules: { total: 0, existing: 0, new: 0 },
         escalation_policies: { total: 0, existing: 0, new: 0 },
         services: { total: 0, existing: 0, new: 0, withExternalKeys: 0 },
+        routing_rules: { total: 0, existing: 0, new: 0, totalConditions: 0 },
       },
       details: {
         users: [] as any[],
@@ -1295,6 +1499,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         schedules: [] as any[],
         escalation_policies: [] as any[],
         services: [] as any[],
+        routing_rules: [] as any[],
       },
     };
 
@@ -1498,6 +1703,58 @@ router.post('/preview', async (req: Request, res: Response) => {
       }
     }
 
+    // Analyze routing rules
+    const routingRuleRepo = dataSource.getRepository(AlertRoutingRule);
+    const routingRules = source === 'pagerduty' ? data.routing_rules : data.alert_policies;
+    if (routingRules) {
+      for (const rule of routingRules) {
+        const ruleName = source === 'pagerduty'
+          ? (rule.label || `Event Rule ${rule.id}`)
+          : rule.name;
+
+        // Count conditions
+        let conditionCount = 0;
+        if (source === 'pagerduty') {
+          conditionCount = rule.conditions?.subconditions?.length || 0;
+        } else {
+          conditionCount = rule.filter?.conditions?.length || 0;
+        }
+
+        // Check if rule exists by name
+        const existing = await routingRuleRepo.findOne({ where: { name: ruleName, orgId } });
+        preview.summary.routing_rules.total++;
+        preview.summary.routing_rules.totalConditions += conditionCount;
+
+        // Get target service name if available
+        let targetServiceName: string | undefined;
+        if (source === 'pagerduty' && rule.actions?.route?.value) {
+          const targetService = services?.find((s: any) => s.id === rule.actions.route.value);
+          targetServiceName = targetService?.name;
+        }
+
+        if (existing) {
+          preview.summary.routing_rules.existing++;
+          preview.details.routing_rules.push({
+            name: ruleName,
+            status: 'existing',
+            id: existing.id,
+            conditions: conditionCount,
+            enabled: source === 'pagerduty' ? !rule.disabled : (rule.enabled !== false),
+            targetServiceName,
+          });
+        } else {
+          preview.summary.routing_rules.new++;
+          preview.details.routing_rules.push({
+            name: ruleName,
+            status: 'new',
+            conditions: conditionCount,
+            enabled: source === 'pagerduty' ? !rule.disabled : (rule.enabled !== false),
+            targetServiceName,
+          });
+        }
+      }
+    }
+
     return res.status(200).json(preview);
   } catch (error: any) {
     logger.error('Import preview failed:', error);
@@ -1569,6 +1826,122 @@ function convertOpsgenieRestrictions(timeRestriction: any): any {
     };
   }
   return null;
+}
+
+// Routing rule mapping helpers
+
+/**
+ * Map PagerDuty event rule operator to OnCallShift condition operator
+ */
+function mapPagerDutyOperator(pdOperator: string): ConditionOperator | null {
+  const mapping: Record<string, ConditionOperator> = {
+    'equals': 'equals',
+    'contains': 'contains',
+    'matches': 'regex',
+    'exists': 'exists',
+    'startsWith': 'starts_with',
+    'endsWith': 'ends_with',
+    // Negated operators
+    'nequals': 'not_equals',
+    'ncontains': 'not_contains',
+    'nexists': 'not_exists',
+  };
+  return mapping[pdOperator] || null;
+}
+
+/**
+ * Map PagerDuty event path to OnCallShift field name
+ */
+function mapPagerDutyPath(pdPath: string): string {
+  const mapping: Record<string, string> = {
+    'event.source': 'source',
+    'event.summary': 'summary',
+    'event.severity': 'severity',
+    'event.component': 'component',
+    'event.group': 'group',
+    'event.class': 'class',
+    'event.custom_details': 'details',
+  };
+
+  // Check for exact match
+  if (mapping[pdPath]) {
+    return mapping[pdPath];
+  }
+
+  // Handle custom_details paths like event.custom_details.environment
+  if (pdPath.startsWith('event.custom_details.')) {
+    return pdPath.replace('event.custom_details.', 'details.');
+  }
+
+  // Default: strip 'event.' prefix if present
+  return pdPath.replace(/^event\./, '');
+}
+
+/**
+ * Map PagerDuty severity to OnCallShift severity
+ */
+function mapPagerDutySeverity(pdSeverity: string): 'info' | 'warning' | 'error' | 'critical' | null {
+  const mapping: Record<string, 'info' | 'warning' | 'error' | 'critical'> = {
+    'info': 'info',
+    'warning': 'warning',
+    'error': 'error',
+    'critical': 'critical',
+  };
+  return mapping[pdSeverity?.toLowerCase()] || null;
+}
+
+/**
+ * Map Opsgenie alert policy operator to OnCallShift condition operator
+ */
+function mapOpsgenieOperator(ogOperator: string): ConditionOperator | null {
+  const mapping: Record<string, ConditionOperator> = {
+    'equals': 'equals',
+    'equals-ignore-whitespace': 'equals',
+    'contains': 'contains',
+    'contains-key': 'exists',
+    'starts-with': 'starts_with',
+    'ends-with': 'ends_with',
+    'matches': 'regex',
+    'is-empty': 'not_exists',
+    'greater-than': 'not_equals', // Approximation
+    'less-than': 'not_equals', // Approximation
+  };
+  return mapping[ogOperator] || null;
+}
+
+/**
+ * Map Opsgenie field name to OnCallShift field name
+ */
+function mapOpsgenieField(ogField: string): string {
+  const mapping: Record<string, string> = {
+    'message': 'summary',
+    'alias': 'dedupe_key',
+    'description': 'description',
+    'source': 'source',
+    'entity': 'component',
+    'tags': 'tags',
+    'actions': 'actions',
+    'details': 'details',
+    'extra-properties': 'details',
+    'responders': 'responders',
+    'teams': 'teams',
+    'priority': 'priority',
+  };
+  return mapping[ogField] || ogField;
+}
+
+/**
+ * Map Opsgenie priority to OnCallShift severity
+ */
+function mapOpsgeniePriority(ogPriority: string): 'info' | 'warning' | 'error' | 'critical' | null {
+  const mapping: Record<string, 'info' | 'warning' | 'error' | 'critical'> = {
+    'P1': 'critical',
+    'P2': 'error',
+    'P3': 'warning',
+    'P4': 'info',
+    'P5': 'info',
+  };
+  return mapping[ogPriority?.toUpperCase()] || null;
 }
 
 export default router;
