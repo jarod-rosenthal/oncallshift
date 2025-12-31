@@ -119,6 +119,14 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
       title: 'Administration',
       items: [
         {
+          id: 'setup-wizard',
+          title: 'Setup Wizard',
+          subtitle: 'Add services, runbooks & team',
+          icon: 'wizard-hat',
+          screen: 'SetupWizard',
+          showChevron: true,
+        },
+        {
           id: 'escalation-policies',
           title: 'Escalation Policies',
           subtitle: 'Manage escalation rules',
