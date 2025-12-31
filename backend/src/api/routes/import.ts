@@ -15,6 +15,7 @@ import {
   UserContactMethod,
   UserNotificationRule,
   AlertRoutingRule,
+  Heartbeat,
 } from '../../shared/models';
 import { RoutingCondition, ConditionOperator, MatchType } from '../../shared/models/AlertRoutingRule';
 import { authenticateUser } from '../../shared/auth/middleware';
@@ -747,6 +748,19 @@ interface OpsgenieImportData {
   escalations?: OpsgenieEscalation[];
   services?: OpsgenieService[];
   alert_policies?: OpsgenieAlertPolicy[];
+  heartbeats?: OpsgenieHeartbeat[];
+}
+
+interface OpsgenieHeartbeat {
+  name: string;
+  description?: string;
+  interval: number; // minutes
+  intervalUnit: 'minutes' | 'hours' | 'days';
+  enabled?: boolean;
+  ownerTeam?: { id: string; name: string };
+  alertMessage?: string;
+  alertTags?: string[];
+  alertPriority?: string;
 }
 
 interface OpsgenieAlertPolicy {
@@ -900,6 +914,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
     escalations: { imported: 0, skipped: 0, errors: [] as string[] },
     services: { imported: 0, skipped: 0, errors: [] as string[] },
     routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
+    heartbeats: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   const userIdMap = new Map<string, string>();
@@ -1415,6 +1430,59 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
       }
     }
 
+    // 7. Import Heartbeats
+    if (importData.heartbeats && importData.heartbeats.length > 0) {
+      const heartbeatRepo = dataSource.getRepository(Heartbeat);
+
+      for (const ogHeartbeat of importData.heartbeats) {
+        try {
+          // Check if heartbeat with same name exists
+          const existing = await heartbeatRepo.findOne({
+            where: { name: ogHeartbeat.name, orgId },
+          });
+
+          if (!existing) {
+            // Convert interval to seconds
+            let intervalSeconds = ogHeartbeat.interval;
+            switch (ogHeartbeat.intervalUnit) {
+              case 'hours':
+                intervalSeconds = ogHeartbeat.interval * 60 * 60;
+                break;
+              case 'days':
+                intervalSeconds = ogHeartbeat.interval * 24 * 60 * 60;
+                break;
+              case 'minutes':
+              default:
+                intervalSeconds = ogHeartbeat.interval * 60;
+                break;
+            }
+
+            const heartbeat = heartbeatRepo.create({
+              orgId,
+              name: ogHeartbeat.name,
+              description: ogHeartbeat.description || null,
+              intervalSeconds,
+              alertAfterMissedCount: 1, // Default to alert after 1 missed ping
+              enabled: ogHeartbeat.enabled !== false,
+              status: 'unknown',
+              externalId: ogHeartbeat.name, // Use name as external ID for Opsgenie
+            });
+            await heartbeatRepo.save(heartbeat);
+            results.heartbeats.imported++;
+
+            logger.info('Heartbeat imported', {
+              heartbeatName: ogHeartbeat.name,
+              intervalSeconds,
+            });
+          } else {
+            results.heartbeats.skipped++;
+          }
+        } catch (error: any) {
+          results.heartbeats.errors.push(`Heartbeat ${ogHeartbeat.name}: ${error.message}`);
+        }
+      }
+    }
+
     const duration = Date.now() - startTime;
 
     logger.info('Opsgenie import completed', {
@@ -1490,6 +1558,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         escalation_policies: { total: 0, existing: 0, new: 0 },
         services: { total: 0, existing: 0, new: 0, withExternalKeys: 0 },
         routing_rules: { total: 0, existing: 0, new: 0, totalConditions: 0 },
+        heartbeats: { total: 0, existing: 0, new: 0 },
       },
       details: {
         users: [] as any[],
@@ -1500,6 +1569,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         escalation_policies: [] as any[],
         services: [] as any[],
         routing_rules: [] as any[],
+        heartbeats: [] as any[],
       },
     };
 
@@ -1750,6 +1820,50 @@ router.post('/preview', async (req: Request, res: Response) => {
             conditions: conditionCount,
             enabled: source === 'pagerduty' ? !rule.disabled : (rule.enabled !== false),
             targetServiceName,
+          });
+        }
+      }
+    }
+
+    // Analyze heartbeats (Opsgenie only)
+    if (source === 'opsgenie' && data.heartbeats) {
+      const heartbeatRepo = dataSource.getRepository(Heartbeat);
+
+      for (const hb of data.heartbeats) {
+        const existing = await heartbeatRepo.findOne({ where: { name: hb.name, orgId } });
+        preview.summary.heartbeats.total++;
+
+        // Convert interval to seconds for display
+        let intervalSeconds = hb.interval;
+        switch (hb.intervalUnit) {
+          case 'hours':
+            intervalSeconds = hb.interval * 60 * 60;
+            break;
+          case 'days':
+            intervalSeconds = hb.interval * 24 * 60 * 60;
+            break;
+          case 'minutes':
+          default:
+            intervalSeconds = hb.interval * 60;
+            break;
+        }
+
+        if (existing) {
+          preview.summary.heartbeats.existing++;
+          preview.details.heartbeats.push({
+            name: hb.name,
+            status: 'existing',
+            id: existing.id,
+            intervalSeconds,
+            enabled: hb.enabled !== false,
+          });
+        } else {
+          preview.summary.heartbeats.new++;
+          preview.details.heartbeats.push({
+            name: hb.name,
+            status: 'new',
+            intervalSeconds,
+            enabled: hb.enabled !== false,
           });
         }
       }
