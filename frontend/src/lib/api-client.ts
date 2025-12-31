@@ -190,9 +190,10 @@ export const incidentsAPI = {
     return response.data;
   },
 
-  resolve: async (id: string): Promise<{ incident: Incident }> => {
+  resolve: async (id: string, note?: string): Promise<{ incident: Incident }> => {
     const response = await apiClient.put<{ incident: Incident }>(
-      `/incidents/${id}/resolve`
+      `/incidents/${id}/resolve`,
+      note ? { note } : undefined
     );
     return response.data;
   },
