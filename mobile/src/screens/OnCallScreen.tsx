@@ -25,6 +25,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as apiService from '../services/apiService';
 import type { OnCallData, UserProfile, UpcomingShift } from '../services/apiService';
+import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
 import { OwnerAvatar, useToast } from '../components';
 import * as hapticService from '../services/hapticService';
@@ -40,7 +41,9 @@ const OVERRIDE_DURATIONS = [
 
 export default function OnCallScreen({ navigation }: any) {
   const theme = useTheme();
+  const { colors } = useAppTheme();
   const { showSuccess, showError } = useToast();
+  const themedStyles = styles(colors);
   const [oncallData, setOncallData] = useState<OnCallData[]>([]);
   const [upcomingShifts, setUpcomingShifts] = useState<UpcomingShift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,10 +134,7 @@ export default function OnCallScreen({ navigation }: any) {
       );
 
       await hapticService.success();
-      showSuccess({
-        title: 'On-Call Updated',
-        message: `You are now on-call for ${selectedSchedule.service.name}`,
-      });
+      showSuccess(`You are now on-call for ${selectedSchedule.service.name}`);
       setShowTakeOverModal(false);
       setSelectedSchedule(null);
       setSelectedDuration(4);
@@ -162,10 +162,7 @@ export default function OnCallScreen({ navigation }: any) {
             try {
               await apiService.removeScheduleOverride(item.schedule.id);
               await hapticService.success();
-              showSuccess({
-                title: 'Override Removed',
-                message: 'Schedule returned to normal rotation',
-              });
+              showSuccess('Schedule returned to normal rotation');
               fetchOnCallData();
             } catch (err: any) {
               await hapticService.error();
@@ -237,10 +234,7 @@ export default function OnCallScreen({ navigation }: any) {
 
       if (result.success) {
         await hapticService.success();
-        showSuccess({
-          title: 'Calendar Updated',
-          message: result.message,
-        });
+        showSuccess(result.message);
       } else {
         await hapticService.error();
         if (result.message.includes('permission')) {
@@ -263,33 +257,33 @@ export default function OnCallScreen({ navigation }: any) {
     : oncallData;
 
   const renderStatusHeader = () => (
-    <Surface style={styles.statusHeader} elevation={0}>
+    <Surface style={themedStyles.statusHeader} elevation={0}>
       {isCurrentlyOnCall ? (
-        <View style={styles.statusOnCall}>
-          <View style={styles.statusIconContainer}>
-            <View style={styles.statusLive}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText}>LIVE</Text>
+        <View style={themedStyles.statusOnCall}>
+          <View style={themedStyles.statusIconContainer}>
+            <View style={themedStyles.statusLive}>
+              <View style={themedStyles.liveDot} />
+              <Text style={themedStyles.liveText}>LIVE</Text>
             </View>
             <MaterialCommunityIcons name="phone-in-talk" size={32} color={colors.success} />
           </View>
-          <View style={styles.statusTextContainer}>
-            <Text variant="titleLarge" style={styles.statusTitle}>
+          <View style={themedStyles.statusTextContainer}>
+            <Text variant="titleLarge" style={themedStyles.statusTitle}>
               You're On-Call
             </Text>
-            <Text variant="bodyMedium" style={styles.statusSubtitle}>
+            <Text variant="bodyMedium" style={themedStyles.statusSubtitle}>
               {myOnCallAssignments.length} service{myOnCallAssignments.length !== 1 ? 's' : ''}
             </Text>
           </View>
         </View>
       ) : (
-        <View style={styles.statusOffCall}>
+        <View style={themedStyles.statusOffCall}>
           <MaterialCommunityIcons name="phone-off" size={32} color={colors.textMuted} />
-          <View style={styles.statusTextContainer}>
-            <Text variant="titleLarge" style={styles.statusTitle}>
+          <View style={themedStyles.statusTextContainer}>
+            <Text variant="titleLarge" style={themedStyles.statusTitle}>
               Not On-Call
             </Text>
-            <Text variant="bodyMedium" style={styles.statusSubtitle}>
+            <Text variant="bodyMedium" style={themedStyles.statusSubtitle}>
               Check upcoming shifts below
             </Text>
           </View>
@@ -302,36 +296,35 @@ export default function OnCallScreen({ navigation }: any) {
     if (!isCurrentlyOnCall) return null;
 
     return (
-      <View style={styles.currentOnCallSection}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>Currently On-Call For</Text>
+      <View style={themedStyles.currentOnCallSection}>
+        <Text variant="titleMedium" style={themedStyles.sectionTitle}>Currently On-Call For</Text>
         {myOnCallAssignments.map((item) => (
-          <Card key={`${item.service.id}-${item.schedule.id}`} style={styles.currentOnCallCard} mode="elevated">
-            <Card.Content style={styles.currentOnCallContent}>
-              <View style={styles.currentOnCallLeft}>
-                <View style={[styles.severityIndicator, { backgroundColor: colors.success }]} />
-                <View>
-                  <Text variant="titleMedium" style={styles.currentServiceName}>
+          <Card key={`${item.service.id}-${item.schedule.id}`} style={themedStyles.currentOnCallCard} mode="elevated">
+            <Card.Content style={themedStyles.currentOnCallContent}>
+              <View style={themedStyles.currentOnCallLeft}>
+                <View style={themedStyles.currentOnCallInfo}>
+                  <Text variant="titleMedium" style={themedStyles.currentServiceName} numberOfLines={1}>
                     {item.service.name}
                   </Text>
-                  <View style={styles.currentScheduleRow}>
+                  <View style={themedStyles.currentScheduleRow}>
                     <MaterialCommunityIcons name="calendar-clock" size={14} color={colors.textSecondary} />
-                    <Text variant="bodySmall" style={styles.currentScheduleName}>
+                    <Text variant="bodySmall" style={themedStyles.currentScheduleName} numberOfLines={1}>
                       {item.schedule.name}
                     </Text>
                   </View>
                 </View>
               </View>
               {item.isOverride && (
-                <View style={styles.overrideBadgeSmall}>
+                <View style={themedStyles.overrideBadgeSmall}>
                   <MaterialCommunityIcons name="swap-horizontal" size={12} color={colors.warning} />
-                  <Text style={styles.overrideBadgeText}>Override</Text>
+                  <Text style={themedStyles.overrideBadgeText}>Override</Text>
                 </View>
               )}
             </Card.Content>
             {item.isOverride && item.overrideUntil && (
-              <View style={styles.overrideUntilBar}>
+              <View style={themedStyles.overrideUntilBar}>
                 <MaterialCommunityIcons name="clock-outline" size={14} color={colors.warning} />
-                <Text style={styles.overrideUntilText}>
+                <Text style={themedStyles.overrideUntilText}>
                   Until {new Date(item.overrideUntil).toLocaleString([], {
                     weekday: 'short',
                     month: 'short',
@@ -360,15 +353,15 @@ export default function OnCallScreen({ navigation }: any) {
     if (upcomingShifts.length === 0) return null;
 
     return (
-      <View style={styles.upcomingSection}>
-        <View style={styles.upcomingSectionHeader}>
+      <View style={themedStyles.upcomingSection}>
+        <View style={themedStyles.upcomingSectionHeader}>
           <Pressable
-            style={styles.sectionHeaderRow}
+            style={themedStyles.sectionHeaderRow}
             onPress={() => setShowUpcoming(!showUpcoming)}
           >
-            <View style={styles.sectionTitleRow}>
+            <View style={themedStyles.sectionTitleRow}>
               <MaterialCommunityIcons name="calendar-clock" size={20} color={colors.accent} />
-              <Text variant="titleMedium" style={styles.sectionTitle}>Upcoming Shifts</Text>
+              <Text variant="titleMedium" style={themedStyles.sectionTitle}>Upcoming Shifts</Text>
             </View>
             <MaterialCommunityIcons
               name={showUpcoming ? 'chevron-up' : 'chevron-down'}
@@ -383,7 +376,7 @@ export default function OnCallScreen({ navigation }: any) {
             onPress={handleExportToCalendar}
             loading={exportingCalendar}
             disabled={exportingCalendar}
-            style={styles.exportButton}
+            style={themedStyles.exportButton}
             textColor={colors.accent}
           >
             Export
@@ -391,37 +384,37 @@ export default function OnCallScreen({ navigation }: any) {
         </View>
 
         {showUpcoming && (
-          <View style={styles.upcomingList}>
+          <View style={themedStyles.upcomingList}>
             {upcomingShifts.slice(0, 5).map((shift, index) => {
               const isActive = new Date(shift.startTime) <= new Date() && new Date(shift.endTime) > new Date();
 
               return (
-                <View key={`${shift.scheduleId}-${index}`} style={styles.upcomingItem}>
-                  <View style={styles.upcomingTimeColumn}>
-                    <Text style={[styles.upcomingTime, isActive && styles.upcomingTimeActive]}>
+                <View key={`${shift.scheduleId}-${index}`} style={themedStyles.upcomingItem}>
+                  <View style={themedStyles.upcomingTimeColumn}>
+                    <Text style={[themedStyles.upcomingTime, isActive && themedStyles.upcomingTimeActive]}>
                       {formatShiftTime(shift.startTime)}
                     </Text>
-                    <Text style={styles.upcomingDuration}>
+                    <Text style={themedStyles.upcomingDuration}>
                       {formatDuration(shift.startTime, shift.endTime)}
                     </Text>
                   </View>
-                  <View style={styles.upcomingDivider} />
-                  <View style={styles.upcomingDetails}>
-                    <Text variant="titleSmall" style={styles.upcomingScheduleName}>
+                  <View style={themedStyles.upcomingDivider} />
+                  <View style={themedStyles.upcomingDetails}>
+                    <Text variant="titleSmall" style={themedStyles.upcomingScheduleName}>
                       {shift.scheduleName}
                     </Text>
                     {shift.serviceName && shift.serviceName !== shift.scheduleName && (
-                      <Text variant="bodySmall" style={styles.upcomingServiceName}>
+                      <Text variant="bodySmall" style={themedStyles.upcomingServiceName}>
                         {shift.serviceName}
                       </Text>
                     )}
                     {isActive && (
-                      <Chip compact style={styles.activeChip} textStyle={styles.activeChipText}>
+                      <Chip compact style={themedStyles.activeChip} textStyle={themedStyles.activeChipText}>
                         Active Now
                       </Chip>
                     )}
                   </View>
-                  <Text style={styles.upcomingCountdown}>
+                  <Text style={themedStyles.upcomingCountdown}>
                     {isActive ? 'Now' : formatTimeUntil(shift.startTime)}
                   </Text>
                 </View>
@@ -440,69 +433,61 @@ export default function OnCallScreen({ navigation }: any) {
       <Card style={dynamicStyles.card} mode="elevated">
         <Card.Content>
           {/* Service Header */}
-          <View style={styles.serviceHeader}>
-            <View style={styles.serviceTitleContainer}>
+          <View style={themedStyles.serviceHeader}>
+            <View style={themedStyles.serviceTitleContainer}>
               <MaterialCommunityIcons
                 name="server"
                 size={20}
                 color={theme.colors.primary}
               />
-              <Text variant="titleMedium" style={styles.serviceName}>
+              <Text variant="titleMedium" style={themedStyles.serviceName}>
                 {item.service.name}
               </Text>
             </View>
-            <View style={styles.badges}>
+            <View style={themedStyles.badges}>
               {isMe && (
-                <Chip
-                  compact
-                  style={styles.youChip}
-                  textStyle={styles.youChipText}
-                  icon="account"
-                >
-                  You
-                </Chip>
+                <View style={themedStyles.youBadge}>
+                  <MaterialCommunityIcons name="account" size={12} color={colors.success} />
+                  <Text style={themedStyles.youBadgeText}>You</Text>
+                </View>
               )}
               {item.isOverride && (
-                <Chip
-                  compact
-                  style={styles.overrideChip}
-                  textStyle={styles.overrideChipText}
-                  icon="swap-horizontal"
-                >
-                  Override
-                </Chip>
+                <View style={themedStyles.overrideBadge}>
+                  <MaterialCommunityIcons name="swap-horizontal" size={12} color={colors.warning} />
+                  <Text style={themedStyles.overrideBadgeTextInline}>Override</Text>
+                </View>
               )}
             </View>
           </View>
 
           {/* On-Call User */}
           {item.oncallUser ? (
-            <View style={styles.userContainer}>
+            <View style={themedStyles.userContainer}>
               <OwnerAvatar
                 name={item.oncallUser.fullName}
                 email={item.oncallUser.email}
                 size={48}
               />
-              <View style={styles.userInfo}>
-                <Text variant="titleMedium" style={styles.userName}>
+              <View style={themedStyles.userInfo}>
+                <Text variant="titleMedium" style={themedStyles.userName}>
                   {item.oncallUser.fullName}
                 </Text>
-                <View style={styles.emailContainer}>
+                <View style={themedStyles.emailContainer}>
                   <MaterialCommunityIcons name="email-outline" size={14} color={colors.textSecondary} />
-                  <Text variant="bodySmall" style={styles.userEmail}>
+                  <Text variant="bodySmall" style={themedStyles.userEmail}>
                     {item.oncallUser.email}
                   </Text>
                 </View>
               </View>
             </View>
           ) : (
-            <View style={styles.noUserContainer}>
+            <View style={themedStyles.noUserContainer}>
               <MaterialCommunityIcons name="account-off-outline" size={48} color={colors.warning} />
-              <View style={styles.userInfo}>
-                <Text variant="titleMedium" style={styles.noUserText}>
+              <View style={themedStyles.userInfo}>
+                <Text variant="titleMedium" style={themedStyles.noUserText}>
                   No one on call
                 </Text>
-                <Text variant="bodySmall" style={styles.noUserSubtext}>
+                <Text variant="bodySmall" style={themedStyles.noUserSubtext}>
                   Assign someone to this schedule
                 </Text>
               </View>
@@ -510,18 +495,18 @@ export default function OnCallScreen({ navigation }: any) {
           )}
 
           {/* Schedule Info */}
-          <View style={styles.scheduleContainer}>
+          <View style={themedStyles.scheduleContainer}>
             <MaterialCommunityIcons name="calendar-clock" size={16} color={colors.textSecondary} />
-            <Text variant="bodySmall" style={styles.scheduleText}>
+            <Text variant="bodySmall" style={themedStyles.scheduleText}>
               {item.schedule.name}
             </Text>
           </View>
 
           {/* Override Until */}
           {item.isOverride && item.overrideUntil && (
-            <View style={styles.overrideInfo}>
+            <View style={themedStyles.overrideInfo}>
               <MaterialCommunityIcons name="clock-alert-outline" size={16} color={colors.warning} />
-              <Text variant="bodySmall" style={styles.overrideText}>
+              <Text variant="bodySmall" style={themedStyles.overrideText}>
                 Override until: {new Date(item.overrideUntil).toLocaleString()}
               </Text>
             </View>
@@ -533,7 +518,7 @@ export default function OnCallScreen({ navigation }: any) {
               mode="outlined"
               icon="account-switch"
               onPress={() => openTakeOverModal(item)}
-              style={styles.takeOverButton}
+              style={themedStyles.takeOverButton}
               textColor={colors.accent}
             >
               Take Over
@@ -546,7 +531,7 @@ export default function OnCallScreen({ navigation }: any) {
               mode="outlined"
               icon="close-circle-outline"
               onPress={() => handleRemoveOverride(item)}
-              style={[styles.takeOverButton, { borderColor: colors.warning }]}
+              style={[themedStyles.takeOverButton, { borderColor: colors.warning }]}
               textColor={colors.warning}
             >
               Remove Override
@@ -559,9 +544,9 @@ export default function OnCallScreen({ navigation }: any) {
 
   if (loading) {
     return (
-      <View style={[dynamicStyles.container, styles.centerContent]}>
+      <View style={[dynamicStyles.container, themedStyles.centerContent]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text variant="bodyLarge" style={styles.loadingText}>
+        <Text variant="bodyLarge" style={themedStyles.loadingText}>
           Loading on-call data...
         </Text>
       </View>
@@ -570,9 +555,9 @@ export default function OnCallScreen({ navigation }: any) {
 
   if (error) {
     return (
-      <View style={[dynamicStyles.container, styles.centerContent]}>
+      <View style={[dynamicStyles.container, themedStyles.centerContent]}>
         <MaterialCommunityIcons name="alert-circle-outline" size={64} color={colors.error} />
-        <Text variant="bodyLarge" style={styles.errorText}>
+        <Text variant="bodyLarge" style={themedStyles.errorText}>
           {error}
         </Text>
       </View>
@@ -589,7 +574,7 @@ export default function OnCallScreen({ navigation }: any) {
             colors={[theme.colors.primary]}
           />
         }
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={themedStyles.scrollContent}
       >
         {/* Status Header */}
         {renderStatusHeader()}
@@ -602,9 +587,9 @@ export default function OnCallScreen({ navigation }: any) {
 
         {/* Quick Actions */}
         {!isCurrentlyOnCall && oncallData.length > 0 && (
-          <View style={styles.quickActionsSection}>
-            <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.quickActionsRow}>
+          <View style={themedStyles.quickActionsSection}>
+            <Text variant="titleMedium" style={themedStyles.sectionTitle}>Quick Actions</Text>
+            <View style={themedStyles.quickActionsRow}>
               <Button
                 mode="contained"
                 icon="account-switch"
@@ -616,7 +601,7 @@ export default function OnCallScreen({ navigation }: any) {
                   }
                 }}
                 buttonColor={colors.accent}
-                style={styles.quickActionButton}
+                style={themedStyles.quickActionButton}
               >
                 Take On-Call
               </Button>
@@ -624,12 +609,12 @@ export default function OnCallScreen({ navigation }: any) {
           </View>
         )}
 
-        <Divider style={styles.sectionDivider} />
+        <Divider style={themedStyles.sectionDivider} />
 
         {/* All Schedules Section */}
-        <View style={styles.allSchedulesSection}>
-          <View style={styles.allSchedulesHeader}>
-            <Text variant="titleMedium" style={styles.sectionTitle}>
+        <View style={themedStyles.allSchedulesSection}>
+          <View style={themedStyles.allSchedulesHeader}>
+            <Text variant="titleMedium" style={themedStyles.sectionTitle}>
               All Schedules
             </Text>
             <SegmentedButtons
@@ -639,22 +624,22 @@ export default function OnCallScreen({ navigation }: any) {
                 { value: 'mine', label: 'Mine', icon: 'account' },
                 { value: 'all', label: 'All', icon: 'account-group' },
               ]}
-              style={styles.segmentedButtons}
+              style={themedStyles.segmentedButtons}
               density="small"
             />
           </View>
 
           {filteredData.length === 0 ? (
-            <View style={styles.emptyContainer}>
+            <View style={themedStyles.emptyContainer}>
               <MaterialCommunityIcons
                 name={segment === 'mine' ? 'calendar-check' : 'calendar-remove-outline'}
                 size={48}
                 color={colors.textMuted}
               />
-              <Text variant="titleSmall" style={styles.emptyText}>
+              <Text variant="titleSmall" style={themedStyles.emptyText}>
                 {segment === 'mine' ? "You're not on call" : 'No schedules found'}
               </Text>
-              <Text variant="bodySmall" style={styles.emptySubtext}>
+              <Text variant="bodySmall" style={themedStyles.emptySubtext}>
                 {segment === 'mine'
                   ? 'Switch to "All" to see who is on call'
                   : 'Set up schedules in the web app'}
@@ -675,24 +660,24 @@ export default function OnCallScreen({ navigation }: any) {
         <Modal
           visible={showTakeOverModal}
           onDismiss={() => setShowTakeOverModal(false)}
-          contentContainerStyle={styles.modalContainer}
+          contentContainerStyle={themedStyles.modalContainer}
         >
           <View style={dynamicStyles.modalContent}>
             <MaterialCommunityIcons name="account-switch" size={48} color={colors.accent} />
-            <Text variant="titleLarge" style={styles.modalTitle}>
+            <Text variant="titleLarge" style={themedStyles.modalTitle}>
               Take Over On-Call?
             </Text>
-            <Text variant="bodyMedium" style={styles.modalDescription}>
+            <Text variant="bodyMedium" style={themedStyles.modalDescription}>
               You will become the on-call responder for{' '}
-              <Text style={styles.modalServiceName}>{selectedSchedule?.service.name}</Text>.
+              <Text style={themedStyles.modalServiceName}>{selectedSchedule?.service.name}</Text>.
               {selectedSchedule?.oncallUser && (
                 <Text>{'\n'}{selectedSchedule.oncallUser.fullName} will be notified.</Text>
               )}
             </Text>
 
             {/* Duration Picker */}
-            <View style={styles.durationSection}>
-              <Text variant="titleSmall" style={styles.durationLabel}>
+            <View style={themedStyles.durationSection}>
+              <Text variant="titleSmall" style={themedStyles.durationLabel}>
                 Override Duration
               </Text>
               <RadioButton.Group
@@ -702,24 +687,24 @@ export default function OnCallScreen({ navigation }: any) {
                 {OVERRIDE_DURATIONS.map((duration) => (
                   <Pressable
                     key={duration.hours}
-                    style={styles.durationOption}
+                    style={themedStyles.durationOption}
                     onPress={() => setSelectedDuration(duration.hours)}
                   >
                     <RadioButton.Android
                       value={duration.hours.toString()}
                       color={colors.accent}
                     />
-                    <Text style={styles.durationText}>{duration.label}</Text>
+                    <Text style={themedStyles.durationText}>{duration.label}</Text>
                   </Pressable>
                 ))}
               </RadioButton.Group>
             </View>
 
-            <View style={styles.modalActions}>
+            <View style={themedStyles.modalActions}>
               <Button
                 mode="outlined"
                 onPress={() => setShowTakeOverModal(false)}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 disabled={takeOverLoading}
               >
                 Cancel
@@ -728,7 +713,7 @@ export default function OnCallScreen({ navigation }: any) {
                 mode="contained"
                 onPress={handleTakeOver}
                 buttonColor={colors.accent}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 loading={takeOverLoading}
                 disabled={takeOverLoading}
               >
@@ -742,7 +727,7 @@ export default function OnCallScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   scrollContent: {
     paddingBottom: 24,
   },
@@ -830,17 +815,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingVertical: 4,
   },
   currentOnCallLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    marginRight: 8,
   },
-  severityIndicator: {
-    width: 4,
-    height: 40,
-    borderRadius: 2,
+  currentOnCallInfo: {
+    flex: 1,
   },
   currentServiceName: {
     color: colors.textPrimary,
@@ -860,14 +845,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: colors.warningLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 12,
+    flexShrink: 0,
   },
   overrideBadgeText: {
     fontSize: 11,
     fontWeight: '600',
     color: colors.warning,
+    lineHeight: 11,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   overrideUntilBar: {
     flexDirection: 'row',
@@ -953,12 +942,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.successLight,
     marginTop: 4,
     alignSelf: 'flex-start',
-    height: 22,
+    paddingVertical: 2,
   },
   activeChipText: {
     fontSize: 10,
     color: colors.success,
     fontWeight: '600',
+    lineHeight: 10,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   upcomingCountdown: {
     fontSize: 12,
@@ -994,7 +986,7 @@ const styles = StyleSheet.create({
   segmentedButtons: {
     marginTop: 12,
   },
-  // Card styles (unchanged from original)
+  // Card styles
   serviceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1012,12 +1004,15 @@ const styles = StyleSheet.create({
   },
   overrideChip: {
     backgroundColor: colors.warningLight,
-    height: 28,
+    paddingVertical: 4,
   },
   overrideChipText: {
     color: colors.warning,
     fontSize: 11,
     fontWeight: '600',
+    lineHeight: 11,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   userContainer: {
     flexDirection: 'row',
@@ -1100,15 +1095,54 @@ const styles = StyleSheet.create({
   badges: {
     flexDirection: 'row',
     gap: 8,
+    alignItems: 'center',
   },
+  youBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.successLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  youBadgeText: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 12,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  overrideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.warningLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  overrideBadgeTextInline: {
+    color: colors.warning,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 12,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  // Keep old chip styles for backwards compatibility
   youChip: {
     backgroundColor: colors.successLight,
-    height: 28,
+    paddingVertical: 4,
   },
   youChipText: {
     color: colors.success,
     fontSize: 11,
     fontWeight: '600',
+    lineHeight: 11,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   takeOverButton: {
     marginTop: 16,

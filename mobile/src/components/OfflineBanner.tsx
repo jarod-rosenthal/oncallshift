@@ -19,7 +19,7 @@ export default function OfflineBanner({
   showPendingActions = true,
   onPress,
 }: OfflineBannerProps) {
-  const { colors: themeColors } = useAppTheme();
+  const { colors } = useAppTheme();
   const slideAnim = useRef(new Animated.Value(-60)).current;
   const [offlineStatus, setOfflineStatus] = useState<offlineService.OfflineStatus | null>(null);
 
@@ -67,12 +67,12 @@ export default function OfflineBanner({
 
   const BannerContent = (
     <>
-      <MaterialCommunityIcons name="wifi-off" size={18} color={themeColors.accent} />
-      <Text variant="labelMedium" style={[styles.text, { color: themeColors.textPrimary }]}>
+      <MaterialCommunityIcons name="wifi-off" size={18} color={colors.accent} />
+      <Text variant="labelMedium" style={[styles.text, { color: colors.textPrimary }]}>
         {displayMessage}
       </Text>
       {showPendingActions && pendingActions > 0 && (
-        <Badge size={20} style={styles.badge}>
+        <Badge size={20} style={[styles.badge, { backgroundColor: colors.warning }]}>
           {pendingActions}
         </Badge>
       )}
@@ -87,7 +87,7 @@ export default function OfflineBanner({
       style={[
         styles.container,
         {
-          backgroundColor: themeColors.surfaceSecondary,
+          backgroundColor: colors.surfaceSecondary,
           transform: [{ translateY: slideAnim }],
         },
       ]}
@@ -191,7 +191,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   badge: {
-    backgroundColor: colors.warning,
     color: '#fff',
   },
 });

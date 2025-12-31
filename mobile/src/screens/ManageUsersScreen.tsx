@@ -25,18 +25,17 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { useToast, OwnerAvatar } from '../components';
 import * as apiService from '../services/apiService';
-import type { UserProfile } from '../services/apiService';
+import type { User } from '../services/apiService';
 import * as hapticService from '../services/hapticService';
 
 const ROLE_OPTIONS = [
-  { value: 'user', label: 'User' },
+  { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
 ];
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
-  { value: 'invited', label: 'Invited' },
-  { value: 'disabled', label: 'Disabled' },
+  { value: 'inactive', label: 'Inactive' },
 ];
 
 export default function ManageUsersScreen() {
@@ -44,18 +43,18 @@ export default function ManageUsersScreen() {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Form state
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'user' | 'admin'>('user');
-  const [userRole, setUserRole] = useState<'user' | 'admin'>('user');
+  const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
+  const [userRole, setUserRole] = useState<'member' | 'admin'>('member');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
   useEffect(() => {
@@ -69,7 +68,9 @@ export default function ManageUsersScreen() {
         apiService.getUserProfile(),
       ]);
       setUsers(usersData);
-      setCurrentUser(profile);
+      // Find current user in users list by matching profile ID
+      const current = usersData.find(u => u.id === profile.id) || null;
+      setCurrentUser(current);
     } catch (error: any) {
       console.error('Failed to fetch users:', error);
       showToast({ message: 'Failed to load users', type: 'error' });
@@ -86,31 +87,28 @@ export default function ManageUsersScreen() {
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) {
-      showToast('Email is required', 'error');
+      showToast({ message: 'Email is required', type: 'error' });
       return;
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(inviteEmail.trim())) {
-      showToast('Please enter a valid email address', 'error');
+      showToast({ message: 'Please enter a valid email address', type: 'error' });
       return;
     }
 
     setSaving(true);
     try {
-      await apiService.inviteUser({
-        email: inviteEmail.trim().toLowerCase(),
-        role: inviteRole,
-      });
+      await apiService.inviteUser(inviteEmail.trim().toLowerCase(), inviteRole);
       hapticService.success();
-      showToast('Invitation sent', 'success');
+      showToast({ message: 'Invitation sent', type: 'success' });
       setShowInviteModal(false);
       resetInviteForm();
       fetchData();
     } catch (error: any) {
       console.error('Failed to invite user:', error);
-      showToast(error.message || 'Failed to send invitation', 'error');
+      showToast({ message: error.message || 'Failed to send invitation', type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -121,7 +119,7 @@ export default function ManageUsersScreen() {
 
     // Prevent changing own role
     if (selectedUser.id === currentUser?.id) {
-      showToast("You cannot change your own role", 'error');
+      showToast({ message: "You cannot change your own role", type: 'error' });
       return;
     }
 
@@ -129,20 +127,20 @@ export default function ManageUsersScreen() {
     try {
       await apiService.updateUserRole(selectedUser.id, userRole);
       hapticService.success();
-      showToast('Role updated', 'success');
+      showToast({ message: 'Role updated', type: 'success' });
       setShowEditModal(false);
       fetchData();
     } catch (error: any) {
       console.error('Failed to update role:', error);
-      showToast(error.message || 'Failed to update role', 'error');
+      showToast({ message: error.message || 'Failed to update role', type: 'error' });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeactivate = (user: UserProfile) => {
+  const handleDeactivate = (user: User) => {
     if (user.id === currentUser?.id) {
-      showToast("You cannot deactivate yourself", 'error');
+      showToast({ message: "You cannot deactivate yourself", type: 'error' });
       return;
     }
 
@@ -157,12 +155,12 @@ export default function ManageUsersScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await apiService.updateUserStatus(user.id, 'disabled');
+              await apiService.updateUserStatus(user.id, false);
               hapticService.success();
-              showToast('User deactivated', 'success');
+              showToast({ message: 'User deactivated', type: 'success' });
               fetchData();
             } catch (error: any) {
-              showToast(error.message || 'Failed to deactivate user', 'error');
+              showToast({ message: error.message || 'Failed to deactivate user', type: 'error' });
             }
           },
         },
@@ -170,49 +168,44 @@ export default function ManageUsersScreen() {
     );
   };
 
-  const handleReactivate = async (user: UserProfile) => {
+  const handleReactivate = async (user: User) => {
     try {
-      await apiService.updateUserStatus(user.id, 'active');
+      await apiService.updateUserStatus(user.id, true);
       hapticService.success();
-      showToast('User reactivated', 'success');
+      showToast({ message: 'User reactivated', type: 'success' });
       fetchData();
     } catch (error: any) {
-      showToast(error.message || 'Failed to reactivate user', 'error');
+      showToast({ message: error.message || 'Failed to reactivate user', type: 'error' });
     }
   };
 
-  const handleResendInvite = async (user: UserProfile) => {
+  const handleResendInvite = async (user: User) => {
     try {
-      await apiService.inviteUser({
-        email: user.email,
-        role: user.role as 'user' | 'admin',
-      });
+      await apiService.inviteUser(user.email, user.role);
       hapticService.success();
-      showToast('Invitation resent', 'success');
+      showToast({ message: 'Invitation resent', type: 'success' });
     } catch (error: any) {
-      showToast(error.message || 'Failed to resend invitation', 'error');
+      showToast({ message: error.message || 'Failed to resend invitation', type: 'error' });
     }
   };
 
-  const openEditModal = (user: UserProfile) => {
+  const openEditModal = (user: User) => {
     setSelectedUser(user);
-    setUserRole(user.role as 'user' | 'admin');
+    setUserRole(user.role);
     setShowEditModal(true);
     setMenuVisible(null);
   };
 
   const resetInviteForm = () => {
     setInviteEmail('');
-    setInviteRole('user');
+    setInviteRole('member');
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
         return colors.success;
-      case 'invited':
-        return colors.warning;
-      case 'disabled':
+      case 'inactive':
         return colors.error;
       default:
         return colors.textMuted;
@@ -221,7 +214,7 @@ export default function ManageUsersScreen() {
 
   const filteredUsers = users.filter((user) => {
     if (filterStatus === 'all') return true;
-    return (user as any).status === filterStatus;
+    return user.status === filterStatus;
   });
 
   if (loading) {
@@ -255,18 +248,11 @@ export default function ManageUsersScreen() {
             Active
           </Chip>
           <Chip
-            selected={filterStatus === 'invited'}
-            onPress={() => setFilterStatus('invited')}
+            selected={filterStatus === 'inactive'}
+            onPress={() => setFilterStatus('inactive')}
             style={styles.filterChip}
           >
-            Invited
-          </Chip>
-          <Chip
-            selected={filterStatus === 'disabled'}
-            onPress={() => setFilterStatus('disabled')}
-            style={styles.filterChip}
-          >
-            Disabled
+            Inactive
           </Chip>
         </ScrollView>
       </View>
@@ -349,18 +335,8 @@ export default function ManageUsersScreen() {
                     leadingIcon="shield-account"
                     disabled={user.id === currentUser?.id}
                   />
-                  {(user as any).status === 'invited' && (
-                    <Menu.Item
-                      onPress={() => {
-                        setMenuVisible(null);
-                        handleResendInvite(user);
-                      }}
-                      title="Resend Invite"
-                      leadingIcon="email-send"
-                    />
-                  )}
                   <Divider />
-                  {(user as any).status === 'disabled' ? (
+                  {user.status === 'inactive' ? (
                     <Menu.Item
                       onPress={() => {
                         setMenuVisible(null);
@@ -429,7 +405,7 @@ export default function ManageUsersScreen() {
           </Text>
           <SegmentedButtons
             value={inviteRole}
-            onValueChange={(value) => setInviteRole(value as 'user' | 'admin')}
+            onValueChange={(value) => setInviteRole(value as 'member' | 'admin')}
             buttons={ROLE_OPTIONS}
             style={styles.segmentedButtons}
           />
@@ -494,7 +470,7 @@ export default function ManageUsersScreen() {
           </View>
           <SegmentedButtons
             value={userRole}
-            onValueChange={(value) => setUserRole(value as 'user' | 'admin')}
+            onValueChange={(value) => setUserRole(value as 'member' | 'admin')}
             buttons={ROLE_OPTIONS}
             style={styles.segmentedButtons}
           />

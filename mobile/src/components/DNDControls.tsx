@@ -18,7 +18,6 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../context/ThemeContext';
-import { colors } from '../theme';
 import * as hapticService from '../services/hapticService';
 
 const DND_STORAGE_KEY = '@oncallshift/dnd_settings';
@@ -54,7 +53,8 @@ const DURATION_OPTIONS = [
 ];
 
 export function DNDControls({ onSettingsChange, compact = false }: DNDControlsProps) {
-  const { colors: themeColors } = useAppTheme();
+  const { colors } = useAppTheme();
+  const themedStyles = styles(colors);
   const [settings, setSettings] = useState<DNDSettings>(defaultDNDSettings);
   const [showModal, setShowModal] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState<number>(60);
@@ -168,14 +168,14 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
   // Compact mode for quick toggle in header/settings
   if (compact) {
     return (
-      <View style={styles.compactContainer}>
-        <View style={styles.compactRow}>
+      <View style={themedStyles.compactContainer}>
+        <View style={themedStyles.compactRow}>
           <MaterialCommunityIcons
             name={settings.enabled ? 'bell-off' : 'bell'}
             size={20}
             color={settings.enabled ? colors.warning : colors.textSecondary}
           />
-          <Text style={[styles.compactLabel, settings.enabled && styles.compactLabelActive]}>
+          <Text style={[themedStyles.compactLabel, settings.enabled && themedStyles.compactLabelActive]}>
             {settings.enabled ? 'DND On' : 'DND Off'}
           </Text>
         </View>
@@ -195,20 +195,20 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
           <Modal
             visible={showModal}
             onDismiss={() => setShowModal(false)}
-            contentContainerStyle={[styles.modal, { backgroundColor: themeColors.surface }]}
+            contentContainerStyle={[themedStyles.modal, { backgroundColor: colors.surface }]}
           >
-            <View style={styles.modalHeader}>
+            <View style={themedStyles.modalHeader}>
               <MaterialCommunityIcons name="bell-off" size={32} color={colors.warning} />
-              <Text variant="titleLarge" style={styles.modalTitle}>Enable Do Not Disturb</Text>
+              <Text variant="titleLarge" style={themedStyles.modalTitle}>Enable Do Not Disturb</Text>
             </View>
 
-            <Text variant="bodyMedium" style={styles.modalDescription}>
+            <Text variant="bodyMedium" style={themedStyles.modalDescription}>
               Silence notifications for a period of time. Critical alerts can still break through if enabled.
             </Text>
 
-            <Divider style={styles.modalDivider} />
+            <Divider style={themedStyles.modalDivider} />
 
-            <Text variant="labelLarge" style={styles.sectionLabel}>Duration</Text>
+            <Text variant="labelLarge" style={themedStyles.sectionLabel}>Duration</Text>
             <RadioButton.Group
               onValueChange={(value) => setSelectedDuration(parseInt(value))}
               value={selectedDuration.toString()}
@@ -216,22 +216,22 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
               {DURATION_OPTIONS.map((option) => (
                 <Pressable
                   key={option.minutes}
-                  style={styles.radioRow}
+                  style={themedStyles.radioRow}
                   onPress={() => setSelectedDuration(option.minutes)}
                 >
                   <RadioButton.Android value={option.minutes.toString()} color={colors.warning} />
-                  <Text style={styles.radioLabel}>{option.label}</Text>
+                  <Text style={themedStyles.radioLabel}>{option.label}</Text>
                 </Pressable>
               ))}
             </RadioButton.Group>
 
-            <Divider style={styles.modalDivider} />
+            <Divider style={themedStyles.modalDivider} />
 
-            <View style={styles.overrideSection}>
-              <View style={styles.overrideRow}>
-                <View style={styles.overrideInfo}>
+            <View style={themedStyles.overrideSection}>
+              <View style={themedStyles.overrideRow}>
+                <View style={themedStyles.overrideInfo}>
                   <MaterialCommunityIcons name="alert-circle" size={20} color={colors.error} />
-                  <Text style={styles.overrideLabel}>Allow Critical Alerts</Text>
+                  <Text style={themedStyles.overrideLabel}>Allow Critical Alerts</Text>
                 </View>
                 <Switch
                   value={settings.allowCritical}
@@ -239,10 +239,10 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
                   color={colors.error}
                 />
               </View>
-              <View style={styles.overrideRow}>
-                <View style={styles.overrideInfo}>
+              <View style={themedStyles.overrideRow}>
+                <View style={themedStyles.overrideInfo}>
                   <MaterialCommunityIcons name="alert" size={20} color={colors.warning} />
-                  <Text style={styles.overrideLabel}>Allow High Urgency</Text>
+                  <Text style={themedStyles.overrideLabel}>Allow High Urgency</Text>
                 </View>
                 <Switch
                   value={settings.allowHighUrgency}
@@ -252,11 +252,11 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
               </View>
             </View>
 
-            <View style={styles.modalActions}>
+            <View style={themedStyles.modalActions}>
               <Button
                 mode="outlined"
                 onPress={() => setShowModal(false)}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
               >
                 Cancel
               </Button>
@@ -264,7 +264,7 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
                 mode="contained"
                 onPress={handleConfirmDND}
                 buttonColor={colors.warning}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
               >
                 Enable DND
               </Button>
@@ -277,19 +277,19 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
 
   // Full card mode for settings screen
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.surface }]}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
+    <View style={[themedStyles.container, { backgroundColor: colors.surface }]}>
+      <View style={themedStyles.header}>
+        <View style={themedStyles.headerLeft}>
           <MaterialCommunityIcons
             name={settings.enabled ? 'bell-off' : 'bell-ring-outline'}
             size={28}
             color={settings.enabled ? colors.warning : colors.textSecondary}
           />
-          <View style={styles.headerText}>
-            <Text variant="titleMedium" style={styles.title}>
+          <View style={themedStyles.headerText}>
+            <Text variant="titleMedium" style={themedStyles.title}>
               Do Not Disturb
             </Text>
-            <Text variant="bodySmall" style={styles.subtitle}>
+            <Text variant="bodySmall" style={themedStyles.subtitle}>
               {settings.enabled
                 ? formatTimeRemaining()
                 : 'Silence notifications temporarily'}
@@ -311,12 +311,12 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
 
       {settings.enabled && (
         <>
-          <Divider style={styles.divider} />
-          <View style={styles.activeInfo}>
-            <View style={styles.activeRow}>
+          <Divider style={themedStyles.divider} />
+          <View style={themedStyles.activeInfo}>
+            <View style={themedStyles.activeRow}>
               <Chip
                 icon="bell-off"
-                style={[styles.activeChip, { backgroundColor: colors.warningLight }]}
+                style={[themedStyles.activeChip, { backgroundColor: colors.warningLight }]}
                 textStyle={{ color: colors.warning }}
               >
                 DND Active
@@ -324,7 +324,7 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
               {settings.allowCritical && (
                 <Chip
                   icon="alert-circle"
-                  style={[styles.activeChip, { backgroundColor: colors.errorLight }]}
+                  style={[themedStyles.activeChip, { backgroundColor: colors.errorLight }]}
                   textStyle={{ color: colors.error }}
                 >
                   Critical allowed
@@ -347,20 +347,20 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
         <Modal
           visible={showModal}
           onDismiss={() => setShowModal(false)}
-          contentContainerStyle={[styles.modal, { backgroundColor: themeColors.surface }]}
+          contentContainerStyle={[themedStyles.modal, { backgroundColor: colors.surface }]}
         >
-          <View style={styles.modalHeader}>
+          <View style={themedStyles.modalHeader}>
             <MaterialCommunityIcons name="bell-off" size={32} color={colors.warning} />
-            <Text variant="titleLarge" style={styles.modalTitle}>Enable Do Not Disturb</Text>
+            <Text variant="titleLarge" style={themedStyles.modalTitle}>Enable Do Not Disturb</Text>
           </View>
 
-          <Text variant="bodyMedium" style={styles.modalDescription}>
+          <Text variant="bodyMedium" style={themedStyles.modalDescription}>
             Silence notifications for a period of time. Critical alerts can still break through if enabled.
           </Text>
 
-          <Divider style={styles.modalDivider} />
+          <Divider style={themedStyles.modalDivider} />
 
-          <Text variant="labelLarge" style={styles.sectionLabel}>Duration</Text>
+          <Text variant="labelLarge" style={themedStyles.sectionLabel}>Duration</Text>
           <RadioButton.Group
             onValueChange={(value) => setSelectedDuration(parseInt(value))}
             value={selectedDuration.toString()}
@@ -368,22 +368,22 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
             {DURATION_OPTIONS.map((option) => (
               <Pressable
                 key={option.minutes}
-                style={styles.radioRow}
+                style={themedStyles.radioRow}
                 onPress={() => setSelectedDuration(option.minutes)}
               >
                 <RadioButton.Android value={option.minutes.toString()} color={colors.warning} />
-                <Text style={styles.radioLabel}>{option.label}</Text>
+                <Text style={themedStyles.radioLabel}>{option.label}</Text>
               </Pressable>
             ))}
           </RadioButton.Group>
 
-          <Divider style={styles.modalDivider} />
+          <Divider style={themedStyles.modalDivider} />
 
-          <View style={styles.overrideSection}>
-            <View style={styles.overrideRow}>
-              <View style={styles.overrideInfo}>
+          <View style={themedStyles.overrideSection}>
+            <View style={themedStyles.overrideRow}>
+              <View style={themedStyles.overrideInfo}>
                 <MaterialCommunityIcons name="alert-circle" size={20} color={colors.error} />
-                <Text style={styles.overrideLabel}>Allow Critical Alerts</Text>
+                <Text style={themedStyles.overrideLabel}>Allow Critical Alerts</Text>
               </View>
               <Switch
                 value={settings.allowCritical}
@@ -391,10 +391,10 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
                 color={colors.error}
               />
             </View>
-            <View style={styles.overrideRow}>
-              <View style={styles.overrideInfo}>
+            <View style={themedStyles.overrideRow}>
+              <View style={themedStyles.overrideInfo}>
                 <MaterialCommunityIcons name="alert" size={20} color={colors.warning} />
-                <Text style={styles.overrideLabel}>Allow High Urgency</Text>
+                <Text style={themedStyles.overrideLabel}>Allow High Urgency</Text>
               </View>
               <Switch
                 value={settings.allowHighUrgency}
@@ -404,11 +404,11 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
             </View>
           </View>
 
-          <View style={styles.modalActions}>
+          <View style={themedStyles.modalActions}>
             <Button
               mode="outlined"
               onPress={() => setShowModal(false)}
-              style={styles.modalButton}
+              style={themedStyles.modalButton}
             >
               Cancel
             </Button>
@@ -416,7 +416,7 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
               mode="contained"
               onPress={handleConfirmDND}
               buttonColor={colors.warning}
-              style={styles.modalButton}
+              style={themedStyles.modalButton}
             >
               Enable DND
             </Button>
@@ -482,7 +482,7 @@ export function shouldShowNotification(
   return false;
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     borderRadius: 12,
     padding: 16,

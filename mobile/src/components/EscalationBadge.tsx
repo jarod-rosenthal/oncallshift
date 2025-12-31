@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
 
 interface EscalationBadgeProps {
@@ -25,6 +26,7 @@ export const EscalationBadge: React.FC<EscalationBadgeProps> = ({
   triggeredAt,
   escalationTimeoutMinutes = 30,
 }) => {
+  const { colors } = useAppTheme();
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
 
   useEffect(() => {

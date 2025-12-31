@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
 
 interface UrgencyIndicatorProps {
@@ -15,6 +16,7 @@ export default function UrgencyIndicator({
   state,
   thresholdMinutes = 5,
 }: UrgencyIndicatorProps) {
+  const { colors } = useAppTheme();
   const [minutesOld, setMinutesOld] = useState(0);
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
 

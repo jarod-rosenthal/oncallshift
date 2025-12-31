@@ -35,20 +35,21 @@ import * as apiService from '../services/apiService';
 import * as runbookService from '../services/runbookService';
 import { getAccessToken } from '../services/authService';
 import { config } from '../config';
-import type { Incident, IncidentEvent, User, AIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary } from '../services/apiService';
+import type { Incident, IncidentEvent, User, LegacyAIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary } from '../services/apiService';
 import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '../services/runbookService';
-import { severityColors, statusColors, colors } from '../theme';
+import { severityColors, statusColors } from '../theme';
+import { useAppTheme } from '../context/ThemeContext';
 import * as hapticService from '../services/hapticService';
 import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel } from '../components';
 
 // Skeleton placeholder component for loading states
-const SkeletonBox = ({ width, height, style }: { width: number | string; height: number; style?: any }) => (
+const SkeletonBox = ({ width, height, style, bgColor }: { width: number | string; height: number; style?: any; bgColor: string }) => (
   <View
     style={[
       {
         width,
         height,
-        backgroundColor: colors.border,
+        backgroundColor: bgColor,
         borderRadius: 6,
         opacity: 0.5,
       },
@@ -59,6 +60,8 @@ const SkeletonBox = ({ width, height, style }: { width: number | string; height:
 
 export default function AlertDetailScreen({ route, navigation }: any) {
   const theme = useTheme();
+  const { colors } = useAppTheme();
+  const themedStyles = styles(colors);
   const insets = useSafeAreaInsets();
   const { showSuccess, showError } = useToast();
   const { showConfetti } = useConfetti();
@@ -82,7 +85,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [reassignReason, setReassignReason] = useState('');
   const [escalateReason, setEscalateReason] = useState('');
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
-  const [diagnosis, setDiagnosis] = useState<AIDiagnosisResponse | null>(null);
+  const [diagnosis, setDiagnosis] = useState<LegacyAIDiagnosisResponse | null>(null);
   const [diagnosisError, setDiagnosisError] = useState<string | null>(null);
   const [sendingDiagnosisNote, setSendingDiagnosisNote] = useState(false);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
@@ -622,8 +625,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
   const handleUnacknowledge = async () => {
     Alert.alert(
-      'Revert to Triggered',
-      'This will move the incident back to triggered state. Are you sure?',
+      'Revert to Active',
+      'This will move the incident back to active state. Are you sure?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -634,7 +637,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             try {
               await apiService.unacknowledgeIncident(incident.id);
               await hapticService.success();
-              showSuccess('Incident reverted to triggered');
+              showSuccess('Incident reverted to active');
               fetchIncidentDetails();
             } catch (error: any) {
               await hapticService.error();
@@ -651,7 +654,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const handleUnresolve = async () => {
     Alert.alert(
       'Reopen Incident',
-      'This will reopen the incident and move it back to triggered state. Are you sure?',
+      'This will reopen the incident and move it back to active state. Are you sure?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -725,7 +728,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const getEventLabel = (type: string) => {
     switch (type) {
       case 'trigger':
-        return 'Triggered';
+        return 'Created';
       case 'acknowledge':
         return 'Acknowledged';
       case 'resolve':
@@ -745,15 +748,15 @@ export default function AlertDetailScreen({ route, navigation }: any) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={themedStyles.scrollView}>
         {/* Header Card */}
         <Card style={dynamicStyles.card} mode="elevated">
           <Card.Content>
             {/* Severity and Status */}
-            <View style={styles.headerBadges}>
+            <View style={themedStyles.headerBadges}>
               <Chip
-                style={[styles.severityChip, { backgroundColor: getSeverityColor(incident.severity) }]}
-                textStyle={styles.severityChipText}
+                style={[themedStyles.severityChip, { backgroundColor: getSeverityColor(incident.severity) }]}
+                textStyle={themedStyles.severityChipText}
                 icon={() => (
                   <MaterialCommunityIcons name="alert-octagon" size={16} color="#fff" />
                 )}
@@ -762,49 +765,49 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               </Chip>
               <Chip
                 mode="outlined"
-                style={[styles.statusChip, { borderColor: getStatusColor(incident.state) }]}
-                textStyle={[styles.statusChipText, { color: getStatusColor(incident.state) }]}
+                style={[themedStyles.statusChip, { borderColor: getStatusColor(incident.state) }]}
+                textStyle={[themedStyles.statusChipText, { color: getStatusColor(incident.state) }]}
               >
                 {incident.state}
               </Chip>
             </View>
 
             {/* Incident Number and Title */}
-            <Text variant="labelMedium" style={styles.incidentNumber}>
+            <Text variant="labelMedium" style={themedStyles.incidentNumber}>
               #{incident.incidentNumber}
             </Text>
-            <Text variant="headlineSmall" style={styles.title}>
+            <Text variant="headlineSmall" style={themedStyles.title}>
               {incident.summary}
             </Text>
 
-            <Divider style={styles.divider} />
+            <Divider style={themedStyles.divider} />
 
             {/* Meta Information */}
-            <View style={styles.metaRow}>
+            <View style={themedStyles.metaRow}>
               <MaterialCommunityIcons name="server" size={18} color={colors.textSecondary} />
-              <Text variant="bodyMedium" style={styles.metaLabel}>Service</Text>
-              <Text variant="bodyMedium" style={styles.metaValue}>{incident.service.name}</Text>
+              <Text variant="bodyMedium" style={themedStyles.metaLabel}>Service</Text>
+              <Text variant="bodyMedium" style={themedStyles.metaValue}>{incident.service.name}</Text>
             </View>
 
-            <View style={styles.metaRow}>
+            <View style={themedStyles.metaRow}>
               <MaterialCommunityIcons name="clock-outline" size={18} color={colors.textSecondary} />
-              <Text variant="bodyMedium" style={styles.metaLabel}>Triggered</Text>
-              <Text variant="bodyMedium" style={styles.metaValue}>{formatDate(incident.triggeredAt)}</Text>
+              <Text variant="bodyMedium" style={themedStyles.metaLabel}>Created</Text>
+              <Text variant="bodyMedium" style={themedStyles.metaValue}>{formatDate(incident.triggeredAt)}</Text>
             </View>
 
             {incident.acknowledgedAt && (
-              <View style={styles.metaRow}>
+              <View style={themedStyles.metaRow}>
                 <MaterialCommunityIcons name="check" size={18} color={colors.warning} />
-                <Text variant="bodyMedium" style={styles.metaLabel}>Acknowledged</Text>
-                <Text variant="bodyMedium" style={styles.metaValue}>{formatDate(incident.acknowledgedAt)}</Text>
+                <Text variant="bodyMedium" style={themedStyles.metaLabel}>Acknowledged</Text>
+                <Text variant="bodyMedium" style={themedStyles.metaValue}>{formatDate(incident.acknowledgedAt)}</Text>
               </View>
             )}
 
             {incident.resolvedAt && (
-              <View style={styles.metaRow}>
+              <View style={themedStyles.metaRow}>
                 <MaterialCommunityIcons name="check-all" size={18} color={colors.success} />
-                <Text variant="bodyMedium" style={styles.metaLabel}>Resolved</Text>
-                <Text variant="bodyMedium" style={styles.metaValue}>{formatDate(incident.resolvedAt)}</Text>
+                <Text variant="bodyMedium" style={themedStyles.metaLabel}>Resolved</Text>
+                <Text variant="bodyMedium" style={themedStyles.metaValue}>{formatDate(incident.resolvedAt)}</Text>
               </View>
             )}
           </Card.Content>
@@ -816,15 +819,15 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             {/* Owner/Responders Skeleton */}
             <Card style={dynamicStyles.card} mode="elevated">
               <Card.Content>
-                <View style={styles.sectionHeader}>
-                  <SkeletonBox width={20} height={20} />
-                  <SkeletonBox width={100} height={18} style={{ marginLeft: 8 }} />
+                <View style={themedStyles.sectionHeader}>
+                  <SkeletonBox width={20} height={20} bgColor={colors.border} />
+                  <SkeletonBox width={100} height={18} style={{ marginLeft: 8 }} bgColor={colors.border} />
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
-                  <SkeletonBox width={40} height={40} style={{ borderRadius: 20 }} />
+                  <SkeletonBox width={40} height={40} style={{ borderRadius: 20 }} bgColor={colors.border} />
                   <View style={{ marginLeft: 12 }}>
-                    <SkeletonBox width={120} height={16} />
-                    <SkeletonBox width={80} height={12} style={{ marginTop: 4 }} />
+                    <SkeletonBox width={120} height={16} bgColor={colors.border} />
+                    <SkeletonBox width={80} height={12} style={{ marginTop: 4 }} bgColor={colors.border} />
                   </View>
                 </View>
               </Card.Content>
@@ -833,17 +836,17 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             {/* Timeline Skeleton */}
             <Card style={dynamicStyles.card} mode="elevated">
               <Card.Content>
-                <View style={styles.sectionHeader}>
-                  <SkeletonBox width={20} height={20} />
-                  <SkeletonBox width={80} height={18} style={{ marginLeft: 8 }} />
+                <View style={themedStyles.sectionHeader}>
+                  <SkeletonBox width={20} height={20} bgColor={colors.border} />
+                  <SkeletonBox width={80} height={18} style={{ marginLeft: 8 }} bgColor={colors.border} />
                 </View>
                 {[1, 2, 3].map((i) => (
                   <View key={i} style={{ flexDirection: 'row', marginTop: 16 }}>
-                    <SkeletonBox width={32} height={32} style={{ borderRadius: 16 }} />
+                    <SkeletonBox width={32} height={32} style={{ borderRadius: 16 }} bgColor={colors.border} />
                     <View style={{ marginLeft: 12, flex: 1 }}>
-                      <SkeletonBox width={100} height={14} />
-                      <SkeletonBox width={150} height={12} style={{ marginTop: 6 }} />
-                      <SkeletonBox width={80} height={10} style={{ marginTop: 6 }} />
+                      <SkeletonBox width={100} height={14} bgColor={colors.border} />
+                      <SkeletonBox width={150} height={12} style={{ marginTop: 6 }} bgColor={colors.border} />
+                      <SkeletonBox width={80} height={10} style={{ marginTop: 6 }} bgColor={colors.border} />
                     </View>
                   </View>
                 ))}
@@ -853,14 +856,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             {/* Runbook Skeleton */}
             <Card style={dynamicStyles.card} mode="elevated">
               <Card.Content>
-                <View style={styles.sectionHeader}>
-                  <SkeletonBox width={20} height={20} />
-                  <SkeletonBox width={120} height={18} style={{ marginLeft: 8 }} />
+                <View style={themedStyles.sectionHeader}>
+                  <SkeletonBox width={20} height={20} bgColor={colors.border} />
+                  <SkeletonBox width={120} height={18} style={{ marginLeft: 8 }} bgColor={colors.border} />
                 </View>
                 {[1, 2].map((i) => (
                   <View key={i} style={{ marginTop: 12, padding: 12, backgroundColor: colors.surfaceSecondary, borderRadius: 8 }}>
-                    <SkeletonBox width="80%" height={16} />
-                    <SkeletonBox width="60%" height={12} style={{ marginTop: 8 }} />
+                    <SkeletonBox width="80%" height={16} bgColor={colors.border} />
+                    <SkeletonBox width="60%" height={12} style={{ marginTop: 8 }} bgColor={colors.border} />
                   </View>
                 ))}
               </Card.Content>
@@ -872,12 +875,12 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         {!loadingDetails && incident.details && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
-              <View style={styles.sectionHeader}>
+              <View style={themedStyles.sectionHeader}>
                 <MaterialCommunityIcons name="code-json" size={20} color={theme.colors.primary} />
-                <Text variant="titleMedium" style={styles.sectionTitle}>Details</Text>
+                <Text variant="titleMedium" style={themedStyles.sectionTitle}>Details</Text>
               </View>
-              <Surface style={styles.detailSurface} elevation={0}>
-                <Text variant="bodySmall" style={styles.detailText}>
+              <Surface style={themedStyles.detailSurface} elevation={0}>
+                <Text variant="bodySmall" style={themedStyles.detailText}>
                   {JSON.stringify(incident.details, null, 2)}
                 </Text>
               </Surface>
@@ -886,17 +889,17 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         )}
 
         {/* AI Diagnosis Section */}
-        {!loadingDetails && !diagnosis && !diagnosisLoading && incident.state !== 'resolved' && (
+        {!loadingDetails && !diagnosis && !diagnosisLoading && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
-              <View style={styles.diagnoseButtonContainer}>
-                <View style={styles.diagnoseInfo}>
+              <View style={themedStyles.diagnoseButtonContainer}>
+                <View style={themedStyles.diagnoseInfo}>
                   <MaterialCommunityIcons name="robot" size={24} color={colors.accent} />
-                  <View style={styles.diagnoseTextContainer}>
-                    <Text variant="titleSmall" style={styles.diagnoseTitle}>
+                  <View style={themedStyles.diagnoseTextContainer}>
+                    <Text variant="titleSmall" style={themedStyles.diagnoseTitle}>
                       Need help troubleshooting?
                     </Text>
-                    <Text variant="bodySmall" style={styles.diagnoseSubtitle}>
+                    <Text variant="bodySmall" style={themedStyles.diagnoseSubtitle}>
                       AI can analyze logs, metrics, and history
                     </Text>
                   </View>
@@ -906,7 +909,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                   onPress={() => navigation.navigate('AIChat', { incident })}
                   icon="robot-outline"
                   buttonColor={colors.accent}
-                  style={styles.diagnoseButton}
+                  style={themedStyles.diagnoseButton}
                 >
                   Chat with AI
                 </Button>
@@ -922,7 +925,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             diagnosis={diagnosis}
             error={diagnosisError}
             onRetry={handleDiagnose}
-            onSendAsNote={incident.state !== 'resolved' ? handleSendDiagnosisAsNote : undefined}
+            onSendAsNote={handleSendDiagnosisAsNote}
             sendingNote={sendingDiagnosisNote}
           />
         )}
@@ -933,14 +936,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             <Card.Content>
               <Pressable
                 onPress={() => setShowRunbook(!showRunbook)}
-                style={styles.runbookHeader}
+                style={themedStyles.runbookHeader}
               >
-                <View style={styles.sectionHeader}>
+                <View style={themedStyles.sectionHeader}>
                   <MaterialCommunityIcons name="book-open-variant" size={20} color={colors.accent} />
-                  <Text variant="titleMedium" style={styles.sectionTitle}>Runbook</Text>
+                  <Text variant="titleMedium" style={themedStyles.sectionTitle}>Runbook</Text>
                 </View>
-                <View style={styles.runbookProgress}>
-                  <Text variant="labelSmall" style={styles.runbookProgressText}>
+                <View style={themedStyles.runbookProgress}>
+                  <Text variant="labelSmall" style={themedStyles.runbookProgressText}>
                     {completedSteps.length}/{runbook.steps.length}
                   </Text>
                   <MaterialCommunityIcons
@@ -952,10 +955,10 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               </Pressable>
 
               {/* Progress Bar */}
-              <View style={styles.progressBarContainer}>
+              <View style={themedStyles.progressBarContainer}>
                 <View
                   style={[
-                    styles.progressBar,
+                    themedStyles.progressBar,
                     { width: `${(completedSteps.length / runbook.steps.length) * 100}%` },
                   ]}
                 />
@@ -963,32 +966,32 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
               {showRunbook && (
                 <>
-                  <Text variant="bodySmall" style={styles.runbookDescription}>
+                  <Text variant="bodySmall" style={themedStyles.runbookDescription}>
                     {runbook.description}
                   </Text>
 
                   {/* Runbook Metadata */}
                   {(runbook.author || runbook.lastUpdated || (runbook.tags && runbook.tags.length > 0)) && (
-                    <View style={styles.runbookMeta}>
-                      <View style={styles.runbookMetaRow}>
+                    <View style={themedStyles.runbookMeta}>
+                      <View style={themedStyles.runbookMetaRow}>
                         {runbook.author && (
-                          <Text variant="bodySmall" style={styles.runbookMetaText}>
+                          <Text variant="bodySmall" style={themedStyles.runbookMetaText}>
                             By {runbook.author.fullName}
                           </Text>
                         )}
                         {runbook.author && runbook.lastUpdated && (
-                          <Text style={styles.runbookMetaSeparator}> • </Text>
+                          <Text style={themedStyles.runbookMetaSeparator}> • </Text>
                         )}
                         {runbook.lastUpdated && (
-                          <Text variant="bodySmall" style={styles.runbookMetaText}>
+                          <Text variant="bodySmall" style={themedStyles.runbookMetaText}>
                             Updated {new Date(runbook.lastUpdated).toLocaleDateString()}
                           </Text>
                         )}
                       </View>
                       {runbook.tags && runbook.tags.length > 0 && (
-                        <View style={styles.runbookTagsRow}>
+                        <View style={themedStyles.runbookTagsRow}>
                           {runbook.tags.slice(0, 5).map((tag, idx) => (
-                            <Text key={idx} style={styles.runbookTagText}>#{tag}</Text>
+                            <Text key={idx} style={themedStyles.runbookTagText}>#{tag}</Text>
                           ))}
                         </View>
                       )}
@@ -996,7 +999,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                   )}
 
                   {/* Runbook Steps */}
-                  <View style={styles.runbookSteps}>
+                  <View style={themedStyles.runbookSteps}>
                     {runbook.steps.map((step, index) => {
                       const isCompleted = completedSteps.includes(step.id);
                       const canToggle = incident.state !== 'resolved';
@@ -1007,16 +1010,16 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                         <View
                           key={step.id}
                           style={[
-                            styles.runbookStep,
-                            actionState?.status === 'success' && styles.runbookStepSuccess,
-                            actionState?.status === 'error' && styles.runbookStepError,
+                            themedStyles.runbookStep,
+                            actionState?.status === 'success' && themedStyles.runbookStepSuccess,
+                            actionState?.status === 'error' && themedStyles.runbookStepError,
                           ]}
                         >
-                          <View style={styles.runbookStepHeader}>
+                          <View style={themedStyles.runbookStepHeader}>
                             {/* Checkbox for non-action steps */}
                             {!hasAction && (
                               <Pressable
-                                style={styles.runbookStepCheckbox}
+                                style={themedStyles.runbookStepCheckbox}
                                 onPress={() => canToggle && toggleStepCompleted(step.id)}
                                 disabled={!canToggle}
                               >
@@ -1030,32 +1033,32 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                             )}
 
                             {/* Step content */}
-                            <View style={[styles.runbookStepContent, hasAction && styles.runbookStepContentWithAction]}>
+                            <View style={[themedStyles.runbookStepContent, hasAction && themedStyles.runbookStepContentWithAction]}>
                               <Text
                                 variant="titleSmall"
                                 style={[
-                                  styles.runbookStepTitle,
-                                  isCompleted && styles.runbookStepCompleted,
+                                  themedStyles.runbookStepTitle,
+                                  isCompleted && themedStyles.runbookStepCompleted,
                                 ]}
                               >
                                 {index + 1}. {step.title}
                                 {step.isOptional && (
-                                  <Text style={styles.optionalBadgeInline}> (Optional)</Text>
+                                  <Text style={themedStyles.optionalBadgeInline}> (Optional)</Text>
                                 )}
                               </Text>
                               <Text
                                 variant="bodySmall"
                                 style={[
-                                  styles.runbookStepDescription,
-                                  isCompleted && styles.runbookStepCompleted,
+                                  themedStyles.runbookStepDescription,
+                                  isCompleted && themedStyles.runbookStepCompleted,
                                 ]}
                               >
                                 {step.description}
                               </Text>
                               {step.estimatedMinutes != null && !isCompleted && (
-                                <View style={styles.runbookStepMeta}>
+                                <View style={themedStyles.runbookStepMeta}>
                                   <MaterialCommunityIcons name="clock-outline" size={12} color={colors.textMuted} />
-                                  <Text variant="labelSmall" style={styles.runbookStepTime}>
+                                  <Text variant="labelSmall" style={themedStyles.runbookStepTime}>
                                     ~{step.estimatedMinutes} min
                                   </Text>
                                 </View>
@@ -1064,14 +1067,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
                             {/* Action button or completed check for action steps */}
                             {hasAction && step.action && (
-                              <View style={styles.runbookActionContainer}>
+                              <View style={themedStyles.runbookActionContainer}>
                                 {actionState?.status === 'executing' ? (
                                   <Button
                                     mode="contained"
                                     disabled
                                     loading
                                     compact
-                                    style={styles.runbookActionButton}
+                                    style={themedStyles.runbookActionButton}
                                   >
                                     Running
                                   </Button>
@@ -1081,7 +1084,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                                     disabled
                                     compact
                                     icon="check"
-                                    style={styles.runbookActionButton}
+                                    style={themedStyles.runbookActionButton}
                                     textColor={colors.success}
                                   >
                                     Done
@@ -1091,7 +1094,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                                     mode="outlined"
                                     compact
                                     icon="check"
-                                    style={styles.runbookActionButton}
+                                    style={themedStyles.runbookActionButton}
                                     textColor={colors.success}
                                     onPress={() => canToggle && executeAction(step.id, step.action!)}
                                     disabled={!canToggle}
@@ -1103,7 +1106,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                                     mode="contained"
                                     compact
                                     icon="play"
-                                    style={styles.runbookActionButton}
+                                    style={themedStyles.runbookActionButton}
                                     buttonColor={colors.accent}
                                     onPress={() => canToggle && executeAction(step.id, step.action!)}
                                     disabled={!canToggle}
@@ -1117,11 +1120,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
                           {/* Confirmation prompt */}
                           {actionState?.status === 'confirming' && step.action && (
-                            <View style={styles.runbookConfirmContainer}>
-                              <Text variant="bodySmall" style={styles.runbookConfirmText}>
+                            <View style={themedStyles.runbookConfirmContainer}>
+                              <Text variant="bodySmall" style={themedStyles.runbookConfirmText}>
                                 {actionState.message}
                               </Text>
-                              <View style={styles.runbookConfirmButtons}>
+                              <View style={themedStyles.runbookConfirmButtons}>
                                 <Button
                                   mode="contained"
                                   compact
@@ -1143,8 +1146,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
                           {/* Error message */}
                           {actionState?.status === 'error' && (
-                            <View style={styles.runbookErrorContainer}>
-                              <Text variant="bodySmall" style={styles.runbookErrorText}>
+                            <View style={themedStyles.runbookErrorContainer}>
+                              <Text variant="bodySmall" style={themedStyles.runbookErrorText}>
                                 {actionState.message}
                               </Text>
                             </View>
@@ -1160,7 +1163,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                       mode="outlined"
                       icon="open-in-new"
                       onPress={() => Linking.openURL(runbook.externalUrl!)}
-                      style={styles.externalLinkButton}
+                      style={themedStyles.externalLinkButton}
                     >
                       View Full Runbook
                     </Button>
@@ -1171,8 +1174,16 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </Card>
         )}
 
-        {/* Responders Card */}
-        {!loadingDetails && (
+        {/* Related Incidents - right after Runbooks */}
+        <RelatedIncidents
+          currentIncident={incident}
+          onIncidentPress={(relatedIncident) => {
+            navigation.push('AlertDetail', { alert: relatedIncident });
+          }}
+        />
+
+        {/* Responders Card - only show if there's content */}
+        {!loadingDetails && incident.acknowledgedBy && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
               <RespondersSection
@@ -1189,20 +1200,20 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             <Card.Content>
               <Pressable
                 onPress={() => setShowNotifications(!showNotifications)}
-                style={styles.notificationHeader}
+                style={themedStyles.notificationHeader}
               >
-                <View style={styles.sectionHeader}>
+                <View style={themedStyles.sectionHeader}>
                   <MaterialCommunityIcons name="bell-ring-outline" size={20} color={theme.colors.primary} />
-                  <Text variant="titleMedium" style={styles.sectionTitle}>Notification Status</Text>
+                  <Text variant="titleMedium" style={themedStyles.sectionTitle}>Notification Status</Text>
                 </View>
-                <View style={styles.notificationHeaderRight}>
+                <View style={themedStyles.notificationHeaderRight}>
                   {notificationSummary && (
-                    <View style={styles.notificationSummaryChips}>
+                    <View style={themedStyles.notificationSummaryChips}>
                       {notificationSummary.delivered > 0 && (
                         <Chip
                           compact
-                          style={[styles.summaryChip, { backgroundColor: colors.successLight }]}
-                          textStyle={[styles.summaryChipText, { color: colors.success }]}
+                          style={[themedStyles.summaryChip, { backgroundColor: colors.successLight }]}
+                          textStyle={[themedStyles.summaryChipText, { color: colors.success }]}
                         >
                           {notificationSummary.delivered} delivered
                         </Chip>
@@ -1210,8 +1221,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                       {notificationSummary.sent > 0 && (
                         <Chip
                           compact
-                          style={[styles.summaryChip, { backgroundColor: colors.infoLight }]}
-                          textStyle={[styles.summaryChipText, { color: colors.info }]}
+                          style={[themedStyles.summaryChip, { backgroundColor: colors.infoLight }]}
+                          textStyle={[themedStyles.summaryChipText, { color: colors.info }]}
                         >
                           {notificationSummary.sent} sent
                         </Chip>
@@ -1219,8 +1230,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                       {notificationSummary.pending > 0 && (
                         <Chip
                           compact
-                          style={[styles.summaryChip, { backgroundColor: colors.warningLight }]}
-                          textStyle={[styles.summaryChipText, { color: colors.warning }]}
+                          style={[themedStyles.summaryChip, { backgroundColor: colors.warningLight }]}
+                          textStyle={[themedStyles.summaryChipText, { color: colors.warning }]}
                         >
                           {notificationSummary.pending} pending
                         </Chip>
@@ -1228,8 +1239,8 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                       {notificationSummary.failed > 0 && (
                         <Chip
                           compact
-                          style={[styles.summaryChip, { backgroundColor: '#FED7D7' }]}
-                          textStyle={[styles.summaryChipText, { color: '#C53030' }]}
+                          style={[themedStyles.summaryChip, { backgroundColor: '#FED7D7' }]}
+                          textStyle={[themedStyles.summaryChipText, { color: '#C53030' }]}
                         >
                           {notificationSummary.failed} failed
                         </Chip>
@@ -1247,36 +1258,36 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               {showNotifications && (
                 <>
                   {loadingNotifications ? (
-                    <View style={styles.notificationLoading}>
+                    <View style={themedStyles.notificationLoading}>
                       <ActivityIndicator size="small" color={theme.colors.primary} />
-                      <Text variant="bodySmall" style={styles.notificationLoadingText}>
+                      <Text variant="bodySmall" style={themedStyles.notificationLoadingText}>
                         Loading notification status...
                       </Text>
                     </View>
                   ) : notifications.length === 0 ? (
-                    <Text variant="bodyMedium" style={styles.noNotificationsText}>
+                    <Text variant="bodyMedium" style={themedStyles.noNotificationsText}>
                       No notifications sent yet
                     </Text>
                   ) : (
-                    <View style={styles.notificationsList}>
+                    <View style={themedStyles.notificationsList}>
                       {notifications.map((userNotif) => (
-                        <View key={userNotif.userId} style={styles.notificationUserCard}>
-                          <View style={styles.notificationUserHeader}>
-                            <View style={styles.notificationUserAvatar}>
-                              <Text style={styles.notificationUserAvatarText}>
+                        <View key={userNotif.userId} style={themedStyles.notificationUserCard}>
+                          <View style={themedStyles.notificationUserHeader}>
+                            <View style={themedStyles.notificationUserAvatar}>
+                              <Text style={themedStyles.notificationUserAvatarText}>
                                 {userNotif.userName.charAt(0).toUpperCase()}
                               </Text>
                             </View>
-                            <View style={styles.notificationUserInfo}>
-                              <Text variant="titleSmall" style={styles.notificationUserName}>
+                            <View style={themedStyles.notificationUserInfo}>
+                              <Text variant="titleSmall" style={themedStyles.notificationUserName}>
                                 {userNotif.userName}
                               </Text>
-                              <Text variant="bodySmall" style={styles.notificationUserEmail}>
+                              <Text variant="bodySmall" style={themedStyles.notificationUserEmail}>
                                 {userNotif.userEmail}
                               </Text>
                             </View>
                           </View>
-                          <View style={styles.notificationChannels}>
+                          <View style={themedStyles.notificationChannels}>
                             {userNotif.channels.map((channel, idx) => {
                               const getChannelIcon = (ch: string): keyof typeof MaterialCommunityIcons.glyphMap => {
                                 switch (ch) {
@@ -1300,14 +1311,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                               return (
                                 <View
                                   key={idx}
-                                  style={[styles.notificationChannel, { backgroundColor: statusStyle.bg }]}
+                                  style={[themedStyles.notificationChannel, { backgroundColor: statusStyle.bg }]}
                                 >
                                   <MaterialCommunityIcons
                                     name={getChannelIcon(channel.channel)}
                                     size={14}
                                     color={statusStyle.text}
                                   />
-                                  <Text style={[styles.notificationChannelText, { color: statusStyle.text }]}>
+                                  <Text style={[themedStyles.notificationChannelText, { color: statusStyle.text }]}>
                                     {channel.channel}
                                   </Text>
                                   <MaterialCommunityIcons
@@ -1321,11 +1332,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                           </View>
                           {/* Show error messages */}
                           {userNotif.channels.some(c => c.errorMessage) && (
-                            <View style={styles.notificationErrors}>
+                            <View style={themedStyles.notificationErrors}>
                               {userNotif.channels
                                 .filter(c => c.errorMessage)
                                 .map((c, idx) => (
-                                  <Text key={idx} variant="bodySmall" style={styles.notificationErrorText}>
+                                  <Text key={idx} variant="bodySmall" style={themedStyles.notificationErrorText}>
                                     {c.channel}: {c.errorMessage}
                                   </Text>
                                 ))}
@@ -1345,24 +1356,24 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         {!loadingDetails && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
-              <View style={styles.sectionHeader}>
+              <View style={themedStyles.sectionHeader}>
                 <MaterialCommunityIcons name="timeline-clock-outline" size={20} color={theme.colors.primary} />
-                <Text variant="titleMedium" style={styles.sectionTitle}>Timeline</Text>
+                <Text variant="titleMedium" style={themedStyles.sectionTitle}>Timeline</Text>
               </View>
 
             {events.length > 0 ? (
-              <View style={styles.timeline}>
+              <View style={themedStyles.timeline}>
                 {events.map((event, index) => {
                   const { icon, color } = getEventIcon(event.type);
                   return (
-                    <View key={event.id} style={styles.timelineItem}>
-                      <View style={styles.timelineLeft}>
-                        <View style={[styles.timelineIcon, { backgroundColor: color }]}>
+                    <View key={event.id} style={themedStyles.timelineItem}>
+                      <View style={themedStyles.timelineLeft}>
+                        <View style={[themedStyles.timelineIcon, { backgroundColor: color }]}>
                           <MaterialCommunityIcons name={icon} size={16} color="#fff" />
                         </View>
                         {index < events.length - 1 && <View style={dynamicStyles.timelineLine} />}
                       </View>
-                      <View style={styles.timelineContent}>
+                      <View style={themedStyles.timelineContent}>
                         <Text variant="titleSmall" style={dynamicStyles.timelineLabel}>
                           {getEventLabel(event.type)}
                         </Text>
@@ -1385,7 +1396,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 })}
               </View>
             ) : (
-              <Text variant="bodyMedium" style={styles.noEventsText}>
+              <Text variant="bodyMedium" style={themedStyles.noEventsText}>
                 No timeline events
               </Text>
             )}
@@ -1397,9 +1408,9 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         {!loadingDetails && incident.state !== 'resolved' && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
-              <View style={styles.sectionHeader}>
+              <View style={themedStyles.sectionHeader}>
                 <MaterialCommunityIcons name="note-plus" size={20} color={theme.colors.primary} />
-                <Text variant="titleMedium" style={styles.sectionTitle}>Add Note</Text>
+                <Text variant="titleMedium" style={themedStyles.sectionTitle}>Add Note</Text>
               </View>
               <TextInput
                 mode="outlined"
@@ -1409,14 +1420,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 multiline
                 numberOfLines={3}
                 style={dynamicStyles.noteInput}
-                outlineStyle={styles.noteInputOutline}
+                outlineStyle={themedStyles.noteInputOutline}
               />
               <Button
                 mode="contained"
                 onPress={handleAddNote}
                 loading={addingNote}
                 disabled={!noteText.trim() || addingNote}
-                style={styles.noteButton}
+                style={themedStyles.noteButton}
                 icon="send"
               >
                 Add Note
@@ -1427,14 +1438,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
         {/* Resolved Notice */}
         {incident.state === 'resolved' && (
-          <Surface style={styles.resolvedNotice} elevation={0}>
+          <Surface style={themedStyles.resolvedNotice} elevation={0}>
             <MaterialCommunityIcons name="check-circle" size={24} color={colors.success} />
-            <View style={styles.resolvedTextContainer}>
-              <Text variant="titleSmall" style={styles.resolvedText}>
+            <View style={themedStyles.resolvedTextContainer}>
+              <Text variant="titleSmall" style={themedStyles.resolvedText}>
                 This incident has been resolved
               </Text>
               {incident.resolvedBy && (
-                <Text variant="bodySmall" style={styles.resolvedBy}>
+                <Text variant="bodySmall" style={themedStyles.resolvedBy}>
                   By {incident.resolvedBy.fullName}
                 </Text>
               )}
@@ -1442,21 +1453,13 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </Surface>
         )}
 
-        {/* Related Incidents */}
-        <RelatedIncidents
-          currentIncident={incident}
-          onIncidentPress={(relatedIncident) => {
-            navigation.push('AlertDetail', { alert: relatedIncident });
-          }}
-        />
-
         {/* Admin Actions */}
         {currentUserProfile?.role === 'admin' && (
-          <Card style={[dynamicStyles.card, styles.dangerCard]} mode="elevated">
+          <Card style={[dynamicStyles.card, themedStyles.dangerCard]} mode="elevated">
             <Card.Content>
-              <View style={styles.sectionHeader}>
+              <View style={themedStyles.sectionHeader}>
                 <MaterialCommunityIcons name="shield-account" size={20} color="#C53030" />
-                <Text variant="titleMedium" style={[styles.sectionTitle, { color: '#C53030' }]}>
+                <Text variant="titleMedium" style={[themedStyles.sectionTitle, { color: '#C53030' }]}>
                   Admin Actions
                 </Text>
               </View>
@@ -1465,7 +1468,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 buttonColor="#C53030"
                 onPress={() => setShowDeleteModal(true)}
                 icon="delete"
-                style={styles.deleteButton}
+                style={themedStyles.deleteButton}
               >
                 Delete Incident
               </Button>
@@ -1474,7 +1477,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         )}
 
         {/* Bottom padding to account for sticky action bar - always show since all states have actions */}
-        <View style={styles.bottomPaddingWithActions} />
+        <View style={themedStyles.bottomPaddingWithActions} />
       </ScrollView>
 
       {/* Sticky Action Bar */}
@@ -1549,14 +1552,14 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         <Modal
           visible={showEscalateModal}
           onDismiss={() => { setShowEscalateModal(false); setEscalateReason(''); }}
-          contentContainerStyle={styles.modalContainer}
+          contentContainerStyle={themedStyles.modalContainer}
         >
           <View style={dynamicStyles.modalContent}>
             <MaterialCommunityIcons name="arrow-up-circle" size={48} color={colors.accent} />
-            <Text variant="titleLarge" style={styles.modalTitle}>
+            <Text variant="titleLarge" style={themedStyles.modalTitle}>
               Escalate Incident?
             </Text>
-            <Text variant="bodyMedium" style={styles.modalDescription}>
+            <Text variant="bodyMedium" style={themedStyles.modalDescription}>
               This will notify the next responder in the escalation policy for {incident.service.name}.
             </Text>
             <TextInput
@@ -1568,11 +1571,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               multiline
               numberOfLines={2}
             />
-            <View style={styles.modalActions}>
+            <View style={themedStyles.modalActions}>
               <Button
                 mode="outlined"
                 onPress={() => { setShowEscalateModal(false); setEscalateReason(''); }}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
               >
                 Cancel
               </Button>
@@ -1580,7 +1583,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 mode="contained"
                 onPress={handleEscalate}
                 buttonColor={colors.accent}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
               >
                 Escalate
               </Button>
@@ -1594,41 +1597,41 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         <Modal
           visible={showReassignModal}
           onDismiss={() => { setShowReassignModal(false); setSelectedUserId(null); setReassignReason(''); }}
-          contentContainerStyle={styles.reassignModalContainer}
+          contentContainerStyle={themedStyles.reassignModalContainer}
         >
           <View style={dynamicStyles.reassignModalContent}>
-            <View style={styles.reassignModalHeader}>
+            <View style={themedStyles.reassignModalHeader}>
               <MaterialCommunityIcons name="account-switch" size={32} color={colors.accent} />
-              <Text variant="titleLarge" style={styles.modalTitle}>
+              <Text variant="titleLarge" style={themedStyles.modalTitle}>
                 Reassign Incident
               </Text>
             </View>
 
-            <Text variant="bodyMedium" style={styles.reassignSubtitle}>
+            <Text variant="bodyMedium" style={themedStyles.reassignSubtitle}>
               Select a team member to reassign this incident to:
             </Text>
 
             {loadingUsers ? (
-              <View style={styles.loadingContainer}>
+              <View style={themedStyles.loadingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
               </View>
             ) : (
-              <ScrollView style={styles.userList}>
+              <ScrollView style={themedStyles.userList}>
                 {users.map((user) => (
                   <Pressable
                     key={user.id}
                     style={[
-                      styles.userItem,
-                      selectedUserId === user.id && styles.userItemSelected,
+                      themedStyles.userItem,
+                      selectedUserId === user.id && themedStyles.userItemSelected,
                     ]}
                     onPress={() => setSelectedUserId(user.id)}
                   >
                     <OwnerAvatar name={user.fullName} email={user.email} size={40} />
-                    <View style={styles.userItemInfo}>
-                      <Text variant="titleSmall" style={styles.userItemName}>
+                    <View style={themedStyles.userItemInfo}>
+                      <Text variant="titleSmall" style={themedStyles.userItemName}>
                         {user.fullName}
                       </Text>
-                      <Text variant="bodySmall" style={styles.userItemEmail}>
+                      <Text variant="bodySmall" style={themedStyles.userItemEmail}>
                         {user.email}
                       </Text>
                     </View>
@@ -1653,11 +1656,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               numberOfLines={2}
             />
 
-            <View style={styles.modalActions}>
+            <View style={themedStyles.modalActions}>
               <Button
                 mode="outlined"
                 onPress={() => { setShowReassignModal(false); setSelectedUserId(null); setReassignReason(''); }}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
               >
                 Cancel
               </Button>
@@ -1665,7 +1668,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 mode="contained"
                 onPress={handleReassign}
                 buttonColor={colors.accent}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 disabled={!selectedUserId}
               >
                 Reassign
@@ -1687,21 +1690,21 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         <Modal
           visible={showDeleteModal}
           onDismiss={() => setShowDeleteModal(false)}
-          contentContainerStyle={styles.modalContainer}
+          contentContainerStyle={themedStyles.modalContainer}
         >
           <View style={dynamicStyles.modalContent}>
             <MaterialCommunityIcons name="delete-alert" size={48} color="#C53030" />
-            <Text variant="titleLarge" style={styles.modalTitle}>
+            <Text variant="titleLarge" style={themedStyles.modalTitle}>
               Delete Incident?
             </Text>
-            <Text variant="bodyMedium" style={styles.modalDescription}>
+            <Text variant="bodyMedium" style={themedStyles.modalDescription}>
               Are you sure you want to delete incident #{incident.incidentNumber}? This action cannot be undone and will remove all associated timeline events and notes.
             </Text>
-            <View style={styles.modalActions}>
+            <View style={themedStyles.modalActions}>
               <Button
                 mode="outlined"
                 onPress={() => setShowDeleteModal(false)}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 disabled={isDeleting}
               >
                 Cancel
@@ -1710,7 +1713,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 mode="contained"
                 onPress={handleDelete}
                 buttonColor="#C53030"
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 loading={isDeleting}
                 disabled={isDeleting}
               >
@@ -1726,17 +1729,17 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         <Modal
           visible={showApiKeyModal}
           onDismiss={() => { setShowApiKeyModal(false); setApiKeyInput(''); }}
-          contentContainerStyle={styles.modalContainer}
+          contentContainerStyle={themedStyles.modalContainer}
         >
           <View style={dynamicStyles.reassignModalContent}>
-            <View style={styles.reassignModalHeader}>
+            <View style={themedStyles.reassignModalHeader}>
               <MaterialCommunityIcons name="key-variant" size={32} color={theme.colors.secondary} />
-              <Text variant="titleLarge" style={styles.modalTitle}>
+              <Text variant="titleLarge" style={themedStyles.modalTitle}>
                 Set Up AI Diagnosis
               </Text>
             </View>
 
-            <Text variant="bodyMedium" style={styles.reassignSubtitle}>
+            <Text variant="bodyMedium" style={themedStyles.reassignSubtitle}>
               To use AI-powered incident diagnosis, you need to provide your Anthropic API key. Your key is stored securely and encrypted.
             </Text>
 
@@ -1752,15 +1755,15 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               autoCorrect={false}
             />
 
-            <Text variant="bodySmall" style={styles.apiKeyHint}>
+            <Text variant="bodySmall" style={themedStyles.apiKeyHint}>
               Get your API key from console.anthropic.com
             </Text>
 
-            <View style={styles.modalActions}>
+            <View style={themedStyles.modalActions}>
               <Button
                 mode="outlined"
                 onPress={() => { setShowApiKeyModal(false); setApiKeyInput(''); }}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 disabled={savingApiKey}
               >
                 Cancel
@@ -1769,7 +1772,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 mode="contained"
                 onPress={handleSaveApiKey}
                 buttonColor={theme.colors.secondary}
-                style={styles.modalButton}
+                style={themedStyles.modalButton}
                 loading={savingApiKey}
                 disabled={!apiKeyInput.trim() || savingApiKey}
               >
@@ -1783,7 +1786,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

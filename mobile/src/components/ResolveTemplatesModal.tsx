@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Text, Modal, Portal, Button, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { useAppTheme } from '../context/ThemeContext';
 
 export interface ResolveTemplate {
   id: string;
@@ -75,6 +75,7 @@ export default function ResolveTemplatesModal({
   onSelectTemplate,
   templates = defaultResolveTemplates,
 }: ResolveTemplatesModalProps) {
+  const { colors } = useAppTheme();
   const [customNote, setCustomNote] = React.useState('');
   const [showCustom, setShowCustom] = React.useState(false);
 
@@ -92,19 +93,55 @@ export default function ResolveTemplatesModal({
     }
   };
 
+  // Dynamic styles with theme colors
+  const themedStyles = {
+    modalContainer: {
+      ...styles.modalContainer,
+      backgroundColor: colors.surface,
+    },
+    header: {
+      ...styles.header,
+      borderBottomColor: colors.border,
+    },
+    title: {
+      ...styles.title,
+      color: colors.textPrimary,
+    },
+    subtitle: {
+      ...styles.subtitle,
+      color: colors.textSecondary,
+    },
+    templateItem: {
+      ...styles.templateItem,
+      borderBottomColor: colors.border,
+    },
+    templateIcon: {
+      ...styles.templateIcon,
+      backgroundColor: colors.accent + '20',
+    },
+    templateLabel: {
+      ...styles.templateLabel,
+      color: colors.textPrimary,
+    },
+    templateNote: {
+      ...styles.templateNote,
+      color: colors.textSecondary,
+    },
+  };
+
   return (
     <Portal>
       <Modal
         visible={visible}
         onDismiss={onDismiss}
-        contentContainerStyle={styles.modalContainer}
+        contentContainerStyle={themedStyles.modalContainer}
       >
-        <View style={styles.header}>
+        <View style={themedStyles.header}>
           <MaterialCommunityIcons name="check-all" size={28} color={colors.success} />
-          <Text variant="titleLarge" style={styles.title}>
+          <Text variant="titleLarge" style={themedStyles.title}>
             Resolve with Note
           </Text>
-          <Text variant="bodyMedium" style={styles.subtitle}>
+          <Text variant="bodyMedium" style={themedStyles.subtitle}>
             Choose a template or write a custom note
           </Text>
         </View>
@@ -115,10 +152,10 @@ export default function ResolveTemplatesModal({
               {templates.map((template) => (
                 <Pressable
                   key={template.id}
-                  style={styles.templateItem}
+                  style={themedStyles.templateItem}
                   onPress={() => handleTemplateSelect(template)}
                 >
-                  <View style={styles.templateIcon}>
+                  <View style={themedStyles.templateIcon}>
                     <MaterialCommunityIcons
                       name={template.icon}
                       size={20}
@@ -126,10 +163,10 @@ export default function ResolveTemplatesModal({
                     />
                   </View>
                   <View style={styles.templateContent}>
-                    <Text variant="titleSmall" style={styles.templateLabel}>
+                    <Text variant="titleSmall" style={themedStyles.templateLabel}>
                       {template.label}
                     </Text>
-                    <Text variant="bodySmall" style={styles.templateNote} numberOfLines={2}>
+                    <Text variant="bodySmall" style={themedStyles.templateNote} numberOfLines={2}>
                       {template.note}
                     </Text>
                   </View>
@@ -142,10 +179,10 @@ export default function ResolveTemplatesModal({
               ))}
 
               <Pressable
-                style={[styles.templateItem, styles.customItem]}
+                style={[themedStyles.templateItem, styles.customItem]}
                 onPress={() => setShowCustom(true)}
               >
-                <View style={[styles.templateIcon, { backgroundColor: colors.surfaceSecondary }]}>
+                <View style={[themedStyles.templateIcon, { backgroundColor: colors.surfaceSecondary }]}>
                   <MaterialCommunityIcons
                     name="pencil"
                     size={20}
@@ -153,10 +190,10 @@ export default function ResolveTemplatesModal({
                   />
                 </View>
                 <View style={styles.templateContent}>
-                  <Text variant="titleSmall" style={styles.templateLabel}>
+                  <Text variant="titleSmall" style={themedStyles.templateLabel}>
                     Custom Note
                   </Text>
-                  <Text variant="bodySmall" style={styles.templateNote}>
+                  <Text variant="bodySmall" style={themedStyles.templateNote}>
                     Write your own resolution note
                   </Text>
                 </View>
@@ -221,7 +258,6 @@ export default function ResolveTemplatesModal({
 
 const styles = StyleSheet.create({
   modalContainer: {
-    backgroundColor: colors.surface,
     margin: 20,
     borderRadius: 16,
     maxHeight: '80%',
@@ -231,15 +267,12 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
   },
   title: {
-    color: colors.textPrimary,
     fontWeight: '600',
     marginTop: 8,
   },
   subtitle: {
-    color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
   },
@@ -251,7 +284,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
   },
   customItem: {
     borderBottomWidth: 0,
@@ -260,7 +292,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.accentMuted + '30',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -270,11 +301,9 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   templateLabel: {
-    color: colors.textPrimary,
     fontWeight: '600',
   },
   templateNote: {
-    color: colors.textSecondary,
     marginTop: 2,
     lineHeight: 18,
   },
@@ -282,7 +311,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   customInput: {
-    backgroundColor: colors.surface,
     marginBottom: 16,
   },
   customActions: {

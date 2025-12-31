@@ -15,7 +15,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useAppTheme } from '../context/ThemeContext';
 import { severityColors, statusColors } from '../theme';
-import { OwnerAvatar, EscalationBadge, UrgencyIndicator } from './index';
+import { OwnerAvatar } from './OwnerAvatar';
+import { EscalationBadge } from './EscalationBadge';
+import UrgencyIndicator from './UrgencyIndicator';
 import * as hapticService from '../services/hapticService';
 import type { Incident } from '../services/apiService';
 
@@ -171,7 +173,7 @@ export function IncidentCard({
                   <View style={[styles(colors).statusBadge, { backgroundColor: getStatusColor(incident.state) + '20' }]}>
                     <View style={[styles(colors).statusDot, { backgroundColor: getStatusColor(incident.state) }]} />
                     <Text style={[styles(colors).statusText, { color: getStatusColor(incident.state) }]}>
-                      {incident.state}
+                      {incident.state === 'triggered' ? 'Active' : incident.state}
                     </Text>
                   </View>
                   {incident.state === 'triggered' && (
