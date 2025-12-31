@@ -22,6 +22,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as apiService from '../services/apiService';
 import type { UserAvailability } from '../services/apiService';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors } from '../theme';
 import { useToast } from '../components';
 import * as hapticService from '../services/hapticService';
 
@@ -110,10 +111,7 @@ export default function AvailabilityScreen() {
     try {
       await apiService.updateUserAvailability(availability);
       await hapticService.success();
-      showSuccess({
-        title: 'Saved',
-        message: 'Your availability has been updated',
-      });
+      showSuccess('Your availability has been updated');
     } catch (err: any) {
       await hapticService.error();
       showError(err.message || 'Failed to save availability');

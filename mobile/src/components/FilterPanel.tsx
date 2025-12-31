@@ -17,7 +17,7 @@ import {
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
-import { colors, severityColors, statusColors } from '../theme';
+import { severityColors, statusColors } from '../theme';
 
 export interface FilterState {
   status: ('triggered' | 'acknowledged' | 'resolved')[];
@@ -187,7 +187,7 @@ export function FilterPanel({
                   <View style={[styles.chipDot, { backgroundColor: statusColors.triggered }]} />
                 )}
               >
-                Triggered
+                Active
               </Chip>
               <Chip
                 selected={localFilters.status.includes('acknowledged')}
@@ -499,7 +499,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
-    color: colors.textPrimary,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -508,7 +507,6 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   sectionTitle: {
-    color: colors.textSecondary,
     marginBottom: 12,
     fontWeight: '600',
   },
@@ -538,7 +536,6 @@ const styles = StyleSheet.create({
   },
   moreText: {
     fontSize: 12,
-    color: colors.textMuted,
     marginTop: 8,
   },
   savePresetRow: {
@@ -551,7 +548,6 @@ const styles = StyleSheet.create({
     height: 40,
   },
   savePresetButton: {
-    borderColor: colors.accent,
   },
   actions: {
     flexDirection: 'row',
@@ -559,7 +555,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
   },
   actionButton: {
     flex: 1,

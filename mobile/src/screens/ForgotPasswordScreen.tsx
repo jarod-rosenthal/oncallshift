@@ -15,6 +15,7 @@ import {
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as authService from '../services/authService';
+import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
 
 interface ForgotPasswordScreenProps {
@@ -23,6 +24,8 @@ interface ForgotPasswordScreenProps {
 
 export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScreenProps) {
   const theme = useTheme();
+  const { colors } = useAppTheme();
+  const themedStyles = styles(colors);
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -92,22 +95,22 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={themedStyles.container}
     >
-      <View style={styles.content}>
+      <View style={themedStyles.content}>
         {/* Header */}
-        <View style={styles.header}>
-          <Surface style={styles.iconContainer} elevation={2}>
+        <View style={themedStyles.header}>
+          <Surface style={themedStyles.iconContainer} elevation={2}>
             <MaterialCommunityIcons
               name={step === 'email' ? 'email-outline' : 'lock-reset'}
               size={48}
               color={theme.colors.primary}
             />
           </Surface>
-          <Text variant="headlineMedium" style={styles.title}>
+          <Text variant="headlineMedium" style={themedStyles.title}>
             {step === 'email' ? 'Forgot Password?' : 'Reset Password'}
           </Text>
-          <Text variant="bodyLarge" style={styles.subtitle}>
+          <Text variant="bodyLarge" style={themedStyles.subtitle}>
             {step === 'email'
               ? "Enter your email and we'll send you a code to reset your password"
               : 'Enter the code we sent you and your new password'}
@@ -115,7 +118,7 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
         </View>
 
         {/* Form */}
-        <Surface style={styles.formContainer} elevation={1}>
+        <Surface style={themedStyles.formContainer} elevation={1}>
           {step === 'email' ? (
             <>
               <TextInput
@@ -127,8 +130,8 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
                 autoCapitalize="none"
                 autoCorrect={false}
                 left={<TextInput.Icon icon="email-outline" />}
-                style={styles.input}
-                outlineStyle={styles.inputOutline}
+                style={themedStyles.input}
+                outlineStyle={themedStyles.inputOutline}
               />
 
               <Button
@@ -136,9 +139,9 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
                 onPress={handleSendCode}
                 loading={loading}
                 disabled={loading}
-                style={styles.button}
-                contentStyle={styles.buttonContent}
-                labelStyle={styles.buttonLabel}
+                style={themedStyles.button}
+                contentStyle={themedStyles.buttonContent}
+                labelStyle={themedStyles.buttonLabel}
               >
                 Send Reset Code
               </Button>
@@ -152,8 +155,8 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
                 onChangeText={setCode}
                 keyboardType="number-pad"
                 left={<TextInput.Icon icon="numeric" />}
-                style={styles.input}
-                outlineStyle={styles.inputOutline}
+                style={themedStyles.input}
+                outlineStyle={themedStyles.inputOutline}
               />
 
               <TextInput
@@ -170,8 +173,8 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
                     onPress={() => setShowPassword(!showPassword)}
                   />
                 }
-                style={styles.input}
-                outlineStyle={styles.inputOutline}
+                style={themedStyles.input}
+                outlineStyle={themedStyles.inputOutline}
               />
 
               <TextInput
@@ -182,8 +185,8 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 left={<TextInput.Icon icon="lock-check-outline" />}
-                style={styles.input}
-                outlineStyle={styles.inputOutline}
+                style={themedStyles.input}
+                outlineStyle={themedStyles.inputOutline}
               />
 
               <Button
@@ -191,9 +194,9 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
                 onPress={handleResetPassword}
                 loading={loading}
                 disabled={loading}
-                style={styles.button}
-                contentStyle={styles.buttonContent}
-                labelStyle={styles.buttonLabel}
+                style={themedStyles.button}
+                contentStyle={themedStyles.buttonContent}
+                labelStyle={themedStyles.buttonLabel}
               >
                 Reset Password
               </Button>
@@ -201,7 +204,7 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
               <Button
                 mode="text"
                 onPress={() => setStep('email')}
-                style={styles.linkButton}
+                style={themedStyles.linkButton}
               >
                 Didn't receive the code? Send again
               </Button>
@@ -211,7 +214,7 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
           <Button
             mode="text"
             onPress={() => navigation.goBack()}
-            style={styles.linkButton}
+            style={themedStyles.linkButton}
             icon="arrow-left"
           >
             Back to Sign In
@@ -222,7 +225,7 @@ export default function ForgotPasswordScreen({ navigation }: ForgotPasswordScree
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,

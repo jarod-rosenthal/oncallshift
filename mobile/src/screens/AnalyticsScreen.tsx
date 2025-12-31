@@ -248,7 +248,7 @@ export default function AnalyticsScreen({ navigation }: any) {
             <View style={styles(colors).statusRow}>
               <View style={styles(colors).statusItem}>
                 <View style={[styles(colors).statusDot, { backgroundColor: colors.error }]} />
-                <Text style={styles(colors).statusLabel}>Triggered</Text>
+                <Text style={styles(colors).statusLabel}>Active</Text>
                 <Text style={styles(colors).statusValue}>{data?.triggeredCount || 0}</Text>
               </View>
               <View style={styles(colors).statusItem}>

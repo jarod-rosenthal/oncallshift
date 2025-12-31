@@ -16,20 +16,27 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as hapticService from '../services/hapticService';
-import { colors } from '../theme';
-import type { AIDiagnosisResponse, SuggestedAction } from '../services/apiService';
+import { useAppTheme } from '../context/ThemeContext';
+import type { LegacyAIDiagnosisResponse } from '../services/apiService';
+
+// Legacy action format from LegacyAIDiagnosisResponse
+interface LegacyAction {
+  action: string;
+  command: string;
+  risk: 'low' | 'medium' | 'high';
+}
 
 interface AIDiagnosisPanelProps {
   loading: boolean;
-  diagnosis: AIDiagnosisResponse | null;
+  diagnosis: LegacyAIDiagnosisResponse | null;
   error: string | null;
   onRetry: () => void;
-  onActionPress?: (action: SuggestedAction) => void;
+  onActionPress?: (action: LegacyAction) => void;
   onSendAsNote?: (noteText: string) => void;
   sendingNote?: boolean;
 }
 
-const getRiskColor = (risk: SuggestedAction['risk']) => {
+const getRiskColor = (risk: LegacyAction['risk'], colors: any) => {
   switch (risk) {
     case 'low':
       return colors.success;
@@ -42,7 +49,7 @@ const getRiskColor = (risk: SuggestedAction['risk']) => {
   }
 };
 
-const getRiskIcon = (risk: SuggestedAction['risk']): keyof typeof MaterialCommunityIcons.glyphMap => {
+const getRiskIcon = (risk: LegacyAction['risk']): keyof typeof MaterialCommunityIcons.glyphMap => {
   switch (risk) {
     case 'low':
       return 'shield-check';
@@ -64,6 +71,8 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
   onSendAsNote,
   sendingNote = false,
 }) => {
+  const { colors } = useAppTheme();
+  const themedStyles = styles(colors);
   const [expandedLogs, setExpandedLogs] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
 
@@ -97,7 +106,7 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
     setTimeout(() => setCopiedCommand(null), 2000);
   };
 
-  const handleActionPress = async (action: SuggestedAction) => {
+  const handleActionPress = async (action: LegacyAction) => {
     await hapticService.mediumTap();
     if (onActionPress) {
       onActionPress(action);
@@ -108,14 +117,14 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
 
   if (loading) {
     return (
-      <Card style={styles.card} mode="elevated">
+      <Card style={themedStyles.card} mode="elevated">
         <Card.Content>
-          <View style={styles.loadingContainer}>
+          <View style={themedStyles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text variant="titleMedium" style={styles.loadingTitle}>
+            <Text variant="titleMedium" style={themedStyles.loadingTitle}>
               Analyzing Incident
             </Text>
-            <Text variant="bodySmall" style={styles.loadingSubtitle}>
+            <Text variant="bodySmall" style={themedStyles.loadingSubtitle}>
               AI is examining logs, metrics, and historical data...
             </Text>
           </View>
@@ -126,17 +135,17 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
 
   if (error) {
     return (
-      <Card style={styles.card} mode="elevated">
+      <Card style={themedStyles.card} mode="elevated">
         <Card.Content>
-          <View style={styles.errorContainer}>
+          <View style={themedStyles.errorContainer}>
             <MaterialCommunityIcons name="alert-circle" size={48} color={colors.error} />
-            <Text variant="titleMedium" style={styles.errorTitle}>
+            <Text variant="titleMedium" style={themedStyles.errorTitle}>
               Analysis Failed
             </Text>
-            <Text variant="bodyMedium" style={styles.errorMessage}>
+            <Text variant="bodyMedium" style={themedStyles.errorMessage}>
               {error}
             </Text>
-            <Button mode="outlined" onPress={onRetry} style={styles.retryButton}>
+            <Button mode="outlined" onPress={onRetry} style={themedStyles.retryButton}>
               Try Again
             </Button>
           </View>
@@ -150,64 +159,64 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
   }
 
   return (
-    <Card style={styles.card} mode="elevated">
+    <Card style={themedStyles.card} mode="elevated">
       <Card.Content>
         {/* Header */}
-        <View style={styles.sectionHeader}>
+        <View style={themedStyles.sectionHeader}>
           <MaterialCommunityIcons name="robot" size={20} color={colors.accent} />
-          <Text variant="titleMedium" style={styles.sectionTitle}>AI Diagnosis</Text>
-          <Chip compact style={styles.betaChip} textStyle={styles.betaChipText}>
+          <Text variant="titleMedium" style={themedStyles.sectionTitle}>AI Diagnosis</Text>
+          <Chip compact style={themedStyles.betaChip} textStyle={themedStyles.betaChipText}>
             Beta
           </Chip>
         </View>
 
         {/* Analysis */}
-        <Surface style={styles.analysisSurface} elevation={0}>
-          <Text variant="bodyMedium" style={styles.analysisText}>
+        <Surface style={themedStyles.analysisSurface} elevation={0}>
+          <Text variant="bodyMedium" style={themedStyles.analysisText}>
             {diagnosis.analysis}
           </Text>
         </Surface>
 
         {/* Suggested Actions */}
         {diagnosis.suggestedActions.length > 0 && (
-          <View style={styles.actionsSection}>
-            <Text variant="titleSmall" style={styles.subSectionTitle}>
+          <View style={themedStyles.actionsSection}>
+            <Text variant="titleSmall" style={themedStyles.subSectionTitle}>
               Suggested Actions
             </Text>
             {diagnosis.suggestedActions.map((action, index) => (
               <Pressable
                 key={index}
-                style={styles.actionItem}
+                style={themedStyles.actionItem}
                 onPress={() => handleActionPress(action)}
               >
-                <View style={styles.actionHeader}>
-                  <View style={styles.actionTitleRow}>
+                <View style={themedStyles.actionHeader}>
+                  <View style={themedStyles.actionTitleRow}>
                     <MaterialCommunityIcons
                       name={getRiskIcon(action.risk)}
                       size={18}
-                      color={getRiskColor(action.risk)}
+                      color={getRiskColor(action.risk, colors)}
                     />
-                    <Text variant="titleSmall" style={styles.actionTitle}>
+                    <Text variant="titleSmall" style={themedStyles.actionTitle}>
                       {action.action}
                     </Text>
                   </View>
                   <Chip
                     compact
-                    style={[styles.riskChip, { backgroundColor: getRiskColor(action.risk) + '20' }]}
-                    textStyle={[styles.riskChipText, { color: getRiskColor(action.risk) }]}
+                    style={[themedStyles.riskChip, { backgroundColor: getRiskColor(action.risk, colors) + '20' }]}
+                    textStyle={[themedStyles.riskChipText, { color: getRiskColor(action.risk, colors) }]}
                   >
                     {action.risk}
                   </Chip>
                 </View>
-                <View style={styles.commandContainer}>
-                  <Surface style={styles.commandSurface} elevation={0}>
-                    <Text variant="bodySmall" style={styles.commandText}>
+                <View style={themedStyles.commandContainer}>
+                  <Surface style={themedStyles.commandSurface} elevation={0}>
+                    <Text variant="bodySmall" style={themedStyles.commandText}>
                       {action.command}
                     </Text>
                   </Surface>
                   <Pressable
                     onPress={() => handleCopyCommand(action.command)}
-                    style={styles.copyButton}
+                    style={themedStyles.copyButton}
                   >
                     <MaterialCommunityIcons
                       name={copiedCommand === action.command ? 'check' : 'content-copy'}
@@ -223,16 +232,16 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
 
         {/* Relevant Logs */}
         {diagnosis.relevantLogs.length > 0 && (
-          <View style={styles.logsSection}>
+          <View style={themedStyles.logsSection}>
             <Pressable
-              style={styles.logsSectionHeader}
+              style={themedStyles.logsSectionHeader}
               onPress={() => setExpandedLogs(!expandedLogs)}
             >
-              <Text variant="titleSmall" style={styles.subSectionTitle}>
+              <Text variant="titleSmall" style={themedStyles.subSectionTitle}>
                 Relevant Logs
               </Text>
-              <View style={styles.logsToggle}>
-                <Text variant="labelSmall" style={styles.logsCount}>
+              <View style={themedStyles.logsToggle}>
+                <Text variant="labelSmall" style={themedStyles.logsCount}>
                   {diagnosis.relevantLogs.length} entries
                 </Text>
                 <MaterialCommunityIcons
@@ -243,9 +252,9 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
               </View>
             </Pressable>
             {expandedLogs && (
-              <Surface style={styles.logsSurface} elevation={0}>
+              <Surface style={themedStyles.logsSurface} elevation={0}>
                 {diagnosis.relevantLogs.map((log, index) => (
-                  <Text key={index} variant="bodySmall" style={styles.logEntry}>
+                  <Text key={index} variant="bodySmall" style={themedStyles.logEntry}>
                     {log}
                   </Text>
                 ))}
@@ -262,7 +271,7 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
             onPress={handleSendAsNote}
             loading={sendingNote}
             disabled={sendingNote}
-            style={styles.sendNoteButton}
+            style={themedStyles.sendNoteButton}
           >
             Add to Incident Notes
           </Button>
@@ -272,7 +281,7 @@ export const AIDiagnosisPanel: React.FC<AIDiagnosisPanelProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   card: {
     margin: 16,
     marginBottom: 0,

@@ -24,7 +24,10 @@ import {
   Switch,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAppTheme } from '../context/ThemeContext';
+import { colors as themeColors } from '../theme';
 import { useToast } from '../components';
 import * as apiService from '../services/apiService';
 import type { Service, EscalationPolicy } from '../services/apiService';
@@ -33,6 +36,7 @@ import * as hapticService from '../services/hapticService';
 export default function ManageServicesScreen() {
   const { colors } = useAppTheme();
   const { showToast } = useToast();
+  const navigation = useNavigation<StackNavigationProp<any>>();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
@@ -112,7 +116,7 @@ export default function ManageServicesScreen() {
         name: serviceName.trim(),
         description: serviceDescription.trim() || undefined,
         escalationPolicyId: selectedPolicyId || undefined,
-        status: alertsEnabled ? 'active' : 'disabled',
+        status: alertsEnabled ? 'active' : 'inactive',
       });
       hapticService.success();
       showToast({ message: 'Service updated', type: 'success' });

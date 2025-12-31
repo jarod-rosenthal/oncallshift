@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Avatar, Text } from 'react-native-paper';
+import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
 
 interface OwnerAvatarProps {
@@ -50,6 +51,7 @@ export const OwnerAvatar: React.FC<OwnerAvatarProps> = ({
   size = 28,
   showName = false,
 }) => {
+  const { colors } = useAppTheme();
   const initials = getInitials(name, email);
   const bgColor = getAvatarColor(name, email);
 
@@ -62,7 +64,7 @@ export const OwnerAvatar: React.FC<OwnerAvatarProps> = ({
         labelStyle={[styles.label, { fontSize: size * 0.4 }]}
       />
       {showName && name && (
-        <Text variant="labelSmall" style={styles.name} numberOfLines={1}>
+        <Text variant="labelSmall" style={[styles.name, { color: colors.textSecondary }]} numberOfLines={1}>
           {name.split(' ')[0]}
         </Text>
       )}
@@ -84,7 +86,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   name: {
-    color: colors.textSecondary,
     maxWidth: 80,
   },
 });

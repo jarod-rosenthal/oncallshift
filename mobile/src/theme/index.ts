@@ -199,6 +199,7 @@ export const severityColors = {
   error: '#C53030',      // Same as critical for consistency
   warning: '#B7791F',    // Earthy ochre
   moderate: '#3182CE',   // Blue - standard awareness
+  medium: '#3182CE',     // Alias for moderate
   info: '#3182CE',       // Calm cerulean - informational only
   low: '#718096',        // Slate - minimal concern
   default: '#A0AEC0',    // Barely noticeable
