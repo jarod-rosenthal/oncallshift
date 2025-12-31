@@ -389,7 +389,7 @@ export default function AlertListScreen({ navigation }: any) {
 
   // Swipe action renderers
   const renderLeftActions = useCallback((progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, incident: Incident) => {
-    if (incident.state !== 'triggered') return null;
+    if (incident.state === 'resolved') return null;
 
     const trans = dragX.interpolate({
       inputRange: [0, 50, 100, 101],
@@ -399,18 +399,18 @@ export default function AlertListScreen({ navigation }: any) {
     return (
       <Animated.View style={[styles(colors).leftAction, { transform: [{ translateX: trans }] }]}>
         <Pressable
-          style={styles(colors).actionButton}
-          onPress={() => handleQuickAction(incident, 'acknowledge')}
+          style={[styles(colors).actionButton, { backgroundColor: colors.success }]}
+          onPress={() => handleQuickAction(incident, 'resolve')}
         >
-          <MaterialCommunityIcons name="check" size={24} color="#fff" />
-          <Text style={styles(colors).actionText}>Ack</Text>
+          <MaterialCommunityIcons name="check-all" size={24} color="#fff" />
+          <Text style={styles(colors).actionText}>Resolve</Text>
         </Pressable>
       </Animated.View>
     );
   }, [colors]);
 
   const renderRightActions = useCallback((progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, incident: Incident) => {
-    if (incident.state === 'resolved') return null;
+    if (incident.state !== 'triggered') return null;
 
     const trans = dragX.interpolate({
       inputRange: [-101, -100, -50, 0],
@@ -420,11 +420,11 @@ export default function AlertListScreen({ navigation }: any) {
     return (
       <Animated.View style={[styles(colors).rightActions, { transform: [{ translateX: trans }] }]}>
         <Pressable
-          style={[styles(colors).actionButton, { backgroundColor: colors.success }]}
-          onPress={() => handleQuickAction(incident, 'resolve')}
+          style={styles(colors).actionButton}
+          onPress={() => handleQuickAction(incident, 'acknowledge')}
         >
-          <MaterialCommunityIcons name="check-all" size={24} color="#fff" />
-          <Text style={styles(colors).actionText}>Resolve</Text>
+          <MaterialCommunityIcons name="check" size={24} color="#fff" />
+          <Text style={styles(colors).actionText}>Ack</Text>
         </Pressable>
       </Animated.View>
     );
@@ -661,6 +661,17 @@ export default function AlertListScreen({ navigation }: any) {
               {/* Quick Actions */}
               {item.state !== 'resolved' && !isSelectionMode && (
                 <View style={styles(colors).quickActions}>
+                  <Button
+                    mode="contained"
+                    compact
+                    buttonColor={colors.success}
+                    textColor="#fff"
+                    onPress={() => handleQuickAction(item, 'resolve')}
+                    style={styles(colors).actionButtonStyle}
+                    labelStyle={styles(colors).actionButtonLabel}
+                  >
+                    Resolve
+                  </Button>
                   {item.state === 'triggered' && (
                     <Button
                       mode="contained"
@@ -674,17 +685,6 @@ export default function AlertListScreen({ navigation }: any) {
                       Ack
                     </Button>
                   )}
-                  <Button
-                    mode="contained"
-                    compact
-                    buttonColor={colors.success}
-                    textColor="#fff"
-                    onPress={() => handleQuickAction(item, 'resolve')}
-                    style={styles(colors).actionButtonStyle}
-                    labelStyle={styles(colors).actionButtonLabel}
-                  >
-                    Resolve
-                  </Button>
                 </View>
               )}
                 </View>
@@ -769,19 +769,6 @@ export default function AlertListScreen({ navigation }: any) {
               <Button
                 mode="contained"
                 compact
-                buttonColor={colors.warning}
-                textColor="#fff"
-                onPress={handleBulkAcknowledge}
-                loading={bulkActionLoading}
-                disabled={bulkActionLoading}
-                style={styles(colors).bulkActionButton}
-                icon="check"
-              >
-                Ack
-              </Button>
-              <Button
-                mode="contained"
-                compact
                 buttonColor={colors.success}
                 textColor="#fff"
                 onPress={handleBulkResolve}
@@ -791,6 +778,19 @@ export default function AlertListScreen({ navigation }: any) {
                 icon="check-all"
               >
                 Resolve
+              </Button>
+              <Button
+                mode="contained"
+                compact
+                buttonColor={colors.warning}
+                textColor="#fff"
+                onPress={handleBulkAcknowledge}
+                loading={bulkActionLoading}
+                disabled={bulkActionLoading}
+                style={styles(colors).bulkActionButton}
+                icon="check"
+              >
+                Ack
               </Button>
             </View>
           </View>
@@ -1068,7 +1068,7 @@ const styles = (colors: any) => StyleSheet.create({
   },
   // Swipe Actions
   leftAction: {
-    backgroundColor: colors.warning,
+    backgroundColor: colors.success,
     justifyContent: 'center',
     marginBottom: 10,
     borderRadius: 12,
@@ -1079,9 +1079,9 @@ const styles = (colors: any) => StyleSheet.create({
     marginBottom: 10,
     borderRadius: 12,
     marginLeft: -12,
+    backgroundColor: colors.warning,
   },
   actionButton: {
-    backgroundColor: colors.warning,
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
