@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   FlatList,
@@ -6,6 +6,7 @@ import {
   RefreshControl,
   Alert,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import {
   Text,
@@ -18,13 +19,16 @@ import {
   Portal,
   Modal,
   RadioButton,
+  Surface,
+  Divider,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as apiService from '../services/apiService';
-import type { OnCallData, UserProfile } from '../services/apiService';
+import type { OnCallData, UserProfile, UpcomingShift } from '../services/apiService';
 import { colors } from '../theme';
 import { OwnerAvatar, useToast } from '../components';
 import * as hapticService from '../services/hapticService';
+import * as calendarService from '../services/calendarService';
 
 const OVERRIDE_DURATIONS = [
   { label: '1 hour', hours: 1 },
@@ -34,10 +38,11 @@ const OVERRIDE_DURATIONS = [
   { label: 'End of week', hours: 168 },
 ];
 
-export default function OnCallScreen() {
+export default function OnCallScreen({ navigation }: any) {
   const theme = useTheme();
   const { showSuccess, showError } = useToast();
   const [oncallData, setOncallData] = useState<OnCallData[]>([]);
+  const [upcomingShifts, setUpcomingShifts] = useState<UpcomingShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +51,9 @@ export default function OnCallScreen() {
   const [selectedSchedule, setSelectedSchedule] = useState<OnCallData | null>(null);
   const [takeOverLoading, setTakeOverLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [selectedDuration, setSelectedDuration] = useState<number>(4); // Default 4 hours
+  const [selectedDuration, setSelectedDuration] = useState<number>(4);
+  const [showUpcoming, setShowUpcoming] = useState(true);
+  const [exportingCalendar, setExportingCalendar] = useState(false);
 
   // Dynamic styles for theme-aware colors
   const dynamicStyles = {
@@ -70,11 +77,13 @@ export default function OnCallScreen() {
   const fetchOnCallData = async () => {
     try {
       setError(null);
-      const [data, profile] = await Promise.all([
+      const [data, profile, shifts] = await Promise.all([
         apiService.getOnCallData(),
         apiService.getUserProfile().catch(() => null),
+        apiService.getUpcomingShifts().catch(() => []),
       ]);
       setOncallData(data);
+      setUpcomingShifts(shifts);
       if (profile) {
         setCurrentUser(profile);
       }
@@ -98,6 +107,13 @@ export default function OnCallScreen() {
     fetchOnCallData();
   };
 
+  // Get current user's on-call assignments
+  const myOnCallAssignments = useMemo(() => {
+    return oncallData.filter(item => item.oncallUser?.id === currentUserId);
+  }, [oncallData, currentUserId]);
+
+  const isCurrentlyOnCall = myOnCallAssignments.length > 0;
+
   const handleTakeOver = async () => {
     if (!selectedSchedule || !currentUser) return;
 
@@ -105,7 +121,6 @@ export default function OnCallScreen() {
     await hapticService.mediumTap();
 
     try {
-      // Calculate override end time
       const until = new Date();
       until.setHours(until.getHours() + selectedDuration);
 
@@ -122,7 +137,7 @@ export default function OnCallScreen() {
       });
       setShowTakeOverModal(false);
       setSelectedSchedule(null);
-      setSelectedDuration(4); // Reset to default
+      setSelectedDuration(4);
       fetchOnCallData();
     } catch (err: any) {
       await hapticService.error();
@@ -167,10 +182,256 @@ export default function OnCallScreen() {
     setShowTakeOverModal(true);
   };
 
+  const formatShiftTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const isToday = date.toDateString() === now.toDateString();
+    const isTomorrow = date.toDateString() === tomorrow.toDateString();
+
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (isToday) return `Today ${timeStr}`;
+    if (isTomorrow) return `Tomorrow ${timeStr}`;
+
+    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ` ${timeStr}`;
+  };
+
+  const formatDuration = (startStr: string, endStr: string) => {
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const diffMs = end.getTime() - start.getTime();
+    const hours = Math.round(diffMs / (1000 * 60 * 60));
+
+    if (hours < 24) return `${hours}h`;
+    const days = Math.round(hours / 24);
+    return `${days}d`;
+  };
+
+  const formatTimeUntil = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+
+    if (diffMs < 0) return 'Now';
+
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours < 1) return `in ${minutes}m`;
+    if (hours < 24) return `in ${hours}h ${minutes}m`;
+    const days = Math.floor(hours / 24);
+    return `in ${days}d`;
+  };
+
+  const handleExportToCalendar = async () => {
+    if (upcomingShifts.length === 0) return;
+
+    await hapticService.mediumTap();
+    setExportingCalendar(true);
+
+    try {
+      const result = await calendarService.exportShiftsToCalendar(upcomingShifts);
+
+      if (result.success) {
+        await hapticService.success();
+        showSuccess({
+          title: 'Calendar Updated',
+          message: result.message,
+        });
+      } else {
+        await hapticService.error();
+        if (result.message.includes('permission')) {
+          calendarService.showPermissionDeniedAlert();
+        } else {
+          showError(result.message);
+        }
+      }
+    } catch (err: any) {
+      await hapticService.error();
+      showError(err.message || 'Failed to export to calendar');
+    } finally {
+      setExportingCalendar(false);
+    }
+  };
+
   // Filter data based on segment
   const filteredData = segment === 'mine'
     ? oncallData.filter(item => item.oncallUser?.id === currentUserId)
     : oncallData;
+
+  const renderStatusHeader = () => (
+    <Surface style={styles.statusHeader} elevation={0}>
+      {isCurrentlyOnCall ? (
+        <View style={styles.statusOnCall}>
+          <View style={styles.statusIconContainer}>
+            <View style={styles.statusLive}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+            <MaterialCommunityIcons name="phone-in-talk" size={32} color={colors.success} />
+          </View>
+          <View style={styles.statusTextContainer}>
+            <Text variant="titleLarge" style={styles.statusTitle}>
+              You're On-Call
+            </Text>
+            <Text variant="bodyMedium" style={styles.statusSubtitle}>
+              {myOnCallAssignments.length} service{myOnCallAssignments.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.statusOffCall}>
+          <MaterialCommunityIcons name="phone-off" size={32} color={colors.textMuted} />
+          <View style={styles.statusTextContainer}>
+            <Text variant="titleLarge" style={styles.statusTitle}>
+              Not On-Call
+            </Text>
+            <Text variant="bodyMedium" style={styles.statusSubtitle}>
+              Check upcoming shifts below
+            </Text>
+          </View>
+        </View>
+      )}
+    </Surface>
+  );
+
+  const renderCurrentOnCallCards = () => {
+    if (!isCurrentlyOnCall) return null;
+
+    return (
+      <View style={styles.currentOnCallSection}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>Currently On-Call For</Text>
+        {myOnCallAssignments.map((item) => (
+          <Card key={`${item.service.id}-${item.schedule.id}`} style={styles.currentOnCallCard} mode="elevated">
+            <Card.Content style={styles.currentOnCallContent}>
+              <View style={styles.currentOnCallLeft}>
+                <View style={[styles.severityIndicator, { backgroundColor: colors.success }]} />
+                <View>
+                  <Text variant="titleMedium" style={styles.currentServiceName}>
+                    {item.service.name}
+                  </Text>
+                  <View style={styles.currentScheduleRow}>
+                    <MaterialCommunityIcons name="calendar-clock" size={14} color={colors.textSecondary} />
+                    <Text variant="bodySmall" style={styles.currentScheduleName}>
+                      {item.schedule.name}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              {item.isOverride && (
+                <View style={styles.overrideBadgeSmall}>
+                  <MaterialCommunityIcons name="swap-horizontal" size={12} color={colors.warning} />
+                  <Text style={styles.overrideBadgeText}>Override</Text>
+                </View>
+              )}
+            </Card.Content>
+            {item.isOverride && item.overrideUntil && (
+              <View style={styles.overrideUntilBar}>
+                <MaterialCommunityIcons name="clock-outline" size={14} color={colors.warning} />
+                <Text style={styles.overrideUntilText}>
+                  Until {new Date(item.overrideUntil).toLocaleString([], {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </Text>
+                <Button
+                  mode="text"
+                  compact
+                  textColor={colors.warning}
+                  onPress={() => handleRemoveOverride(item)}
+                >
+                  End Early
+                </Button>
+              </View>
+            )}
+          </Card>
+        ))}
+      </View>
+    );
+  };
+
+  const renderUpcomingShifts = () => {
+    if (upcomingShifts.length === 0) return null;
+
+    return (
+      <View style={styles.upcomingSection}>
+        <View style={styles.upcomingSectionHeader}>
+          <Pressable
+            style={styles.sectionHeaderRow}
+            onPress={() => setShowUpcoming(!showUpcoming)}
+          >
+            <View style={styles.sectionTitleRow}>
+              <MaterialCommunityIcons name="calendar-clock" size={20} color={colors.accent} />
+              <Text variant="titleMedium" style={styles.sectionTitle}>Upcoming Shifts</Text>
+            </View>
+            <MaterialCommunityIcons
+              name={showUpcoming ? 'chevron-up' : 'chevron-down'}
+              size={24}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+          <Button
+            mode="outlined"
+            icon="calendar-export"
+            compact
+            onPress={handleExportToCalendar}
+            loading={exportingCalendar}
+            disabled={exportingCalendar}
+            style={styles.exportButton}
+            textColor={colors.accent}
+          >
+            Export
+          </Button>
+        </View>
+
+        {showUpcoming && (
+          <View style={styles.upcomingList}>
+            {upcomingShifts.slice(0, 5).map((shift, index) => {
+              const isActive = new Date(shift.startTime) <= new Date() && new Date(shift.endTime) > new Date();
+
+              return (
+                <View key={`${shift.scheduleId}-${index}`} style={styles.upcomingItem}>
+                  <View style={styles.upcomingTimeColumn}>
+                    <Text style={[styles.upcomingTime, isActive && styles.upcomingTimeActive]}>
+                      {formatShiftTime(shift.startTime)}
+                    </Text>
+                    <Text style={styles.upcomingDuration}>
+                      {formatDuration(shift.startTime, shift.endTime)}
+                    </Text>
+                  </View>
+                  <View style={styles.upcomingDivider} />
+                  <View style={styles.upcomingDetails}>
+                    <Text variant="titleSmall" style={styles.upcomingScheduleName}>
+                      {shift.scheduleName}
+                    </Text>
+                    {shift.serviceName && shift.serviceName !== shift.scheduleName && (
+                      <Text variant="bodySmall" style={styles.upcomingServiceName}>
+                        {shift.serviceName}
+                      </Text>
+                    )}
+                    {isActive && (
+                      <Chip compact style={styles.activeChip} textStyle={styles.activeChipText}>
+                        Active Now
+                      </Chip>
+                    )}
+                  </View>
+                  <Text style={styles.upcomingCountdown}>
+                    {isActive ? 'Now' : formatTimeUntil(shift.startTime)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
 
   const renderOnCallItem = ({ item }: { item: OnCallData }) => {
     const isMe = item.oncallUser?.id === currentUserId;
@@ -320,11 +581,7 @@ export default function OnCallScreen() {
 
   return (
     <View style={dynamicStyles.container}>
-      <FlatList
-        data={filteredData}
-        renderItem={renderOnCallItem}
-        keyExtractor={(item) => `${item.service.id}-${item.schedule.id}`}
-        contentContainerStyle={styles.listContent}
+      <ScrollView
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -332,56 +589,86 @@ export default function OnCallScreen() {
             colors={[theme.colors.primary]}
           />
         }
-        // Performance optimizations
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={8}
-        windowSize={8}
-        initialNumToRender={6}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Text variant="headlineSmall" style={styles.headerTitle}>
-              Who's On Call
-            </Text>
-            <Text variant="bodyMedium" style={styles.headerSubtitle}>
-              Current on-call responders by service
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Status Header */}
+        {renderStatusHeader()}
+
+        {/* Current On-Call Cards */}
+        {renderCurrentOnCallCards()}
+
+        {/* Upcoming Shifts */}
+        {renderUpcomingShifts()}
+
+        {/* Quick Actions */}
+        {!isCurrentlyOnCall && oncallData.length > 0 && (
+          <View style={styles.quickActionsSection}>
+            <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.quickActionsRow}>
+              <Button
+                mode="contained"
+                icon="account-switch"
+                onPress={() => {
+                  // Find first schedule to take over
+                  const firstAvailable = oncallData.find(item => item.oncallUser?.id !== currentUserId);
+                  if (firstAvailable) {
+                    openTakeOverModal(firstAvailable);
+                  }
+                }}
+                buttonColor={colors.accent}
+                style={styles.quickActionButton}
+              >
+                Take On-Call
+              </Button>
+            </View>
+          </View>
+        )}
+
+        <Divider style={styles.sectionDivider} />
+
+        {/* All Schedules Section */}
+        <View style={styles.allSchedulesSection}>
+          <View style={styles.allSchedulesHeader}>
+            <Text variant="titleMedium" style={styles.sectionTitle}>
+              All Schedules
             </Text>
             <SegmentedButtons
               value={segment}
               onValueChange={(value) => setSegment(value as 'mine' | 'all')}
               buttons={[
-                {
-                  value: 'mine',
-                  label: 'My Schedule',
-                  icon: 'account',
-                },
-                {
-                  value: 'all',
-                  label: 'All Schedules',
-                  icon: 'account-group',
-                },
+                { value: 'mine', label: 'Mine', icon: 'account' },
+                { value: 'all', label: 'All', icon: 'account-group' },
               ]}
               style={styles.segmentedButtons}
+              density="small"
             />
           </View>
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons
-              name={segment === 'mine' ? 'calendar-check' : 'calendar-remove-outline'}
-              size={64}
-              color={colors.textMuted}
-            />
-            <Text variant="titleMedium" style={styles.emptyText}>
-              {segment === 'mine' ? "You're not on call" : 'No on-call schedules'}
-            </Text>
-            <Text variant="bodyMedium" style={styles.emptySubtext}>
-              {segment === 'mine'
-                ? 'Check "All Schedules" to see who is currently on call'
-                : 'Set up schedules in the web app to see on-call responders here'}
-            </Text>
-          </View>
-        }
-      />
+
+          {filteredData.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons
+                name={segment === 'mine' ? 'calendar-check' : 'calendar-remove-outline'}
+                size={48}
+                color={colors.textMuted}
+              />
+              <Text variant="titleSmall" style={styles.emptyText}>
+                {segment === 'mine' ? "You're not on call" : 'No schedules found'}
+              </Text>
+              <Text variant="bodySmall" style={styles.emptySubtext}>
+                {segment === 'mine'
+                  ? 'Switch to "All" to see who is on call'
+                  : 'Set up schedules in the web app'}
+              </Text>
+            </View>
+          ) : (
+            filteredData.map((item) => (
+              <View key={`${item.service.id}-${item.schedule.id}`}>
+                {renderOnCallItem({ item })}
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
 
       {/* Take Over Confirmation Modal */}
       <Portal>
@@ -456,13 +743,13 @@ export default function OnCallScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  scrollContent: {
+    paddingBottom: 24,
   },
   centerContent: {
     justifyContent: 'center',
     alignItems: 'center',
+    flex: 1,
   },
   loadingText: {
     marginTop: 16,
@@ -474,25 +761,240 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginTop: 16,
   },
-  listContent: {
-    padding: 16,
+  // Status Header
+  statusHeader: {
+    padding: 20,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
   },
-  header: {
-    marginBottom: 16,
+  statusOnCall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
-  headerTitle: {
+  statusOffCall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  statusIconContainer: {
+    alignItems: 'center',
+  },
+  statusLive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+  },
+  liveText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: colors.success,
+  },
+  statusTextContainer: {
+    flex: 1,
+  },
+  statusTitle: {
     color: colors.textPrimary,
     fontWeight: 'bold',
   },
-  headerSubtitle: {
+  statusSubtitle: {
     color: colors.textSecondary,
-    marginTop: 4,
+    marginTop: 2,
   },
-  card: {
+  // Current On-Call Section
+  currentOnCallSection: {
+    padding: 16,
+    paddingBottom: 8,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  currentOnCallCard: {
     marginBottom: 12,
     borderRadius: 12,
     backgroundColor: colors.surface,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.success,
   },
+  currentOnCallContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  currentOnCallLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  severityIndicator: {
+    width: 4,
+    height: 40,
+    borderRadius: 2,
+  },
+  currentServiceName: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  currentScheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  currentScheduleName: {
+    color: colors.textSecondary,
+  },
+  overrideBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.warningLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  overrideBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.warning,
+  },
+  overrideUntilBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: 12,
+    paddingTop: 0,
+  },
+  overrideUntilText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.warning,
+  },
+  // Upcoming Shifts Section
+  upcomingSection: {
+    padding: 16,
+    paddingTop: 8,
+  },
+  upcomingSectionHeader: {
+    marginBottom: 12,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  exportButton: {
+    marginTop: 12,
+    borderColor: colors.accent,
+    borderRadius: 8,
+  },
+  upcomingList: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  upcomingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  upcomingTimeColumn: {
+    width: 100,
+  },
+  upcomingTime: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  upcomingTimeActive: {
+    color: colors.success,
+  },
+  upcomingDuration: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  upcomingDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: colors.borderLight,
+    marginHorizontal: 12,
+  },
+  upcomingDetails: {
+    flex: 1,
+  },
+  upcomingScheduleName: {
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  upcomingServiceName: {
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  activeChip: {
+    backgroundColor: colors.successLight,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    height: 22,
+  },
+  activeChipText: {
+    fontSize: 10,
+    color: colors.success,
+    fontWeight: '600',
+  },
+  upcomingCountdown: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  // Quick Actions
+  quickActionsSection: {
+    padding: 16,
+    paddingTop: 8,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  quickActionButton: {
+    flex: 1,
+    borderRadius: 8,
+  },
+  // Section Divider
+  sectionDivider: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
+  // All Schedules Section
+  allSchedulesSection: {
+    padding: 16,
+    paddingTop: 8,
+  },
+  allSchedulesHeader: {
+    marginBottom: 16,
+  },
+  segmentedButtons: {
+    marginTop: 12,
+  },
+  // Card styles (unchanged from original)
   serviceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -580,24 +1082,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   emptyContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingVertical: 40,
   },
   emptyText: {
     color: colors.textMuted,
-    marginTop: 16,
+    marginTop: 12,
     fontWeight: '600',
   },
   emptySubtext: {
     color: colors.textMuted,
-    marginTop: 8,
+    marginTop: 4,
     textAlign: 'center',
     paddingHorizontal: 40,
-  },
-  segmentedButtons: {
-    marginTop: 16,
   },
   badges: {
     flexDirection: 'row',
@@ -619,12 +1117,6 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     margin: 20,
-  },
-  modalContent: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
   },
   modalTitle: {
     color: colors.textPrimary,

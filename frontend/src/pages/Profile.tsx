@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
-import { Navigation } from '../components/Navigation';
 import { usersAPI, aiCredentialsAPI, type AnthropicCredentialStatus } from '../lib/api-client';
-import type { User, NotificationPreferences } from '../types/api';
+import type { User, NotificationPreferences, UserContactMethod, UserNotificationRule, ContactMethodType, NotificationUrgency } from '../types/api';
 
 const TIMEZONES = [
   'UTC',
@@ -57,9 +56,31 @@ export function Profile() {
   const [savingCredential, setSavingCredential] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
 
+  // Contact Methods state
+  const [contactMethods, setContactMethods] = useState<UserContactMethod[]>([]);
+  const [showAddContactMethod, setShowAddContactMethod] = useState(false);
+  const [contactMethodForm, setContactMethodForm] = useState({
+    type: 'email' as ContactMethodType,
+    address: '',
+    label: '',
+  });
+  const [savingContactMethod, setSavingContactMethod] = useState(false);
+
+  // Notification Rules state
+  const [notificationRules, setNotificationRules] = useState<UserNotificationRule[]>([]);
+  const [showAddRule, setShowAddRule] = useState(false);
+  const [ruleForm, setRuleForm] = useState({
+    contactMethodId: '',
+    urgency: 'any' as NotificationUrgency,
+    startDelayMinutes: 0,
+  });
+  const [savingRule, setSavingRule] = useState(false);
+
   useEffect(() => {
     loadProfile();
     loadCredentialStatus();
+    loadContactMethods();
+    loadNotificationRules();
   }, []);
 
   const loadProfile = async () => {
@@ -96,6 +117,108 @@ export function Profile() {
       setAiCredentialStatus(status);
     } catch (err) {
       console.error('Failed to load credential status:', err);
+    }
+  };
+
+  const loadContactMethods = async () => {
+    try {
+      const response = await usersAPI.listContactMethods();
+      setContactMethods(response.contactMethods);
+    } catch (err) {
+      console.error('Failed to load contact methods:', err);
+    }
+  };
+
+  const loadNotificationRules = async () => {
+    try {
+      const response = await usersAPI.listNotificationRules();
+      setNotificationRules(response.notificationRules);
+    } catch (err) {
+      console.error('Failed to load notification rules:', err);
+    }
+  };
+
+  const handleAddContactMethod = async () => {
+    if (!contactMethodForm.address.trim()) {
+      setError('Address is required');
+      return;
+    }
+
+    try {
+      setSavingContactMethod(true);
+      setError(null);
+      await usersAPI.createContactMethod({
+        type: contactMethodForm.type,
+        address: contactMethodForm.address.trim(),
+        label: contactMethodForm.label.trim() || undefined,
+      });
+      setShowAddContactMethod(false);
+      setContactMethodForm({ type: 'email', address: '', label: '' });
+      loadContactMethods();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to add contact method');
+    } finally {
+      setSavingContactMethod(false);
+    }
+  };
+
+  const handleDeleteContactMethod = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this contact method?')) return;
+
+    try {
+      await usersAPI.deleteContactMethod(id);
+      loadContactMethods();
+      loadNotificationRules(); // Rules may be affected
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete contact method');
+    }
+  };
+
+  const handleAddNotificationRule = async () => {
+    if (!ruleForm.contactMethodId) {
+      setError('Please select a contact method');
+      return;
+    }
+
+    try {
+      setSavingRule(true);
+      setError(null);
+      await usersAPI.createNotificationRule({
+        contactMethodId: ruleForm.contactMethodId,
+        urgency: ruleForm.urgency,
+        startDelayMinutes: ruleForm.startDelayMinutes,
+      });
+      setShowAddRule(false);
+      setRuleForm({ contactMethodId: '', urgency: 'any', startDelayMinutes: 0 });
+      loadNotificationRules();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to add notification rule');
+    } finally {
+      setSavingRule(false);
+    }
+  };
+
+  const handleDeleteNotificationRule = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this notification rule?')) return;
+
+    try {
+      await usersAPI.deleteNotificationRule(id);
+      loadNotificationRules();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete notification rule');
+    }
+  };
+
+  const handleToggleRuleEnabled = async (rule: UserNotificationRule) => {
+    try {
+      await usersAPI.updateNotificationRule(rule.id, { enabled: !rule.enabled });
+      loadNotificationRules();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update notification rule');
     }
   };
 
@@ -206,16 +329,7 @@ export function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">
-            ← Back to Dashboard
-          </Button>
-        </Link>
-
+    <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Profile Settings</h2>
           <p className="text-muted-foreground">
@@ -532,6 +646,226 @@ export function Profile() {
               </div>
             )}
 
+            {/* Contact Methods Card */}
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle>Contact Methods</CardTitle>
+                    <CardDescription>
+                      Add email, phone, or SMS contact methods for notifications
+                    </CardDescription>
+                  </div>
+                  <Button size="sm" onClick={() => setShowAddContactMethod(true)}>
+                    Add Contact
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {showAddContactMethod && (
+                  <div className="mb-4 p-4 border rounded-lg bg-accent">
+                    <h4 className="font-medium mb-3">Add Contact Method</h4>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="cm-type">Type</Label>
+                          <Select
+                            id="cm-type"
+                            value={contactMethodForm.type}
+                            onChange={(e) => setContactMethodForm({ ...contactMethodForm, type: e.target.value as ContactMethodType })}
+                          >
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                            <option value="phone">Phone</option>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="cm-label">Label (Optional)</Label>
+                          <Input
+                            id="cm-label"
+                            value={contactMethodForm.label}
+                            onChange={(e) => setContactMethodForm({ ...contactMethodForm, label: e.target.value })}
+                            placeholder="e.g., Work Phone"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="cm-address">
+                          {contactMethodForm.type === 'email' ? 'Email Address' : 'Phone Number'}
+                        </Label>
+                        <Input
+                          id="cm-address"
+                          type={contactMethodForm.type === 'email' ? 'email' : 'tel'}
+                          value={contactMethodForm.address}
+                          onChange={(e) => setContactMethodForm({ ...contactMethodForm, address: e.target.value })}
+                          placeholder={contactMethodForm.type === 'email' ? 'you@example.com' : '+1234567890'}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button onClick={handleAddContactMethod} disabled={savingContactMethod}>
+                          {savingContactMethod ? 'Adding...' : 'Add'}
+                        </Button>
+                        <Button variant="outline" onClick={() => {
+                          setShowAddContactMethod(false);
+                          setContactMethodForm({ type: 'email', address: '', label: '' });
+                        }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {contactMethods.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">
+                    No contact methods added yet. Add one to set up notification rules.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {contactMethods.map((cm) => (
+                      <div key={cm.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-medium uppercase px-2 py-1 rounded bg-slate-100 dark:bg-slate-800">
+                            {cm.type}
+                          </span>
+                          <div>
+                            <p className="font-medium">{cm.label || cm.address}</p>
+                            {cm.label && <p className="text-sm text-muted-foreground">{cm.address}</p>}
+                          </div>
+                          {cm.verified ? (
+                            <span className="text-xs text-green-600 dark:text-green-400">Verified</span>
+                          ) : (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">Pending</span>
+                          )}
+                          {cm.isDefault && (
+                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">Default</span>
+                          )}
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteContactMethod(cm.id)}>
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Notification Rules Card */}
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle>Notification Rules</CardTitle>
+                    <CardDescription>
+                      Configure when and how you receive notifications based on urgency
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowAddRule(true)}
+                    disabled={contactMethods.length === 0}
+                  >
+                    Add Rule
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {showAddRule && (
+                  <div className="mb-4 p-4 border rounded-lg bg-accent">
+                    <h4 className="font-medium mb-3">Add Notification Rule</h4>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label htmlFor="rule-cm">Contact Method</Label>
+                          <Select
+                            id="rule-cm"
+                            value={ruleForm.contactMethodId}
+                            onChange={(e) => setRuleForm({ ...ruleForm, contactMethodId: e.target.value })}
+                          >
+                            <option value="">Select...</option>
+                            {contactMethods.map((cm) => (
+                              <option key={cm.id} value={cm.id}>
+                                {cm.type.toUpperCase()}: {cm.label || cm.address}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="rule-urgency">Urgency</Label>
+                          <Select
+                            id="rule-urgency"
+                            value={ruleForm.urgency}
+                            onChange={(e) => setRuleForm({ ...ruleForm, urgency: e.target.value as NotificationUrgency })}
+                          >
+                            <option value="any">Any</option>
+                            <option value="high">High Only</option>
+                            <option value="low">Low Only</option>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="rule-delay">Delay (minutes)</Label>
+                          <Input
+                            id="rule-delay"
+                            type="number"
+                            min="0"
+                            value={ruleForm.startDelayMinutes}
+                            onChange={(e) => setRuleForm({ ...ruleForm, startDelayMinutes: parseInt(e.target.value) || 0 })}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button onClick={handleAddNotificationRule} disabled={savingRule}>
+                          {savingRule ? 'Adding...' : 'Add Rule'}
+                        </Button>
+                        <Button variant="outline" onClick={() => {
+                          setShowAddRule(false);
+                          setRuleForm({ contactMethodId: '', urgency: 'any', startDelayMinutes: 0 });
+                        }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {contactMethods.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">
+                    Add contact methods first before creating notification rules.
+                  </p>
+                ) : notificationRules.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-4">
+                    No notification rules configured. Add rules to control how you receive notifications.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {notificationRules.map((rule) => (
+                      <div key={rule.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={rule.enabled}
+                            onCheckedChange={() => handleToggleRuleEnabled(rule)}
+                          />
+                          <div>
+                            <p className="font-medium">
+                              {rule.contactMethod?.type.toUpperCase()}: {rule.contactMethod?.label || rule.contactMethod?.address}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {rule.urgency === 'any' ? 'All incidents' : `${rule.urgency} urgency only`}
+                              {rule.startDelayMinutes > 0 && ` • ${rule.startDelayMinutes}min delay`}
+                            </p>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteNotificationRule(rule.id)}>
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Organization Card (Read-Only) */}
             <Card>
               <CardHeader>
@@ -596,7 +930,6 @@ export function Profile() {
             </div>
           </div>
         )}
-      </main>
     </div>
   );
 }

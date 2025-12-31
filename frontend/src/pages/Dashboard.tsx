@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Navigation } from '../components/Navigation';
 import { WeeklyCalendar } from '../components/WeeklyCalendar';
 import { incidentsAPI, setupAPI } from '../lib/api-client';
 import { useAuthStore } from '../store/auth-store';
@@ -141,10 +140,8 @@ export function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-
-      <main className="container mx-auto px-4 py-8">
+    <div>
+      <main className="container mx-auto">
         {/* Setup Wizard Banner */}
         {showSetupBanner && (
           <div className="mb-6 p-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg shadow-lg">

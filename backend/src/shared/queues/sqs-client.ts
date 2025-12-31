@@ -9,6 +9,7 @@ export interface AlertMessage {
   details?: Record<string, any>;
   severity: 'info' | 'warning' | 'error' | 'critical';
   dedupKey?: string;
+  source?: string;
 }
 
 export interface NotificationMessage {

@@ -6,7 +6,6 @@ const KEYS = {
   ONBOARDING_COMPLETE: 'app_onboarding_complete',
   HAPTIC_ENABLED: 'app_haptic_enabled',
   SOUND_ENABLED: 'app_sound_enabled',
-  SNOOZED_INCIDENTS: 'app_snoozed_incidents',
   CACHED_INCIDENTS: 'app_cached_incidents',
   CACHED_ONCALL: 'app_cached_oncall',
   CACHED_PROFILE: 'app_cached_profile',
@@ -15,11 +14,6 @@ const KEYS = {
 };
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-
-export interface SnoozedIncident {
-  incidentId: string;
-  snoozeUntil: string; // ISO date string
-}
 
 export interface AppSettings {
   themeMode: ThemeMode;

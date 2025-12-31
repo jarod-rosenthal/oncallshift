@@ -46,10 +46,6 @@ export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
         return '✓✓';
       case 'escalate':
         return '↑';
-      case 'snooze':
-        return '💤';
-      case 'unsnooze':
-        return '⏰';
       case 'reassign':
         return '→';
       case 'note':
@@ -69,9 +65,6 @@ export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-300 dark:border-green-700';
       case 'escalate':
         return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 border-orange-300 dark:border-orange-700';
-      case 'snooze':
-      case 'unsnooze':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700';
       case 'reassign':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700';
       case 'note':
@@ -166,15 +159,6 @@ export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
                         <span className="text-muted-foreground">
                           Step {event.payload.fromStep} → Step {event.payload.toStep}
                           {event.payload.reason && ` (${event.payload.reason})`}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Payload details for snooze events */}
-                    {event.type === 'snooze' && event.payload && (
-                      <div className="mt-2 text-xs bg-gray-50 dark:bg-gray-800 rounded p-2">
-                        <span className="text-muted-foreground">
-                          Duration: {event.payload.durationMinutes} minutes
                         </span>
                       </div>
                     )}

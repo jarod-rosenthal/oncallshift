@@ -62,46 +62,6 @@ async function processIncidentEscalation(
   incidentRepo: any,
   eventRepo: any
 ): Promise<void> {
-  // Check if snooze has expired
-  if (incident.snoozedUntil !== null) {
-    if (incident.isSnoozed()) {
-      // Still snoozed - skip escalation
-      logger.debug('Skipping escalation for snoozed incident', {
-        incidentId: incident.id,
-        incidentNumber: incident.incidentNumber,
-        snoozedUntil: incident.snoozedUntil,
-      });
-      return;
-    } else {
-      // Snooze expired - clear snooze and reset escalation timer
-      logger.info('Snooze expired, resuming escalation', {
-        incidentId: incident.id,
-        incidentNumber: incident.incidentNumber,
-      });
-
-      // Create snooze expired event
-      const snoozeExpiredEvent = eventRepo.create({
-        incidentId: incident.id,
-        type: 'unsnooze',
-        message: 'Snooze expired, resuming escalation',
-        payload: {
-          expiredAt: incident.snoozedUntil,
-          reason: 'expired',
-        },
-      });
-      await eventRepo.save(snoozeExpiredEvent);
-
-      // Clear snooze and reset escalation timer
-      incident.snoozedUntil = null;
-      incident.snoozedBy = null;
-      incident.escalationStartedAt = new Date();
-      await incidentRepo.save(incident);
-
-      // Continue with escalation check but timeout resets
-      return;
-    }
-  }
-
   // Get service with escalation policy
   const service = await serviceRepo.findOne({
     where: { id: incident.serviceId },
@@ -268,13 +228,15 @@ async function getStepTargetUsers(
   }
 
   if (step.targetType === 'schedule' && step.scheduleId) {
-    // Schedule-based targeting
+    // Schedule-based targeting - load with layers and overrides for full resolution
     const schedule = await scheduleRepo.findOne({
       where: { id: step.scheduleId },
+      relations: ['layers', 'layers.members', 'overrides'],
     });
 
     if (schedule) {
-      const oncallUserId = schedule.getCurrentOncallUserId();
+      // Use getEffectiveOncallUserId which respects layers and overrides
+      const oncallUserId = schedule.getEffectiveOncallUserId(new Date());
       if (oncallUserId) {
         return [oncallUserId];
       }
@@ -297,8 +259,10 @@ async function checkAndAdvanceRotations(): Promise<void> {
     const userRepo = dataSource.getRepository(User);
 
     // Find all schedules with rotation configs (daily or weekly)
+    // Include layers relation to check if schedule uses layer-based rotations
     const rotatingSchedules = await scheduleRepo.find({
       where: { type: In(['daily', 'weekly']) },
+      relations: ['layers'],
     });
 
     if (rotatingSchedules.length === 0) {
@@ -327,6 +291,12 @@ async function processRotationHandoff(
   scheduleRepo: any,
   userRepo: any
 ): Promise<void> {
+  // Skip legacy rotation processing if schedule has layers configured
+  // Layer-based rotations are calculated dynamically by getEffectiveOncallUserId()
+  if (schedule.hasLayers && schedule.hasLayers()) {
+    return;
+  }
+
   if (!schedule.rotation_config) {
     return;
   }

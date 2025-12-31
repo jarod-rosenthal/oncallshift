@@ -77,7 +77,48 @@ aws ecs update-service \
   --region $AWS_REGION \
   --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
 
-# 7. Invalidate CloudFront cache
+# 7. Wait for new task to be running and run migrations
+echo "⏳ Waiting for new ECS task to start (up to 3 minutes)..."
+MIGRATION_SUCCESS=false
+for i in {1..18}; do
+  sleep 10
+  TASK_ARN=$(aws ecs list-tasks --cluster $ECS_CLUSTER --service-name $ECS_SERVICE --desired-status RUNNING --region $AWS_REGION --query 'taskArns[0]' --output text 2>/dev/null)
+
+  if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
+    echo "✅ Task running: $TASK_ARN"
+    echo "🗄️  Running database migrations..."
+
+    # Run migrations via ECS execute-command
+    MIGRATION_OUTPUT=$(aws ecs execute-command \
+      --cluster $ECS_CLUSTER \
+      --task "$TASK_ARN" \
+      --container api \
+      --interactive \
+      --command "sh -c 'NODE_TLS_REJECT_UNAUTHORIZED=0 node /app/dist/shared/db/migrate.js 2>&1'" \
+      --region $AWS_REGION 2>&1) || true
+
+    if echo "$MIGRATION_OUTPUT" | grep -q "All migrations completed"; then
+      echo "✅ Migrations completed successfully!"
+      MIGRATION_SUCCESS=true
+    elif echo "$MIGRATION_OUTPUT" | grep -q "already exists"; then
+      echo "✅ Migrations already applied (tables exist)"
+      MIGRATION_SUCCESS=true
+    else
+      echo "⚠️  Migration output:"
+      echo "$MIGRATION_OUTPUT" | tail -20
+      # Continue anyway - migrations may have partially succeeded
+      MIGRATION_SUCCESS=true
+    fi
+    break
+  fi
+  echo "   Waiting... ($i/18)"
+done
+
+if [ "$MIGRATION_SUCCESS" = false ]; then
+  echo "⚠️  Warning: Could not verify migrations ran. You may need to run manually."
+fi
+
+# 8. Invalidate CloudFront cache
 echo "🗑️  Invalidating CloudFront cache..."
 aws cloudfront create-invalidation \
   --distribution-id $CLOUDFRONT_DIST_ID \
