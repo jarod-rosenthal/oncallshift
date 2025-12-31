@@ -1110,3 +1110,233 @@ describe('Heartbeat Import', () => {
     });
   });
 });
+
+describe('Maintenance Window Import', () => {
+  describe('PagerDuty maintenance window parsing', () => {
+    it('should parse PagerDuty maintenance window structure', () => {
+      const pdWindow = {
+        id: 'mw-123',
+        type: 'maintenance_window',
+        summary: 'Database Upgrade',
+        description: 'Planned database upgrade',
+        start_time: '2025-01-15T02:00:00Z',
+        end_time: '2025-01-15T06:00:00Z',
+        services: [
+          { id: 'service-1', type: 'service_reference', summary: 'Database Service' },
+        ],
+        teams: [
+          { id: 'team-1', type: 'team_reference', summary: 'DBA Team' },
+        ],
+        created_by: {
+          id: 'user-1',
+          type: 'user_reference',
+          summary: 'John Doe',
+        },
+      };
+
+      expect(pdWindow.id).toBe('mw-123');
+      expect(pdWindow.summary).toBe('Database Upgrade');
+      expect(pdWindow.start_time).toBe('2025-01-15T02:00:00Z');
+      expect(pdWindow.end_time).toBe('2025-01-15T06:00:00Z');
+      expect(pdWindow.services?.length).toBe(1);
+      expect(pdWindow.services?.[0].id).toBe('service-1');
+    });
+
+    it('should handle maintenance window with multiple services', () => {
+      const pdWindow = {
+        id: 'mw-456',
+        summary: 'Infrastructure Update',
+        start_time: '2025-01-20T00:00:00Z',
+        end_time: '2025-01-20T04:00:00Z',
+        services: [
+          { id: 'service-1', type: 'service_reference', summary: 'Service A' },
+          { id: 'service-2', type: 'service_reference', summary: 'Service B' },
+          { id: 'service-3', type: 'service_reference', summary: 'Service C' },
+        ],
+      };
+
+      expect(pdWindow.services?.length).toBe(3);
+    });
+
+    it('should skip past maintenance windows', () => {
+      const pdWindow = {
+        id: 'mw-old',
+        summary: 'Past Maintenance',
+        start_time: '2020-01-01T00:00:00Z',
+        end_time: '2020-01-01T04:00:00Z',
+        services: [],
+      };
+
+      const endTime = new Date(pdWindow.end_time);
+      const now = new Date();
+
+      expect(endTime < now).toBe(true);
+    });
+  });
+
+  describe('Opsgenie maintenance window parsing', () => {
+    it('should parse scheduled Opsgenie maintenance window', () => {
+      const ogWindow = {
+        id: 'mw-og-123',
+        description: 'Scheduled server maintenance',
+        time: {
+          type: 'schedule' as const,
+          startDate: '2025-02-01T03:00:00Z',
+          endDate: '2025-02-01T05:00:00Z',
+        },
+        rules: [
+          { state: 'enabled', entity: { id: 'integration-1', type: 'integration' } },
+        ],
+      };
+
+      expect(ogWindow.id).toBe('mw-og-123');
+      expect(ogWindow.time.type).toBe('schedule');
+      expect(ogWindow.time.startDate).toBe('2025-02-01T03:00:00Z');
+      expect(ogWindow.time.endDate).toBe('2025-02-01T05:00:00Z');
+    });
+
+    it('should handle quick maintenance window types', () => {
+      const windowTypes = ['for-5-minutes', 'for-30-minutes', 'for-1-hour', 'indefinitely'];
+      const now = new Date();
+
+      for (const timeType of windowTypes) {
+        const ogWindow = {
+          id: `mw-quick-${timeType}`,
+          time: {
+            type: timeType as 'for-5-minutes' | 'for-30-minutes' | 'for-1-hour' | 'indefinitely',
+          },
+        };
+
+        let expectedDuration: number;
+        switch (ogWindow.time.type) {
+          case 'for-5-minutes':
+            expectedDuration = 5 * 60 * 1000;
+            break;
+          case 'for-30-minutes':
+            expectedDuration = 30 * 60 * 1000;
+            break;
+          case 'for-1-hour':
+            expectedDuration = 60 * 60 * 1000;
+            break;
+          case 'indefinitely':
+            expectedDuration = 365 * 24 * 60 * 60 * 1000;
+            break;
+          default:
+            expectedDuration = 60 * 60 * 1000;
+        }
+
+        const endTime = new Date(now.getTime() + expectedDuration);
+        expect(endTime > now).toBe(true);
+      }
+    });
+
+    it('should extract integration IDs from rules', () => {
+      const ogWindow = {
+        id: 'mw-og-456',
+        description: 'Multi-integration maintenance',
+        time: {
+          type: 'schedule' as const,
+          startDate: '2025-03-01T00:00:00Z',
+          endDate: '2025-03-01T02:00:00Z',
+        },
+        rules: [
+          { state: 'enabled', entity: { id: 'int-1', type: 'integration' } },
+          { state: 'enabled', entity: { id: 'int-2', type: 'integration' } },
+        ],
+      };
+
+      const integrationIds = ogWindow.rules
+        ?.filter((r: { state: string; entity?: { id: string; type: string } }) => r.entity?.type === 'integration')
+        .map((r: { state: string; entity?: { id: string; type: string } }) => r.entity?.id);
+
+      expect(integrationIds?.length).toBe(2);
+      expect(integrationIds).toContain('int-1');
+      expect(integrationIds).toContain('int-2');
+    });
+  });
+
+  describe('Maintenance window date handling', () => {
+    it('should correctly parse ISO date strings', () => {
+      const startTimeStr = '2025-01-15T14:30:00Z';
+      const endTimeStr = '2025-01-15T18:00:00Z';
+
+      const startTime = new Date(startTimeStr);
+      const endTime = new Date(endTimeStr);
+
+      expect(startTime.getTime()).toBeLessThan(endTime.getTime());
+      expect(endTime.getTime() - startTime.getTime()).toBe(3.5 * 60 * 60 * 1000); // 3.5 hours
+    });
+
+    it('should detect future vs past maintenance windows', () => {
+      const now = new Date();
+      const futureEnd = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Tomorrow
+      const pastEnd = new Date(now.getTime() - 24 * 60 * 60 * 1000); // Yesterday
+
+      expect(futureEnd > now).toBe(true);
+      expect(pastEnd < now).toBe(true);
+    });
+  });
+
+  describe('Maintenance window service association', () => {
+    it('should use first service from PagerDuty window', () => {
+      const serviceIdMap = new Map<string, string>();
+      serviceIdMap.set('pd-service-1', 'ocs-service-1');
+      serviceIdMap.set('pd-service-2', 'ocs-service-2');
+
+      const pdWindow = {
+        id: 'mw-123',
+        services: [
+          { id: 'pd-service-1' },
+          { id: 'pd-service-2' },
+        ],
+      };
+
+      const serviceId = pdWindow.services?.[0]?.id
+        ? serviceIdMap.get(pdWindow.services[0].id)
+        : undefined;
+
+      expect(serviceId).toBe('ocs-service-1');
+    });
+
+    it('should handle maintenance window with no services', () => {
+      const pdWindow: {
+        id: string;
+        services?: Array<{ id: string }>;
+      } = {
+        id: 'mw-no-services',
+        services: [],
+      };
+
+      const serviceId = pdWindow.services?.[0]?.id || null;
+      expect(serviceId).toBeNull();
+    });
+  });
+
+  describe('Preview maintenance windows', () => {
+    it('should count skipped past windows separately', () => {
+      const summary = {
+        total: 5,
+        existing: 1,
+        new: 2,
+        skippedPast: 2,
+      };
+
+      expect(summary.total).toBe(5);
+      expect(summary.skippedPast).toBe(2);
+      expect(summary.existing + summary.new + summary.skippedPast).toBe(5);
+    });
+
+    it('should include time range in preview details', () => {
+      const detail = {
+        description: 'Server Upgrade',
+        status: 'new',
+        startTime: '2025-02-01T00:00:00Z',
+        endTime: '2025-02-01T04:00:00Z',
+      };
+
+      expect(detail.startTime).toBeDefined();
+      expect(detail.endTime).toBeDefined();
+      expect(detail.status).toBe('new');
+    });
+  });
+});

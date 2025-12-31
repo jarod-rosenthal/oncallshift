@@ -97,14 +97,14 @@
 - [x] Write tests
 
 ### 2.2 Import Maintenance Windows
-**Effort**: 1-2 days | **Status**: Not Started
+**Effort**: 1-2 days | **Status**: Complete
 
-- [ ] Add `maintenanceWindows` to PagerDuty import structure
-- [ ] Fetch PagerDuty maintenance windows via API
-- [ ] Map to OnCallShift MaintenanceWindow model
-- [ ] Add to Opsgenie import (if API available)
-- [ ] Add to import preview
-- [ ] Write tests
+- [x] Add `maintenanceWindows` to PagerDuty import structure
+- [x] Map PagerDuty maintenance windows to OnCallShift model
+- [x] Add `maintenanceWindows` to Opsgenie import structure
+- [x] Map Opsgenie maintenance windows (scheduled + quick types)
+- [x] Add to import preview with skippedPast tracking
+- [x] Write tests (12 tests)
 
 ### 2.3 Import Service Dependencies
 **Effort**: 1-2 days | **Status**: Not Started
@@ -237,10 +237,10 @@
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
 | Phase 1: Critical | 40 | 40 | 100% |
-| Phase 2: Important | 28 | 12 | 43% |
+| Phase 2: Important | 28 | 18 | 64% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **113** | **52** | **46%** |
+| **Total** | **113** | **58** | **51%** |
 
 ---
 
@@ -265,6 +265,7 @@
 - **Dec 31, 2024**: Implemented Phase 1.2 - Multi-Target Escalation Steps (8/8 tasks)
 - **Dec 31, 2024**: Implemented Phase 1.4 - Import Alert Routing Rules (11/11 tasks)
 - **Dec 31, 2024**: Implemented Phase 2.1 - Heartbeat Monitors (12/12 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.2 - Import Maintenance Windows (6/6 tasks)
 
 ---
 

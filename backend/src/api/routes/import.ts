@@ -16,6 +16,7 @@ import {
   UserNotificationRule,
   AlertRoutingRule,
   Heartbeat,
+  MaintenanceWindow,
 } from '../../shared/models';
 import { RoutingCondition, ConditionOperator, MatchType } from '../../shared/models/AlertRoutingRule';
 import { authenticateUser } from '../../shared/auth/middleware';
@@ -37,6 +38,19 @@ interface PagerDutyImportData {
   escalation_policies?: PagerDutyEscalationPolicy[];
   services?: PagerDutyService[];
   routing_rules?: PagerDutyEventRule[];
+  maintenance_windows?: PagerDutyMaintenanceWindow[];
+}
+
+interface PagerDutyMaintenanceWindow {
+  id: string;
+  type?: string;
+  summary?: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  services?: Array<{ id: string; type?: string; summary?: string }>;
+  teams?: Array<{ id: string; type?: string; summary?: string }>;
+  created_by?: { id: string; type?: string; summary?: string };
 }
 
 interface PagerDutyEventRule {
@@ -175,6 +189,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
     escalation_policies: { imported: 0, skipped: 0, errors: [] as string[] },
     services: { imported: 0, skipped: 0, errors: [] as string[] },
     routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
+    maintenance_windows: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   // Maps to track PagerDuty ID -> OnCallShift ID mappings
@@ -706,6 +721,88 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
       }
     }
 
+    // 7. Import Maintenance Windows
+    if (importData.maintenance_windows && importData.maintenance_windows.length > 0) {
+      const maintenanceWindowRepo = dataSource.getRepository(MaintenanceWindow);
+
+      for (const pdWindow of importData.maintenance_windows) {
+        try {
+          // Parse dates
+          const startTime = new Date(pdWindow.start_time);
+          const endTime = new Date(pdWindow.end_time);
+
+          // Skip past maintenance windows
+          if (endTime < new Date()) {
+            results.maintenance_windows.skipped++;
+            continue;
+          }
+
+          // Get the first service from the maintenance window
+          // PagerDuty maintenance windows can cover multiple services
+          const pdServiceId = pdWindow.services?.[0]?.id;
+          let serviceId: string | undefined;
+
+          if (pdServiceId) {
+            serviceId = serviceIdMap.get(pdServiceId);
+          }
+
+          // If no mapped service, try to find any service in the org
+          if (!serviceId) {
+            const serviceRepo = dataSource.getRepository(Service);
+            const anyService = await serviceRepo.findOne({
+              where: { orgId },
+              order: { createdAt: 'ASC' },
+            });
+            if (anyService) {
+              serviceId = anyService.id;
+            }
+          }
+
+          if (!serviceId) {
+            results.maintenance_windows.errors.push(
+              `Window ${pdWindow.summary || pdWindow.id}: No service found to associate`
+            );
+            continue;
+          }
+
+          // Check for duplicate by time range and service
+          const existing = await maintenanceWindowRepo.findOne({
+            where: {
+              serviceId,
+              startTime,
+              endTime,
+              orgId,
+            },
+          });
+
+          if (!existing) {
+            const maintenanceWindow = maintenanceWindowRepo.create({
+              orgId,
+              serviceId,
+              startTime,
+              endTime,
+              description: pdWindow.description || pdWindow.summary || null,
+              suppressAlerts: true,
+            });
+            await maintenanceWindowRepo.save(maintenanceWindow);
+            results.maintenance_windows.imported++;
+
+            logger.info('Maintenance window imported', {
+              windowId: maintenanceWindow.id,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+            });
+          } else {
+            results.maintenance_windows.skipped++;
+          }
+        } catch (error: any) {
+          results.maintenance_windows.errors.push(
+            `Window ${pdWindow.summary || pdWindow.id}: ${error.message}`
+          );
+        }
+      }
+    }
+
     const duration = Date.now() - startTime;
 
     logger.info('PagerDuty import completed', {
@@ -749,6 +846,21 @@ interface OpsgenieImportData {
   services?: OpsgenieService[];
   alert_policies?: OpsgenieAlertPolicy[];
   heartbeats?: OpsgenieHeartbeat[];
+  maintenance_windows?: OpsgenieMaintenanceWindow[];
+}
+
+interface OpsgenieMaintenanceWindow {
+  id: string;
+  description?: string;
+  time: {
+    type: 'schedule' | 'for-5-minutes' | 'for-30-minutes' | 'for-1-hour' | 'indefinitely';
+    startDate?: string;
+    endDate?: string;
+  };
+  rules?: Array<{
+    state: string;
+    entity?: { id: string; type: string };
+  }>;
 }
 
 interface OpsgenieHeartbeat {
@@ -915,6 +1027,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
     services: { imported: 0, skipped: 0, errors: [] as string[] },
     routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
     heartbeats: { imported: 0, skipped: 0, errors: [] as string[] },
+    maintenance_windows: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   const userIdMap = new Map<string, string>();
@@ -1483,6 +1596,117 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
       }
     }
 
+    // 8. Import Maintenance Windows
+    if (importData.maintenance_windows && importData.maintenance_windows.length > 0) {
+      const maintenanceWindowRepo = dataSource.getRepository(MaintenanceWindow);
+
+      for (const ogWindow of importData.maintenance_windows) {
+        try {
+          // Parse dates based on time type
+          let startTime: Date;
+          let endTime: Date;
+
+          if (ogWindow.time.type === 'schedule' && ogWindow.time.startDate && ogWindow.time.endDate) {
+            startTime = new Date(ogWindow.time.startDate);
+            endTime = new Date(ogWindow.time.endDate);
+          } else {
+            // For quick maintenance windows (for-5-minutes, for-30-minutes, etc.)
+            // These are typically already started, so we skip past ones
+            startTime = new Date();
+            switch (ogWindow.time.type) {
+              case 'for-5-minutes':
+                endTime = new Date(startTime.getTime() + 5 * 60 * 1000);
+                break;
+              case 'for-30-minutes':
+                endTime = new Date(startTime.getTime() + 30 * 60 * 1000);
+                break;
+              case 'for-1-hour':
+                endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+                break;
+              case 'indefinitely':
+                // Set to 1 year from now for indefinite windows
+                endTime = new Date(startTime.getTime() + 365 * 24 * 60 * 60 * 1000);
+                break;
+              default:
+                endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // Default 1 hour
+            }
+          }
+
+          // Skip past maintenance windows
+          if (endTime < new Date()) {
+            results.maintenance_windows.skipped++;
+            continue;
+          }
+
+          // Get service ID from rules if available
+          let serviceId: string | undefined;
+          if (ogWindow.rules && ogWindow.rules.length > 0) {
+            for (const rule of ogWindow.rules) {
+              if (rule.entity?.type === 'integration' && rule.entity.id) {
+                // Try to find service by mapped ID
+                serviceId = serviceIdMap.get(rule.entity.id);
+                if (serviceId) break;
+              }
+            }
+          }
+
+          // If no mapped service, try to find any service in the org
+          if (!serviceId) {
+            const serviceRepo = dataSource.getRepository(Service);
+            const anyService = await serviceRepo.findOne({
+              where: { orgId },
+              order: { createdAt: 'ASC' },
+            });
+            if (anyService) {
+              serviceId = anyService.id;
+            }
+          }
+
+          if (!serviceId) {
+            results.maintenance_windows.errors.push(
+              `Window ${ogWindow.id}: No service found to associate`
+            );
+            continue;
+          }
+
+          // Check for duplicate by time range and service
+          const existing = await maintenanceWindowRepo.findOne({
+            where: {
+              serviceId,
+              startTime,
+              endTime,
+              orgId,
+            },
+          });
+
+          if (!existing) {
+            const maintenanceWindow = maintenanceWindowRepo.create({
+              orgId,
+              serviceId,
+              startTime,
+              endTime,
+              description: ogWindow.description || null,
+              suppressAlerts: true,
+            });
+            await maintenanceWindowRepo.save(maintenanceWindow);
+            results.maintenance_windows.imported++;
+
+            logger.info('Maintenance window imported', {
+              windowId: maintenanceWindow.id,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+            });
+          } else {
+            results.maintenance_windows.skipped++;
+          }
+        } catch (error: any) {
+          results.maintenance_windows.errors.push(
+            `Window ${ogWindow.id}: ${error.message}`
+          );
+        }
+      }
+    }
+
     const duration = Date.now() - startTime;
 
     logger.info('Opsgenie import completed', {
@@ -1559,6 +1783,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         services: { total: 0, existing: 0, new: 0, withExternalKeys: 0 },
         routing_rules: { total: 0, existing: 0, new: 0, totalConditions: 0 },
         heartbeats: { total: 0, existing: 0, new: 0 },
+        maintenance_windows: { total: 0, existing: 0, new: 0, skippedPast: 0 },
       },
       details: {
         users: [] as any[],
@@ -1570,6 +1795,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         services: [] as any[],
         routing_rules: [] as any[],
         heartbeats: [] as any[],
+        maintenance_windows: [] as any[],
       },
     };
 
@@ -1864,6 +2090,112 @@ router.post('/preview', async (req: Request, res: Response) => {
             status: 'new',
             intervalSeconds,
             enabled: hb.enabled !== false,
+          });
+        }
+      }
+    }
+
+    // Analyze maintenance windows
+    const maintenanceWindows = data.maintenance_windows;
+    if (maintenanceWindows) {
+      const maintenanceWindowRepo = dataSource.getRepository(MaintenanceWindow);
+      const now = new Date();
+
+      for (const mw of maintenanceWindows) {
+        preview.summary.maintenance_windows.total++;
+
+        // Parse dates based on source
+        let startTime: Date;
+        let endTime: Date;
+        let description: string | undefined;
+
+        if (source === 'pagerduty') {
+          startTime = new Date(mw.start_time);
+          endTime = new Date(mw.end_time);
+          description = mw.description || mw.summary;
+        } else {
+          // Opsgenie
+          if (mw.time?.type === 'schedule' && mw.time.startDate && mw.time.endDate) {
+            startTime = new Date(mw.time.startDate);
+            endTime = new Date(mw.time.endDate);
+          } else {
+            // Quick maintenance windows - approximate
+            startTime = now;
+            switch (mw.time?.type) {
+              case 'for-5-minutes':
+                endTime = new Date(now.getTime() + 5 * 60 * 1000);
+                break;
+              case 'for-30-minutes':
+                endTime = new Date(now.getTime() + 30 * 60 * 1000);
+                break;
+              case 'for-1-hour':
+                endTime = new Date(now.getTime() + 60 * 60 * 1000);
+                break;
+              case 'indefinitely':
+                endTime = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
+                break;
+              default:
+                endTime = new Date(now.getTime() + 60 * 60 * 1000);
+            }
+          }
+          description = mw.description;
+        }
+
+        // Skip past maintenance windows
+        if (endTime < now) {
+          preview.summary.maintenance_windows.skippedPast++;
+          preview.details.maintenance_windows.push({
+            description: description || `Window ${mw.id}`,
+            status: 'skipped',
+            reason: 'past',
+            startTime: startTime.toISOString(),
+            endTime: endTime.toISOString(),
+          });
+          continue;
+        }
+
+        // Check for existing maintenance window
+        const anyService = await serviceRepo.findOne({
+          where: { orgId },
+          order: { createdAt: 'ASC' },
+        });
+
+        if (anyService) {
+          const existing = await maintenanceWindowRepo.findOne({
+            where: {
+              serviceId: anyService.id,
+              startTime,
+              endTime,
+              orgId,
+            },
+          });
+
+          if (existing) {
+            preview.summary.maintenance_windows.existing++;
+            preview.details.maintenance_windows.push({
+              description: description || `Window ${mw.id}`,
+              status: 'existing',
+              id: existing.id,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+            });
+          } else {
+            preview.summary.maintenance_windows.new++;
+            preview.details.maintenance_windows.push({
+              description: description || `Window ${mw.id}`,
+              status: 'new',
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+            });
+          }
+        } else {
+          preview.summary.maintenance_windows.new++;
+          preview.details.maintenance_windows.push({
+            description: description || `Window ${mw.id}`,
+            status: 'new',
+            startTime: startTime.toISOString(),
+            endTime: endTime.toISOString(),
+            note: 'Will be associated with first imported service',
           });
         }
       }
