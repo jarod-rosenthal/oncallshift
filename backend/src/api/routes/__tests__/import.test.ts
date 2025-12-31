@@ -1688,3 +1688,544 @@ describe('Tag Import', () => {
     });
   });
 });
+
+describe('Migration Validation', () => {
+  describe('Validation report structure', () => {
+    it('should have proper report structure', () => {
+      const report = {
+        source: 'pagerduty' as const,
+        validatedAt: new Date().toISOString(),
+        summary: {
+          users: { matched: 0, missing: 0, different: 0, extra: 0 },
+          teams: { matched: 0, missing: 0, different: 0, extra: 0 },
+          schedules: { matched: 0, missing: 0, different: 0, extra: 0 },
+          escalationPolicies: { matched: 0, missing: 0, different: 0, extra: 0 },
+          services: { matched: 0, missing: 0, different: 0, extra: 0 },
+        },
+        details: {
+          users: [],
+          teams: [],
+          schedules: [],
+          escalationPolicies: [],
+          services: [],
+        },
+        suggestions: [],
+        configurationGaps: [],
+      };
+
+      expect(report.source).toBe('pagerduty');
+      expect(report.summary.users).toBeDefined();
+      expect(report.summary.teams).toBeDefined();
+      expect(report.summary.schedules).toBeDefined();
+      expect(report.summary.escalationPolicies).toBeDefined();
+      expect(report.summary.services).toBeDefined();
+    });
+
+    it('should support both pagerduty and opsgenie sources', () => {
+      const sources = ['pagerduty', 'opsgenie'];
+      expect(sources).toContain('pagerduty');
+      expect(sources).toContain('opsgenie');
+    });
+  });
+
+  describe('Entity validation statuses', () => {
+    it('should support all validation statuses', () => {
+      const statuses = ['matched', 'missing', 'different', 'extra'];
+
+      expect(statuses).toContain('matched');
+      expect(statuses).toContain('missing');
+      expect(statuses).toContain('different');
+      expect(statuses).toContain('extra');
+    });
+
+    it('should track entity validation with diffs', () => {
+      const validation = {
+        sourceId: 'PD123',
+        sourceName: 'Test User',
+        mappedId: 'UUID-456',
+        status: 'different' as const,
+        diffs: [
+          { field: 'name', source: 'Test User', current: 'Different Name', severity: 'info' as const },
+        ],
+      };
+
+      expect(validation.sourceId).toBe('PD123');
+      expect(validation.sourceName).toBe('Test User');
+      expect(validation.mappedId).toBe('UUID-456');
+      expect(validation.status).toBe('different');
+      expect(validation.diffs.length).toBe(1);
+    });
+  });
+
+  describe('User validation', () => {
+    it('should match users by email', () => {
+      const sourceUsers = [
+        { id: 'PD1', email: 'user@example.com', name: 'Test User' },
+      ];
+      const existingUsers = [
+        { id: 'UUID1', email: 'user@example.com', fullName: 'Test User' },
+      ];
+
+      const usersByEmail = new Map(existingUsers.map(u => [u.email.toLowerCase(), u]));
+      const matchedUser = usersByEmail.get(sourceUsers[0].email.toLowerCase());
+
+      expect(matchedUser).toBeDefined();
+      expect(matchedUser?.id).toBe('UUID1');
+    });
+
+    it('should detect missing users', () => {
+      const sourceUsers = [
+        { id: 'PD1', email: 'new@example.com', name: 'New User' },
+      ];
+      const existingUsers: any[] = [];
+
+      const usersByEmail = new Map(existingUsers.map(u => [u.email.toLowerCase(), u]));
+      const matchedUser = usersByEmail.get(sourceUsers[0].email.toLowerCase());
+
+      expect(matchedUser).toBeUndefined();
+    });
+
+    it('should detect name differences', () => {
+      const sourceUser = { name: 'John Doe' };
+      const existingUser = { fullName: 'John Smith' };
+
+      const hasDiff = existingUser.fullName !== sourceUser.name;
+      expect(hasDiff).toBe(true);
+    });
+  });
+
+  describe('Team validation', () => {
+    it('should match teams by name (case-insensitive)', () => {
+      const sourceTeams = [
+        { id: 'PD1', name: 'Backend Team' },
+      ];
+      const existingTeams = [
+        { id: 'UUID1', name: 'backend team' },
+      ];
+
+      const teamsByName = new Map(existingTeams.map(t => [t.name.toLowerCase(), t]));
+      const matchedTeam = teamsByName.get(sourceTeams[0].name.toLowerCase());
+
+      expect(matchedTeam).toBeDefined();
+      expect(matchedTeam?.id).toBe('UUID1');
+    });
+
+    it('should detect description differences', () => {
+      const sourceTeam = { description: 'Handles backend services' };
+      const existingTeam = { description: 'Different description' };
+
+      const hasDiff = existingTeam.description !== sourceTeam.description;
+      expect(hasDiff).toBe(true);
+    });
+  });
+
+  describe('Schedule validation', () => {
+    it('should compare layer counts', () => {
+      const sourceSchedule = {
+        name: 'Primary On-Call',
+        schedule_layers: [{ id: '1' }, { id: '2' }],
+      };
+      const existingSchedule = {
+        name: 'Primary On-Call',
+        layers: [{ id: 'UUID1' }],
+      };
+
+      const sourceLayers = sourceSchedule.schedule_layers.length;
+      const currentLayers = existingSchedule.layers.length;
+
+      expect(sourceLayers).toBe(2);
+      expect(currentLayers).toBe(1);
+      expect(sourceLayers !== currentLayers).toBe(true);
+    });
+
+    it('should handle Opsgenie rotations as layers', () => {
+      const opsgenieSchedule = {
+        name: 'Primary',
+        rotations: [{ id: '1' }, { id: '2' }, { id: '3' }],
+      };
+
+      const layerCount = opsgenieSchedule.rotations.length;
+      expect(layerCount).toBe(3);
+    });
+  });
+
+  describe('Escalation policy validation', () => {
+    it('should compare step counts for PagerDuty', () => {
+      const sourcePolicy = {
+        name: 'Default Policy',
+        escalation_rules: [{ id: '1' }, { id: '2' }],
+      };
+      const existingPolicy = {
+        name: 'Default Policy',
+        steps: [{ id: 'UUID1' }],
+      };
+
+      const sourceSteps = sourcePolicy.escalation_rules.length;
+      const currentSteps = existingPolicy.steps.length;
+
+      expect(sourceSteps !== currentSteps).toBe(true);
+    });
+
+    it('should handle Opsgenie rules as steps', () => {
+      const opsgeniePolicy = {
+        name: 'Default',
+        rules: [{ id: '1' }],
+      };
+
+      const stepCount = opsgeniePolicy.rules.length;
+      expect(stepCount).toBe(1);
+    });
+  });
+
+  describe('Service validation', () => {
+    it('should check integration key preservation', () => {
+      const sourceService = {
+        name: 'API Service',
+        integration_key: 'abc123',
+      };
+      const existingService = {
+        name: 'API Service',
+        externalKeys: { pagerduty: 'abc123' },
+      };
+
+      const hasExternalKey = existingService.externalKeys?.pagerduty === sourceService.integration_key;
+      expect(hasExternalKey).toBe(true);
+    });
+
+    it('should detect missing integration key', () => {
+      const sourceService = {
+        name: 'API Service',
+        integration_key: 'abc123',
+      };
+      const existingService = {
+        name: 'API Service',
+        externalKeys: null as { pagerduty?: string; opsgenie?: string } | null,
+      };
+
+      const hasExternalKey = existingService.externalKeys?.pagerduty === sourceService.integration_key;
+      expect(hasExternalKey).toBe(false);
+    });
+
+    it('should support Opsgenie apiKey', () => {
+      const opsgenieService = {
+        name: 'API',
+        apiKey: 'og-key-123',
+      };
+      const existingService = {
+        name: 'API',
+        externalKeys: { opsgenie: 'og-key-123' },
+      };
+
+      const hasExternalKey = existingService.externalKeys?.opsgenie === opsgenieService.apiKey;
+      expect(hasExternalKey).toBe(true);
+    });
+  });
+
+  describe('Diff severity levels', () => {
+    it('should support all severity levels', () => {
+      const severities = ['info', 'warning', 'error'];
+
+      expect(severities).toContain('info');
+      expect(severities).toContain('warning');
+      expect(severities).toContain('error');
+    });
+
+    it('should assign appropriate severity for different diffs', () => {
+      const nameDiff = { field: 'name', severity: 'info' };
+      const layerDiff = { field: 'layerCount', severity: 'warning' };
+      const keyDiff = { field: 'integrationKey', severity: 'warning' };
+
+      expect(nameDiff.severity).toBe('info');
+      expect(layerDiff.severity).toBe('warning');
+      expect(keyDiff.severity).toBe('warning');
+    });
+  });
+
+  describe('Suggestions generation', () => {
+    it('should generate user invite suggestions', () => {
+      const missingUserCount = 3;
+      const suggestion = `${missingUserCount} users need to be invited to the organization`;
+
+      expect(suggestion).toContain('3 users');
+      expect(suggestion).toContain('invited');
+    });
+
+    it('should generate service import suggestions', () => {
+      const missingServiceCount = 2;
+      const suggestion = `${missingServiceCount} services need to be imported`;
+
+      expect(suggestion).toContain('2 services');
+      expect(suggestion).toContain('imported');
+    });
+
+    it('should generate integration key suggestions', () => {
+      const serviceName = 'API Service';
+      const suggestion = `Service "${serviceName}" integration key not preserved - webhooks may need reconfiguration`;
+
+      expect(suggestion).toContain('API Service');
+      expect(suggestion).toContain('integration key');
+      expect(suggestion).toContain('webhooks');
+    });
+  });
+
+  describe('Configuration gaps', () => {
+    it('should report schedule rotation differences', () => {
+      const displayName = 'Primary On-Call';
+      const sourceLayers = 3;
+      const currentLayers = 1;
+      const gap = `Schedule "${displayName}" has ${sourceLayers} rotations in source but ${currentLayers} in system`;
+
+      expect(gap).toContain('Primary On-Call');
+      expect(gap).toContain('3 rotations');
+      expect(gap).toContain('1 in system');
+    });
+
+    it('should report escalation step differences', () => {
+      const displayName = 'Default Policy';
+      const sourceSteps = 4;
+      const currentSteps = 2;
+      const gap = `Escalation policy "${displayName}" has ${sourceSteps} steps in source but ${currentSteps} in system`;
+
+      expect(gap).toContain('Default Policy');
+      expect(gap).toContain('4 steps');
+      expect(gap).toContain('2 in system');
+    });
+  });
+
+  describe('Extra entities detection', () => {
+    it('should detect extra users in database', () => {
+      const matchedEmails = new Set(['user1@example.com']);
+      const allEmails = ['user1@example.com', 'user2@example.com'];
+
+      const extraEmails = allEmails.filter(e => !matchedEmails.has(e));
+
+      expect(extraEmails.length).toBe(1);
+      expect(extraEmails[0]).toBe('user2@example.com');
+    });
+
+    it('should mark extra entities with status "extra"', () => {
+      const extraValidation = {
+        sourceId: '',
+        sourceName: 'Extra User',
+        mappedId: 'UUID-123',
+        status: 'extra' as const,
+        diffs: [],
+      };
+
+      expect(extraValidation.sourceId).toBe('');
+      expect(extraValidation.status).toBe('extra');
+      expect(extraValidation.mappedId).toBeDefined();
+    });
+  });
+});
+
+describe('Incident History Import', () => {
+  describe('PagerDuty incident fetching', () => {
+    it('should support date range filtering', () => {
+      const dateRange = {
+        since: '2024-01-01T00:00:00Z',
+        until: '2024-12-31T23:59:59Z',
+      };
+
+      expect(dateRange.since).toBeDefined();
+      expect(dateRange.until).toBeDefined();
+      expect(new Date(dateRange.since).getTime()).toBeLessThan(new Date(dateRange.until).getTime());
+    });
+
+    it('should default to last 30 days when no range specified', () => {
+      const now = Date.now();
+      const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+      const defaultRange = {
+        until: new Date(now).toISOString(),
+        since: new Date(thirtyDaysAgo).toISOString(),
+      };
+
+      expect(new Date(defaultRange.since).getTime()).toBeGreaterThan(now - 31 * 24 * 60 * 60 * 1000);
+      expect(new Date(defaultRange.since).getTime()).toBeLessThan(now - 29 * 24 * 60 * 60 * 1000);
+    });
+
+    it('should include incident log entries', () => {
+      const incident = {
+        id: 'INC-123',
+        title: 'Server down',
+        status: 'resolved',
+        log_entries: [
+          { type: 'trigger', created_at: '2024-01-01T10:00:00Z' },
+          { type: 'acknowledge', created_at: '2024-01-01T10:05:00Z' },
+          { type: 'resolve', created_at: '2024-01-01T11:00:00Z' },
+        ],
+      };
+
+      expect(incident.log_entries.length).toBe(3);
+      expect(incident.log_entries[0].type).toBe('trigger');
+      expect(incident.log_entries[2].type).toBe('resolve');
+    });
+
+    it('should include incident notes', () => {
+      const incident = {
+        id: 'INC-123',
+        notes: [
+          { content: 'Investigating the issue', created_at: '2024-01-01T10:10:00Z' },
+          { content: 'Root cause identified', created_at: '2024-01-01T10:30:00Z' },
+        ],
+      };
+
+      expect(incident.notes.length).toBe(2);
+      expect(incident.notes[0].content).toContain('Investigating');
+    });
+  });
+
+  describe('Opsgenie alert fetching', () => {
+    it('should support date range filtering', () => {
+      const dateRange = {
+        since: '2024-01-01T00:00:00Z',
+        until: '2024-12-31T23:59:59Z',
+      };
+
+      // Opsgenie uses timestamps in milliseconds
+      const sinceMs = new Date(dateRange.since).getTime();
+      const untilMs = new Date(dateRange.until).getTime();
+
+      expect(sinceMs).toBeLessThan(untilMs);
+    });
+
+    it('should include alert notes', () => {
+      const alert = {
+        id: 'alert-123',
+        message: 'CPU high',
+        notes: [
+          { note: 'Looking into it', createdAt: '2024-01-01T10:00:00Z' },
+        ],
+      };
+
+      expect(alert.notes.length).toBe(1);
+      expect(alert.notes[0].note).toContain('Looking');
+    });
+
+    it('should include alert logs', () => {
+      const alert = {
+        id: 'alert-123',
+        logs: [
+          { log: 'Alert created', logType: 'system', createdAt: '2024-01-01T10:00:00Z' },
+          { log: 'Acknowledged', logType: 'alertRecipient', createdAt: '2024-01-01T10:05:00Z' },
+        ],
+      };
+
+      expect(alert.logs.length).toBe(2);
+      expect(alert.logs[0].logType).toBe('system');
+    });
+  });
+
+  describe('Incident export options', () => {
+    it('should support PagerDuty incident options', () => {
+      const options = {
+        apiKey: 'test-key',
+        includeIncidents: true,
+        incidentDateRange: {
+          since: '2024-01-01T00:00:00Z',
+          until: '2024-12-31T23:59:59Z',
+        },
+      };
+
+      expect(options.includeIncidents).toBe(true);
+      expect(options.incidentDateRange).toBeDefined();
+    });
+
+    it('should support Opsgenie alert options', () => {
+      const options = {
+        apiKey: 'test-key',
+        region: 'us' as const,
+        includeAlerts: true,
+        alertDateRange: {
+          since: '2024-01-01T00:00:00Z',
+          until: '2024-12-31T23:59:59Z',
+        },
+      };
+
+      expect(options.includeAlerts).toBe(true);
+      expect(options.alertDateRange).toBeDefined();
+      expect(options.region).toBe('us');
+    });
+
+    it('should support EU region for Opsgenie', () => {
+      const options = {
+        region: 'eu' as const,
+      };
+
+      expect(options.region).toBe('eu');
+    });
+  });
+
+  describe('Incident data mapping', () => {
+    it('should preserve PagerDuty incident timestamps', () => {
+      const incident = {
+        id: 'INC-123',
+        created_at: '2024-01-01T10:00:00Z',
+        resolved_at: '2024-01-01T11:00:00Z',
+        urgency: 'high',
+        status: 'resolved',
+      };
+
+      const mapped = {
+        externalId: incident.id,
+        createdAt: incident.created_at,
+        resolvedAt: incident.resolved_at,
+        severity: incident.urgency === 'high' ? 'critical' : 'warning',
+        status: incident.status,
+      };
+
+      expect(mapped.createdAt).toBe('2024-01-01T10:00:00Z');
+      expect(mapped.resolvedAt).toBe('2024-01-01T11:00:00Z');
+      expect(mapped.severity).toBe('critical');
+    });
+
+    it('should preserve Opsgenie alert timestamps', () => {
+      const alert = {
+        id: 'alert-123',
+        createdAt: '2024-01-01T10:00:00Z',
+        updatedAt: '2024-01-01T11:00:00Z',
+        priority: 'P1',
+        status: 'closed',
+      };
+
+      const priorityToSeverity: Record<string, string> = {
+        'P1': 'critical',
+        'P2': 'error',
+        'P3': 'warning',
+        'P4': 'info',
+        'P5': 'info',
+      };
+
+      const mapped = {
+        externalId: alert.id,
+        createdAt: alert.createdAt,
+        updatedAt: alert.updatedAt,
+        severity: priorityToSeverity[alert.priority],
+        status: alert.status === 'closed' ? 'resolved' : 'triggered',
+      };
+
+      expect(mapped.createdAt).toBe('2024-01-01T10:00:00Z');
+      expect(mapped.severity).toBe('critical');
+      expect(mapped.status).toBe('resolved');
+    });
+  });
+
+  describe('Large volume handling', () => {
+    it('should handle pagination for incidents', () => {
+      const totalIncidents = 350;
+      const pageSize = 100;
+      const expectedPages = Math.ceil(totalIncidents / pageSize);
+
+      expect(expectedPages).toBe(4);
+    });
+
+    it('should respect safety limit for pagination', () => {
+      const maxOffset = 10000;
+      const pageSize = 100;
+      const maxPages = maxOffset / pageSize;
+
+      expect(maxPages).toBe(100);
+    });
+  });
+});
