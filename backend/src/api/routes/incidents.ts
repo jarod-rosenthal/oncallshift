@@ -43,7 +43,6 @@ router.get(
         .leftJoinAndSelect('incident.acknowledgedByUser', 'ackUser')
         .leftJoinAndSelect('incident.resolvedByUser', 'resUser')
         .leftJoinAndSelect('incident.assignedToUser', 'assignedUser')
-        .leftJoinAndSelect('incident.snoozedByUser', 'snoozedUser')
         .where('incident.org_id = :orgId', { orgId })
         .orderBy('incident.triggeredAt', 'DESC')
         .take(limit as number)
@@ -91,7 +90,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const incident = await incidentRepo.findOne({
       where: { id, orgId },
-      relations: ['service', 'acknowledgedByUser', 'resolvedByUser', 'assignedToUser', 'snoozedByUser'],
+      relations: ['service', 'acknowledgedByUser', 'resolvedByUser', 'assignedToUser'],
     });
 
     if (!incident) {
@@ -698,141 +697,6 @@ router.post(
 );
 
 /**
- * POST /api/v1/incidents/:id/snooze
- * Snooze incident notifications for a duration
- */
-router.post(
-  '/:id/snooze',
-  [
-    body('durationMinutes').isInt({ min: 5, max: 1440 }).withMessage('Duration must be between 5 and 1440 minutes'),
-    body('reason').optional().isString().isLength({ max: 500 }),
-  ],
-  async (req: Request, res: Response) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { id } = req.params;
-      const { durationMinutes, reason } = req.body;
-      const orgId = req.orgId!;
-      const user = req.user!;
-
-      const dataSource = await getDataSource();
-      const incidentRepo = dataSource.getRepository(Incident);
-      const eventRepo = dataSource.getRepository(IncidentEvent);
-
-      const incident = await incidentRepo.findOne({
-        where: { id, orgId },
-        relations: ['service'],
-      });
-
-      if (!incident) {
-        return res.status(404).json({ error: 'Incident not found' });
-      }
-
-      if (!incident.canSnooze()) {
-        return res.status(400).json({ error: 'Incident cannot be snoozed in current state' });
-      }
-
-      // Set snooze
-      const snoozedUntil = new Date(Date.now() + durationMinutes * 60 * 1000);
-      incident.snoozedUntil = snoozedUntil;
-      incident.snoozedBy = user.id;
-      await incidentRepo.save(incident);
-
-      // Create snooze event
-      const event = eventRepo.create({
-        incidentId: incident.id,
-        type: 'snooze',
-        actorId: user.id,
-        message: `Incident snoozed for ${durationMinutes} minutes${reason ? `: ${reason}` : ''}`,
-        payload: {
-          durationMinutes,
-          snoozedUntil: snoozedUntil.toISOString(),
-          reason,
-        },
-      });
-      await eventRepo.save(event);
-
-      logger.info('Incident snoozed', {
-        incidentId: incident.id,
-        incidentNumber: incident.incidentNumber,
-        durationMinutes,
-        snoozedUntil,
-        snoozedBy: user.id,
-      });
-
-      return res.json({
-        incident: formatIncident(incident),
-        message: `Incident snoozed until ${snoozedUntil.toISOString()}`,
-      });
-    } catch (error) {
-      logger.error('Error snoozing incident:', error);
-      return res.status(500).json({ error: 'Failed to snooze incident' });
-    }
-  }
-);
-
-/**
- * DELETE /api/v1/incidents/:id/snooze
- * Cancel snooze on incident
- */
-router.delete('/:id/snooze', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const orgId = req.orgId!;
-    const user = req.user!;
-
-    const dataSource = await getDataSource();
-    const incidentRepo = dataSource.getRepository(Incident);
-    const eventRepo = dataSource.getRepository(IncidentEvent);
-
-    const incident = await incidentRepo.findOne({
-      where: { id, orgId },
-      relations: ['service'],
-    });
-
-    if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
-    }
-
-    if (!incident.isSnoozed()) {
-      return res.status(400).json({ error: 'Incident is not snoozed' });
-    }
-
-    // Clear snooze
-    incident.snoozedUntil = null;
-    incident.snoozedBy = null;
-    await incidentRepo.save(incident);
-
-    // Create unsnooze event
-    const event = eventRepo.create({
-      incidentId: incident.id,
-      type: 'unsnooze',
-      actorId: user.id,
-      message: `Snooze cancelled by ${user.fullName || user.email}`,
-    });
-    await eventRepo.save(event);
-
-    logger.info('Incident snooze cancelled', {
-      incidentId: incident.id,
-      incidentNumber: incident.incidentNumber,
-      cancelledBy: user.id,
-    });
-
-    return res.json({
-      incident: formatIncident(incident),
-      message: 'Snooze cancelled',
-    });
-  } catch (error) {
-    logger.error('Error cancelling snooze:', error);
-    return res.status(500).json({ error: 'Failed to cancel snooze' });
-  }
-});
-
-/**
  * PUT /api/v1/incidents/:id/reassign
  * Reassign incident to another user
  */
@@ -1009,13 +873,6 @@ function formatIncident(incident: Incident) {
       fullName: incident.assignedToUser.fullName,
       email: incident.assignedToUser.email,
     } : null,
-    snoozedUntil: incident.snoozedUntil,
-    snoozedBy: incident.snoozedByUser ? {
-      id: incident.snoozedByUser.id,
-      fullName: incident.snoozedByUser.fullName,
-      email: incident.snoozedByUser.email,
-    } : null,
-    isSnoozed: incident.isSnoozed(),
     currentEscalationStep: incident.currentEscalationStep,
     eventCount: incident.eventCount,
     lastEventAt: incident.lastEventAt,
@@ -1173,7 +1030,7 @@ async function getEscalationStatus(
     steps: stepsInfo,
     loopsRemaining: null, // TODO: Add escalationLoopsRemaining to Incident model
     repeatEnabled: policy.repeatEnabled,
-    isEscalating: incident.state === 'triggered' && !incident.isSnoozed(),
+    isEscalating: incident.state === 'triggered',
   };
 }
 

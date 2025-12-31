@@ -160,9 +160,6 @@ export interface Incident {
   resolvedBy: IncidentUser | null;
   assignedAt: string | null;
   assignedTo: IncidentUser | null;
-  snoozedUntil: string | null;
-  snoozedBy: IncidentUser | null;
-  isSnoozed: boolean;
   currentEscalationStep: number;
   details: Record<string, any> | null;
   service: {
@@ -342,7 +339,7 @@ export interface EscalationStatus {
 // Incident Timeline Event
 export interface IncidentEvent {
   id: string;
-  type: 'alert' | 'acknowledge' | 'resolve' | 'escalate' | 'snooze' | 'unsnooze' | 'reassign' | 'note';
+  type: 'alert' | 'acknowledge' | 'resolve' | 'escalate' | 'reassign' | 'note';
   message: string;
   payload: Record<string, any> | null;
   actor: {

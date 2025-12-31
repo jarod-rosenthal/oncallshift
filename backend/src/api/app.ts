@@ -27,6 +27,8 @@ import routingRulesRoutes from './routes/routing-rules';
 import prioritiesRoutes from './routes/priorities';
 import businessServicesRoutes from './routes/business-services';
 import tagsRoutes from './routes/tags';
+import webhooksRoutes from './routes/webhooks';
+import importRoutes from './routes/import';
 import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
@@ -253,6 +255,8 @@ export function createApp(): Express {
   app.use('/api/v1/priorities', prioritiesRoutes);
   app.use('/api/v1/business-services', businessServicesRoutes);
   app.use('/api/v1/tags', tagsRoutes);
+  app.use('/api/v1/webhooks', webhooksRoutes);
+  app.use('/api/v1/import', importRoutes);
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

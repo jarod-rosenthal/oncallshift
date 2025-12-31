@@ -70,7 +70,7 @@ terraform apply
 - **Escalation Timer**: `backend/src/workers/escalation-timer.ts` - Auto-advances escalation steps
 - **Runbooks**: `backend/src/api/routes/runbooks.ts` - CRUD + execution
 - **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered analysis
-- **User Actions**: Reassign, snooze, escalate in `backend/src/api/routes/incidents.ts`
+- **User Actions**: Reassign, escalate in `backend/src/api/routes/incidents.ts`
 - **Setup Wizard**: `frontend/src/pages/SetupWizard.tsx` and `mobile/src/screens/SetupWizardScreen.tsx`
 - **Notification Tracking**: Delivery status per user/channel
 
@@ -134,5 +134,6 @@ GitHub Actions workflows in `.github/workflows/`:
 - AI diagnosis and chat features
 - Setup wizard for new organizations
 - Notification status panel with delivery tracking
-- User actions: reassign, snooze, manual escalate
+- User actions: reassign, manual escalate
+- PagerDuty/Opsgenie compatible webhooks and import wizard
 - Escalation timer auto-advancement

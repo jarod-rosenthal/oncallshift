@@ -129,7 +129,7 @@ const playSystemSound = async (severity: Severity): Promise<void> => {
 };
 
 // Play a specific action sound (for feedback)
-export const playActionSound = async (action: 'acknowledge' | 'resolve' | 'snooze'): Promise<void> => {
+export const playActionSound = async (action: 'acknowledge' | 'resolve'): Promise<void> => {
   if (!soundsEnabled) return;
 
   try {

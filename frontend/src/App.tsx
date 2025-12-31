@@ -24,6 +24,24 @@ import { TeamDetail } from './pages/TeamDetail';
 import { Analytics } from './pages/Analytics';
 import { Account } from './pages/Account';
 import { SetupWizard } from './pages/SetupWizard';
+import { ImportWizard } from './pages/ImportWizard';
+import { Pricing } from './pages/Pricing';
+import { MigrateFromOpsgenie } from './pages/MigrateFromOpsgenie';
+import { MigrateFromPagerDuty } from './pages/MigrateFromPagerDuty';
+import { PagerDutyAlternative } from './pages/PagerDutyAlternative';
+import { OpsgenieAlternative } from './pages/OpsgenieAlternative';
+import { ProductOnCallScheduling } from './pages/ProductOnCallScheduling';
+import { ProductIncidentManagement } from './pages/ProductIncidentManagement';
+import { ProductAIDiagnosis } from './pages/ProductAIDiagnosis';
+import { ProductIntegrations } from './pages/ProductIntegrations';
+import { ProductMobileApp } from './pages/ProductMobileApp';
+import { ProductEscalationPolicies } from './pages/ProductEscalationPolicies';
+import { Contact } from './pages/Contact';
+import { About } from './pages/About';
+import { Privacy } from './pages/Privacy';
+import { Terms } from './pages/Terms';
+import { Blog } from './pages/Blog';
+import { Security } from './pages/Security';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { AppLayout } from './components/AppLayout';
@@ -55,6 +73,23 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/demo" element={<Demo />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/migrate/from-opsgenie" element={<MigrateFromOpsgenie />} />
+        <Route path="/migrate/from-pagerduty" element={<MigrateFromPagerDuty />} />
+        <Route path="/alternatives/pagerduty" element={<PagerDutyAlternative />} />
+        <Route path="/alternatives/opsgenie" element={<OpsgenieAlternative />} />
+        <Route path="/product/on-call-scheduling" element={<ProductOnCallScheduling />} />
+        <Route path="/product/incident-management" element={<ProductIncidentManagement />} />
+        <Route path="/product/ai-diagnosis" element={<ProductAIDiagnosis />} />
+        <Route path="/product/integrations" element={<ProductIntegrations />} />
+        <Route path="/product/mobile-app" element={<ProductMobileApp />} />
+        <Route path="/product/escalation-policies" element={<ProductEscalationPolicies />} />
+        <Route path="/company/contact" element={<Contact />} />
+        <Route path="/company/about" element={<About />} />
+        <Route path="/legal/privacy" element={<Privacy />} />
+        <Route path="/legal/terms" element={<Terms />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/company/security" element={<Security />} />
 
         {/* Setup wizard (admin only, no sidebar) */}
         <Route
@@ -62,6 +97,16 @@ function App() {
           element={
             <AdminRoute>
               <SetupWizard />
+            </AdminRoute>
+          }
+        />
+
+        {/* Import wizard (admin only, no sidebar) */}
+        <Route
+          path="/import"
+          element={
+            <AdminRoute>
+              <ImportWizard />
             </AdminRoute>
           }
         />

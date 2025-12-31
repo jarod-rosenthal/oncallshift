@@ -73,13 +73,6 @@ export class Incident {
   @Column({ name: 'assigned_at', type: 'timestamp', nullable: true })
   assignedAt: Date | null;
 
-  // Snooze functionality
-  @Column({ name: 'snoozed_until', type: 'timestamp', nullable: true })
-  snoozedUntil: Date | null;
-
-  @Column({ name: 'snoozed_by', type: 'uuid', nullable: true })
-  snoozedBy: string | null;
-
   // Merged incident tracking
   @Column({ name: 'merged_into_incident_id', type: 'uuid', nullable: true })
   mergedIntoIncidentId: string | null;
@@ -115,9 +108,6 @@ export class Incident {
   @JoinColumn({ name: 'assigned_to_user_id' })
   assignedToUser: User | null;
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'snoozed_by' })
-  snoozedByUser: User | null;
 
   @ManyToOne(() => Incident, { nullable: true })
   @JoinColumn({ name: 'merged_into_incident_id' })
@@ -153,17 +143,11 @@ export class Incident {
     return this.state !== 'resolved';
   }
 
-  canSnooze(): boolean {
-    return this.state === 'triggered' && !this.isSnoozed();
-  }
 
   canEscalate(): boolean {
     return this.state === 'triggered';
   }
 
-  isSnoozed(): boolean {
-    return this.snoozedUntil !== null && new Date(this.snoozedUntil) > new Date();
-  }
 
   isMerged(): boolean {
     return this.mergedIntoIncidentId !== null;
