@@ -9,6 +9,7 @@ import { Schedule } from '../models/Schedule';
 import { ScheduleMember } from '../models/ScheduleMember';
 import { EscalationPolicy } from '../models/EscalationPolicy';
 import { EscalationStep } from '../models/EscalationStep';
+import { EscalationTarget } from '../models/EscalationTarget';
 import { Incident } from '../models/Incident';
 import { IncidentEvent } from '../models/IncidentEvent';
 import { Notification } from '../models/Notification';
@@ -36,6 +37,7 @@ export async function createDataSource(): Promise<DataSource> {
       ScheduleMember,
       EscalationPolicy,
       EscalationStep,
+      EscalationTarget,
       Incident,
       IncidentEvent,
       Notification,

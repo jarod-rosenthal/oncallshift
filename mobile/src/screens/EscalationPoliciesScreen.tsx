@@ -25,7 +25,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { useToast } from '../components';
 import * as apiService from '../services/apiService';
-import type { EscalationPolicy, EscalationStep } from '../services/apiService';
+import type { EscalationPolicy, EscalationStep, EscalationTarget } from '../services/apiService';
 import * as hapticService from '../services/hapticService';
 
 export default function EscalationPoliciesScreen() {
@@ -156,13 +156,13 @@ export default function EscalationPoliciesScreen() {
         targetId: stepTargetId.trim(),
       });
       hapticService.success();
-      showToast({ message: 'Escalation step added', type: 'success' });
+      showToast({ message: 'Escalation level added', type: 'success' });
       setShowStepModal(false);
       resetStepForm();
       fetchPolicies();
     } catch (error: any) {
-      console.error('Failed to add step:', error);
-      showToast({ message: error.message || 'Failed to add step', type: 'error' });
+      console.error('Failed to add level:', error);
+      showToast({ message: error.message || 'Failed to add level', type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -171,7 +171,7 @@ export default function EscalationPoliciesScreen() {
   const handleRemoveStep = async (policy: EscalationPolicy, step: EscalationStep) => {
     hapticService.warning();
     Alert.alert(
-      'Remove Step',
+      'Remove Level',
       `Remove level ${step.escalationLevel} from "${policy.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -182,10 +182,10 @@ export default function EscalationPoliciesScreen() {
             try {
               await apiService.deleteEscalationStep(policy.id, step.id);
               hapticService.success();
-              showToast({ message: 'Step removed', type: 'success' });
+              showToast({ message: 'Level removed', type: 'success' });
               fetchPolicies();
             } catch (error: any) {
-              showToast({ message: error.message || 'Failed to remove step', type: 'error' });
+              showToast({ message: error.message || 'Failed to remove level', type: 'error' });
             }
           },
         },
@@ -217,6 +217,49 @@ export default function EscalationPoliciesScreen() {
     setStepDelay('5');
     setStepTargetType('user');
     setStepTargetId('');
+  };
+
+  // Helper to get step target description for display
+  const getStepTargetDescription = (step: EscalationStep): string => {
+    // Check for new multi-target format first
+    if (step.targets && step.targets.length > 0) {
+      return step.targets.map(target => {
+        if (target.targetType === 'user') {
+          return target.user?.fullName || 'Unknown User';
+        } else {
+          return target.schedule?.name || 'Unknown Schedule';
+        }
+      }).join(', ');
+    }
+
+    // Use resolved user info from backend
+    if (step.targetType === 'schedule') {
+      if (step.resolvedOncallUser) {
+        return `${step.resolvedOncallUser.fullName} (on-call)`;
+      }
+      if (step.schedule?.name) return step.schedule.name;
+    } else {
+      // Use resolved users if available
+      if (step.resolvedUsers && step.resolvedUsers.length > 0) {
+        return step.resolvedUsers.map(u => u.fullName).join(', ');
+      }
+    }
+
+    // Fall back to old format
+    if (step.targetName) return step.targetName;
+    return step.targetId;
+  };
+
+  // Helper to get delay in minutes (handle both old delayMinutes and new timeoutSeconds)
+  const getStepDelayMinutes = (step: EscalationStep): number => {
+    if (step.delayMinutes) return step.delayMinutes;
+    if (step.timeoutSeconds) return Math.round(step.timeoutSeconds / 60);
+    return 0;
+  };
+
+  // Helper to get step level (handle both old escalationLevel and new stepOrder)
+  const getStepLevel = (step: EscalationStep): number => {
+    return step.escalationLevel || step.stepOrder || 1;
   };
 
   if (loading) {
@@ -268,8 +311,18 @@ export default function EscalationPoliciesScreen() {
                         style={[styles.metaChip, { backgroundColor: `${colors.primary}15` }]}
                         textStyle={{ color: colors.primary, fontSize: 11 }}
                       >
-                        {policy.steps?.length || 0} steps
+                        {policy.steps?.length || 0} {policy.steps?.length === 1 ? 'level' : 'levels'}
                       </Chip>
+                      {policy.repeatEnabled && (
+                        <Chip
+                          compact
+                          icon="repeat"
+                          style={[styles.metaChip, { backgroundColor: `${colors.info || colors.primary}15` }]}
+                          textStyle={{ color: colors.info || colors.primary, fontSize: 11 }}
+                        >
+                          {policy.repeatCount === 0 ? 'Repeats' : `${policy.repeatCount}x`}
+                        </Chip>
+                      )}
                       {policy.servicesCount !== undefined && policy.servicesCount > 0 && (
                         <Chip
                           compact
@@ -299,7 +352,7 @@ export default function EscalationPoliciesScreen() {
                     />
                     <Menu.Item
                       onPress={() => openStepModal(policy)}
-                      title="Add Step"
+                      title="Add Level"
                       leadingIcon="plus"
                     />
                     <Divider />
@@ -322,18 +375,21 @@ export default function EscalationPoliciesScreen() {
                       ESCALATION PATH
                     </Text>
                     {policy.steps
-                      .sort((a, b) => a.escalationLevel - b.escalationLevel)
+                      .sort((a, b) => getStepLevel(a) - getStepLevel(b))
                       .map((step, index) => (
                         <View key={step.id} style={styles.stepRow}>
                           <View style={[styles.stepNumber, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.stepNumberText}>{step.escalationLevel}</Text>
+                            <Text style={styles.stepNumberText}>{getStepLevel(step)}</Text>
                           </View>
                           <View style={styles.stepInfo}>
                             <Text variant="bodyMedium" style={{ color: colors.textPrimary }}>
-                              {step.targetName || step.targetId}
+                              {getStepTargetDescription(step)}
                             </Text>
                             <Text variant="bodySmall" style={{ color: colors.textSecondary }}>
-                              {step.targetType === 'user' ? 'User' : 'Schedule'} • {step.delayMinutes}min delay
+                              {step.targets && step.targets.length > 1
+                                ? `${step.targets.length} targets`
+                                : step.targetType === 'user' ? 'User' : 'Schedule'
+                              } • {getStepDelayMinutes(step)}min delay
                             </Text>
                           </View>
                           <IconButton
@@ -467,13 +523,13 @@ export default function EscalationPoliciesScreen() {
           contentContainerStyle={[styles.modal, { backgroundColor: colors.surface }]}
         >
           <Text variant="titleLarge" style={[styles.modalTitle, { color: colors.textPrimary }]}>
-            Add Escalation Step
+            Add Escalation Level
           </Text>
           <Text variant="bodyMedium" style={{ color: colors.textSecondary, marginBottom: 16 }}>
             Adding to: {selectedPolicy?.name}
           </Text>
           <TextInput
-            label="Delay (minutes)"
+            label="Escalate after (minutes)"
             value={stepDelay}
             onChangeText={setStepDelay}
             mode="outlined"
@@ -534,7 +590,7 @@ export default function EscalationPoliciesScreen() {
               Cancel
             </Button>
             <Button mode="contained" onPress={handleAddStep} loading={saving} disabled={saving}>
-              Add Step
+              Add Level
             </Button>
           </View>
         </Modal>

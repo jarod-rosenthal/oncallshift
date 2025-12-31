@@ -7,6 +7,15 @@ import { Label } from '../components/ui/label';
 import { Navigation } from '../components/Navigation';
 import { useAuthStore } from '../store/auth-store';
 
+interface EscalationTarget {
+  id: string;
+  targetType: 'user' | 'schedule';
+  userId?: string;
+  user?: { id: string; fullName: string; email: string };
+  scheduleId?: string;
+  schedule?: { id: string; name: string };
+}
+
 interface EscalationStep {
   id?: string;
   stepOrder: number;
@@ -15,12 +24,18 @@ interface EscalationStep {
   userIds?: string[];
   timeoutSeconds: number;
   schedule?: { id: string; name: string };
+  targets?: EscalationTarget[];
+  // Resolved user info from backend
+  resolvedOncallUser?: { id: string; fullName: string; email: string };
+  resolvedUsers?: Array<{ id: string; fullName: string; email: string }>;
 }
 
 interface EscalationPolicy {
   id: string;
   name: string;
   description: string;
+  repeatEnabled: boolean;
+  repeatCount: number;
   steps: EscalationStep[];
   createdAt: string;
   updatedAt: string;
@@ -48,6 +63,8 @@ export function EscalationPolicies() {
   const [formData, setFormData] = useState<{
     name: string;
     description: string;
+    repeatEnabled: boolean;
+    repeatCount: number;
     steps: Array<{
       stepOrder: number;
       targetType: 'schedule' | 'users';
@@ -58,6 +75,8 @@ export function EscalationPolicies() {
   }>({
     name: '',
     description: '',
+    repeatEnabled: false,
+    repeatCount: 0,
     steps: [
       { stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 }
     ]
@@ -141,6 +160,8 @@ export function EscalationPolicies() {
     setFormData({
       name: policy.name,
       description: policy.description || '',
+      repeatEnabled: policy.repeatEnabled || false,
+      repeatCount: policy.repeatCount || 0,
       steps: policy.steps.map(step => ({
         stepOrder: step.stepOrder,
         targetType: step.targetType,
@@ -172,11 +193,11 @@ export function EscalationPolicies() {
     for (let i = 0; i < formData.steps.length; i++) {
       const step = formData.steps[i] as EscalationStep;
       if (step.targetType === 'schedule' && !step.scheduleId) {
-        alert(`Step ${i + 1}: Please select a schedule`);
+        alert(`Level ${i + 1}: Please select a schedule`);
         return;
       }
       if (step.targetType === 'users' && (!step.userIds || step.userIds.length === 0)) {
-        alert(`Step ${i + 1}: Please select at least one user`);
+        alert(`Level ${i + 1}: Please select at least one user`);
         return;
       }
     }
@@ -205,6 +226,8 @@ export function EscalationPolicies() {
         setFormData({
           name: '',
           description: '',
+          repeatEnabled: false,
+          repeatCount: 0,
           steps: [{ stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 }],
         });
         fetchPolicies();
@@ -297,6 +320,34 @@ export function EscalationPolicies() {
       .join(', ');
   };
 
+  const getTargetDescription = (step: EscalationStep) => {
+    // Check for new multi-target format first
+    if (step.targets && step.targets.length > 0) {
+      const descriptions = step.targets.map(target => {
+        if (target.targetType === 'user') {
+          return target.user?.fullName || 'Unknown User';
+        } else {
+          return `on-call from ${target.schedule?.name || 'Unknown Schedule'}`;
+        }
+      });
+      return descriptions.join(', ');
+    }
+
+    // Use resolved user info from backend
+    if (step.targetType === 'schedule') {
+      if (step.resolvedOncallUser) {
+        return `${step.resolvedOncallUser.fullName} (on-call)`;
+      }
+      return `on-call from ${step.schedule?.name || 'Unknown Schedule'}`;
+    } else {
+      // Use resolved users if available
+      if (step.resolvedUsers && step.resolvedUsers.length > 0) {
+        return step.resolvedUsers.map(u => u.fullName).join(', ');
+      }
+      return step.userIds && step.userIds.length > 0 ? getUserNamesByIds(step.userIds) : 'no users';
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -327,7 +378,7 @@ export function EscalationPolicies() {
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>{editingPolicy ? 'Edit' : 'Create'} Escalation Policy</CardTitle>
-              <CardDescription>Define a multi-step escalation workflow</CardDescription>
+              <CardDescription>Define who gets notified and when if an incident isn't acknowledged</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSavePolicy} className="space-y-4">
@@ -351,13 +402,47 @@ export function EscalationPolicies() {
                   />
                 </div>
 
+                <div className="border rounded-md p-4 bg-muted/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="repeatEnabled"
+                      checked={formData.repeatEnabled}
+                      onChange={(e) => setFormData({ ...formData, repeatEnabled: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="repeatEnabled" className="font-medium cursor-pointer">
+                      Repeat escalation policy if unacknowledged
+                    </Label>
+                  </div>
+                  {formData.repeatEnabled && (
+                    <div className="ml-6 mt-2">
+                      <Label htmlFor="repeatCount" className="text-sm">Number of times to repeat (0 = indefinitely)</Label>
+                      <Input
+                        id="repeatCount"
+                        type="number"
+                        min={0}
+                        value={formData.repeatCount}
+                        onChange={(e) => setFormData({ ...formData, repeatCount: parseInt(e.target.value) || 0 })}
+                        className="w-32 mt-1"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        After all levels are exhausted, the policy will restart from Level 1
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 <div>
-                  <Label>Escalation Steps</Label>
+                  <Label>Escalation Levels</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    If the incident isn't acknowledged, it will escalate through these levels in order
+                  </p>
                   {formData.steps.map((step, index) => (
                     <Card key={index} className="mb-4 mt-2">
                       <CardHeader>
                         <div className="flex justify-between items-center">
-                          <CardTitle className="text-sm">Step {index + 1}</CardTitle>
+                          <CardTitle className="text-sm">Level {index + 1}</CardTitle>
                           {formData.steps.length > 1 && (
                             <Button
                               type="button"
@@ -372,7 +457,7 @@ export function EscalationPolicies() {
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div>
-                          <Label>Target Type</Label>
+                          <Label>Notify</Label>
                           <select
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             value={step.targetType}
@@ -380,8 +465,8 @@ export function EscalationPolicies() {
                               updateStep(index, 'targetType', e.target.value as 'schedule' | 'users')
                             }
                           >
-                            <option value="schedule">Schedule (Current On-Call)</option>
-                            <option value="users">Specific Users</option>
+                            <option value="schedule">On-Call Schedule</option>
+                            <option value="users">Specific User(s)</option>
                           </select>
                         </div>
 
@@ -435,17 +520,17 @@ export function EscalationPolicies() {
                         )}
 
                         <div>
-                          <Label>Timeout (seconds)</Label>
+                          <Label>Escalate after (minutes)</Label>
                           <Input
                             type="number"
-                            value={step.timeoutSeconds}
+                            value={Math.round(step.timeoutSeconds / 60)}
                             onChange={(e) =>
-                              updateStep(index, 'timeoutSeconds', parseInt(e.target.value))
+                              updateStep(index, 'timeoutSeconds', parseInt(e.target.value) * 60)
                             }
-                            min={0}
+                            min={1}
                           />
                           <p className="text-xs text-muted-foreground mt-1">
-                            Time to wait before escalating to next step
+                            If not acknowledged, escalate to the next level after this time
                           </p>
                         </div>
                       </CardContent>
@@ -453,7 +538,7 @@ export function EscalationPolicies() {
                   ))}
 
                   <Button type="button" variant="outline" onClick={addStep} className="mt-2">
-                    Add Step
+                    + Add Escalation Level
                   </Button>
                 </div>
 
@@ -468,6 +553,8 @@ export function EscalationPolicies() {
                       setFormData({
                         name: '',
                         description: '',
+                        repeatEnabled: false,
+                        repeatCount: 0,
                         steps: [
                           { stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 },
                         ],
@@ -500,7 +587,14 @@ export function EscalationPolicies() {
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle>{policy.name}</CardTitle>
-                      <CardDescription>{policy.description}</CardDescription>
+                      <CardDescription>
+                        {policy.description}
+                        {policy.repeatEnabled && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            🔄 Repeats {policy.repeatCount === 0 ? 'indefinitely' : `${policy.repeatCount}x`}
+                          </span>
+                        )}
+                      </CardDescription>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -522,21 +616,15 @@ export function EscalationPolicies() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Escalation Steps:</p>
+                    <p className="text-sm font-medium">Escalation Levels:</p>
                     {policy.steps.map((step) => (
                       <div key={step.id} className="flex items-center gap-2 text-sm border-l-2 border-blue-500 pl-3 py-1">
-                        <span className="font-medium">Step {step.stepOrder}:</span>
-                        {step.targetType === 'schedule' ? (
-                          <span>
-                            Notify on-call from <strong>{step.schedule?.name || 'Unknown Schedule'}</strong>
-                          </span>
-                        ) : (
-                          <span>
-                            Notify <strong>{step.userIds && step.userIds.length > 0 ? getUserNamesByIds(step.userIds) : 'no users'}</strong>
-                          </span>
-                        )}
+                        <span className="font-medium">Level {step.stepOrder}:</span>
+                        <span>
+                          Notify <strong>{getTargetDescription(step)}</strong>
+                        </span>
                         <span className="text-muted-foreground">
-                          (wait {step.timeoutSeconds}s)
+                          → {Math.round(step.timeoutSeconds / 60)} min
                         </span>
                       </div>
                     ))}

@@ -79,10 +79,10 @@ export function EscalationStatusPanel({ escalation, isSnoozed, snoozedUntil }: E
           <p className="font-medium">{escalation.policyName || 'Unknown'}</p>
         </div>
 
-        {/* Step Progress */}
+        {/* Level Progress */}
         <div>
           <div className="flex justify-between text-sm mb-1">
-            <span className="text-muted-foreground">Step Progress</span>
+            <span className="text-muted-foreground">Level</span>
             <span className="font-medium">
               {escalation.currentStep} of {escalation.totalSteps}
             </span>

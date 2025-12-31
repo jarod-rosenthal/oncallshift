@@ -799,19 +799,39 @@ export const diagnoseIncident = async (
 
 // ============ ADMIN: ESCALATION POLICIES ============
 
+export interface EscalationTarget {
+  id: string;
+  targetType: 'user' | 'schedule';
+  userId?: string;
+  user?: { id: string; fullName: string; email: string };
+  scheduleId?: string;
+  schedule?: { id: string; name: string };
+}
+
 export interface EscalationStep {
   id: string;
   escalationLevel: number;
+  stepOrder?: number; // New API field
   delayMinutes: number;
+  timeoutSeconds?: number; // New API field (seconds)
   targetType: 'user' | 'schedule';
   targetId: string;
   targetName?: string;
+  scheduleId?: string;
+  schedule?: { id: string; name: string };
+  userIds?: string[];
+  targets?: EscalationTarget[]; // New multi-target support
+  // Resolved user info from backend
+  resolvedOncallUser?: { id: string; fullName: string; email: string };
+  resolvedUsers?: Array<{ id: string; fullName: string; email: string }>;
 }
 
 export interface EscalationPolicy {
   id: string;
   name: string;
   description?: string;
+  repeatEnabled?: boolean; // New repeat support
+  repeatCount?: number; // 0 = infinite
   steps: EscalationStep[];
   servicesCount?: number;
   createdAt: string;

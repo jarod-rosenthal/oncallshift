@@ -96,6 +96,23 @@ export const schedulesAPI = {
     return response.data;
   },
 
+  getWeeklyForecast: async (): Promise<{
+    forecast: Array<{
+      schedule: { id: string; name: string; type: string };
+      days: Array<{
+        date: string;
+        dayOfWeek: string;
+        isToday: boolean;
+        oncallUser: { id: string; fullName: string; email: string } | null;
+      }>;
+    }>;
+    weekStart: string;
+    generated: string;
+  }> => {
+    const response = await apiClient.get('/schedules/weekly-forecast');
+    return response.data;
+  },
+
   create: async (data: {
     name: string;
     description?: string;
@@ -178,6 +195,32 @@ export const incidentsAPI = {
     return response.data;
   },
 
+  getNotifications: async (id: string): Promise<{
+    notifications: Array<{
+      userId: string;
+      userName: string;
+      userEmail: string;
+      channels: Array<{
+        channel: string;
+        status: string;
+        sentAt: string | null;
+        deliveredAt: string | null;
+        failedAt: string | null;
+        errorMessage: string | null;
+      }>;
+    }>;
+    summary: {
+      total: number;
+      pending: number;
+      sent: number;
+      delivered: number;
+      failed: number;
+    };
+  }> => {
+    const response = await apiClient.get(`/incidents/${id}/notifications`);
+    return response.data;
+  },
+
   addNote: async (id: string, content: string): Promise<{ event: { id: string; type: string; message: string; createdAt: string }; message: string }> => {
     const response = await apiClient.post(`/incidents/${id}/notes`, { content });
     return response.data;
@@ -190,9 +233,10 @@ export const incidentsAPI = {
     return response.data;
   },
 
-  resolve: async (id: string): Promise<{ incident: Incident }> => {
+  resolve: async (id: string, note?: string): Promise<{ incident: Incident }> => {
     const response = await apiClient.put<{ incident: Incident }>(
-      `/incidents/${id}/resolve`
+      `/incidents/${id}/resolve`,
+      note ? { note } : undefined
     );
     return response.data;
   },
