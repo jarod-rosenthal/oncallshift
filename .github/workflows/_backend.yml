@@ -56,6 +56,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Build API image (dry run)
         if: inputs.dry_run == true
@@ -64,10 +66,10 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
+          load: true
+          provenance: false
           tags: |
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_API_REPO }}:${{ github.sha }}
-          cache-from: type=gha,scope=api-v2
-          cache-to: type=gha,mode=max,scope=api-v2
 
       - name: Build Worker image (dry run)
         if: inputs.dry_run == true
@@ -76,10 +78,10 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile.worker
           push: false
+          load: true
+          provenance: false
           tags: |
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_WORKER_REPO }}:${{ github.sha }}
-          cache-from: type=gha,scope=worker-v2
-          cache-to: type=gha,mode=max,scope=worker-v2
 
       - name: Build and push API image
         if: inputs.dry_run != true
@@ -88,11 +90,10 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          provenance: false
           tags: |
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_API_REPO }}:${{ github.sha }}
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_API_REPO }}:latest
-          cache-from: type=gha,scope=api-v2
-          cache-to: type=gha,mode=max,scope=api-v2
 
       - name: Build and push Worker image
         if: inputs.dry_run != true
@@ -101,11 +102,10 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile.worker
           push: true
+          provenance: false
           tags: |
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_WORKER_REPO }}:${{ github.sha }}
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_WORKER_REPO }}:latest
-          cache-from: type=gha,scope=worker-v2
-          cache-to: type=gha,mode=max,scope=worker-v2
 
       - name: Deploy API to ECS
         if: inputs.dry_run != true

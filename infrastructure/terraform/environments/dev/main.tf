@@ -879,22 +879,23 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default behavior - serve React SPA from S3
+  # Default behavior - serve from ALB (ECS has bundled frontend)
   default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "S3-${aws_s3_bucket.web.id}"
+    target_origin_id = "ALB-${var.project_name}-${var.environment}"
 
     forwarded_values {
-      query_string = false
+      query_string = true
+      headers      = ["Host", "Origin", "Authorization", "Accept", "Content-Type"]
       cookies {
-        forward = "none"
+        forward = "all"
       }
     }
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 0  # Don't cache HTML pages (SPA routing)
+    default_ttl            = 0
     max_ttl                = 0
     compress               = true
   }
