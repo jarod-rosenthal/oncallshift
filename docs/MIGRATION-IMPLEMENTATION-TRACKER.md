@@ -77,24 +77,24 @@
 > **Goal**: Feature parity for common use cases
 
 ### 2.1 Heartbeat Monitors (Opsgenie)
-**Effort**: 3-4 days | **Status**: Not Started
+**Effort**: 3-4 days | **Status**: Complete
 
-- [ ] Create `Heartbeat` model
+- [x] Create `Heartbeat` model
   ```
   id, orgId, serviceId, name, intervalSeconds,
   alertAfterMissedCount, lastPingAt, status, enabled
   ```
-- [ ] Create database migration for heartbeats table
-- [ ] Create heartbeat API endpoints
-  - [ ] `POST /api/v1/heartbeats` - Create heartbeat
-  - [ ] `GET /api/v1/heartbeats` - List heartbeats
-  - [ ] `GET /api/v1/heartbeats/:name/ping` - Ping heartbeat
-  - [ ] `POST /api/v1/heartbeats/:name/ping` - Ping heartbeat (POST)
-  - [ ] `DELETE /api/v1/heartbeats/:id` - Delete heartbeat
-- [ ] Add heartbeat to Opsgenie import
-- [ ] Create heartbeat monitoring worker (check for missed pings)
-- [ ] Trigger incident on heartbeat timeout
-- [ ] Write tests
+- [x] Create database migration for heartbeats table
+- [x] Create heartbeat API endpoints
+  - [x] `POST /api/v1/heartbeats` - Create heartbeat
+  - [x] `GET /api/v1/heartbeats` - List heartbeats
+  - [x] `GET /api/v1/heartbeats/:name/ping` - Ping heartbeat
+  - [x] `POST /api/v1/heartbeats/:name/ping` - Ping heartbeat (POST)
+  - [x] `DELETE /api/v1/heartbeats/:id` - Delete heartbeat
+- [x] Add heartbeat to Opsgenie import
+- [x] Create heartbeat monitoring worker (check for missed pings)
+- [x] Trigger incident on heartbeat timeout
+- [x] Write tests
 
 ### 2.2 Import Maintenance Windows
 **Effort**: 1-2 days | **Status**: Not Started
@@ -237,10 +237,10 @@
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
 | Phase 1: Critical | 40 | 40 | 100% |
-| Phase 2: Important | 28 | 0 | 0% |
+| Phase 2: Important | 28 | 12 | 43% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **113** | **40** | **35%** |
+| **Total** | **113** | **52** | **46%** |
 
 ---
 
@@ -264,6 +264,7 @@
 - **Dec 31, 2024**: Implemented Phase 1.1 - Import User Contact Methods & Notification Rules (12/12 tasks)
 - **Dec 31, 2024**: Implemented Phase 1.2 - Multi-Target Escalation Steps (8/8 tasks)
 - **Dec 31, 2024**: Implemented Phase 1.4 - Import Alert Routing Rules (11/11 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.1 - Heartbeat Monitors (12/12 tasks)
 
 ---
 

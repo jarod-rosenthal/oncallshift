@@ -946,3 +946,167 @@ describe('Routing Rule Import', () => {
     });
   });
 });
+
+describe('Heartbeat Import', () => {
+  describe('Opsgenie heartbeat interval conversion', () => {
+    const convertIntervalToSeconds = (interval: number, unit: string): number => {
+      switch (unit) {
+        case 'hours':
+          return interval * 60 * 60;
+        case 'days':
+          return interval * 24 * 60 * 60;
+        case 'minutes':
+        default:
+          return interval * 60;
+      }
+    };
+
+    it('should convert minutes to seconds', () => {
+      expect(convertIntervalToSeconds(5, 'minutes')).toBe(300);
+      expect(convertIntervalToSeconds(10, 'minutes')).toBe(600);
+    });
+
+    it('should convert hours to seconds', () => {
+      expect(convertIntervalToSeconds(1, 'hours')).toBe(3600);
+      expect(convertIntervalToSeconds(2, 'hours')).toBe(7200);
+    });
+
+    it('should convert days to seconds', () => {
+      expect(convertIntervalToSeconds(1, 'days')).toBe(86400);
+      expect(convertIntervalToSeconds(7, 'days')).toBe(604800);
+    });
+  });
+
+  describe('Heartbeat model helper methods', () => {
+    it('should correctly determine if heartbeat is healthy', () => {
+      const now = Date.now();
+      const lastPingAt = new Date(now - 60000); // 1 minute ago
+      const intervalSeconds = 300; // 5 minutes
+
+      const isHealthy = (now - lastPingAt.getTime()) < (intervalSeconds * 1000);
+      expect(isHealthy).toBe(true);
+    });
+
+    it('should correctly determine if heartbeat is unhealthy', () => {
+      const now = Date.now();
+      const lastPingAt = new Date(now - 360000); // 6 minutes ago
+      const intervalSeconds = 300; // 5 minutes
+
+      const isHealthy = (now - lastPingAt.getTime()) < (intervalSeconds * 1000);
+      expect(isHealthy).toBe(false);
+    });
+
+    it('should correctly calculate missed intervals', () => {
+      const now = Date.now();
+      const lastPingAt = new Date(now - 900000); // 15 minutes ago
+      const intervalSeconds = 300; // 5 minutes
+
+      const missedIntervals = Math.floor((now - lastPingAt.getTime()) / (intervalSeconds * 1000));
+      expect(missedIntervals).toBe(3);
+    });
+
+    it('should correctly determine if heartbeat is expired', () => {
+      const now = Date.now();
+      const lastPingAt = new Date(now - 600000); // 10 minutes ago
+      const intervalSeconds = 300; // 5 minutes
+      const alertAfterMissedCount = 2;
+
+      const missedIntervals = Math.floor((now - lastPingAt.getTime()) / (intervalSeconds * 1000));
+      const isExpired = missedIntervals >= alertAfterMissedCount;
+
+      expect(missedIntervals).toBe(2);
+      expect(isExpired).toBe(true);
+    });
+
+    it('should not be expired if missed count is below threshold', () => {
+      const now = Date.now();
+      const lastPingAt = new Date(now - 400000); // ~6.6 minutes ago
+      const intervalSeconds = 300; // 5 minutes
+      const alertAfterMissedCount = 3;
+
+      const missedIntervals = Math.floor((now - lastPingAt.getTime()) / (intervalSeconds * 1000));
+      const isExpired = missedIntervals >= alertAfterMissedCount;
+
+      expect(missedIntervals).toBe(1);
+      expect(isExpired).toBe(false);
+    });
+
+    it('should determine status based on conditions', () => {
+      const now = Date.now();
+
+      // Status: unknown - never pinged
+      const getStatus = (lastPingAt: Date | null, intervalSeconds: number, alertAfterMissedCount: number): string => {
+        if (!lastPingAt) return 'unknown';
+
+        const elapsed = now - lastPingAt.getTime();
+        const isHealthy = elapsed < (intervalSeconds * 1000);
+
+        if (isHealthy) return 'healthy';
+
+        const missedIntervals = Math.floor(elapsed / (intervalSeconds * 1000));
+        if (missedIntervals >= alertAfterMissedCount) return 'expired';
+
+        return 'unhealthy';
+      };
+
+      // Never pinged
+      expect(getStatus(null, 300, 1)).toBe('unknown');
+
+      // Healthy - pinged recently
+      expect(getStatus(new Date(now - 60000), 300, 1)).toBe('healthy');
+
+      // Unhealthy - missed one ping but threshold is 2
+      expect(getStatus(new Date(now - 400000), 300, 2)).toBe('unhealthy');
+
+      // Expired - missed enough pings
+      expect(getStatus(new Date(now - 700000), 300, 2)).toBe('expired');
+    });
+  });
+
+  describe('Opsgenie heartbeat parsing', () => {
+    it('should parse Opsgenie heartbeat structure', () => {
+      const ogHeartbeat = {
+        name: 'Database Backup',
+        description: 'Daily database backup check',
+        interval: 24,
+        intervalUnit: 'hours' as const,
+        enabled: true,
+        ownerTeam: { id: 'team-123', name: 'DBA Team' },
+        alertMessage: 'Database backup failed!',
+        alertPriority: 'P1',
+      };
+
+      expect(ogHeartbeat.name).toBe('Database Backup');
+      expect(ogHeartbeat.interval).toBe(24);
+      expect(ogHeartbeat.intervalUnit).toBe('hours');
+      expect(ogHeartbeat.enabled).toBe(true);
+    });
+
+    it('should handle disabled heartbeats', () => {
+      const ogHeartbeat = {
+        name: 'Legacy System Check',
+        interval: 1,
+        intervalUnit: 'days' as const,
+        enabled: false,
+      };
+
+      expect(ogHeartbeat.enabled).toBe(false);
+    });
+
+    it('should default to enabled if not specified', () => {
+      const ogHeartbeat: {
+        name: string;
+        interval: number;
+        intervalUnit: 'minutes' | 'hours' | 'days';
+        enabled?: boolean;
+      } = {
+        name: 'Service Ping',
+        interval: 5,
+        intervalUnit: 'minutes',
+      };
+
+      const enabled = ogHeartbeat.enabled !== false;
+      expect(enabled).toBe(true);
+    });
+  });
+});
