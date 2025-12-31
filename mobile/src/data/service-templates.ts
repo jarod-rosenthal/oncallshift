@@ -24,6 +24,15 @@ export interface ServiceTemplate {
 // Available actions that can be assigned to services
 export const AVAILABLE_ACTIONS: ActionTemplate[] = [
   {
+    id: 'aws-identity',
+    label: 'Check AWS Identity',
+    description: 'Run aws sts get-caller-identity to verify AWS credentials',
+    icon: 'aws',
+    estimatedMinutes: 1,
+    endpoint: '/api/v1/actions/aws-identity',
+    method: 'POST',
+  },
+  {
     id: 'restart-pods',
     label: 'Restart Pods',
     description: 'Restart all pods in the deployment to reset connections',
