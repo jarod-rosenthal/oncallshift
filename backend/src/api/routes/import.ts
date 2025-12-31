@@ -11,6 +11,8 @@ import {
   EscalationPolicy,
   EscalationStep,
   Service,
+  UserContactMethod,
+  UserNotificationRule,
 } from '../../shared/models';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { logger } from '../../shared/utils/logger';
@@ -39,14 +41,16 @@ interface PagerDutyUser {
   role?: string;
   time_zone?: string;
   contact_methods?: Array<{
+    id?: string;
     type: string;
     address: string;
     label?: string;
   }>;
   notification_rules?: Array<{
+    id?: string;
     start_delay_in_minutes: number;
     urgency: string;
-    contact_method: { type: string };
+    contact_method: { id?: string; type: string };
   }>;
 }
 
@@ -132,6 +136,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
 
   const results = {
     users: { imported: 0, skipped: 0, errors: [] as string[] },
+    contact_methods: { imported: 0, skipped: 0, errors: [] as string[] },
+    notification_rules: { imported: 0, skipped: 0, errors: [] as string[] },
     teams: { imported: 0, skipped: 0, errors: [] as string[] },
     schedules: { imported: 0, skipped: 0, errors: [] as string[] },
     escalation_policies: { imported: 0, skipped: 0, errors: [] as string[] },
@@ -140,6 +146,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
 
   // Maps to track PagerDuty ID -> OnCallShift ID mappings
   const userIdMap = new Map<string, string>();
+  const contactMethodIdMap = new Map<string, string>(); // PD contact method ID -> OnCallShift ID
   const teamIdMap = new Map<string, string>();
   const scheduleIdMap = new Map<string, string>();
   const policyIdMap = new Map<string, string>();
@@ -147,9 +154,11 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
   try {
     const dataSource = await getDataSource();
 
-    // 1. Import Users (match by email or create placeholder)
+    // 1. Import Users (match by email, then import contact methods and notification rules)
     if (importData.users && importData.users.length > 0) {
       const userRepo = dataSource.getRepository(User);
+      const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+      const notificationRuleRepo = dataSource.getRepository(UserNotificationRule);
 
       for (const pdUser of importData.users) {
         try {
@@ -162,9 +171,133 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
             userIdMap.set(pdUser.id, existingUser.id);
             results.users.skipped++;
             logger.info('User already exists, mapped', { pdId: pdUser.id, email: pdUser.email });
+
+            // Import contact methods for existing user
+            if (pdUser.contact_methods && pdUser.contact_methods.length > 0) {
+              for (const pdContact of pdUser.contact_methods) {
+                try {
+                  // Map PagerDuty contact method type to OnCallShift type
+                  const typeMapping: Record<string, 'email' | 'sms' | 'phone' | 'push'> = {
+                    'email_contact_method': 'email',
+                    'phone_contact_method': 'phone',
+                    'sms_contact_method': 'sms',
+                    'push_notification_contact_method': 'push',
+                  };
+
+                  const contactType = typeMapping[pdContact.type] || 'email';
+
+                  // Check if contact method already exists
+                  const existingContact = await contactMethodRepo.findOne({
+                    where: {
+                      userId: existingUser.id,
+                      type: contactType,
+                      address: pdContact.address,
+                    },
+                  });
+
+                  if (!existingContact) {
+                    const contactMethod = contactMethodRepo.create({
+                      userId: existingUser.id,
+                      type: contactType,
+                      address: pdContact.address,
+                      label: pdContact.label || null,
+                      verified: true, // Assume verified since it was in PagerDuty
+                      isDefault: false,
+                    });
+                    await contactMethodRepo.save(contactMethod);
+                    contactMethodIdMap.set(pdContact.id || pdContact.address, contactMethod.id);
+                    results.contact_methods.imported++;
+
+                    logger.info('Contact method imported', {
+                      userId: existingUser.id,
+                      type: contactType,
+                      address: pdContact.address,
+                    });
+                  } else {
+                    contactMethodIdMap.set(pdContact.id || pdContact.address, existingContact.id);
+                    results.contact_methods.skipped++;
+                  }
+                } catch (error: any) {
+                  results.contact_methods.errors.push(
+                    `Contact for ${pdUser.email}: ${error.message}`
+                  );
+                }
+              }
+            }
+
+            // Import notification rules for existing user
+            if (pdUser.notification_rules && pdUser.notification_rules.length > 0) {
+              for (let i = 0; i < pdUser.notification_rules.length; i++) {
+                const pdRule = pdUser.notification_rules[i];
+                try {
+                  // Find the contact method this rule references
+                  const contactMethodId = contactMethodIdMap.get(
+                    pdRule.contact_method?.id || pdRule.contact_method?.type || ''
+                  );
+
+                  if (!contactMethodId) {
+                    // Try to find by type matching
+                    const typeMapping: Record<string, 'email' | 'sms' | 'phone' | 'push'> = {
+                      'email_contact_method': 'email',
+                      'phone_contact_method': 'phone',
+                      'sms_contact_method': 'sms',
+                      'push_notification_contact_method': 'push',
+                    };
+                    const contactType = typeMapping[pdRule.contact_method?.type || ''] || 'email';
+
+                    // Find user's contact method of this type
+                    const userContact = await contactMethodRepo.findOne({
+                      where: { userId: existingUser.id, type: contactType },
+                    });
+
+                    if (userContact) {
+                      // Check if rule already exists
+                      const existingRule = await notificationRuleRepo.findOne({
+                        where: {
+                          userId: existingUser.id,
+                          contactMethodId: userContact.id,
+                          startDelayMinutes: pdRule.start_delay_in_minutes,
+                        },
+                      });
+
+                      if (!existingRule) {
+                        const urgency = pdRule.urgency === 'high' ? 'high'
+                          : pdRule.urgency === 'low' ? 'low' : 'any';
+
+                        const notificationRule = notificationRuleRepo.create({
+                          userId: existingUser.id,
+                          contactMethodId: userContact.id,
+                          urgency,
+                          startDelayMinutes: pdRule.start_delay_in_minutes,
+                          ruleOrder: i,
+                          enabled: true,
+                        });
+                        await notificationRuleRepo.save(notificationRule);
+                        results.notification_rules.imported++;
+
+                        logger.info('Notification rule imported', {
+                          userId: existingUser.id,
+                          urgency,
+                          delayMinutes: pdRule.start_delay_in_minutes,
+                        });
+                      } else {
+                        results.notification_rules.skipped++;
+                      }
+                    } else {
+                      results.notification_rules.errors.push(
+                        `Rule for ${pdUser.email}: No matching contact method found`
+                      );
+                    }
+                  }
+                } catch (error: any) {
+                  results.notification_rules.errors.push(
+                    `Rule for ${pdUser.email}: ${error.message}`
+                  );
+                }
+              }
+            }
           } else {
-            // For now, we just track the mapping - users need to be invited separately
-            // Store the PagerDuty ID for reference
+            // User doesn't exist - needs to be invited separately
             results.users.skipped++;
             logger.info('User not found, will need to be invited', { pdId: pdUser.id, email: pdUser.email });
           }
@@ -480,6 +613,24 @@ interface OpsgenieUser {
   fullName: string;
   role?: { name: string };
   timezone?: string;
+  userContacts?: Array<{
+    id?: string;
+    method: string; // email, sms, voice, mobile
+    to: string;
+    enabled?: boolean;
+  }>;
+  notificationRules?: Array<{
+    id?: string;
+    name?: string;
+    actionType?: string;
+    notificationTime?: number; // minutes
+    order?: number;
+    steps?: Array<{
+      contact?: { method: string; to: string };
+      sendAfter?: { timeAmount: number };
+      enabled?: boolean;
+    }>;
+  }>;
 }
 
 interface OpsgenieTeam {
@@ -566,6 +717,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
 
   const results = {
     users: { imported: 0, skipped: 0, errors: [] as string[] },
+    contact_methods: { imported: 0, skipped: 0, errors: [] as string[] },
+    notification_rules: { imported: 0, skipped: 0, errors: [] as string[] },
     teams: { imported: 0, skipped: 0, errors: [] as string[] },
     schedules: { imported: 0, skipped: 0, errors: [] as string[] },
     escalations: { imported: 0, skipped: 0, errors: [] as string[] },
@@ -573,6 +726,7 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
   };
 
   const userIdMap = new Map<string, string>();
+  const contactMethodIdMap = new Map<string, string>();
   const teamIdMap = new Map<string, string>();
   const scheduleIdMap = new Map<string, string>();
   const escalationIdMap = new Map<string, string>();
@@ -580,9 +734,11 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
   try {
     const dataSource = await getDataSource();
 
-    // 1. Import Users
+    // 1. Import Users (match by email/username, then import contact methods and notification rules)
     if (importData.users && importData.users.length > 0) {
       const userRepo = dataSource.getRepository(User);
+      const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+      const notificationRuleRepo = dataSource.getRepository(UserNotificationRule);
 
       for (const ogUser of importData.users) {
         try {
@@ -593,6 +749,118 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           if (existingUser) {
             userIdMap.set(ogUser.id, existingUser.id);
             results.users.skipped++;
+
+            // Import contact methods for existing user
+            if (ogUser.userContacts && ogUser.userContacts.length > 0) {
+              for (const ogContact of ogUser.userContacts) {
+                try {
+                  // Map Opsgenie contact method type to OnCallShift type
+                  const typeMapping: Record<string, 'email' | 'sms' | 'phone' | 'push'> = {
+                    'email': 'email',
+                    'sms': 'sms',
+                    'voice': 'phone',
+                    'mobile': 'push',
+                  };
+
+                  const contactType = typeMapping[ogContact.method] || 'email';
+
+                  // Check if contact method already exists
+                  const existingContact = await contactMethodRepo.findOne({
+                    where: {
+                      userId: existingUser.id,
+                      type: contactType,
+                      address: ogContact.to,
+                    },
+                  });
+
+                  if (!existingContact) {
+                    const contactMethod = contactMethodRepo.create({
+                      userId: existingUser.id,
+                      type: contactType,
+                      address: ogContact.to,
+                      label: null,
+                      verified: true,
+                      isDefault: false,
+                    });
+                    await contactMethodRepo.save(contactMethod);
+                    contactMethodIdMap.set(ogContact.id || ogContact.to, contactMethod.id);
+                    results.contact_methods.imported++;
+
+                    logger.info('Contact method imported', {
+                      userId: existingUser.id,
+                      type: contactType,
+                      address: ogContact.to,
+                    });
+                  } else {
+                    contactMethodIdMap.set(ogContact.id || ogContact.to, existingContact.id);
+                    results.contact_methods.skipped++;
+                  }
+                } catch (error: any) {
+                  results.contact_methods.errors.push(
+                    `Contact for ${ogUser.username}: ${error.message}`
+                  );
+                }
+              }
+            }
+
+            // Import notification rules for existing user
+            if (ogUser.notificationRules && ogUser.notificationRules.length > 0) {
+              for (let i = 0; i < ogUser.notificationRules.length; i++) {
+                const ogRule = ogUser.notificationRules[i];
+                try {
+                  // Opsgenie notification rules have steps with contacts
+                  if (ogRule.steps && ogRule.steps.length > 0) {
+                    for (const step of ogRule.steps) {
+                      if (step.contact) {
+                        const typeMapping: Record<string, 'email' | 'sms' | 'phone' | 'push'> = {
+                          'email': 'email',
+                          'sms': 'sms',
+                          'voice': 'phone',
+                          'mobile': 'push',
+                        };
+                        const contactType = typeMapping[step.contact.method] || 'email';
+
+                        // Find user's contact method
+                        const userContact = await contactMethodRepo.findOne({
+                          where: { userId: existingUser.id, type: contactType },
+                        });
+
+                        if (userContact) {
+                          const delayMinutes = step.sendAfter?.timeAmount || 0;
+
+                          const existingRule = await notificationRuleRepo.findOne({
+                            where: {
+                              userId: existingUser.id,
+                              contactMethodId: userContact.id,
+                              startDelayMinutes: delayMinutes,
+                            },
+                          });
+
+                          if (!existingRule) {
+                            const notificationRule = notificationRuleRepo.create({
+                              userId: existingUser.id,
+                              contactMethodId: userContact.id,
+                              urgency: 'any', // Opsgenie doesn't have urgency per rule
+                              startDelayMinutes: delayMinutes,
+                              ruleOrder: i,
+                              enabled: step.enabled !== false,
+                            });
+                            await notificationRuleRepo.save(notificationRule);
+                            results.notification_rules.imported++;
+                          } else {
+                            results.notification_rules.skipped++;
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  results.notification_rules.errors.push(
+                    `Rule for ${ogUser.username}: ${error.message}`
+                  );
+                }
+              }
+            }
           } else {
             results.users.skipped++;
             logger.info('User not found, will need to be invited', { ogId: ogUser.id, email: ogUser.username });
@@ -922,6 +1190,8 @@ router.post('/preview', async (req: Request, res: Response) => {
       options: { preserveKeys },
       summary: {
         users: { total: 0, existing: 0, new: 0, unmapped: 0 },
+        contact_methods: { total: 0, existing: 0, new: 0 },
+        notification_rules: { total: 0, existing: 0, new: 0 },
         teams: { total: 0, existing: 0, new: 0 },
         schedules: { total: 0, existing: 0, new: 0 },
         escalation_policies: { total: 0, existing: 0, new: 0 },
@@ -929,6 +1199,8 @@ router.post('/preview', async (req: Request, res: Response) => {
       },
       details: {
         users: [] as any[],
+        contact_methods: [] as any[],
+        notification_rules: [] as any[],
         teams: [] as any[],
         schedules: [] as any[],
         escalation_policies: [] as any[],
@@ -936,7 +1208,10 @@ router.post('/preview', async (req: Request, res: Response) => {
       },
     };
 
-    // Analyze users
+    // Get repository for contact methods
+    const contactMethodRepo = dataSource.getRepository(UserContactMethod);
+
+    // Analyze users and their contact methods/notification rules
     const users = source === 'pagerduty' ? data.users : data.users;
     if (users) {
       for (const u of users) {
@@ -946,6 +1221,70 @@ router.post('/preview', async (req: Request, res: Response) => {
         if (existing) {
           preview.summary.users.existing++;
           preview.details.users.push({ email, status: 'existing', id: existing.id });
+
+          // Analyze contact methods for this user
+          const contactMethods = source === 'pagerduty' ? u.contact_methods : u.userContacts;
+          if (contactMethods && contactMethods.length > 0) {
+            for (const cm of contactMethods) {
+              // Map contact method type
+              const typeMapping: Record<string, string> = source === 'pagerduty'
+                ? {
+                    'email_contact_method': 'email',
+                    'phone_contact_method': 'phone',
+                    'sms_contact_method': 'sms',
+                    'push_notification_contact_method': 'push',
+                  }
+                : {
+                    'email': 'email',
+                    'sms': 'sms',
+                    'voice': 'phone',
+                    'mobile': 'push',
+                  };
+
+              const contactType = typeMapping[source === 'pagerduty' ? cm.type : cm.method] || 'email';
+              const address = source === 'pagerduty' ? cm.address : cm.to;
+
+              const existingContact = await contactMethodRepo.findOne({
+                where: { userId: existing.id, type: contactType as any, address },
+              });
+
+              preview.summary.contact_methods.total++;
+              if (existingContact) {
+                preview.summary.contact_methods.existing++;
+                preview.details.contact_methods.push({
+                  userEmail: email,
+                  type: contactType,
+                  address,
+                  status: 'existing',
+                });
+              } else {
+                preview.summary.contact_methods.new++;
+                preview.details.contact_methods.push({
+                  userEmail: email,
+                  type: contactType,
+                  address,
+                  status: 'new',
+                });
+              }
+            }
+          }
+
+          // Analyze notification rules for this user
+          const notificationRules = source === 'pagerduty' ? u.notification_rules : u.notificationRules;
+          if (notificationRules && notificationRules.length > 0) {
+            const ruleCount = source === 'pagerduty'
+              ? notificationRules.length
+              : notificationRules.reduce((acc: number, r: any) => acc + (r.steps?.length || 0), 0);
+
+            preview.summary.notification_rules.total += ruleCount;
+            preview.summary.notification_rules.new += ruleCount; // Simplified - actual import deduplicates
+            preview.details.notification_rules.push({
+              userEmail: email,
+              ruleCount,
+              status: 'new',
+              note: 'Rules will be deduplicated during import',
+            });
+          }
         } else {
           preview.summary.users.unmapped++;
           preview.details.users.push({ email, status: 'unmapped', note: 'User needs to be invited' });
