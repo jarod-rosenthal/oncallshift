@@ -42,11 +42,13 @@ export const toastMessages = {
   error: "Something went wrong. Try again.",
 };
 
+// Subtle toast colors - 15% opacity background, solid icon
+// Calmer tones that don't demand attention but still communicate clearly
 const typeConfig: Record<ToastType, { icon: string; color: string }> = {
-  success: { icon: 'check-circle', color: '#10b981' },
-  error: { icon: 'alert-circle', color: '#ef4444' },
-  info: { icon: 'information', color: '#3b82f6' },
-  warning: { icon: 'alert', color: '#f59e0b' },
+  success: { icon: 'check-circle', color: '#38A169' },  // Sage green
+  error: { icon: 'alert-circle', color: '#C53030' },    // Muted terracotta
+  info: { icon: 'information', color: '#3182CE' },      // Calm cerulean
+  warning: { icon: 'alert', color: '#B7791F' },         // Earthy ochre
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {

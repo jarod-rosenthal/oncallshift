@@ -5,3 +5,8 @@ export { StickyActionBar } from './StickyActionBar';
 export { default as EmptyState, EmptyStatePreset, getEmptyStateConfig } from './EmptyState';
 export { ToastProvider, useToast, toastMessages } from './ActionToast';
 export { default as OfflineBanner, useOfflineStatus } from './OfflineBanner';
+export { ConfettiProvider, useConfetti } from './ConfettiOverlay';
+export { default as UrgencyIndicator } from './UrgencyIndicator';
+export { default as ResolveTemplatesModal, defaultResolveTemplates } from './ResolveTemplatesModal';
+export { default as RelatedIncidents } from './RelatedIncidents';
+export { AIDiagnosisPanel } from './AIDiagnosisPanel';

@@ -13,6 +13,7 @@ import { Incident } from '../models/Incident';
 import { IncidentEvent } from '../models/IncidentEvent';
 import { Notification } from '../models/Notification';
 import { DeviceToken } from '../models/DeviceToken';
+import { Runbook } from '../models/Runbook';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -39,6 +40,7 @@ export async function createDataSource(): Promise<DataSource> {
       IncidentEvent,
       Notification,
       DeviceToken,
+      Runbook,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],

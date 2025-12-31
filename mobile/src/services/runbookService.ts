@@ -1,6 +1,15 @@
 import { config } from '../config';
 import { getAccessToken } from './authService';
 
+export interface RunbookStepAction {
+  type: 'webhook';
+  label: string;
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  body?: Record<string, unknown>;
+  confirmMessage?: string;
+}
+
 export interface RunbookStep {
   id: string;
   order: number;
@@ -8,6 +17,7 @@ export interface RunbookStep {
   description: string;
   isOptional: boolean;
   estimatedMinutes?: number;
+  action?: RunbookStepAction;
 }
 
 export interface Runbook {
@@ -40,6 +50,39 @@ export interface RunbookExecution {
   };
 }
 
+// Transform backend runbook response to mobile format
+const transformRunbook = (apiRunbook: any): Runbook => ({
+  id: apiRunbook.id,
+  title: apiRunbook.title,
+  description: apiRunbook.description,
+  serviceId: apiRunbook.serviceId,
+  serviceName: apiRunbook.service?.name || apiRunbook.serviceName || 'Unknown Service',
+  severity: apiRunbook.severity || [],
+  steps: (apiRunbook.steps || []).map((step: any) => ({
+    id: step.id,
+    order: step.order,
+    title: step.title,
+    description: step.description,
+    isOptional: step.isOptional || false,
+    estimatedMinutes: step.estimatedMinutes,
+    action: step.action ? {
+      type: step.action.type || 'webhook',
+      label: step.action.label,
+      url: step.action.url,
+      method: step.action.method,
+      body: step.action.body,
+      confirmMessage: step.action.confirmMessage,
+    } : undefined,
+  })),
+  lastUpdated: apiRunbook.updatedAt || apiRunbook.lastUpdated || new Date().toISOString(),
+  author: apiRunbook.createdBy ? {
+    id: apiRunbook.createdBy.id,
+    fullName: apiRunbook.createdBy.fullName,
+  } : apiRunbook.author,
+  externalUrl: apiRunbook.externalUrl,
+  tags: apiRunbook.tags || [],
+});
+
 // Fetch runbooks for a specific service
 export const getRunbooksForService = async (serviceId: string): Promise<Runbook[]> => {
   try {
@@ -49,7 +92,7 @@ export const getRunbooksForService = async (serviceId: string): Promise<Runbook[
       return [];
     }
 
-    const response = await fetch(`${config.apiUrl}/v1/services/${serviceId}/runbooks`, {
+    const response = await fetch(`${config.apiUrl}/v1/runbooks/service/${serviceId}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -57,11 +100,13 @@ export const getRunbooksForService = async (serviceId: string): Promise<Runbook[
     });
 
     if (!response.ok) {
-      console.log('[RunbookService] Failed to fetch runbooks');
+      console.log('[RunbookService] Failed to fetch runbooks:', response.status);
       return [];
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log('[RunbookService] Fetched runbooks:', data.runbooks?.length || 0);
+    return (data.runbooks || []).map(transformRunbook);
   } catch (error) {
     console.error('[RunbookService] Error fetching runbooks:', error);
     return [];
@@ -87,7 +132,8 @@ export const getRunbook = async (runbookId: string): Promise<Runbook | null> => 
       return null;
     }
 
-    return await response.json();
+    const data = await response.json();
+    return data.runbook ? transformRunbook(data.runbook) : null;
   } catch (error) {
     console.error('[RunbookService] Error fetching runbook:', error);
     return null;
@@ -226,7 +272,7 @@ export const getExecutionForIncident = async (incidentId: string): Promise<Runbo
 export const getMockRunbook = (serviceId: string, serviceName: string): Runbook => ({
   id: `rb-${serviceId}`,
   title: `${serviceName} Incident Response`,
-  description: `Standard operating procedure for handling ${serviceName} incidents`,
+  description: `Quick response guide for ${serviceName} incidents`,
   serviceId,
   serviceName,
   severity: ['critical', 'error'],
@@ -234,66 +280,26 @@ export const getMockRunbook = (serviceId: string, serviceName: string): Runbook 
     {
       id: 'step-1',
       order: 1,
-      title: 'Acknowledge the incident',
-      description: 'Acknowledge the incident to prevent escalation and let the team know you are investigating.',
-      isOptional: false,
-      estimatedMinutes: 1,
-    },
-    {
-      id: 'step-2',
-      order: 2,
-      title: 'Check service health',
-      description: 'Review the service dashboard and health metrics to understand the current state.',
-      isOptional: false,
-      estimatedMinutes: 5,
-    },
-    {
-      id: 'step-3',
-      order: 3,
-      title: 'Review recent changes',
-      description: 'Check for recent deployments or configuration changes that may have caused the issue.',
-      isOptional: false,
-      estimatedMinutes: 5,
-    },
-    {
-      id: 'step-4',
-      order: 4,
-      title: 'Identify root cause',
-      description: 'Use logs, metrics, and traces to identify the root cause of the incident.',
-      isOptional: false,
-      estimatedMinutes: 15,
-    },
-    {
-      id: 'step-5',
-      order: 5,
-      title: 'Apply fix or rollback',
-      description: 'Apply the appropriate fix or rollback to the previous stable version.',
+      title: 'Acknowledge & investigate',
+      description: 'Ack the incident and check logs/metrics for root cause.',
       isOptional: false,
       estimatedMinutes: 10,
     },
     {
-      id: 'step-6',
-      order: 6,
-      title: 'Verify resolution',
-      description: 'Confirm that the issue is resolved and service is healthy.',
+      id: 'step-2',
+      order: 2,
+      title: 'Fix or rollback',
+      description: 'Apply a fix or rollback to restore service.',
       isOptional: false,
-      estimatedMinutes: 5,
+      estimatedMinutes: 15,
     },
     {
-      id: 'step-7',
-      order: 7,
-      title: 'Document findings',
-      description: 'Add notes to the incident with findings and actions taken.',
-      isOptional: true,
-      estimatedMinutes: 5,
-    },
-    {
-      id: 'step-8',
-      order: 8,
-      title: 'Resolve the incident',
-      description: 'Mark the incident as resolved once the issue is confirmed fixed.',
+      id: 'step-3',
+      order: 3,
+      title: 'Verify & resolve',
+      description: 'Confirm service is healthy, then resolve the incident.',
       isOptional: false,
-      estimatedMinutes: 1,
+      estimatedMinutes: 5,
     },
   ],
   lastUpdated: new Date().toISOString(),

@@ -27,18 +27,19 @@ export default function OfflineBanner({
 
   if (!isOffline) return null;
 
+  // Use slate gray background with teal icon - conveys information, not alarm
   return (
     <Animated.View
       style={[
         styles.container,
         {
-          backgroundColor: colors.warning,
+          backgroundColor: colors.surfaceSecondary,
           transform: [{ translateY: slideAnim }],
         },
       ]}
     >
-      <MaterialCommunityIcons name="wifi-off" size={18} color="#fff" />
-      <Text variant="labelMedium" style={styles.text}>
+      <MaterialCommunityIcons name="wifi-off" size={18} color={colors.accent} />
+      <Text variant="labelMedium" style={[styles.text, { color: colors.textPrimary }]}>
         {message}
       </Text>
     </Animated.View>
@@ -98,12 +99,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
   text: {
-    color: '#fff',
-    fontWeight: '600',
+    fontWeight: '500',
   },
 });

@@ -1,0 +1,17 @@
+{
+  "Changes": [
+    {
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "oncallshift.com",
+        "Type": "TXT",
+        "TTL": 3600,
+        "ResourceRecords": [
+          {
+            "Value": "\"protonmail-verification=fc93d89c63116acd6455ebdb1bc45cd47f9e4d6b\""
+          }
+        ]
+      }
+    }
+  ]
+}

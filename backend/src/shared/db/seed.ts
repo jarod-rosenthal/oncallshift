@@ -17,6 +17,7 @@ async function runSeeds() {
     const seedFiles = [
       '001_test_data.sql',
       '002_add_jarod.sql',
+      '003_demo_runbooks.sql',
     ];
 
     for (const seedFile of seedFiles) {

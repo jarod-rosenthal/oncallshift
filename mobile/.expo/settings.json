@@ -1,0 +1,10 @@
+{
+  "devClient": {
+    "url": "http://localhost:8081"
+  },
+  "hostType": "localhost",
+  "lanType": "ip",
+  "dev": true,
+  "minify": false,
+  "urlRandomness": null
+}

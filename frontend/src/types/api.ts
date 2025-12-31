@@ -275,3 +275,65 @@ export interface IncidentDetailResponse {
 export interface IncidentTimelineResponse {
   events: IncidentEvent[];
 }
+
+// Runbook Types
+export interface RunbookStepAction {
+  type: 'webhook';
+  label: string;
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  body?: Record<string, unknown>;
+  confirmMessage?: string;
+}
+
+export interface RunbookStep {
+  id: string;
+  order: number;
+  title: string;
+  description: string;
+  isOptional: boolean;
+  estimatedMinutes?: number;
+  action?: RunbookStepAction;
+}
+
+export interface Runbook {
+  id: string;
+  serviceId: string;
+  service: {
+    id: string;
+    name: string;
+  } | null;
+  title: string;
+  description: string | null;
+  steps: RunbookStep[];
+  severity: string[];
+  tags: string[];
+  externalUrl: string | null;
+  createdBy: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRunbookRequest {
+  serviceId: string;
+  title: string;
+  description?: string;
+  steps: RunbookStep[];
+  severity?: string[];
+  tags?: string[];
+  externalUrl?: string;
+}
+
+export interface UpdateRunbookRequest {
+  title?: string;
+  description?: string;
+  steps?: RunbookStep[];
+  severity?: string[];
+  tags?: string[];
+  externalUrl?: string | null;
+}

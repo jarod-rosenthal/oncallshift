@@ -5,6 +5,7 @@ import {
   StyleSheet,
   RefreshControl,
   Alert,
+  Pressable,
 } from 'react-native';
 import {
   Text,
@@ -16,16 +17,26 @@ import {
   Button,
   Portal,
   Modal,
+  RadioButton,
 } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as apiService from '../services/apiService';
-import type { OnCallData } from '../services/apiService';
+import type { OnCallData, UserProfile } from '../services/apiService';
 import { colors } from '../theme';
-import { OwnerAvatar } from '../components';
+import { OwnerAvatar, useToast } from '../components';
 import * as hapticService from '../services/hapticService';
+
+const OVERRIDE_DURATIONS = [
+  { label: '1 hour', hours: 1 },
+  { label: '4 hours', hours: 4 },
+  { label: '8 hours', hours: 8 },
+  { label: 'Until tomorrow', hours: 24 },
+  { label: 'End of week', hours: 168 },
+];
 
 export default function OnCallScreen() {
   const theme = useTheme();
+  const { showSuccess, showError } = useToast();
   const [oncallData, setOncallData] = useState<OnCallData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,15 +45,39 @@ export default function OnCallScreen() {
   const [showTakeOverModal, setShowTakeOverModal] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<OnCallData | null>(null);
   const [takeOverLoading, setTakeOverLoading] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number>(4); // Default 4 hours
 
-  // Get current user ID from API service (in a real app, this would be from auth context)
-  const currentUserId = 'user-1'; // Mock: First user is current user
+  // Dynamic styles for theme-aware colors
+  const dynamicStyles = {
+    container: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    card: {
+      marginBottom: 12,
+      borderRadius: 12,
+      backgroundColor: theme.colors.surface,
+    },
+    modalContent: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: 16,
+      padding: 24,
+      alignItems: 'center' as const,
+    },
+  };
 
   const fetchOnCallData = async () => {
     try {
       setError(null);
-      const data = await apiService.getOnCallData();
+      const [data, profile] = await Promise.all([
+        apiService.getOnCallData(),
+        apiService.getUserProfile().catch(() => null),
+      ]);
       setOncallData(data);
+      if (profile) {
+        setCurrentUser(profile);
+      }
     } catch (err: any) {
       console.error('Failed to fetch on-call data:', err);
       setError(err.message || 'Failed to load on-call data');
@@ -56,35 +91,75 @@ export default function OnCallScreen() {
     fetchOnCallData();
   }, []);
 
+  const currentUserId = currentUser?.id || '';
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchOnCallData();
   };
 
   const handleTakeOver = async () => {
-    if (!selectedSchedule) return;
+    if (!selectedSchedule || !currentUser) return;
 
     setTakeOverLoading(true);
     await hapticService.mediumTap();
 
     try {
-      // In a real implementation, this would call an API to create an override
-      // For now, we simulate the action
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      await hapticService.success();
-      Alert.alert(
-        'On-Call Updated',
-        `You are now on-call for ${selectedSchedule.service.name}. The previous responder has been notified.`
+      // Calculate override end time
+      const until = new Date();
+      until.setHours(until.getHours() + selectedDuration);
+
+      await apiService.createScheduleOverride(
+        selectedSchedule.schedule.id,
+        currentUser.id,
+        until.toISOString()
       );
+
+      await hapticService.success();
+      showSuccess({
+        title: 'On-Call Updated',
+        message: `You are now on-call for ${selectedSchedule.service.name}`,
+      });
       setShowTakeOverModal(false);
       setSelectedSchedule(null);
+      setSelectedDuration(4); // Reset to default
       fetchOnCallData();
     } catch (err: any) {
       await hapticService.error();
-      Alert.alert('Error', err.message || 'Failed to take over on-call');
+      showError(err.message || 'Failed to take over on-call');
     } finally {
       setTakeOverLoading(false);
     }
+  };
+
+  const handleRemoveOverride = async (item: OnCallData) => {
+    await hapticService.mediumTap();
+
+    Alert.alert(
+      'Remove Override?',
+      `This will remove the override and return to the normal schedule.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiService.removeScheduleOverride(item.schedule.id);
+              await hapticService.success();
+              showSuccess({
+                title: 'Override Removed',
+                message: 'Schedule returned to normal rotation',
+              });
+              fetchOnCallData();
+            } catch (err: any) {
+              await hapticService.error();
+              showError(err.message || 'Failed to remove override');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const openTakeOverModal = (item: OnCallData) => {
@@ -101,7 +176,7 @@ export default function OnCallScreen() {
     const isMe = item.oncallUser?.id === currentUserId;
 
     return (
-      <Card style={styles.card} mode="elevated">
+      <Card style={dynamicStyles.card} mode="elevated">
         <Card.Content>
           {/* Service Header */}
           <View style={styles.serviceHeader}>
@@ -203,6 +278,19 @@ export default function OnCallScreen() {
               Take Over
             </Button>
           )}
+
+          {/* Remove Override Button - show when current user has an override */}
+          {isMe && item.isOverride && (
+            <Button
+              mode="outlined"
+              icon="close-circle-outline"
+              onPress={() => handleRemoveOverride(item)}
+              style={[styles.takeOverButton, { borderColor: colors.warning }]}
+              textColor={colors.warning}
+            >
+              Remove Override
+            </Button>
+          )}
         </Card.Content>
       </Card>
     );
@@ -210,7 +298,7 @@ export default function OnCallScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
+      <View style={[dynamicStyles.container, styles.centerContent]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text variant="bodyLarge" style={styles.loadingText}>
           Loading on-call data...
@@ -221,7 +309,7 @@ export default function OnCallScreen() {
 
   if (error) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
+      <View style={[dynamicStyles.container, styles.centerContent]}>
         <MaterialCommunityIcons name="alert-circle-outline" size={64} color={colors.error} />
         <Text variant="bodyLarge" style={styles.errorText}>
           {error}
@@ -231,7 +319,7 @@ export default function OnCallScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={dynamicStyles.container}>
       <FlatList
         data={filteredData}
         renderItem={renderOnCallItem}
@@ -244,6 +332,11 @@ export default function OnCallScreen() {
             colors={[theme.colors.primary]}
           />
         }
+        // Performance optimizations
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
+        windowSize={8}
+        initialNumToRender={6}
         ListHeaderComponent={
           <View style={styles.header}>
             <Text variant="headlineSmall" style={styles.headerTitle}>
@@ -297,7 +390,7 @@ export default function OnCallScreen() {
           onDismiss={() => setShowTakeOverModal(false)}
           contentContainerStyle={styles.modalContainer}
         >
-          <View style={styles.modalContent}>
+          <View style={dynamicStyles.modalContent}>
             <MaterialCommunityIcons name="account-switch" size={48} color={colors.accent} />
             <Text variant="titleLarge" style={styles.modalTitle}>
               Take Over On-Call?
@@ -309,6 +402,32 @@ export default function OnCallScreen() {
                 <Text>{'\n'}{selectedSchedule.oncallUser.fullName} will be notified.</Text>
               )}
             </Text>
+
+            {/* Duration Picker */}
+            <View style={styles.durationSection}>
+              <Text variant="titleSmall" style={styles.durationLabel}>
+                Override Duration
+              </Text>
+              <RadioButton.Group
+                onValueChange={(value) => setSelectedDuration(parseInt(value))}
+                value={selectedDuration.toString()}
+              >
+                {OVERRIDE_DURATIONS.map((duration) => (
+                  <Pressable
+                    key={duration.hours}
+                    style={styles.durationOption}
+                    onPress={() => setSelectedDuration(duration.hours)}
+                  >
+                    <RadioButton.Android
+                      value={duration.hours.toString()}
+                      color={colors.accent}
+                    />
+                    <Text style={styles.durationText}>{duration.label}</Text>
+                  </Pressable>
+                ))}
+              </RadioButton.Group>
+            </View>
+
             <View style={styles.modalActions}>
               <Button
                 mode="outlined"
@@ -531,5 +650,28 @@ const styles = StyleSheet.create({
   modalButton: {
     flex: 1,
     borderRadius: 8,
+  },
+  durationSection: {
+    width: '100%',
+    marginBottom: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  durationLabel: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  durationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  durationText: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    marginLeft: 4,
   },
 });

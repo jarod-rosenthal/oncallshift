@@ -512,6 +512,39 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
+# Secrets Manager secret for Anthropic API key (for AI diagnosis feature)
+# NOTE: After terraform apply, you need to set the actual key value:
+# aws secretsmanager put-secret-value --secret-id pagerduty-lite-dev-anthropic-key --secret-string "sk-ant-your-key-here" --region us-east-1
+resource "aws_secretsmanager_secret" "anthropic_api_key" {
+  name = "${var.project_name}-${var.environment}-anthropic-key"
+  description = "Anthropic API key for AI-powered incident diagnosis"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-anthropic-key"
+  }
+}
+
+# Secrets Manager secret for credential encryption key (encrypts user-provided API keys)
+# This key is auto-generated - no manual setup needed
+resource "random_password" "credential_encryption_key" {
+  length  = 64
+  special = true
+}
+
+resource "aws_secretsmanager_secret" "credential_encryption_key" {
+  name = "${var.project_name}-${var.environment}-credential-key"
+  description = "Master key for encrypting user Anthropic credentials"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-credential-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "credential_encryption_key" {
+  secret_id     = aws_secretsmanager_secret.credential_encryption_key.id
+  secret_string = random_password.credential_encryption_key.result
+}
+
 # API Service
 module "api_service" {
   source = "../../modules/ecs-service"
@@ -547,9 +580,11 @@ module "api_service" {
 
   secrets = {
     DATABASE_URL = module.database.secret_arn
+    ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
+    CREDENTIAL_ENCRYPTION_KEY = aws_secretsmanager_secret.credential_encryption_key.arn
   }
 
-  secrets_arns = [module.database.secret_arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -570,6 +605,17 @@ module "api_service" {
         "cognito-idp:AdminUpdateUserAttributes"
       ]
       Resource = aws_cognito_user_pool.main.arn
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-${var.environment}/*"
     }
   ]
 
@@ -833,7 +879,7 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default behavior - serve from ALB (Express serves React SPA)
+  # Default behavior - serve from ALB (ECS has bundled frontend)
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
@@ -841,7 +887,7 @@ resource "aws_cloudfront_distribution" "main" {
 
     forwarded_values {
       query_string = true
-      headers      = ["Authorization", "Content-Type", "Origin", "Accept", "Host"]
+      headers      = ["Host", "Origin", "Authorization", "Accept", "Content-Type"]
       cookies {
         forward = "all"
       }
@@ -849,17 +895,17 @@ resource "aws_cloudfront_distribution" "main" {
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 0  # Don't cache HTML pages (SPA routing)
+    default_ttl            = 0
     max_ttl                = 0
     compress               = true
   }
 
-  # Static assets behavior - cache JS, CSS, images from ALB
+  # Static assets behavior - cache JS, CSS, images from S3
   ordered_cache_behavior {
     path_pattern     = "/assets/*"
     allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
+    target_origin_id = "S3-${aws_s3_bucket.web.id}"
 
     forwarded_values {
       query_string = false
@@ -917,46 +963,6 @@ resource "aws_cloudfront_distribution" "main" {
     max_ttl                = 0
   }
 
-  # Demo page behavior
-  ordered_cache_behavior {
-    path_pattern     = "/demo"
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-  }
-
-  # Login page behavior - forward to backend
-  ordered_cache_behavior {
-    path_pattern     = "/login"
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-  }
-
   # API docs behavior
   ordered_cache_behavior {
     path_pattern     = "/api-docs*"
@@ -977,6 +983,19 @@ resource "aws_cloudfront_distribution" "main" {
     max_ttl                = 0
   }
 
+  # SPA routing - serve index.html for 404 errors from S3
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
   restrictions {
     geo_restriction {
       restriction_type = "none"
@@ -992,5 +1011,319 @@ resource "aws_cloudfront_distribution" "main" {
   tags = {
     Name = "${var.project_name}-${var.environment}-cdn"
   }
+}
+
+# =============================================================================
+# GitHub Actions OIDC Provider and IAM Role
+# =============================================================================
+
+# GitHub OIDC Provider (only create if it doesn't exist)
+data "aws_iam_openid_connect_provider" "github" {
+  count = var.github_org != null ? 1 : 0
+  url   = "https://token.actions.githubusercontent.com"
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  count = var.github_org != null && length(data.aws_iam_openid_connect_provider.github) == 0 ? 1 : 0
+
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
+
+  tags = {
+    Name = "github-actions-oidc"
+  }
+}
+
+locals {
+  github_oidc_provider_arn = var.github_org != null ? (
+    length(data.aws_iam_openid_connect_provider.github) > 0
+      ? data.aws_iam_openid_connect_provider.github[0].arn
+      : aws_iam_openid_connect_provider.github[0].arn
+  ) : null
+}
+
+# GitHub Actions IAM Role
+resource "aws_iam_role" "github_actions" {
+  count = var.github_org != null ? 1 : 0
+
+  name = "github-actions-${var.project_name}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = local.github_oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:*"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "github-actions-${var.project_name}"
+  }
+}
+
+# GitHub Actions Policy - Full permissions for Terraform and deployments
+resource "aws_iam_role_policy" "github_actions_terraform" {
+  count = var.github_org != null ? 1 : 0
+
+  name = "terraform-and-deploy"
+  role = aws_iam_role.github_actions[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # EC2 - VPC, Subnets, Security Groups, etc.
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:Describe*",
+          "ec2:CreateVpc",
+          "ec2:DeleteVpc",
+          "ec2:ModifyVpcAttribute",
+          "ec2:CreateSubnet",
+          "ec2:DeleteSubnet",
+          "ec2:CreateRouteTable",
+          "ec2:DeleteRouteTable",
+          "ec2:AssociateRouteTable",
+          "ec2:DisassociateRouteTable",
+          "ec2:CreateRoute",
+          "ec2:DeleteRoute",
+          "ec2:CreateInternetGateway",
+          "ec2:DeleteInternetGateway",
+          "ec2:AttachInternetGateway",
+          "ec2:DetachInternetGateway",
+          "ec2:CreateNatGateway",
+          "ec2:DeleteNatGateway",
+          "ec2:AllocateAddress",
+          "ec2:ReleaseAddress",
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:CreateVpcEndpoint",
+          "ec2:DeleteVpcEndpoints",
+          "ec2:ModifyVpcEndpoint",
+          "ec2:CreateTags",
+          "ec2:DeleteTags"
+        ]
+        Resource = "*"
+      },
+      # ECS
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:*"
+        ]
+        Resource = "*"
+      },
+      # ECR
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:*"
+        ]
+        Resource = "*"
+      },
+      # ELB
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:*"
+        ]
+        Resource = "*"
+      },
+      # RDS
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:*"
+        ]
+        Resource = "*"
+      },
+      # S3
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:*"
+        ]
+        Resource = "*"
+      },
+      # CloudFront
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudfront:*"
+        ]
+        Resource = "*"
+      },
+      # Route53
+      {
+        Effect = "Allow"
+        Action = [
+          "route53:*"
+        ]
+        Resource = "*"
+      },
+      # ACM
+      {
+        Effect = "Allow"
+        Action = [
+          "acm:*"
+        ]
+        Resource = "*"
+      },
+      # Cognito
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:*"
+        ]
+        Resource = "*"
+      },
+      # SQS
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:*"
+        ]
+        Resource = "*"
+      },
+      # SNS
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:*"
+        ]
+        Resource = "*"
+      },
+      # SES
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:*"
+        ]
+        Resource = "*"
+      },
+      # Secrets Manager
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:*"
+        ]
+        Resource = "*"
+      },
+      # IAM - Limited to managing roles for this project
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:PassRole",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListInstanceProfilesForRole",
+          "iam:TagRole",
+          "iam:UntagRole",
+          "iam:UpdateAssumeRolePolicy"
+        ]
+        Resource = [
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/github-actions-${var.project_name}"
+        ]
+      },
+      # IAM - Read-only for listing
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:ListRoles",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion"
+        ]
+        Resource = "*"
+      },
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:*"
+        ]
+        Resource = "*"
+      },
+      # KMS
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Describe*",
+          "kms:Get*",
+          "kms:List*",
+          "kms:CreateKey",
+          "kms:CreateAlias",
+          "kms:DeleteAlias",
+          "kms:UpdateAlias",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ScheduleKeyDeletion"
+        ]
+        Resource = "*"
+      },
+      # SSM Parameter Store
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter*",
+          "ssm:PutParameter",
+          "ssm:DeleteParameter",
+          "ssm:DescribeParameters",
+          "ssm:AddTagsToResource"
+        ]
+        Resource = "*"
+      },
+      # CloudWatch
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:*"
+        ]
+        Resource = "*"
+      },
+      # Application Auto Scaling
+      {
+        Effect = "Allow"
+        Action = [
+          "application-autoscaling:*"
+        ]
+        Resource = "*"
+      },
+      # Service Quotas - needed for some Terraform operations
+      {
+        Effect = "Allow"
+        Action = [
+          "servicequotas:GetServiceQuota"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 

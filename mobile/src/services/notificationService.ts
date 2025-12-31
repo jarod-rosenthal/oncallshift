@@ -49,8 +49,15 @@ setupNotificationCategories().catch(console.error);
  * Request permission and get push token
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  // Check if running on a physical device
   if (!Device.isDevice) {
-    console.log('Push notifications require a physical device');
+    console.log('[Notifications] Push notifications require a physical device - skipping registration');
+    return null;
+  }
+
+  // Check if project ID is configured
+  if (!config.expoProjectId || config.expoProjectId === 'your-project-id-here') {
+    console.log('[Notifications] Expo project ID not configured - push notifications disabled');
     return null;
   }
 
@@ -65,7 +72,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('Push notification permission not granted');
+    console.log('[Notifications] Push notification permission not granted');
     return null;
   }
 
@@ -74,9 +81,12 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: config.expoProjectId,
     });
+    console.log('[Notifications] Push token obtained successfully');
     return tokenData.data;
-  } catch (error) {
-    console.error('Failed to get push token:', error);
+  } catch (error: any) {
+    // This is expected to fail on simulators or when Expo Push is not configured
+    // Log as info rather than error to avoid alarming console output
+    console.log('[Notifications] Push token unavailable:', error?.message || 'Unknown error');
     return null;
   }
 }

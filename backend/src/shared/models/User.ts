@@ -32,6 +32,22 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   settings: Record<string, any> | null;
 
+  // Anthropic credential fields for AI Diagnosis (BYOK)
+  @Column({ name: 'anthropic_credential_encrypted', type: 'text', nullable: true })
+  anthropicCredentialEncrypted: string | null;
+
+  @Column({ name: 'anthropic_credential_type', type: 'varchar', length: 10, nullable: true })
+  anthropicCredentialType: 'api_key' | 'oauth' | null;
+
+  @Column({ name: 'anthropic_credential_hint', type: 'varchar', length: 20, nullable: true })
+  anthropicCredentialHint: string | null;
+
+  @Column({ name: 'anthropic_refresh_token_encrypted', type: 'text', nullable: true })
+  anthropicRefreshTokenEncrypted: string | null;
+
+  @Column({ name: 'anthropic_credential_updated_at', type: 'timestamp', nullable: true })
+  anthropicCredentialUpdatedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   Alert,
+  Linking,
 } from 'react-native';
 import {
   Text,
@@ -81,6 +82,8 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
     );
   };
 
+  const isAdmin = profile?.role === 'admin';
+
   const menuSections: { title: string; items: MenuItem[] }[] = [
     {
       title: 'Your Account',
@@ -90,11 +93,73 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
           title: 'Profile',
           subtitle: profile?.email || 'Manage your profile',
           icon: 'account-circle',
-          screen: 'Profile',
+          screen: 'Settings',
+          showChevron: true,
+        },
+        {
+          id: 'availability',
+          title: 'Availability',
+          subtitle: 'On-call hours & blackout dates',
+          icon: 'calendar-clock',
+          screen: 'Availability',
+          showChevron: true,
+        },
+        {
+          id: 'oncall-calendar',
+          title: 'My On-Call Calendar',
+          subtitle: 'View your upcoming shifts',
+          icon: 'calendar-month',
+          screen: 'OnCallCalendar',
           showChevron: true,
         },
       ],
     },
+    // Admin section - only shown to admins
+    ...(isAdmin ? [{
+      title: 'Administration',
+      items: [
+        {
+          id: 'setup-wizard',
+          title: 'Setup Wizard',
+          subtitle: 'Add services, runbooks & team',
+          icon: 'wizard-hat',
+          screen: 'SetupWizard',
+          showChevron: true,
+        },
+        {
+          id: 'escalation-policies',
+          title: 'Escalation Policies',
+          subtitle: 'Manage escalation rules',
+          icon: 'arrow-decision',
+          screen: 'EscalationPolicies',
+          showChevron: true,
+        },
+        {
+          id: 'manage-schedules',
+          title: 'Manage Schedules',
+          subtitle: 'Configure on-call rotations',
+          icon: 'calendar-edit',
+          screen: 'ManageSchedules',
+          showChevron: true,
+        },
+        {
+          id: 'manage-services',
+          title: 'Manage Services',
+          subtitle: 'Configure services & integrations',
+          icon: 'server-security',
+          screen: 'ManageServices',
+          showChevron: true,
+        },
+        {
+          id: 'manage-users',
+          title: 'Manage Users',
+          subtitle: 'Invite users & manage roles',
+          icon: 'account-cog',
+          screen: 'ManageUsers',
+          showChevron: true,
+        },
+      ],
+    }] : []),
     {
       title: 'Team & Analytics',
       items: [
@@ -137,7 +202,7 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
           title: 'Help & Feedback',
           subtitle: 'Get support or send feedback',
           icon: 'help-circle',
-          screen: 'Help',
+          action: () => Linking.openURL('https://oncallshift.com/support'),
           showChevron: true,
         },
         {
@@ -223,7 +288,7 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
         <Card.Content style={styles.profileContent}>
           <OwnerAvatar
             name={profile?.fullName || profile?.email || 'User'}
-            avatarUrl={profile?.avatarUrl}
+            email={profile?.email}
             size={64}
           />
           <View style={styles.profileInfo}>
