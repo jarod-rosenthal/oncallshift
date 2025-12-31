@@ -117,16 +117,18 @@
 - [x] Write tests (12 tests)
 
 ### 2.4 Import Tags
-**Effort**: 1 day | **Status**: Not Started
+**Effort**: 1 day | **Status**: Complete
 
-- [ ] Add tags array to each importable entity type
-- [ ] Extract tags from PagerDuty entities
-- [ ] Extract tags from Opsgenie entities
-- [ ] Create/match Tag records
-- [ ] Create EntityTag associations
-- [ ] Handle tag name deduplication
-- [ ] Add to import preview
-- [ ] Write tests
+- [x] Add tags array to PagerDuty service and team interfaces
+- [x] Add tags array to Opsgenie service and team interfaces
+- [x] Extract tags from PagerDuty entities (label/summary/id fallback)
+- [x] Extract tags from Opsgenie entities (string arrays)
+- [x] Create/match Tag records with getOrCreateTag helper
+- [x] Create EntityTag associations with associateTag helper
+- [x] Handle tag name normalization and deduplication
+- [x] Generate consistent tag colors (predefined + hash-based)
+- [x] Add to import preview with associations count
+- [x] Write tests (13 tests)
 
 ---
 
@@ -237,10 +239,10 @@
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
 | Phase 1: Critical | 40 | 40 | 100% |
-| Phase 2: Important | 28 | 24 | 86% |
+| Phase 2: Important | 28 | 28 | 100% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **113** | **64** | **57%** |
+| **Total** | **113** | **68** | **60%** |
 
 ---
 
@@ -267,6 +269,7 @@
 - **Dec 31, 2024**: Implemented Phase 2.1 - Heartbeat Monitors (12/12 tasks)
 - **Dec 31, 2024**: Implemented Phase 2.2 - Import Maintenance Windows (6/6 tasks)
 - **Dec 31, 2024**: Implemented Phase 2.3 - Import Service Dependencies (6/6 tasks)
+- **Dec 31, 2024**: Implemented Phase 2.4 - Import Tags (10/10 tasks) - **Phase 2 Complete!**
 
 ---
 

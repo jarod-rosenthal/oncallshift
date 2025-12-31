@@ -18,7 +18,10 @@ import {
   Heartbeat,
   MaintenanceWindow,
   ServiceDependency,
+  Tag,
+  EntityTag,
 } from '../../shared/models';
+import { EntityType } from '../../shared/models/EntityTag';
 import { RoutingCondition, ConditionOperator, MatchType } from '../../shared/models/AlertRoutingRule';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { logger } from '../../shared/utils/logger';
@@ -125,6 +128,7 @@ interface PagerDutyTeam {
     user: { id: string; email?: string };
     role: string;
   }>;
+  tags?: PagerDutyTag[];
 }
 
 interface PagerDutySchedule {
@@ -172,6 +176,15 @@ interface PagerDutyService {
   teams?: Array<{ id: string }>;
   // Integration key for zero-config migration (from service integrations)
   integration_key?: string;
+  // Tags for categorization
+  tags?: Array<{ id: string; type?: string; label?: string; summary?: string }>;
+}
+
+interface PagerDutyTag {
+  id: string;
+  type?: string;
+  label?: string;
+  summary?: string;
 }
 
 interface ImportOptions {
@@ -208,6 +221,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
     routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
     maintenance_windows: { imported: 0, skipped: 0, errors: [] as string[] },
     service_dependencies: { imported: 0, skipped: 0, errors: [] as string[] },
+    tags: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   // Maps to track PagerDuty ID -> OnCallShift ID mappings
@@ -217,6 +231,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
   const scheduleIdMap = new Map<string, string>();
   const policyIdMap = new Map<string, string>();
   const serviceIdMap = new Map<string, string>();
+  const tagIdMap = new Map<string, string>(); // Tag name -> OnCallShift Tag ID
 
   try {
     const dataSource = await getDataSource();
@@ -882,6 +897,104 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
       }
     }
 
+    // 9. Import Tags from all entities
+    const tagRepo = dataSource.getRepository(Tag);
+    const entityTagRepo = dataSource.getRepository(EntityTag);
+
+    // Helper to get or create a tag by name
+    async function getOrCreateTag(tagName: string): Promise<string> {
+      const normalizedName = tagName.trim().toLowerCase();
+
+      // Check cache first
+      if (tagIdMap.has(normalizedName)) {
+        return tagIdMap.get(normalizedName)!;
+      }
+
+      // Check if tag exists in database
+      let tag = await tagRepo.findOne({
+        where: { name: normalizedName, orgId },
+      });
+
+      if (!tag) {
+        // Create new tag with a default color
+        tag = tagRepo.create({
+          orgId,
+          name: normalizedName,
+          color: getTagColor(normalizedName),
+        });
+        await tagRepo.save(tag);
+        results.tags.imported++;
+        logger.info('Tag created', { tagId: tag.id, name: normalizedName });
+      } else {
+        results.tags.skipped++;
+      }
+
+      tagIdMap.set(normalizedName, tag.id);
+      return tag.id;
+    }
+
+    // Helper to associate a tag with an entity
+    async function associateTag(
+      tagId: string,
+      entityType: EntityType,
+      entityId: string
+    ): Promise<void> {
+      // Check if association already exists
+      const existing = await entityTagRepo.findOne({
+        where: { tagId, entityType, entityId, orgId },
+      });
+
+      if (!existing) {
+        const entityTag = entityTagRepo.create({
+          orgId,
+          tagId,
+          entityType,
+          entityId,
+        });
+        await entityTagRepo.save(entityTag);
+      }
+    }
+
+    // Process tags from services
+    if (importData.services) {
+      for (const pdService of importData.services) {
+        if (pdService.tags && pdService.tags.length > 0) {
+          const serviceId = serviceIdMap.get(pdService.id);
+          if (serviceId) {
+            for (const pdTag of pdService.tags) {
+              try {
+                const tagName = pdTag.label || pdTag.summary || pdTag.id;
+                const tagId = await getOrCreateTag(tagName);
+                await associateTag(tagId, 'service', serviceId);
+              } catch (error: any) {
+                results.tags.errors.push(`Service tag ${pdTag.label || pdTag.id}: ${error.message}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Process tags from teams
+    if (importData.teams) {
+      for (const pdTeam of importData.teams) {
+        if (pdTeam.tags && pdTeam.tags.length > 0) {
+          const teamId = teamIdMap.get(pdTeam.id);
+          if (teamId) {
+            for (const pdTag of pdTeam.tags) {
+              try {
+                const tagName = pdTag.label || pdTag.summary || pdTag.id;
+                const tagId = await getOrCreateTag(tagName);
+                await associateTag(tagId, 'team', teamId);
+              } catch (error: any) {
+                results.tags.errors.push(`Team tag ${pdTag.label || pdTag.id}: ${error.message}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
     const duration = Date.now() - startTime;
 
     logger.info('PagerDuty import completed', {
@@ -1014,6 +1127,7 @@ interface OpsgenieTeam {
     user: { id: string; username?: string };
     role: string;
   }>;
+  tags?: string[];
 }
 
 interface OpsgenieSchedule {
@@ -1079,6 +1193,7 @@ interface OpsgenieService {
   teamId?: string;
   // API key for zero-config migration (from integrations)
   apiKey?: string;
+  tags?: string[];
 }
 
 /**
@@ -1107,11 +1222,13 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
     routing_rules: { imported: 0, skipped: 0, errors: [] as string[] },
     heartbeats: { imported: 0, skipped: 0, errors: [] as string[] },
     maintenance_windows: { imported: 0, skipped: 0, errors: [] as string[] },
+    tags: { imported: 0, skipped: 0, errors: [] as string[] },
   };
 
   const userIdMap = new Map<string, string>();
   const contactMethodIdMap = new Map<string, string>();
   const teamIdMap = new Map<string, string>();
+  const tagIdMap = new Map<string, string>(); // Tag name -> OnCallShift Tag ID
   const scheduleIdMap = new Map<string, string>();
   const escalationIdMap = new Map<string, string>();
   const serviceIdMap = new Map<string, string>();
@@ -1786,6 +1903,102 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
       }
     }
 
+    // 9. Import Tags from all entities
+    const tagRepo = dataSource.getRepository(Tag);
+    const entityTagRepo = dataSource.getRepository(EntityTag);
+
+    // Helper to get or create a tag by name
+    async function getOrCreateTag(tagName: string): Promise<string> {
+      const normalizedName = tagName.trim().toLowerCase();
+
+      // Check cache first
+      if (tagIdMap.has(normalizedName)) {
+        return tagIdMap.get(normalizedName)!;
+      }
+
+      // Check if tag exists in database
+      let tag = await tagRepo.findOne({
+        where: { name: normalizedName, orgId },
+      });
+
+      if (!tag) {
+        // Create new tag with a default color
+        tag = tagRepo.create({
+          orgId,
+          name: normalizedName,
+          color: getTagColor(normalizedName),
+        });
+        await tagRepo.save(tag);
+        results.tags.imported++;
+        logger.info('Tag created', { tagId: tag.id, name: normalizedName });
+      } else {
+        results.tags.skipped++;
+      }
+
+      tagIdMap.set(normalizedName, tag.id);
+      return tag.id;
+    }
+
+    // Helper to associate a tag with an entity
+    async function associateTag(
+      tagId: string,
+      entityType: EntityType,
+      entityId: string
+    ): Promise<void> {
+      // Check if association already exists
+      const existing = await entityTagRepo.findOne({
+        where: { tagId, entityType, entityId, orgId },
+      });
+
+      if (!existing) {
+        const entityTag = entityTagRepo.create({
+          orgId,
+          tagId,
+          entityType,
+          entityId,
+        });
+        await entityTagRepo.save(entityTag);
+      }
+    }
+
+    // Process tags from services (Opsgenie uses string arrays)
+    if (importData.services) {
+      for (const ogService of importData.services) {
+        if (ogService.tags && ogService.tags.length > 0) {
+          const serviceId = serviceIdMap.get(ogService.id);
+          if (serviceId) {
+            for (const tagName of ogService.tags) {
+              try {
+                const tagId = await getOrCreateTag(tagName);
+                await associateTag(tagId, 'service', serviceId);
+              } catch (error: any) {
+                results.tags.errors.push(`Service tag ${tagName}: ${error.message}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Process tags from teams (Opsgenie uses string arrays)
+    if (importData.teams) {
+      for (const ogTeam of importData.teams) {
+        if (ogTeam.tags && ogTeam.tags.length > 0) {
+          const teamId = teamIdMap.get(ogTeam.id);
+          if (teamId) {
+            for (const tagName of ogTeam.tags) {
+              try {
+                const tagId = await getOrCreateTag(tagName);
+                await associateTag(tagId, 'team', teamId);
+              } catch (error: any) {
+                results.tags.errors.push(`Team tag ${tagName}: ${error.message}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
     const duration = Date.now() - startTime;
 
     logger.info('Opsgenie import completed', {
@@ -1864,6 +2077,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         heartbeats: { total: 0, existing: 0, new: 0 },
         maintenance_windows: { total: 0, existing: 0, new: 0, skippedPast: 0 },
         service_dependencies: { total: 0, existing: 0, new: 0, unmappedServices: 0 },
+        tags: { total: 0, existing: 0, new: 0, associations: 0 },
       },
       details: {
         users: [] as any[],
@@ -1877,6 +2091,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         heartbeats: [] as any[],
         maintenance_windows: [] as any[],
         service_dependencies: [] as any[],
+        tags: [] as any[],
       },
     };
 
@@ -2346,6 +2561,66 @@ router.post('/preview', async (req: Request, res: Response) => {
       }
     }
 
+    // Analyze tags from all entities
+    const tagRepo = dataSource.getRepository(Tag);
+    const tagNamesSet = new Set<string>();
+    const tagAssociations: Array<{ tag: string; entityType: string; entityName: string }> = [];
+
+    // Collect tags from services
+    const dataServices = data.services || [];
+    for (const svc of dataServices) {
+      const serviceTags = source === 'pagerduty'
+        ? (svc.tags || []).map((t: any) => t.label || t.summary || t.id)
+        : (svc.tags || []);
+
+      for (const tagName of serviceTags) {
+        tagNamesSet.add(tagName.toLowerCase().trim());
+        tagAssociations.push({ tag: tagName, entityType: 'service', entityName: svc.name });
+      }
+    }
+
+    // Collect tags from teams
+    const dataTeams = data.teams || [];
+    for (const tm of dataTeams) {
+      const teamTags = source === 'pagerduty'
+        ? (tm.tags || []).map((tag: any) => tag.label || tag.summary || tag.id)
+        : (tm.tags || []);
+
+      for (const tagName of teamTags) {
+        tagNamesSet.add(tagName.toLowerCase().trim());
+        tagAssociations.push({ tag: tagName, entityType: 'team', entityName: tm.name });
+      }
+    }
+
+    // Analyze each unique tag
+    for (const tagName of tagNamesSet) {
+      preview.summary.tags.total++;
+
+      const existing = await tagRepo.findOne({
+        where: { name: tagName, orgId },
+      });
+
+      if (existing) {
+        preview.summary.tags.existing++;
+        preview.details.tags.push({
+          name: tagName,
+          status: 'existing',
+          id: existing.id,
+          color: existing.color,
+        });
+      } else {
+        preview.summary.tags.new++;
+        preview.details.tags.push({
+          name: tagName,
+          status: 'new',
+          color: getTagColor(tagName),
+        });
+      }
+    }
+
+    // Count associations
+    preview.summary.tags.associations = tagAssociations.length;
+
     return res.status(200).json(preview);
   } catch (error: any) {
     logger.error('Import preview failed:', error);
@@ -2358,6 +2633,44 @@ router.post('/preview', async (req: Request, res: Response) => {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/**
+ * Generate a consistent color for a tag based on its name
+ */
+function getTagColor(tagName: string): string {
+  // Predefined colors for common tag names
+  const colorMap: Record<string, string> = {
+    'production': '#dc2626',    // Red
+    'staging': '#f97316',       // Orange
+    'development': '#22c55e',   // Green
+    'critical': '#b91c1c',      // Dark red
+    'high-priority': '#ea580c', // Dark orange
+    'low-priority': '#16a34a',  // Dark green
+    'urgent': '#dc2626',        // Red
+    'backend': '#3b82f6',       // Blue
+    'frontend': '#8b5cf6',      // Purple
+    'database': '#06b6d4',      // Cyan
+    'api': '#0ea5e9',           // Light blue
+    'infrastructure': '#6366f1',// Indigo
+    'security': '#ef4444',      // Red
+    'monitoring': '#10b981',    // Emerald
+  };
+
+  const normalizedName = tagName.toLowerCase();
+  if (colorMap[normalizedName]) {
+    return colorMap[normalizedName];
+  }
+
+  // Generate a hash-based color for unknown tags
+  let hash = 0;
+  for (let i = 0; i < normalizedName.length; i++) {
+    hash = normalizedName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  // Convert hash to HSL color (saturation 60%, lightness 50%)
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 60%, 50%)`;
+}
 
 function getRotationType(turnLengthSeconds: number): 'daily' | 'weekly' | 'custom' {
   if (turnLengthSeconds === 86400) return 'daily';

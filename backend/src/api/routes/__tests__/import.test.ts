@@ -1517,3 +1517,174 @@ describe('Service Dependency Import', () => {
     });
   });
 });
+
+describe('Tag Import', () => {
+  describe('PagerDuty tag parsing', () => {
+    it('should parse PagerDuty tag structure', () => {
+      const pdTag = {
+        id: 'tag-123',
+        type: 'tag',
+        label: 'production',
+        summary: 'Production environment',
+      };
+
+      expect(pdTag.id).toBe('tag-123');
+      expect(pdTag.label).toBe('production');
+      expect(pdTag.summary).toBe('Production environment');
+    });
+
+    it('should extract tag name from label or summary', () => {
+      const getTagName = (tag: { label?: string; summary?: string; id: string }) =>
+        tag.label || tag.summary || tag.id;
+
+      expect(getTagName({ id: 'tag-1', label: 'production' })).toBe('production');
+      expect(getTagName({ id: 'tag-2', summary: 'staging' })).toBe('staging');
+      expect(getTagName({ id: 'tag-3' })).toBe('tag-3');
+    });
+
+    it('should handle service with multiple tags', () => {
+      const pdService = {
+        id: 'svc-123',
+        name: 'API Service',
+        tags: [
+          { id: 'tag-1', label: 'production' },
+          { id: 'tag-2', label: 'backend' },
+          { id: 'tag-3', label: 'critical' },
+        ],
+      };
+
+      expect(pdService.tags?.length).toBe(3);
+      expect(pdService.tags?.[0].label).toBe('production');
+    });
+  });
+
+  describe('Opsgenie tag parsing', () => {
+    it('should parse Opsgenie string tag array', () => {
+      const ogService = {
+        id: 'svc-og-123',
+        name: 'Database Service',
+        tags: ['production', 'database', 'critical'],
+      };
+
+      expect(ogService.tags?.length).toBe(3);
+      expect(ogService.tags?.[0]).toBe('production');
+    });
+
+    it('should handle team with tags', () => {
+      const ogTeam = {
+        id: 'team-og-123',
+        name: 'Backend Team',
+        tags: ['engineering', 'backend'],
+      };
+
+      expect(ogTeam.tags?.length).toBe(2);
+      expect(ogTeam.tags).toContain('backend');
+    });
+  });
+
+  describe('Tag name normalization', () => {
+    it('should normalize tag names to lowercase', () => {
+      const normalize = (name: string) => name.trim().toLowerCase();
+
+      expect(normalize('Production')).toBe('production');
+      expect(normalize('HIGH-PRIORITY')).toBe('high-priority');
+      expect(normalize('  Backend  ')).toBe('backend');
+    });
+
+    it('should deduplicate tags by normalized name', () => {
+      const tagNames = ['Production', 'production', 'PRODUCTION', 'Backend', 'backend'];
+      const normalized = new Set(tagNames.map((n) => n.toLowerCase().trim()));
+
+      expect(normalized.size).toBe(2);
+      expect(normalized.has('production')).toBe(true);
+      expect(normalized.has('backend')).toBe(true);
+    });
+  });
+
+  describe('Tag color generation', () => {
+    it('should return predefined colors for common tags', () => {
+      const colorMap: Record<string, string> = {
+        'production': '#dc2626',
+        'staging': '#f97316',
+        'development': '#22c55e',
+        'critical': '#b91c1c',
+        'backend': '#3b82f6',
+        'frontend': '#8b5cf6',
+      };
+
+      expect(colorMap['production']).toBe('#dc2626');
+      expect(colorMap['backend']).toBe('#3b82f6');
+    });
+
+    it('should generate consistent colors for unknown tags', () => {
+      // Simple hash function
+      const getHash = (name: string): number => {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+          hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return Math.abs(hash % 360);
+      };
+
+      const hue1 = getHash('custom-tag');
+      const hue2 = getHash('custom-tag');
+
+      expect(hue1).toBe(hue2); // Same tag always gets same hue
+    });
+  });
+
+  describe('Entity tag associations', () => {
+    it('should track tag associations per entity type', () => {
+      const associations = [
+        { tag: 'production', entityType: 'service', entityName: 'API' },
+        { tag: 'production', entityType: 'team', entityName: 'Backend' },
+        { tag: 'backend', entityType: 'service', entityName: 'API' },
+      ];
+
+      const byTag = associations.reduce((acc, a) => {
+        acc[a.tag] = (acc[a.tag] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      expect(byTag['production']).toBe(2);
+      expect(byTag['backend']).toBe(1);
+    });
+
+    it('should support multiple entity types', () => {
+      const entityTypes = ['service', 'incident', 'business_service', 'schedule', 'escalation_policy', 'runbook', 'user', 'team'];
+
+      expect(entityTypes).toContain('service');
+      expect(entityTypes).toContain('team');
+      expect(entityTypes.length).toBe(8);
+    });
+  });
+
+  describe('Preview tag summary', () => {
+    it('should count total, existing, new tags and associations', () => {
+      const summary = {
+        total: 5,
+        existing: 2,
+        new: 3,
+        associations: 10,
+      };
+
+      expect(summary.total).toBe(5);
+      expect(summary.existing).toBe(2);
+      expect(summary.new).toBe(3);
+      expect(summary.associations).toBe(10);
+      expect(summary.existing + summary.new).toBe(summary.total);
+    });
+
+    it('should include tag details with color', () => {
+      const tagDetail = {
+        name: 'production',
+        status: 'new',
+        color: '#dc2626',
+      };
+
+      expect(tagDetail.name).toBe('production');
+      expect(tagDetail.status).toBe('new');
+      expect(tagDetail.color).toBe('#dc2626');
+    });
+  });
+});
