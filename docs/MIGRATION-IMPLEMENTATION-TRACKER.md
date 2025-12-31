@@ -31,16 +31,16 @@
 - [x] Write tests for contact method import
 
 ### 1.2 Multi-Target Escalation Steps
-**Effort**: 2-3 days | **Status**: Not Started
+**Effort**: 2-3 days | **Status**: Complete
 
-- [ ] Audit current `EscalationStep` model for multi-target support
-- [ ] Update import to process ALL targets per escalation rule (not just first)
-- [ ] Add `notifyStrategy` field to EscalationStep (`all` | `round_robin`)
-- [ ] Map PagerDuty multi-target rules
-- [ ] Map Opsgenie multi-target rules
-- [ ] Update escalation worker to notify multiple targets per step
-- [ ] Add to import preview with target counts
-- [ ] Write tests for multi-target escalation
+- [x] Audit current `EscalationStep` model for multi-target support
+- [x] Update import to process ALL targets per escalation rule (not just first)
+- [x] Add `notifyStrategy` field to EscalationStep (`all` | `round_robin`)
+- [x] Map PagerDuty multi-target rules
+- [x] Map Opsgenie multi-target rules
+- [x] Update escalation worker to notify multiple targets per step
+- [x] Add to import preview with target counts
+- [x] Write tests for multi-target escalation
 
 ### 1.3 Preserve Integration Keys (Zero-Config Migration)
 **Effort**: 1-2 days | **Status**: Complete
@@ -236,11 +236,11 @@
 
 | Phase | Tasks | Completed | Progress |
 |-------|-------|-----------|----------|
-| Phase 1: Critical | 37 | 21 | 57% |
+| Phase 1: Critical | 37 | 29 | 78% |
 | Phase 2: Important | 28 | 0 | 0% |
 | Phase 3: Tools | 32 | 0 | 0% |
 | Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **110** | **21** | **19%** |
+| **Total** | **110** | **29** | **26%** |
 
 ---
 
@@ -259,6 +259,7 @@
 - **Dec 31, 2024**: Initial analysis and plan creation
 - **Dec 31, 2024**: Implemented Phase 1.3 - Preserve Integration Keys (9/9 tasks)
 - **Dec 31, 2024**: Implemented Phase 1.1 - Import User Contact Methods & Notification Rules (12/12 tasks)
+- **Dec 31, 2024**: Implemented Phase 1.2 - Multi-Target Escalation Steps (8/8 tasks)
 
 ---
 
