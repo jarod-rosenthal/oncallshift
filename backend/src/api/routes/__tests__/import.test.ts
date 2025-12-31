@@ -530,3 +530,419 @@ describe('Multi-Target Escalation Import', () => {
     });
   });
 });
+
+describe('Routing Rule Import', () => {
+  describe('PagerDuty operator mapping', () => {
+    const mapPagerDutyOperator = (pdOperator: string): string | null => {
+      const mapping: Record<string, string> = {
+        'equals': 'equals',
+        'contains': 'contains',
+        'matches': 'matches_regex',
+        'exists': 'exists',
+        'not': 'not_equals',
+      };
+      return mapping[pdOperator] || null;
+    };
+
+    it('should map equals operator', () => {
+      expect(mapPagerDutyOperator('equals')).toBe('equals');
+    });
+
+    it('should map contains operator', () => {
+      expect(mapPagerDutyOperator('contains')).toBe('contains');
+    });
+
+    it('should map matches to matches_regex', () => {
+      expect(mapPagerDutyOperator('matches')).toBe('matches_regex');
+    });
+
+    it('should map exists operator', () => {
+      expect(mapPagerDutyOperator('exists')).toBe('exists');
+    });
+
+    it('should map not to not_equals', () => {
+      expect(mapPagerDutyOperator('not')).toBe('not_equals');
+    });
+
+    it('should return null for unknown operators', () => {
+      expect(mapPagerDutyOperator('unknown')).toBeNull();
+    });
+  });
+
+  describe('Opsgenie operator mapping', () => {
+    const mapOpsgenieOperator = (ogOperator: string): string | null => {
+      const mapping: Record<string, string> = {
+        'equals': 'equals',
+        'equals-ignore-whitespace': 'equals',
+        'contains': 'contains',
+        'contains-key': 'exists',
+        'starts-with': 'starts_with',
+        'ends-with': 'ends_with',
+        'matches': 'matches_regex',
+        'is-empty': 'is_empty',
+        'greater-than': 'greater_than',
+        'less-than': 'less_than',
+      };
+      return mapping[ogOperator] || null;
+    };
+
+    it('should map equals operator', () => {
+      expect(mapOpsgenieOperator('equals')).toBe('equals');
+    });
+
+    it('should map equals-ignore-whitespace to equals', () => {
+      expect(mapOpsgenieOperator('equals-ignore-whitespace')).toBe('equals');
+    });
+
+    it('should map contains operator', () => {
+      expect(mapOpsgenieOperator('contains')).toBe('contains');
+    });
+
+    it('should map contains-key to exists', () => {
+      expect(mapOpsgenieOperator('contains-key')).toBe('exists');
+    });
+
+    it('should map starts-with to starts_with', () => {
+      expect(mapOpsgenieOperator('starts-with')).toBe('starts_with');
+    });
+
+    it('should map ends-with to ends_with', () => {
+      expect(mapOpsgenieOperator('ends-with')).toBe('ends_with');
+    });
+
+    it('should map matches to matches_regex', () => {
+      expect(mapOpsgenieOperator('matches')).toBe('matches_regex');
+    });
+
+    it('should map is-empty', () => {
+      expect(mapOpsgenieOperator('is-empty')).toBe('is_empty');
+    });
+
+    it('should map comparison operators', () => {
+      expect(mapOpsgenieOperator('greater-than')).toBe('greater_than');
+      expect(mapOpsgenieOperator('less-than')).toBe('less_than');
+    });
+
+    it('should return null for unknown operators', () => {
+      expect(mapOpsgenieOperator('unknown')).toBeNull();
+    });
+  });
+
+  describe('PagerDuty path mapping', () => {
+    const mapPagerDutyPath = (pdPath: string): string => {
+      const mapping: Record<string, string> = {
+        'event.summary': 'summary',
+        'event.source': 'source',
+        'event.severity': 'severity',
+        'event.class': 'class',
+        'event.component': 'component',
+        'event.group': 'group',
+        'event.custom_details': 'custom_details',
+      };
+      return mapping[pdPath] || pdPath.replace('event.', '');
+    };
+
+    it('should map event.summary to summary', () => {
+      expect(mapPagerDutyPath('event.summary')).toBe('summary');
+    });
+
+    it('should map event.source to source', () => {
+      expect(mapPagerDutyPath('event.source')).toBe('source');
+    });
+
+    it('should map event.severity to severity', () => {
+      expect(mapPagerDutyPath('event.severity')).toBe('severity');
+    });
+
+    it('should strip event. prefix for unmapped paths', () => {
+      expect(mapPagerDutyPath('event.custom_field')).toBe('custom_field');
+    });
+  });
+
+  describe('PagerDuty severity mapping', () => {
+    const mapPagerDutySeverity = (pdSeverity: string): string | null => {
+      const mapping: Record<string, string> = {
+        'critical': 'critical',
+        'error': 'error',
+        'warning': 'warning',
+        'info': 'info',
+      };
+      return mapping[pdSeverity?.toLowerCase()] || null;
+    };
+
+    it('should map critical severity', () => {
+      expect(mapPagerDutySeverity('critical')).toBe('critical');
+      expect(mapPagerDutySeverity('CRITICAL')).toBe('critical');
+    });
+
+    it('should map error severity', () => {
+      expect(mapPagerDutySeverity('error')).toBe('error');
+    });
+
+    it('should map warning severity', () => {
+      expect(mapPagerDutySeverity('warning')).toBe('warning');
+    });
+
+    it('should map info severity', () => {
+      expect(mapPagerDutySeverity('info')).toBe('info');
+    });
+
+    it('should return null for unknown severity', () => {
+      expect(mapPagerDutySeverity('unknown')).toBeNull();
+    });
+  });
+
+  describe('Opsgenie priority mapping', () => {
+    const mapOpsgeniePriority = (ogPriority: string): string | null => {
+      const mapping: Record<string, string> = {
+        'P1': 'critical',
+        'P2': 'error',
+        'P3': 'warning',
+        'P4': 'info',
+        'P5': 'info',
+      };
+      return mapping[ogPriority] || null;
+    };
+
+    it('should map P1 to critical', () => {
+      expect(mapOpsgeniePriority('P1')).toBe('critical');
+    });
+
+    it('should map P2 to error', () => {
+      expect(mapOpsgeniePriority('P2')).toBe('error');
+    });
+
+    it('should map P3 to warning', () => {
+      expect(mapOpsgeniePriority('P3')).toBe('warning');
+    });
+
+    it('should map P4/P5 to info', () => {
+      expect(mapOpsgeniePriority('P4')).toBe('info');
+      expect(mapOpsgeniePriority('P5')).toBe('info');
+    });
+
+    it('should return null for unknown priority', () => {
+      expect(mapOpsgeniePriority('P6')).toBeNull();
+    });
+  });
+
+  describe('Opsgenie field mapping', () => {
+    const mapOpsgenieField = (ogField: string): string => {
+      const mapping: Record<string, string> = {
+        'message': 'summary',
+        'alias': 'dedup_key',
+        'description': 'description',
+        'source': 'source',
+        'entity': 'class',
+        'tags': 'tags',
+        'actions': 'custom_details.actions',
+        'details': 'custom_details',
+        'extra-properties': 'custom_details',
+        'priority': 'severity',
+        'responders': 'responders',
+        'teams': 'teams',
+      };
+      return mapping[ogField] || ogField;
+    };
+
+    it('should map message to summary', () => {
+      expect(mapOpsgenieField('message')).toBe('summary');
+    });
+
+    it('should map alias to dedup_key', () => {
+      expect(mapOpsgenieField('alias')).toBe('dedup_key');
+    });
+
+    it('should map entity to class', () => {
+      expect(mapOpsgenieField('entity')).toBe('class');
+    });
+
+    it('should map priority to severity', () => {
+      expect(mapOpsgenieField('priority')).toBe('severity');
+    });
+
+    it('should pass through unknown fields', () => {
+      expect(mapOpsgenieField('custom_field')).toBe('custom_field');
+    });
+  });
+
+  describe('PagerDuty event rule parsing', () => {
+    it('should extract conditions from PagerDuty event rule', () => {
+      const pdRule = {
+        id: 'rule-1',
+        label: 'Route Database Alerts',
+        disabled: false,
+        conditions: {
+          operator: 'and' as const,
+          subconditions: [
+            { operator: 'contains', path: 'event.summary', value: 'database' },
+            { operator: 'equals', path: 'event.source', value: 'prod-db-01' },
+          ],
+        },
+        actions: {
+          route: { type: 'service', value: 'service-123' },
+          severity: { type: 'constant', value: 'critical' },
+        },
+      };
+
+      const conditions = pdRule.conditions?.subconditions?.map(c => ({
+        field: c.path.replace('event.', ''),
+        operator: c.operator,
+        value: c.value,
+      })) || [];
+
+      expect(conditions.length).toBe(2);
+      expect(conditions[0]).toEqual({
+        field: 'summary',
+        operator: 'contains',
+        value: 'database',
+      });
+      expect(conditions[1]).toEqual({
+        field: 'source',
+        operator: 'equals',
+        value: 'prod-db-01',
+      });
+    });
+
+    it('should handle catch-all rules with no conditions', () => {
+      const pdRule: {
+        id: string;
+        label: string;
+        catch_all: boolean;
+        conditions?: { subconditions?: Array<{ operator: string; path: string; value: string }> };
+        actions: { route: { type: string; value: string } };
+      } = {
+        id: 'catch-all',
+        label: 'Catch All',
+        catch_all: true,
+        conditions: undefined,
+        actions: {
+          route: { type: 'service', value: 'default-service' },
+        },
+      };
+
+      const conditions = pdRule.conditions?.subconditions || [];
+      expect(conditions.length).toBe(0);
+      expect(pdRule.catch_all).toBe(true);
+    });
+  });
+
+  describe('Opsgenie alert policy parsing', () => {
+    it('should extract conditions from Opsgenie alert policy', () => {
+      const ogPolicy = {
+        id: 'policy-1',
+        name: 'Critical Alerts',
+        enabled: true,
+        filter: {
+          type: 'match-all',
+          conditions: [
+            { field: 'priority', operation: 'equals', expectedValue: 'P1', not: false },
+            { field: 'message', operation: 'contains', expectedValue: 'critical', not: false },
+          ],
+        },
+        priority: 'P1',
+        responders: [
+          { type: 'team', id: 'team-123', name: 'SRE Team' },
+        ],
+      };
+
+      const conditions = ogPolicy.filter?.conditions?.map(c => ({
+        field: c.field,
+        operator: c.operation,
+        value: c.expectedValue,
+        not: c.not || false,
+      })) || [];
+
+      expect(conditions.length).toBe(2);
+      expect(conditions[0]).toEqual({
+        field: 'priority',
+        operator: 'equals',
+        value: 'P1',
+        not: false,
+      });
+      expect(conditions[1]).toEqual({
+        field: 'message',
+        operator: 'contains',
+        value: 'critical',
+        not: false,
+      });
+    });
+
+    it('should handle negated conditions', () => {
+      const ogPolicy = {
+        id: 'policy-2',
+        name: 'Exclude Test Alerts',
+        enabled: true,
+        filter: {
+          type: 'match-all',
+          conditions: [
+            { field: 'source', operation: 'contains', expectedValue: 'test', not: true },
+          ],
+        },
+      };
+
+      const conditions = ogPolicy.filter?.conditions?.map(c => ({
+        field: c.field,
+        operator: c.operation,
+        value: c.expectedValue,
+        not: c.not || false,
+      })) || [];
+
+      expect(conditions[0].not).toBe(true);
+    });
+
+    it('should extract match type from filter', () => {
+      const ogPolicy = {
+        id: 'policy-3',
+        name: 'Any Match Policy',
+        filter: {
+          type: 'match-any-condition',
+          conditions: [
+            { field: 'source', operation: 'equals', expectedValue: 'server-1' },
+            { field: 'source', operation: 'equals', expectedValue: 'server-2' },
+          ],
+        },
+      };
+
+      const matchType = ogPolicy.filter?.type === 'match-any-condition' ? 'any' : 'all';
+      expect(matchType).toBe('any');
+    });
+  });
+
+  describe('Service ID mapping for routing rules', () => {
+    it('should map PagerDuty service ID to OnCallShift service ID', () => {
+      const serviceIdMap = new Map<string, string>();
+      serviceIdMap.set('pd-service-1', 'ocs-service-1');
+      serviceIdMap.set('pd-service-2', 'ocs-service-2');
+
+      const pdRule = {
+        actions: {
+          route: { type: 'service', value: 'pd-service-1' },
+        },
+      };
+
+      const targetServiceId = pdRule.actions?.route?.value
+        ? serviceIdMap.get(pdRule.actions.route.value)
+        : null;
+
+      expect(targetServiceId).toBe('ocs-service-1');
+    });
+
+    it('should return undefined for unmapped service', () => {
+      const serviceIdMap = new Map<string, string>();
+      serviceIdMap.set('pd-service-1', 'ocs-service-1');
+
+      const pdRule = {
+        actions: {
+          route: { type: 'service', value: 'unmapped-service' },
+        },
+      };
+
+      const targetServiceId = pdRule.actions?.route?.value
+        ? serviceIdMap.get(pdRule.actions.route.value)
+        : null;
+
+      expect(targetServiceId).toBeUndefined();
+    });
+  });
+});
