@@ -1,6 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { EscalationPolicy } from './EscalationPolicy';
 import { Schedule } from './Schedule';
+import { EscalationTarget } from './EscalationTarget';
 
 export type EscalationTargetType = 'schedule' | 'users';
 
@@ -42,6 +43,10 @@ export class EscalationStep {
   @JoinColumn({ name: 'schedule_id' })
   schedule: Schedule | null;
 
+  // New multi-target relation (Phase 2)
+  @OneToMany(() => EscalationTarget, target => target.escalationStep, { cascade: true })
+  targets: EscalationTarget[];
+
   // Helper methods
   isScheduleTarget(): boolean {
     return this.targetType === 'schedule';
@@ -52,10 +57,37 @@ export class EscalationStep {
   }
 
   getTargetUserIds(): string[] {
+    // First check new targets relation (Phase 2)
+    if (this.targets && this.targets.length > 0) {
+      return this.targets
+        .filter(t => t.targetType === 'user' && t.userId)
+        .map(t => t.userId!);
+    }
+    // Fall back to legacy userIds field
     if (this.isUsersTarget() && this.userIds) {
       return this.userIds;
     }
     return [];
+  }
+
+  /**
+   * Get all targets for this step (Phase 2 multi-target support)
+   */
+  getAllTargets(): EscalationTarget[] {
+    return this.targets || [];
+  }
+
+  /**
+   * Check if this step has any targets configured
+   */
+  hasTargets(): boolean {
+    // Check new targets relation first
+    if (this.targets && this.targets.length > 0) {
+      return true;
+    }
+    // Fall back to legacy fields
+    return (this.targetType === 'schedule' && !!this.scheduleId) ||
+           (this.targetType === 'users' && !!this.userIds && this.userIds.length > 0);
   }
 
   validate(): { valid: boolean; errors: string[] } {

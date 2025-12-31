@@ -5,6 +5,7 @@ export * from './Schedule';
 export * from './ScheduleMember';
 export * from './EscalationPolicy';
 export * from './EscalationStep';
+export * from './EscalationTarget';
 export * from './Incident';
 export * from './IncidentEvent';
 export * from './Notification';

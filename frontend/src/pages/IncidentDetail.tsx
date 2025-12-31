@@ -6,8 +6,10 @@ import { Navigation } from '../components/Navigation';
 import { IncidentActions } from '../components/IncidentActions';
 import { IncidentTimeline } from '../components/IncidentTimeline';
 import { EscalationStatusPanel } from '../components/EscalationStatusPanel';
+import { NotificationStatusPanel } from '../components/NotificationStatusPanel';
 import { RunbookPanel } from '../components/RunbookPanel';
 import { RelatedIncidents } from '../components/RelatedIncidents';
+import { ResolveModal } from '../components/ResolveModal';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
 import type { Incident, User, EscalationStatus, IncidentEvent } from '../types/api';
 
@@ -27,6 +29,8 @@ export function IncidentDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAIChatActive, setIsAIChatActive] = useState(false);
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
   const loadIncidentData = useCallback(async (isInitialLoad = false) => {
     if (!id) return;
@@ -127,11 +131,17 @@ export function IncidentDetail() {
     await refreshData();
   };
 
-  const handleResolve = async () => {
+  const handleResolve = async (note?: string) => {
     if (!id) return;
-    await incidentsAPI.resolve(id);
-    showSuccess('Incident resolved');
-    await refreshData();
+    setIsResolving(true);
+    try {
+      await incidentsAPI.resolve(id, note);
+      setShowResolveModal(false);
+      showSuccess('Incident resolved');
+      await refreshData();
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   const handleUnacknowledge = async () => {
@@ -356,7 +366,7 @@ export function IncidentDetail() {
               incident={incident}
               users={users}
               onAcknowledge={handleAcknowledge}
-              onResolve={handleResolve}
+              onResolve={async () => setShowResolveModal(true)}
               onUnacknowledge={handleUnacknowledge}
               onUnresolve={handleUnresolve}
               onEscalate={handleEscalate}
@@ -373,6 +383,9 @@ export function IncidentDetail() {
               isSnoozed={incident.isSnoozed}
               snoozedUntil={incident.snoozedUntil}
             />
+
+            {/* Notification Status */}
+            <NotificationStatusPanel incidentId={incident.id} />
           </div>
 
           {/* Right Column: Runbook and Timeline (spans 2 columns on large screens) */}
@@ -439,6 +452,14 @@ export function IncidentDetail() {
           </Card>
         </div>
       )}
+
+      {/* Resolve Modal */}
+      <ResolveModal
+        open={showResolveModal}
+        onClose={() => setShowResolveModal(false)}
+        onResolve={handleResolve}
+        isLoading={isResolving}
+      />
     </div>
   );
 }
