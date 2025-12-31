@@ -6,6 +6,7 @@ import { Navigation } from '../components/Navigation';
 import { IncidentActions } from '../components/IncidentActions';
 import { IncidentTimeline } from '../components/IncidentTimeline';
 import { EscalationStatusPanel } from '../components/EscalationStatusPanel';
+import { NotificationStatusPanel } from '../components/NotificationStatusPanel';
 import { RunbookPanel } from '../components/RunbookPanel';
 import { RelatedIncidents } from '../components/RelatedIncidents';
 import { ResolveModal } from '../components/ResolveModal';
@@ -382,6 +383,9 @@ export function IncidentDetail() {
               isSnoozed={incident.isSnoozed}
               snoozedUntil={incident.snoozedUntil}
             />
+
+            {/* Notification Status */}
+            <NotificationStatusPanel incidentId={incident.id} />
           </div>
 
           {/* Right Column: Runbook and Timeline (spans 2 columns on large screens) */}

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule } from '../../shared/models';
+import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification } from '../../shared/models';
 import { sendNotificationMessage } from '../../shared/queues/sqs-client';
 import { logger } from '../../shared/utils/logger';
 
@@ -162,6 +162,90 @@ router.get('/:id/timeline', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error fetching incident timeline:', error);
     return res.status(500).json({ error: 'Failed to fetch incident timeline' });
+  }
+});
+
+/**
+ * GET /api/v1/incidents/:id/notifications
+ * Get notification statuses for an incident
+ */
+router.get('/:id/notifications', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const notificationRepo = dataSource.getRepository(Notification);
+
+    // Verify incident exists and belongs to org
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    // Get all notifications for this incident
+    const notifications = await notificationRepo.find({
+      where: { incidentId: id },
+      relations: ['user'],
+      order: { createdAt: 'ASC' },
+    });
+
+    // Group by user and format
+    const userNotifications = new Map<string, {
+      userId: string;
+      userName: string;
+      userEmail: string;
+      channels: Array<{
+        channel: string;
+        status: string;
+        sentAt: Date | null;
+        deliveredAt: Date | null;
+        failedAt: Date | null;
+        errorMessage: string | null;
+      }>;
+    }>();
+
+    for (const notification of notifications) {
+      const userId = notification.userId;
+      if (!userNotifications.has(userId)) {
+        userNotifications.set(userId, {
+          userId,
+          userName: notification.user?.fullName || notification.user?.email || 'Unknown',
+          userEmail: notification.user?.email || '',
+          channels: [],
+        });
+      }
+
+      userNotifications.get(userId)!.channels.push({
+        channel: notification.channel,
+        status: notification.status,
+        sentAt: notification.sentAt,
+        deliveredAt: notification.deliveredAt,
+        failedAt: notification.failedAt,
+        errorMessage: notification.errorMessage,
+      });
+    }
+
+    // Summary stats
+    const summary = {
+      total: notifications.length,
+      pending: notifications.filter(n => n.status === 'pending').length,
+      sent: notifications.filter(n => n.status === 'sent').length,
+      delivered: notifications.filter(n => n.status === 'delivered').length,
+      failed: notifications.filter(n => n.status === 'failed').length,
+    };
+
+    return res.json({
+      notifications: Array.from(userNotifications.values()),
+      summary,
+    });
+  } catch (error) {
+    logger.error('Error fetching incident notifications:', error);
+    return res.status(500).json({ error: 'Failed to fetch incident notifications' });
   }
 });
 
