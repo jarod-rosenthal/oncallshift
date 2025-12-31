@@ -1,10 +1,12 @@
 import 'dotenv/config';
 import { getDataSource } from '../shared/db/data-source';
 import { sendNotificationMessage } from '../shared/queues/sqs-client';
-import { Incident, IncidentEvent, Service, EscalationStep, Schedule } from '../shared/models';
+import { Incident, IncidentEvent, Service, EscalationStep, Schedule, User } from '../shared/models';
 import { logger } from '../shared/utils/logger';
+import { In } from 'typeorm';
 
 const CHECK_INTERVAL_MS = parseInt(process.env.ESCALATION_CHECK_INTERVAL_MS || '30000', 10); // Default 30 seconds
+const ROTATION_CHECK_INTERVAL_MS = parseInt(process.env.ROTATION_CHECK_INTERVAL_MS || '60000', 10); // Default 60 seconds
 
 /**
  * Escalation Timer Worker
@@ -282,6 +284,146 @@ async function getStepTargetUsers(
   return [];
 }
 
+/**
+ * Check and advance schedule rotations
+ *
+ * Checks all daily/weekly schedules and updates currentOncallUserId
+ * if a rotation handoff has occurred.
+ */
+async function checkAndAdvanceRotations(): Promise<void> {
+  try {
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const userRepo = dataSource.getRepository(User);
+
+    // Find all schedules with rotation configs (daily or weekly)
+    const rotatingSchedules = await scheduleRepo.find({
+      where: { type: In(['daily', 'weekly']) },
+    });
+
+    if (rotatingSchedules.length === 0) {
+      return;
+    }
+
+    logger.debug(`Checking ${rotatingSchedules.length} rotating schedules for handoffs`);
+
+    for (const schedule of rotatingSchedules) {
+      try {
+        await processRotationHandoff(schedule, scheduleRepo, userRepo);
+      } catch (error) {
+        logger.error('Error processing rotation for schedule:', {
+          scheduleId: schedule.id,
+          error,
+        });
+      }
+    }
+  } catch (error) {
+    logger.error('Error in rotation check:', error);
+  }
+}
+
+async function processRotationHandoff(
+  schedule: Schedule,
+  scheduleRepo: any,
+  userRepo: any
+): Promise<void> {
+  if (!schedule.rotation_config) {
+    return;
+  }
+
+  const rotationConfig = schedule.rotation_config as {
+    userIds: string[];
+    startDate: string;
+    rotationHour: number;
+    weekday?: number;
+  };
+
+  const { userIds, startDate, rotationHour, weekday } = rotationConfig;
+
+  if (!userIds || userIds.length === 0) {
+    return;
+  }
+
+  // Calculate who should be on-call right now
+  const now = new Date();
+  const start = new Date(startDate);
+
+  let expectedOncallUserId: string;
+
+  if (schedule.type === 'daily') {
+    // Calculate days elapsed since start date
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysSinceStart = Math.floor((now.getTime() - start.getTime()) / msPerDay);
+
+    // Account for rotation hour
+    const currentHour = now.getHours();
+    let rotationIndex: number;
+
+    if (currentHour < rotationHour) {
+      // Haven't rotated yet today
+      rotationIndex = Math.max(0, daysSinceStart - 1) % userIds.length;
+    } else {
+      rotationIndex = Math.max(0, daysSinceStart) % userIds.length;
+    }
+
+    expectedOncallUserId = userIds[rotationIndex];
+  } else if (schedule.type === 'weekly') {
+    // Calculate weeks elapsed since start date
+    const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+    const weeksSinceStart = Math.floor((now.getTime() - start.getTime()) / msPerWeek);
+
+    // Check if we've passed the rotation day this week
+    const currentDay = now.getDay(); // 0 = Sunday, 6 = Saturday
+    const currentHour = now.getHours();
+    const rotationDay = weekday !== undefined ? weekday : 1; // Default Monday
+
+    let rotationIndex: number;
+
+    if (currentDay < rotationDay || (currentDay === rotationDay && currentHour < rotationHour)) {
+      // Haven't rotated yet this week
+      rotationIndex = Math.max(0, weeksSinceStart - 1) % userIds.length;
+    } else {
+      rotationIndex = Math.max(0, weeksSinceStart) % userIds.length;
+    }
+
+    expectedOncallUserId = userIds[rotationIndex];
+  } else {
+    return;
+  }
+
+  // Check if currentOncallUserId needs to be updated
+  const currentOncallUserId = schedule.currentOncallUserId;
+
+  if (currentOncallUserId !== expectedOncallUserId) {
+    // Get user names for logging
+    const previousUser = currentOncallUserId
+      ? await userRepo.findOne({ where: { id: currentOncallUserId } })
+      : null;
+    const nextUser = await userRepo.findOne({ where: { id: expectedOncallUserId } });
+
+    logger.info('Rotation handoff detected', {
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
+      scheduleType: schedule.type,
+      previousUserId: currentOncallUserId,
+      previousUserName: previousUser?.fullName || previousUser?.email || 'N/A',
+      nextUserId: expectedOncallUserId,
+      nextUserName: nextUser?.fullName || nextUser?.email || 'Unknown',
+    });
+
+    // Update the schedule
+    schedule.currentOncallUserId = expectedOncallUserId;
+    await scheduleRepo.save(schedule);
+
+    logger.info('Rotation handoff completed', {
+      scheduleId: schedule.id,
+      scheduleName: schedule.name,
+      newOncallUserId: expectedOncallUserId,
+      newOncallUserName: nextUser?.fullName || nextUser?.email,
+    });
+  }
+}
+
 async function startWorker() {
   try {
     logger.info('Starting escalation timer worker...');
@@ -291,11 +433,22 @@ async function startWorker() {
     await getDataSource();
     logger.info('Database connected successfully');
 
-    logger.info(`Escalation timer worker started, checking every ${CHECK_INTERVAL_MS}ms`);
+    logger.info(`Escalation timer worker started, checking escalations every ${CHECK_INTERVAL_MS}ms, rotations every ${ROTATION_CHECK_INTERVAL_MS}ms`);
+
+    // Track last rotation check time
+    let lastRotationCheck = 0;
 
     // Run check loop
     while (true) {
       await checkAndEscalateIncidents();
+
+      // Check rotations less frequently
+      const now = Date.now();
+      if (now - lastRotationCheck >= ROTATION_CHECK_INTERVAL_MS) {
+        await checkAndAdvanceRotations();
+        lastRotationCheck = now;
+      }
+
       await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
     }
   } catch (error) {
