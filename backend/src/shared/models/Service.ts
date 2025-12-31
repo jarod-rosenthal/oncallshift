@@ -1,8 +1,11 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany, BeforeInsert } from 'typeorm';
 import { Organization } from './Organization';
+import { Team } from './Team';
 import { Schedule } from './Schedule';
 import { Incident } from './Incident';
 import { EscalationPolicy } from './EscalationPolicy';
+import { BusinessService } from './BusinessService';
+import { ServiceDependency } from './ServiceDependency';
 import { v4 as uuidv4 } from 'uuid';
 
 @Entity('services')
@@ -12,6 +15,9 @@ export class Service {
 
   @Column({ name: 'org_id', type: 'uuid' })
   orgId: string;
+
+  @Column({ name: 'team_id', type: 'uuid', nullable: true })
+  teamId: string | null;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;
@@ -34,6 +40,9 @@ export class Service {
   @Column({ name: 'escalation_policy_id', type: 'uuid', nullable: true })
   escalationPolicyId: string | null;
 
+  @Column({ name: 'business_service_id', type: 'uuid', nullable: true })
+  businessServiceId: string | null;
+
   @Column({ type: 'varchar', length: 50, default: 'active' })
   status: 'active' | 'inactive' | 'maintenance';
 
@@ -54,6 +63,10 @@ export class Service {
   @JoinColumn({ name: 'org_id' })
   organization: Organization;
 
+  @ManyToOne(() => Team, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'team_id' })
+  team: Team | null;
+
   @ManyToOne(() => Schedule, { nullable: true })
   @JoinColumn({ name: 'schedule_id' })
   schedule: Schedule | null;
@@ -64,6 +77,18 @@ export class Service {
 
   @OneToMany(() => Incident, incident => incident.service)
   incidents: Incident[];
+
+  @ManyToOne(() => BusinessService, businessService => businessService.services, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'business_service_id' })
+  businessService: BusinessService | null;
+
+  // Services this service depends on (this service is the dependent)
+  @OneToMany(() => ServiceDependency, dep => dep.dependentService)
+  dependsOn: ServiceDependency[];
+
+  // Services that depend on this service (this service is the supporting service)
+  @OneToMany(() => ServiceDependency, dep => dep.supportingService)
+  dependents: ServiceDependency[];
 
   @BeforeInsert()
   generateApiKey() {

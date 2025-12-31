@@ -1034,12 +1034,22 @@ async function getEscalationStatus(
   userRepo: any
 ): Promise<{
   policyName: string | null;
+  policyId: string | null;
   currentStep: number;
   totalSteps: number;
   stepStartedAt: Date | null;
   timeoutAt: Date | null;
   currentStepTimeoutSeconds: number | null;
   currentTargets: Array<{ userId: string; name: string; email: string }>;
+  nextTargets: Array<{ userId: string; name: string; email: string }> | null;
+  steps: Array<{
+    position: number;
+    status: 'completed' | 'active' | 'pending';
+    targetDescription: string;
+    delayMinutes: number;
+  }>;
+  loopsRemaining: number | null;
+  repeatEnabled: boolean;
   isEscalating: boolean;
 } | null> {
   // Get service with escalation policy
@@ -1057,6 +1067,7 @@ async function getEscalationStatus(
   const totalSteps = steps.length;
   const currentStepIndex = incident.currentEscalationStep - 1;
   const currentStep = steps[currentStepIndex];
+  const nextStep = steps[currentStepIndex + 1];
 
   // Calculate timeout
   let timeoutAt: Date | null = null;
@@ -1069,33 +1080,52 @@ async function getEscalationStatus(
     );
   }
 
-  // Get current target users
-  const currentTargets: Array<{ userId: string; name: string; email: string }> = [];
-
-  if (currentStep) {
-    if (currentStep.targetType === 'users' && currentStep.userIds) {
-      // Direct user targets
+  // Helper to get target description for a step
+  const getTargetDescription = async (step: EscalationStep): Promise<string> => {
+    if (step.targetType === 'users' && step.userIds && step.userIds.length > 0) {
       const users = await userRepo.find({
-        where: currentStep.userIds.map((userId: string) => ({ id: userId })),
+        where: step.userIds.map((userId: string) => ({ id: userId })),
       });
-      for (const user of users) {
-        currentTargets.push({
-          userId: user.id,
-          name: user.fullName || user.email,
-          email: user.email,
-        });
-      }
-    } else if (currentStep.targetType === 'schedule' && currentStep.scheduleId) {
-      // Schedule target - get current on-call user
-      const schedule = await scheduleRepo.findOne({
-        where: { id: currentStep.scheduleId },
-      });
+      return users.map((u: any) => u.fullName || u.email).join(', ');
+    } else if (step.targetType === 'schedule' && step.scheduleId) {
+      const schedule = await scheduleRepo.findOne({ where: { id: step.scheduleId } });
       if (schedule) {
         const oncallUserId = schedule.getCurrentOncallUserId();
         if (oncallUserId) {
           const oncallUser = await userRepo.findOne({ where: { id: oncallUserId } });
           if (oncallUser) {
-            currentTargets.push({
+            return `${oncallUser.fullName || oncallUser.email} (${schedule.name})`;
+          }
+        }
+        return `${schedule.name} (no one on-call)`;
+      }
+    }
+    return 'Unknown target';
+  };
+
+  // Helper to get targets for a step
+  const getTargetsForStep = async (step: EscalationStep): Promise<Array<{ userId: string; name: string; email: string }>> => {
+    const targets: Array<{ userId: string; name: string; email: string }> = [];
+
+    if (step.targetType === 'users' && step.userIds) {
+      const users = await userRepo.find({
+        where: step.userIds.map((userId: string) => ({ id: userId })),
+      });
+      for (const user of users) {
+        targets.push({
+          userId: user.id,
+          name: user.fullName || user.email,
+          email: user.email,
+        });
+      }
+    } else if (step.targetType === 'schedule' && step.scheduleId) {
+      const schedule = await scheduleRepo.findOne({ where: { id: step.scheduleId } });
+      if (schedule) {
+        const oncallUserId = schedule.getCurrentOncallUserId();
+        if (oncallUserId) {
+          const oncallUser = await userRepo.findOne({ where: { id: oncallUserId } });
+          if (oncallUser) {
+            targets.push({
               userId: oncallUser.id,
               name: oncallUser.fullName || oncallUser.email,
               email: oncallUser.email,
@@ -1104,16 +1134,45 @@ async function getEscalationStatus(
         }
       }
     }
-  }
+    return targets;
+  };
+
+  // Get current target users
+  const currentTargets = currentStep ? await getTargetsForStep(currentStep) : [];
+
+  // Get next target users (who will be notified if escalation happens)
+  const nextTargets = nextStep ? await getTargetsForStep(nextStep) : null;
+
+  // Build steps array for visual progress bar
+  const stepsInfo = await Promise.all(steps.map(async (step: EscalationStep, index: number) => {
+    let status: 'completed' | 'active' | 'pending' = 'pending';
+    if (index < currentStepIndex) {
+      status = 'completed';
+    } else if (index === currentStepIndex) {
+      status = 'active';
+    }
+
+    return {
+      position: step.stepOrder,
+      status,
+      targetDescription: await getTargetDescription(step),
+      delayMinutes: Math.round(step.timeoutSeconds / 60),
+    };
+  }));
 
   return {
     policyName: policy.name,
+    policyId: policy.id,
     currentStep: incident.currentEscalationStep,
     totalSteps,
     stepStartedAt: incident.escalationStartedAt,
     timeoutAt,
     currentStepTimeoutSeconds,
     currentTargets,
+    nextTargets,
+    steps: stepsInfo,
+    loopsRemaining: null, // TODO: Add escalationLoopsRemaining to Incident model
+    repeatEnabled: policy.repeatEnabled,
     isEscalating: incident.state === 'triggered' && !incident.isSnoozed(),
   };
 }

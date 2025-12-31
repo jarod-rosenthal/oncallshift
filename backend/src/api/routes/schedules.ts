@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { LessThanOrEqual, MoreThan } from 'typeorm';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Schedule, ScheduleMember, Service, User } from '../../shared/models';
+import { Schedule, ScheduleMember, ScheduleOverride, ScheduleLayer, ScheduleLayerMember, Service, User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
@@ -1051,5 +1052,990 @@ function formatSchedule(schedule: Schedule) {
     updatedAt: schedule.updatedAt,
   };
 }
+
+// ============================================================================
+// SCHEDULE OVERRIDES (New Multi-Override System)
+// ============================================================================
+
+/**
+ * GET /api/v1/schedules/:id/overrides
+ * List all overrides for a schedule (active, upcoming, and recent)
+ */
+router.get('/:id/overrides', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const overrideRepo = dataSource.getRepository(ScheduleOverride);
+
+    const schedule = await scheduleRepo.findOne({ where: { id, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    // Get all overrides for this schedule (past 7 days + future)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const overrides = await overrideRepo.find({
+      where: {
+        scheduleId: id,
+        endTime: MoreThan(sevenDaysAgo),
+      },
+      relations: ['user', 'createdByUser'],
+      order: { startTime: 'ASC' },
+    });
+
+    const now = new Date();
+    const formattedOverrides = overrides.map(o => ({
+      id: o.id,
+      scheduleId: o.scheduleId,
+      userId: o.userId,
+      user: o.user ? {
+        id: o.user.id,
+        fullName: o.user.fullName,
+        email: o.user.email,
+      } : null,
+      startTime: o.startTime,
+      endTime: o.endTime,
+      reason: o.reason,
+      status: o.endTime < now ? 'ended' : o.startTime <= now ? 'active' : 'upcoming',
+      createdBy: o.createdByUser ? {
+        id: o.createdByUser.id,
+        fullName: o.createdByUser.fullName,
+      } : null,
+      createdAt: o.createdAt,
+    }));
+
+    return res.json({
+      schedule: { id: schedule.id, name: schedule.name },
+      overrides: formattedOverrides,
+      activeOverride: formattedOverrides.find(o => o.status === 'active') || null,
+    });
+  } catch (error) {
+    logger.error('Error fetching schedule overrides:', error);
+    return res.status(500).json({ error: 'Failed to fetch overrides' });
+  }
+});
+
+/**
+ * POST /api/v1/schedules/:id/overrides
+ * Create a new schedule override
+ */
+router.post(
+  '/:id/overrides',
+  [
+    body('userId').isUUID().withMessage('Valid user ID is required'),
+    body('startTime').isISO8601().withMessage('Valid start date/time is required'),
+    body('endTime').isISO8601().withMessage('Valid end date/time is required'),
+    body('reason').optional().isString().isLength({ max: 500 }).withMessage('Reason must be a string under 500 characters'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const currentUser = req.user!;
+      const { userId, startTime, endTime, reason } = req.body;
+
+      const dataSource = await getDataSource();
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const userRepo = dataSource.getRepository(User);
+      const overrideRepo = dataSource.getRepository(ScheduleOverride);
+
+      const schedule = await scheduleRepo.findOne({ where: { id, orgId } });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      // Verify the covering user exists and belongs to the same org
+      const coveringUser = await userRepo.findOne({ where: { id: userId, orgId } });
+      if (!coveringUser) {
+        return res.status(404).json({ error: 'User not found or not in your organization' });
+      }
+
+      const start = new Date(startTime);
+      const end = new Date(endTime);
+
+      if (end <= start) {
+        return res.status(400).json({ error: 'End time must be after start time' });
+      }
+
+      if (end <= new Date()) {
+        return res.status(400).json({ error: 'Override end time must be in the future' });
+      }
+
+      // Check for overlapping overrides
+      const overlapping = await overrideRepo.findOne({
+        where: {
+          scheduleId: id,
+          startTime: LessThanOrEqual(end),
+          endTime: MoreThan(start),
+        },
+      });
+
+      if (overlapping) {
+        return res.status(409).json({
+          error: 'Override overlaps with an existing override',
+          conflictingOverride: {
+            id: overlapping.id,
+            startTime: overlapping.startTime,
+            endTime: overlapping.endTime,
+          },
+        });
+      }
+
+      // Create the override
+      const override = overrideRepo.create({
+        scheduleId: id,
+        userId,
+        startTime: start,
+        endTime: end,
+        reason: reason || null,
+        createdBy: currentUser.id,
+      });
+
+      await overrideRepo.save(override);
+
+      logger.info('Schedule override created', {
+        overrideId: override.id,
+        scheduleId: id,
+        userId,
+        startTime: start,
+        endTime: end,
+        createdBy: currentUser.id,
+      });
+
+      return res.status(201).json({
+        message: 'Override created successfully',
+        override: {
+          id: override.id,
+          scheduleId: override.scheduleId,
+          userId: override.userId,
+          user: {
+            id: coveringUser.id,
+            fullName: coveringUser.fullName,
+            email: coveringUser.email,
+          },
+          startTime: override.startTime,
+          endTime: override.endTime,
+          reason: override.reason,
+          createdAt: override.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error creating schedule override:', error);
+      return res.status(500).json({ error: 'Failed to create override' });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/schedules/:scheduleId/overrides/:overrideId
+ * Update an existing override
+ */
+router.put(
+  '/:scheduleId/overrides/:overrideId',
+  [
+    body('userId').optional().isUUID().withMessage('Valid user ID is required'),
+    body('startTime').optional().isISO8601().withMessage('Valid start date/time is required'),
+    body('endTime').optional().isISO8601().withMessage('Valid end date/time is required'),
+    body('reason').optional().isString().isLength({ max: 500 }).withMessage('Reason must be under 500 characters'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { scheduleId, overrideId } = req.params;
+      const orgId = req.orgId!;
+      const { userId, startTime, endTime, reason } = req.body;
+
+      const dataSource = await getDataSource();
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const userRepo = dataSource.getRepository(User);
+      const overrideRepo = dataSource.getRepository(ScheduleOverride);
+
+      const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      const override = await overrideRepo.findOne({
+        where: { id: overrideId, scheduleId },
+        relations: ['user'],
+      });
+      if (!override) {
+        return res.status(404).json({ error: 'Override not found' });
+      }
+
+      // Update fields if provided
+      if (userId) {
+        const coveringUser = await userRepo.findOne({ where: { id: userId, orgId } });
+        if (!coveringUser) {
+          return res.status(404).json({ error: 'User not found or not in your organization' });
+        }
+        override.userId = userId;
+      }
+
+      if (startTime) {
+        override.startTime = new Date(startTime);
+      }
+
+      if (endTime) {
+        override.endTime = new Date(endTime);
+      }
+
+      if (reason !== undefined) {
+        override.reason = reason || null;
+      }
+
+      // Validate time range
+      if (override.endTime <= override.startTime) {
+        return res.status(400).json({ error: 'End time must be after start time' });
+      }
+
+      await overrideRepo.save(override);
+
+      // Reload with relations
+      const updated = await overrideRepo.findOne({
+        where: { id: overrideId },
+        relations: ['user'],
+      });
+
+      logger.info('Schedule override updated', { overrideId, scheduleId });
+
+      return res.json({
+        message: 'Override updated successfully',
+        override: {
+          id: updated!.id,
+          scheduleId: updated!.scheduleId,
+          userId: updated!.userId,
+          user: updated!.user ? {
+            id: updated!.user.id,
+            fullName: updated!.user.fullName,
+            email: updated!.user.email,
+          } : null,
+          startTime: updated!.startTime,
+          endTime: updated!.endTime,
+          reason: updated!.reason,
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating schedule override:', error);
+      return res.status(500).json({ error: 'Failed to update override' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/schedules/:scheduleId/overrides/:overrideId
+ * Delete an override
+ */
+router.delete('/:scheduleId/overrides/:overrideId', async (req: Request, res: Response) => {
+  try {
+    const { scheduleId, overrideId } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const overrideRepo = dataSource.getRepository(ScheduleOverride);
+
+    const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const override = await overrideRepo.findOne({ where: { id: overrideId, scheduleId } });
+    if (!override) {
+      return res.status(404).json({ error: 'Override not found' });
+    }
+
+    await overrideRepo.remove(override);
+
+    logger.info('Schedule override deleted', { overrideId, scheduleId });
+
+    return res.json({ message: 'Override deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting schedule override:', error);
+    return res.status(500).json({ error: 'Failed to delete override' });
+  }
+});
+
+// ============================================================================
+// SCHEDULE LAYERS (PagerDuty-style Rotation Layers)
+// ============================================================================
+
+/**
+ * GET /api/v1/schedules/:id/layers
+ * List all layers for a schedule
+ */
+router.get('/:id/layers', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const layerRepo = dataSource.getRepository(ScheduleLayer);
+
+    const schedule = await scheduleRepo.findOne({ where: { id, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const layers = await layerRepo.find({
+      where: { scheduleId: id },
+      relations: ['members', 'members.user'],
+      order: { layerOrder: 'ASC' },
+    });
+
+    const formattedLayers = layers.map(layer => ({
+      id: layer.id,
+      scheduleId: layer.scheduleId,
+      name: layer.name,
+      rotationType: layer.rotationType,
+      startDate: layer.startDate,
+      endDate: layer.endDate,
+      handoffTime: layer.handoffTime,
+      handoffDay: layer.handoffDay,
+      rotationLength: layer.rotationLength,
+      layerOrder: layer.layerOrder,
+      restrictions: layer.restrictions,
+      members: layer.members
+        .sort((a, b) => a.position - b.position)
+        .map(m => ({
+          id: m.id,
+          userId: m.userId,
+          position: m.position,
+          user: m.user ? {
+            id: m.user.id,
+            fullName: m.user.fullName,
+            email: m.user.email,
+          } : null,
+        })),
+      currentOncallUserId: layer.calculateOncallUserId(new Date()),
+      createdAt: layer.createdAt,
+      updatedAt: layer.updatedAt,
+    }));
+
+    return res.json({
+      schedule: { id: schedule.id, name: schedule.name },
+      layers: formattedLayers,
+    });
+  } catch (error) {
+    logger.error('Error fetching schedule layers:', error);
+    return res.status(500).json({ error: 'Failed to fetch layers' });
+  }
+});
+
+/**
+ * POST /api/v1/schedules/:id/layers
+ * Create a new layer for a schedule
+ */
+router.post(
+  '/:id/layers',
+  [
+    body('name').isString().notEmpty().withMessage('Layer name is required'),
+    body('rotationType').isIn(['daily', 'weekly', 'custom']).withMessage('Rotation type must be daily, weekly, or custom'),
+    body('startDate').isISO8601().withMessage('Valid start date is required'),
+    body('endDate').optional({ nullable: true }).isISO8601().withMessage('End date must be a valid date'),
+    body('handoffTime').optional().matches(/^\d{2}:\d{2}(:\d{2})?$/).withMessage('Handoff time must be in HH:MM format'),
+    body('handoffDay').optional().isInt({ min: 0, max: 6 }).withMessage('Handoff day must be 0-6 (Sunday-Saturday)'),
+    body('rotationLength').optional().isInt({ min: 1 }).withMessage('Rotation length must be at least 1'),
+    body('layerOrder').optional().isInt({ min: 0 }).withMessage('Layer order must be a non-negative integer'),
+    body('restrictions').optional().isObject().withMessage('Restrictions must be an object'),
+    body('userIds').optional().isArray().withMessage('User IDs must be an array'),
+    body('userIds.*').optional().isUUID().withMessage('All user IDs must be valid UUIDs'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const {
+        name,
+        rotationType,
+        startDate,
+        endDate,
+        handoffTime,
+        handoffDay,
+        rotationLength,
+        layerOrder,
+        restrictions,
+        userIds,
+      } = req.body;
+
+      const dataSource = await getDataSource();
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const layerRepo = dataSource.getRepository(ScheduleLayer);
+      const memberRepo = dataSource.getRepository(ScheduleLayerMember);
+      const userRepo = dataSource.getRepository(User);
+
+      const schedule = await scheduleRepo.findOne({ where: { id, orgId } });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      // Get max layer order if not specified
+      let effectiveLayerOrder = layerOrder;
+      if (effectiveLayerOrder === undefined) {
+        const maxOrderResult = await layerRepo
+          .createQueryBuilder('layer')
+          .select('MAX(layer.layerOrder)', 'max')
+          .where('layer.scheduleId = :scheduleId', { scheduleId: id })
+          .getRawOne();
+        effectiveLayerOrder = (maxOrderResult?.max ?? -1) + 1;
+      }
+
+      // Create the layer
+      const layer = layerRepo.create({
+        scheduleId: id,
+        name,
+        rotationType,
+        startDate: new Date(startDate),
+        endDate: endDate ? new Date(endDate) : null,
+        handoffTime: handoffTime || '09:00:00',
+        handoffDay: handoffDay ?? (rotationType === 'weekly' ? 1 : null),
+        rotationLength: rotationLength || 1,
+        layerOrder: effectiveLayerOrder,
+        restrictions: restrictions || null,
+      });
+
+      await layerRepo.save(layer);
+
+      // Add users as members if provided
+      if (userIds && userIds.length > 0) {
+        // Verify all users exist
+        const users = await userRepo.find({
+          where: userIds.map((userId: string) => ({ id: userId, orgId })),
+        });
+
+        if (users.length !== userIds.length) {
+          // Rollback layer creation
+          await layerRepo.remove(layer);
+          return res.status(400).json({ error: 'One or more users not found in your organization' });
+        }
+
+        // Create members
+        for (let i = 0; i < userIds.length; i++) {
+          const member = memberRepo.create({
+            layerId: layer.id,
+            userId: userIds[i],
+            position: i,
+          });
+          await memberRepo.save(member);
+        }
+      }
+
+      // Reload with members
+      const savedLayer = await layerRepo.findOne({
+        where: { id: layer.id },
+        relations: ['members', 'members.user'],
+      });
+
+      logger.info('Schedule layer created', {
+        layerId: layer.id,
+        scheduleId: id,
+        name,
+        rotationType,
+        memberCount: userIds?.length || 0,
+      });
+
+      return res.status(201).json({
+        message: 'Layer created successfully',
+        layer: {
+          id: savedLayer!.id,
+          scheduleId: savedLayer!.scheduleId,
+          name: savedLayer!.name,
+          rotationType: savedLayer!.rotationType,
+          startDate: savedLayer!.startDate,
+          endDate: savedLayer!.endDate,
+          handoffTime: savedLayer!.handoffTime,
+          handoffDay: savedLayer!.handoffDay,
+          rotationLength: savedLayer!.rotationLength,
+          layerOrder: savedLayer!.layerOrder,
+          restrictions: savedLayer!.restrictions,
+          members: savedLayer!.members
+            .sort((a, b) => a.position - b.position)
+            .map(m => ({
+              id: m.id,
+              userId: m.userId,
+              position: m.position,
+              user: m.user ? {
+                id: m.user.id,
+                fullName: m.user.fullName,
+                email: m.user.email,
+              } : null,
+            })),
+          currentOncallUserId: savedLayer!.calculateOncallUserId(new Date()),
+          createdAt: savedLayer!.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error creating schedule layer:', error);
+      return res.status(500).json({ error: 'Failed to create layer' });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/schedules/:scheduleId/layers/:layerId
+ * Get a specific layer
+ */
+router.get('/:scheduleId/layers/:layerId', async (req: Request, res: Response) => {
+  try {
+    const { scheduleId, layerId } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const layerRepo = dataSource.getRepository(ScheduleLayer);
+
+    const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const layer = await layerRepo.findOne({
+      where: { id: layerId, scheduleId },
+      relations: ['members', 'members.user'],
+    });
+
+    if (!layer) {
+      return res.status(404).json({ error: 'Layer not found' });
+    }
+
+    return res.json({
+      layer: {
+        id: layer.id,
+        scheduleId: layer.scheduleId,
+        name: layer.name,
+        rotationType: layer.rotationType,
+        startDate: layer.startDate,
+        endDate: layer.endDate,
+        handoffTime: layer.handoffTime,
+        handoffDay: layer.handoffDay,
+        rotationLength: layer.rotationLength,
+        layerOrder: layer.layerOrder,
+        restrictions: layer.restrictions,
+        members: layer.members
+          .sort((a, b) => a.position - b.position)
+          .map(m => ({
+            id: m.id,
+            userId: m.userId,
+            position: m.position,
+            user: m.user ? {
+              id: m.user.id,
+              fullName: m.user.fullName,
+              email: m.user.email,
+            } : null,
+          })),
+        currentOncallUserId: layer.calculateOncallUserId(new Date()),
+        createdAt: layer.createdAt,
+        updatedAt: layer.updatedAt,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching schedule layer:', error);
+    return res.status(500).json({ error: 'Failed to fetch layer' });
+  }
+});
+
+/**
+ * PUT /api/v1/schedules/:scheduleId/layers/:layerId
+ * Update a layer
+ */
+router.put(
+  '/:scheduleId/layers/:layerId',
+  [
+    body('name').optional().isString().notEmpty().withMessage('Layer name cannot be empty'),
+    body('rotationType').optional().isIn(['daily', 'weekly', 'custom']).withMessage('Rotation type must be daily, weekly, or custom'),
+    body('startDate').optional().isISO8601().withMessage('Valid start date is required'),
+    body('endDate').optional({ nullable: true }).isISO8601().withMessage('End date must be a valid date'),
+    body('handoffTime').optional().matches(/^\d{2}:\d{2}(:\d{2})?$/).withMessage('Handoff time must be in HH:MM format'),
+    body('handoffDay').optional().isInt({ min: 0, max: 6 }).withMessage('Handoff day must be 0-6'),
+    body('rotationLength').optional().isInt({ min: 1 }).withMessage('Rotation length must be at least 1'),
+    body('layerOrder').optional().isInt({ min: 0 }).withMessage('Layer order must be non-negative'),
+    body('restrictions').optional({ nullable: true }).isObject().withMessage('Restrictions must be an object'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { scheduleId, layerId } = req.params;
+      const orgId = req.orgId!;
+      const {
+        name,
+        rotationType,
+        startDate,
+        endDate,
+        handoffTime,
+        handoffDay,
+        rotationLength,
+        layerOrder,
+        restrictions,
+      } = req.body;
+
+      const dataSource = await getDataSource();
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const layerRepo = dataSource.getRepository(ScheduleLayer);
+
+      const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      const layer = await layerRepo.findOne({
+        where: { id: layerId, scheduleId },
+        relations: ['members', 'members.user'],
+      });
+
+      if (!layer) {
+        return res.status(404).json({ error: 'Layer not found' });
+      }
+
+      // Update fields
+      if (name !== undefined) layer.name = name;
+      if (rotationType !== undefined) layer.rotationType = rotationType;
+      if (startDate !== undefined) layer.startDate = new Date(startDate);
+      if (endDate !== undefined) layer.endDate = endDate ? new Date(endDate) : null;
+      if (handoffTime !== undefined) layer.handoffTime = handoffTime;
+      if (handoffDay !== undefined) layer.handoffDay = handoffDay;
+      if (rotationLength !== undefined) layer.rotationLength = rotationLength;
+      if (layerOrder !== undefined) layer.layerOrder = layerOrder;
+      if (restrictions !== undefined) layer.restrictions = restrictions;
+
+      await layerRepo.save(layer);
+
+      logger.info('Schedule layer updated', { layerId, scheduleId });
+
+      return res.json({
+        message: 'Layer updated successfully',
+        layer: {
+          id: layer.id,
+          scheduleId: layer.scheduleId,
+          name: layer.name,
+          rotationType: layer.rotationType,
+          startDate: layer.startDate,
+          endDate: layer.endDate,
+          handoffTime: layer.handoffTime,
+          handoffDay: layer.handoffDay,
+          rotationLength: layer.rotationLength,
+          layerOrder: layer.layerOrder,
+          restrictions: layer.restrictions,
+          members: layer.members
+            .sort((a, b) => a.position - b.position)
+            .map(m => ({
+              id: m.id,
+              userId: m.userId,
+              position: m.position,
+              user: m.user ? {
+                id: m.user.id,
+                fullName: m.user.fullName,
+                email: m.user.email,
+              } : null,
+            })),
+          currentOncallUserId: layer.calculateOncallUserId(new Date()),
+          updatedAt: layer.updatedAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating schedule layer:', error);
+      return res.status(500).json({ error: 'Failed to update layer' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/schedules/:scheduleId/layers/:layerId
+ * Delete a layer
+ */
+router.delete('/:scheduleId/layers/:layerId', async (req: Request, res: Response) => {
+  try {
+    const { scheduleId, layerId } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const layerRepo = dataSource.getRepository(ScheduleLayer);
+
+    const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const layer = await layerRepo.findOne({ where: { id: layerId, scheduleId } });
+    if (!layer) {
+      return res.status(404).json({ error: 'Layer not found' });
+    }
+
+    await layerRepo.remove(layer);
+
+    logger.info('Schedule layer deleted', { layerId, scheduleId });
+
+    return res.json({ message: 'Layer deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting schedule layer:', error);
+    return res.status(500).json({ error: 'Failed to delete layer' });
+  }
+});
+
+/**
+ * PUT /api/v1/schedules/:scheduleId/layers/:layerId/members
+ * Set the members of a layer (replaces all existing members)
+ */
+router.put(
+  '/:scheduleId/layers/:layerId/members',
+  [
+    body('userIds').isArray().withMessage('User IDs must be an array'),
+    body('userIds.*').isUUID().withMessage('All user IDs must be valid UUIDs'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { scheduleId, layerId } = req.params;
+      const orgId = req.orgId!;
+      const { userIds } = req.body;
+
+      const dataSource = await getDataSource();
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const layerRepo = dataSource.getRepository(ScheduleLayer);
+      const memberRepo = dataSource.getRepository(ScheduleLayerMember);
+      const userRepo = dataSource.getRepository(User);
+
+      const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      const layer = await layerRepo.findOne({ where: { id: layerId, scheduleId } });
+      if (!layer) {
+        return res.status(404).json({ error: 'Layer not found' });
+      }
+
+      // Verify all users exist in the org
+      if (userIds.length > 0) {
+        const users = await userRepo.find({
+          where: userIds.map((userId: string) => ({ id: userId, orgId })),
+        });
+
+        if (users.length !== userIds.length) {
+          return res.status(400).json({ error: 'One or more users not found in your organization' });
+        }
+      }
+
+      // Delete existing members
+      await memberRepo.delete({ layerId });
+
+      // Create new members
+      for (let i = 0; i < userIds.length; i++) {
+        const member = memberRepo.create({
+          layerId,
+          userId: userIds[i],
+          position: i,
+        });
+        await memberRepo.save(member);
+      }
+
+      // Reload layer with members
+      const updatedLayer = await layerRepo.findOne({
+        where: { id: layerId },
+        relations: ['members', 'members.user'],
+      });
+
+      logger.info('Schedule layer members updated', {
+        layerId,
+        scheduleId,
+        memberCount: userIds.length,
+      });
+
+      return res.json({
+        message: 'Layer members updated successfully',
+        members: updatedLayer!.members
+          .sort((a, b) => a.position - b.position)
+          .map(m => ({
+            id: m.id,
+            userId: m.userId,
+            position: m.position,
+            user: m.user ? {
+              id: m.user.id,
+              fullName: m.user.fullName,
+              email: m.user.email,
+            } : null,
+          })),
+        currentOncallUserId: updatedLayer!.calculateOncallUserId(new Date()),
+      });
+    } catch (error) {
+      logger.error('Error updating layer members:', error);
+      return res.status(500).json({ error: 'Failed to update layer members' });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/schedules/:id/rendered
+ * Get the rendered schedule showing who's on-call over a time range
+ */
+router.get('/:id/rendered', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+    const { since, until } = req.query;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const userRepo = dataSource.getRepository(User);
+
+    const schedule = await scheduleRepo.findOne({
+      where: { id, orgId },
+      relations: ['layers', 'layers.members', 'layers.members.user', 'overrides', 'overrides.user'],
+    });
+
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    // Parse time range (default to next 14 days)
+    const startTime = since ? new Date(since as string) : new Date();
+    const endTime = until ? new Date(until as string) : new Date(startTime.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    // Generate rendered schedule entries
+    const entries: Array<{
+      start: Date;
+      end: Date;
+      userId: string;
+      user: { id: string; fullName: string | null; email: string } | null;
+      source: 'layer' | 'override' | 'legacy';
+      layerId?: string;
+      overrideId?: string;
+    }> = [];
+
+    // Get all unique user IDs we'll need
+    const userIdSet = new Set<string>();
+
+    // Calculate entries by sampling at intervals (every hour)
+    const intervalMs = 60 * 60 * 1000; // 1 hour
+    let currentTime = new Date(startTime);
+    let currentEntry: typeof entries[0] | null = null;
+
+    while (currentTime <= endTime) {
+      const oncallUserId = schedule.getEffectiveOncallUserId(currentTime);
+
+      if (oncallUserId) {
+        userIdSet.add(oncallUserId);
+
+        if (!currentEntry || currentEntry.userId !== oncallUserId) {
+          // Start a new entry
+          if (currentEntry) {
+            currentEntry.end = new Date(currentTime);
+            entries.push(currentEntry);
+          }
+
+          // Determine source
+          let source: 'layer' | 'override' | 'legacy' = 'legacy';
+          let layerId: string | undefined;
+          let overrideId: string | undefined;
+
+          // Check for active override
+          const activeOverride = schedule.overrides?.find(
+            o => o.startTime <= currentTime && o.endTime > currentTime
+          );
+          if (activeOverride) {
+            source = 'override';
+            overrideId = activeOverride.id;
+          } else if (schedule.layers && schedule.layers.length > 0) {
+            // Check layers
+            const sortedLayers = [...schedule.layers].sort((a, b) => a.layerOrder - b.layerOrder);
+            for (const layer of sortedLayers) {
+              if (layer.calculateOncallUserId(currentTime) === oncallUserId) {
+                source = 'layer';
+                layerId = layer.id;
+                break;
+              }
+            }
+          }
+
+          currentEntry = {
+            start: new Date(currentTime),
+            end: new Date(currentTime),
+            userId: oncallUserId,
+            user: null, // Will be populated later
+            source,
+            layerId,
+            overrideId,
+          };
+        }
+      } else if (currentEntry) {
+        // No one on-call, close current entry
+        currentEntry.end = new Date(currentTime);
+        entries.push(currentEntry);
+        currentEntry = null;
+      }
+
+      currentTime = new Date(currentTime.getTime() + intervalMs);
+    }
+
+    // Close final entry
+    if (currentEntry) {
+      currentEntry.end = new Date(endTime);
+      entries.push(currentEntry);
+    }
+
+    // Fetch user details
+    const userIds = Array.from(userIdSet);
+    const users = userIds.length > 0
+      ? await userRepo.find({ where: userIds.map(uid => ({ id: uid })) })
+      : [];
+    const userMap = new Map(users.map(u => [u.id, { id: u.id, fullName: u.fullName, email: u.email }]));
+
+    // Populate user details in entries
+    for (const entry of entries) {
+      entry.user = userMap.get(entry.userId) || null;
+    }
+
+    return res.json({
+      schedule: {
+        id: schedule.id,
+        name: schedule.name,
+        timezone: schedule.timezone,
+      },
+      since: startTime.toISOString(),
+      until: endTime.toISOString(),
+      entries: entries.map(e => ({
+        start: e.start.toISOString(),
+        end: e.end.toISOString(),
+        userId: e.userId,
+        user: e.user,
+        source: e.source,
+        layerId: e.layerId,
+        overrideId: e.overrideId,
+      })),
+      currentOncallUserId: schedule.getEffectiveOncallUserId(new Date()),
+    });
+  } catch (error) {
+    logger.error('Error rendering schedule:', error);
+    return res.status(500).json({ error: 'Failed to render schedule' });
+  }
+});
 
 export default router;

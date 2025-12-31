@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Navigation } from '../components/Navigation';
 import { useAuthStore } from '../store/auth-store';
 
 interface EscalationTarget {
@@ -44,6 +42,11 @@ interface EscalationPolicy {
 interface Schedule {
   id: string;
   name: string;
+  currentOncallUser?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
 }
 
 interface User {
@@ -193,11 +196,11 @@ export function EscalationPolicies() {
     for (let i = 0; i < formData.steps.length; i++) {
       const step = formData.steps[i] as EscalationStep;
       if (step.targetType === 'schedule' && !step.scheduleId) {
-        alert(`Level ${i + 1}: Please select a schedule`);
+        alert(`Rule ${i + 1}: Please select a schedule`);
         return;
       }
       if (step.targetType === 'users' && (!step.userIds || step.userIds.length === 0)) {
-        alert(`Level ${i + 1}: Please select at least one user`);
+        alert(`Rule ${i + 1}: Please select at least one user`);
         return;
       }
     }
@@ -350,9 +353,8 @@ export function EscalationPolicies() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
-        <Navigation />
-        <div className="container mx-auto p-8">
+      <div>
+        <div className="container mx-auto">
           <p>Loading escalation policies...</p>
         </div>
       </div>
@@ -360,12 +362,8 @@ export function EscalationPolicies() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-      <div className="container mx-auto max-w-6xl p-8">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm" className="mb-4">← Back to Dashboard</Button>
-        </Link>
+    <div>
+      <div className="container mx-auto max-w-6xl">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold">Escalation Policies</h1>
@@ -402,58 +400,91 @@ export function EscalationPolicies() {
                   />
                 </div>
 
+                {/* Repeat Settings Section */}
                 <div className="border rounded-md p-4 bg-muted/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <input
-                      type="checkbox"
-                      id="repeatEnabled"
-                      checked={formData.repeatEnabled}
-                      onChange={(e) => setFormData({ ...formData, repeatEnabled: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    <Label htmlFor="repeatEnabled" className="font-medium cursor-pointer">
-                      Repeat escalation policy if unacknowledged
-                    </Label>
-                  </div>
-                  {formData.repeatEnabled && (
-                    <div className="ml-6 mt-2">
-                      <Label htmlFor="repeatCount" className="text-sm">Number of times to repeat (0 = indefinitely)</Label>
-                      <Input
-                        id="repeatCount"
-                        type="number"
-                        min={0}
-                        value={formData.repeatCount}
-                        onChange={(e) => setFormData({ ...formData, repeatCount: parseInt(e.target.value) || 0 })}
-                        className="w-32 mt-1"
+                  <p className="text-sm font-medium mb-3">Repeat Settings</p>
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="repeatMode"
+                        checked={!formData.repeatEnabled}
+                        onChange={() => setFormData({ ...formData, repeatEnabled: false, repeatCount: 0 })}
+                        className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        After all levels are exhausted, the policy will restart from Level 1
-                      </p>
-                    </div>
-                  )}
+                      <div>
+                        <span className="font-medium">Stop escalating</span>
+                        <p className="text-xs text-muted-foreground">Incident remains triggered after all rules exhausted</p>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="repeatMode"
+                        checked={formData.repeatEnabled && formData.repeatCount > 0}
+                        onChange={() => setFormData({ ...formData, repeatEnabled: true, repeatCount: formData.repeatCount || 2 })}
+                        className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <div className="flex-1">
+                        <span className="font-medium">Repeat the policy</span>
+                        {formData.repeatEnabled && formData.repeatCount > 0 && (
+                          <span className="ml-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={formData.repeatCount}
+                              onChange={(e) => setFormData({ ...formData, repeatCount: parseInt(e.target.value) || 1 })}
+                              className="w-16 h-7 inline-block mx-1 text-center"
+                            />
+                            <span className="text-sm">times, then stop</span>
+                          </span>
+                        )}
+                        <p className="text-xs text-muted-foreground">Restart from Rule 1 after all rules exhausted</p>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="repeatMode"
+                        checked={formData.repeatEnabled && formData.repeatCount === 0}
+                        onChange={() => setFormData({ ...formData, repeatEnabled: true, repeatCount: 0 })}
+                        className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <div>
+                        <span className="font-medium">Repeat until acknowledged</span>
+                        <p className="text-xs text-muted-foreground">Keep escalating indefinitely until someone responds</p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
                 <div>
-                  <Label>Escalation Levels</Label>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    If the incident isn't acknowledged, it will escalate through these levels in order
+                  <Label className="text-base font-semibold">Escalation Rules</Label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Rules define who gets notified and when. If the incident isn't acknowledged, it escalates through these rules in order.
                   </p>
                   {formData.steps.map((step, index) => (
-                    <Card key={index} className="mb-4 mt-2">
-                      <CardHeader>
+                    <Card key={index} className="mb-4 mt-2 border-l-4 border-l-blue-500">
+                      <CardHeader className="pb-2">
                         <div className="flex justify-between items-center">
-                          <CardTitle className="text-sm">Level {index + 1}</CardTitle>
+                          <CardTitle className="text-sm font-semibold">Rule {index + 1}</CardTitle>
                           {formData.steps.length > 1 && (
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
                               onClick={() => removeStep(index)}
                             >
                               Remove
                             </Button>
                           )}
                         </div>
+                        <p className="text-xs text-muted-foreground">
+                          {index === 0
+                            ? 'Notify immediately, then wait before escalating to the next rule.'
+                            : 'If still unacknowledged, notify these targets.'}
+                        </p>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div>
@@ -485,6 +516,29 @@ export function EscalationPolicies() {
                                 </option>
                               ))}
                             </select>
+                            {/* Currently on-call preview */}
+                            {step.scheduleId && (() => {
+                              const selectedSchedule = schedules.find(s => s.id === step.scheduleId);
+                              if (selectedSchedule?.currentOncallUser) {
+                                return (
+                                  <div className="mt-2 flex items-center gap-2 text-sm bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md px-3 py-2">
+                                    <div className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-800 flex items-center justify-center text-green-600 dark:text-green-400 text-xs font-medium">
+                                      {selectedSchedule.currentOncallUser.fullName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="text-green-800 dark:text-green-200">
+                                      Currently on-call: <strong>{selectedSchedule.currentOncallUser.fullName}</strong>
+                                    </span>
+                                  </div>
+                                );
+                              } else if (selectedSchedule) {
+                                return (
+                                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                                    No one currently on-call for this schedule
+                                  </p>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         )}
 
@@ -520,7 +574,7 @@ export function EscalationPolicies() {
                         )}
 
                         <div>
-                          <Label>Escalate after (minutes)</Label>
+                          <Label>Wait before next rule (minutes)</Label>
                           <Input
                             type="number"
                             value={Math.round(step.timeoutSeconds / 60)}
@@ -530,7 +584,7 @@ export function EscalationPolicies() {
                             min={1}
                           />
                           <p className="text-xs text-muted-foreground mt-1">
-                            If not acknowledged, escalate to the next level after this time
+                            Time to wait for acknowledgment before escalating to the next rule
                           </p>
                         </div>
                       </CardContent>
@@ -538,7 +592,7 @@ export function EscalationPolicies() {
                   ))}
 
                   <Button type="button" variant="outline" onClick={addStep} className="mt-2">
-                    + Add Escalation Level
+                    + Add Escalation Rule
                   </Button>
                 </div>
 
@@ -587,14 +641,9 @@ export function EscalationPolicies() {
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle>{policy.name}</CardTitle>
-                      <CardDescription>
-                        {policy.description}
-                        {policy.repeatEnabled && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                            🔄 Repeats {policy.repeatCount === 0 ? 'indefinitely' : `${policy.repeatCount}x`}
-                          </span>
-                        )}
-                      </CardDescription>
+                      {policy.description && (
+                        <CardDescription>{policy.description}</CardDescription>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -615,16 +664,24 @@ export function EscalationPolicies() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* Summary line */}
+                  <div className="text-sm text-muted-foreground mb-3">
+                    {policy.steps.length} rule{policy.steps.length !== 1 ? 's' : ''} •{' '}
+                    {policy.repeatEnabled
+                      ? policy.repeatCount === 0
+                        ? 'Repeats indefinitely'
+                        : `Repeats ${policy.repeatCount}×`
+                      : 'No repeat'}
+                  </div>
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Escalation Levels:</p>
-                    {policy.steps.map((step) => (
+                    {policy.steps.map((step, idx) => (
                       <div key={step.id} className="flex items-center gap-2 text-sm border-l-2 border-blue-500 pl-3 py-1">
-                        <span className="font-medium">Level {step.stepOrder}:</span>
+                        <span className="font-medium text-blue-700">Rule {step.stepOrder}:</span>
                         <span>
-                          Notify <strong>{getTargetDescription(step)}</strong>
+                          <strong>{getTargetDescription(step)}</strong>
                         </span>
                         <span className="text-muted-foreground">
-                          → {Math.round(step.timeoutSeconds / 60)} min
+                          → {idx < policy.steps.length - 1 ? `${Math.round(step.timeoutSeconds / 60)} min` : 'end'}
                         </span>
                       </div>
                     ))}

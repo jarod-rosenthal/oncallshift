@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { Organization } from './Organization';
+import { Team } from './Team';
 import { EscalationStep } from './EscalationStep';
 import { Service } from './Service';
 
@@ -10,6 +11,9 @@ export class EscalationPolicy {
 
   @Column({ name: 'org_id', type: 'uuid' })
   orgId: string;
+
+  @Column({ name: 'team_id', type: 'uuid', nullable: true })
+  teamId: string | null;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;
@@ -33,6 +37,10 @@ export class EscalationPolicy {
   @ManyToOne(() => Organization)
   @JoinColumn({ name: 'org_id' })
   organization: Organization;
+
+  @ManyToOne(() => Team, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'team_id' })
+  team: Team | null;
 
   @OneToMany(() => EscalationStep, step => step.escalationPolicy, { cascade: true })
   steps: EscalationStep[];

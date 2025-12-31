@@ -1,53 +1,105 @@
-# PagerDuty-Lite Mobile App
+# OnCallShift Mobile App
 
 React Native mobile application built with Expo for iOS and Android.
 
-## Prerequisites
+## Features
 
+### Incident Management
+- Incident list with filtering (open/resolved/acknowledged)
+- Incident detail with full timeline
+- Acknowledge, resolve, reassign, snooze actions
+- Add notes to incidents
+- Bulk actions (multi-select ack/resolve)
+- Swipe gestures for quick actions
+
+### Runbooks
+- View runbook steps for each incident
+- One-click action execution
+- Confirmation dialogs for destructive actions
+- Automatic note creation after actions
+
+### AI Features
+- AI-powered incident diagnosis
+- Chat interface for incident analysis
+- Root cause suggestions
+- Save analysis to notes
+
+### On-Call Management
+- Current on-call roster
+- Personal schedule view
+- Take on-call override
+- Availability settings
+
+### Additional Features
+- Push notifications with deep linking
+- Notification status panel (delivery tracking)
+- Setup wizard for new organizations
+- Analytics dashboard
+- Biometric authentication
+- Dark mode support
+- Haptic feedback
+
+## Implemented Screens (20 Total)
+
+| Screen | Description |
+|--------|-------------|
+| LoginScreen | Authentication with Cognito |
+| ForgotPasswordScreen | Password reset |
+| AlertListScreen | Incident list with filters |
+| AlertDetailScreen | Incident detail + timeline + runbook |
+| AIChatScreen | AI diagnosis conversation |
+| OnCallScreen | Current on-call roster |
+| ScheduleScreen | Personal schedule view |
+| SettingsScreen | App preferences |
+| AnalyticsScreen | MTTA/MTTR metrics |
+| InboxScreen | Notification history |
+| TeamScreen | Team members |
+| MoreScreen | Additional options |
+| AvailabilityScreen | Availability settings |
+| SetupWizardScreen | New org onboarding |
+| ManageServicesScreen | Service CRUD |
+| ManageSchedulesScreen | Schedule CRUD |
+| ManageUsersScreen | User management |
+| EscalationPoliciesScreen | Policy management |
+| OnboardingScreen | First-time setup |
+| CreateScheduleScreen | Create new schedule |
+
+## Setup
+
+### Prerequisites
 - Node.js >= 18
-- npm or yarn
+- npm
 - Expo CLI: `npm install -g expo-cli`
 - For iOS: Xcode and CocoaPods
 - For Android: Android Studio
 
-## Setup
+### Install Dependencies
+```bash
+npm install
+```
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+### Configure Environment
+```bash
+cp .env.example .env
+```
 
-2. **Configure environment variables:**
-   ```bash
-   cp .env.example .env
-   ```
-
-   Edit `.env` with your values:
-   - `API_URL`: Your API endpoint (from Terraform output)
-   - `COGNITO_USER_POOL_ID`: From Terraform output
-   - `COGNITO_CLIENT_ID`: From Terraform output
-   - `AWS_REGION`: Your AWS region
+Edit `.env`:
+- `API_URL`: Your API endpoint
+- `COGNITO_USER_POOL_ID`: From Terraform output
+- `COGNITO_CLIENT_ID`: From Terraform output
+- `AWS_REGION`: Your AWS region
 
 ## Development
 
-**Start Metro bundler:**
 ```bash
+# Start Metro bundler
 npm start
-```
 
-**Run on iOS:**
-```bash
+# Run on iOS
 npm run ios
-```
 
-**Run on Android:**
-```bash
+# Run on Android
 npm run android
-```
-
-**Run on web (for testing):**
-```bash
-npm run web
 ```
 
 ## Project Structure
@@ -55,80 +107,25 @@ npm run web
 ```
 mobile/
 ├── src/
-│   ├── api/              # API client and hooks
-│   ├── auth/             # Authentication (Cognito)
-│   ├── components/       # Reusable UI components
-│   ├── config/           # App configuration
-│   ├── navigation/       # React Navigation setup
-│   ├── screens/          # App screens
-│   │   ├── auth/         # Login screen
-│   │   ├── incidents/    # Incident list & detail
-│   │   ├── oncall/       # On-call roster
-│   │   └── settings/     # Settings screen
-│   ├── stores/           # Zustand state management
-│   ├── types/            # TypeScript types
-│   └── utils/            # Utility functions
-├── assets/               # Images, fonts, sounds
-├── App.tsx               # Root component
-├── app.json              # Expo configuration
-└── package.json
+│   ├── components/       # Shared UI components
+│   │   ├── RespondersSection.tsx
+│   │   ├── AIDiagnosisPanel.tsx
+│   │   ├── OwnerAvatar.tsx
+│   │   └── ...
+│   ├── screens/          # App screens (20 total)
+│   ├── services/         # API client, auth, runbooks
+│   │   ├── apiService.ts
+│   │   ├── authService.ts
+│   │   ├── runbookService.ts
+│   │   └── pushNotifications.ts
+│   ├── data/            # Static data (templates)
+│   └── theme/           # Colors, styles
+├── assets/              # Images, fonts
+├── App.tsx              # Root component
+└── app.json             # Expo config
 ```
 
-## Features Implemented
-
-### MVP (Phase 1)
-- ✅ Cognito authentication
-- ✅ Incident list (open/resolved filter)
-- ✅ Incident detail with timeline
-- ✅ Acknowledge incident
-- ✅ Resolve incident
-- ✅ Add notes to incidents
-- ✅ View on-call roster
-- ✅ Push notifications
-- ✅ Deep linking from notifications
-- ✅ Device token registration
-
-### Phase 2 (Completed)
-- ✅ Schedule rotations view (with members list)
-- ✅ Personal on-call calendar
-- ✅ Take on-call button (override with duration)
-- ✅ Quiet hours configuration
-- ✅ Biometric authentication
-- ✅ Offline caching
-- ✅ User availability settings
-- ✅ Service filtering for incidents
-- ✅ Incident reassignment
-- ✅ Server-side snooze
-
-## Push Notifications
-
-### iOS Setup
-
-1. **Configure APNs:**
-   - Get an APNs certificate from Apple Developer Portal
-   - Upload to AWS SNS (done via Terraform)
-   - Update `APNS_PLATFORM_APP_ARN` in backend
-
-2. **Test with TestFlight:**
-   - Build app: `eas build --platform ios`
-   - Submit to TestFlight: `eas submit --platform ios`
-
-### Android Setup
-
-1. **Configure FCM:**
-   - Create Firebase project
-   - Add app to Firebase
-   - Download `google-services.json`
-   - Get FCM server key
-   - Update `FCM_PLATFORM_APP_ARN` in backend
-
-2. **Test with internal testing:**
-   - Build app: `eas build --platform android`
-   - Submit to Play Console: `eas submit --platform android`
-
 ## Building for Production
-
-**Using EAS Build (Recommended):**
 
 ```bash
 # Install EAS CLI
@@ -137,9 +134,6 @@ npm install -g eas-cli
 # Login to Expo
 eas login
 
-# Configure project
-eas build:configure
-
 # Build for iOS
 eas build --platform ios --profile production
 
@@ -147,66 +141,32 @@ eas build --platform ios --profile production
 eas build --platform android --profile production
 ```
 
-## Testing
+## Push Notifications
 
-**Run tests:**
-```bash
-npm test
-```
+### iOS (APNs)
+1. Get APNs certificate from Apple Developer Portal
+2. Upload to AWS SNS via Terraform
+3. Update `APNS_PLATFORM_APP_ARN` in backend
 
-**Type checking:**
-```bash
-npx tsc --noEmit
-```
+### Android (FCM)
+1. Create Firebase project
+2. Download `google-services.json`
+3. Get FCM server key
+4. Update `FCM_PLATFORM_APP_ARN` in backend
 
 ## Troubleshooting
 
-### Metro bundler issues
+### Clear Metro cache
 ```bash
-# Clear cache
 npx expo start -c
 ```
 
-### iOS build issues
+### iOS pod issues
 ```bash
-cd ios
-pod install
-cd ..
+cd ios && pod install && cd ..
 ```
 
-### Android build issues
+### Android gradle issues
 ```bash
-cd android
-./gradlew clean
-cd ..
+cd android && ./gradlew clean && cd ..
 ```
-
-## Environment-Specific Builds
-
-Create multiple .env files:
-- `.env.development`
-- `.env.staging`
-- `.env.production`
-
-Load based on environment:
-```bash
-# Development
-cp .env.development .env
-
-# Staging
-cp .env.staging .env
-
-# Production
-cp .env.production .env
-```
-
-## Documentation
-
-- [Expo Documentation](https://docs.expo.dev/)
-- [React Navigation](https://reactnavigation.org/docs/getting-started)
-- [React Query](https://tanstack.com/query/latest/docs/react/overview)
-- [AWS Cognito SDK](https://docs.amplify.aws/lib/auth/getting-started/q/platform/js/)
-
-## Support
-
-For issues or questions, see the main project README.

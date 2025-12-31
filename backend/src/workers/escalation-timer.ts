@@ -268,13 +268,15 @@ async function getStepTargetUsers(
   }
 
   if (step.targetType === 'schedule' && step.scheduleId) {
-    // Schedule-based targeting
+    // Schedule-based targeting - load with layers and overrides for full resolution
     const schedule = await scheduleRepo.findOne({
       where: { id: step.scheduleId },
+      relations: ['layers', 'layers.members', 'overrides'],
     });
 
     if (schedule) {
-      const oncallUserId = schedule.getCurrentOncallUserId();
+      // Use getEffectiveOncallUserId which respects layers and overrides
+      const oncallUserId = schedule.getEffectiveOncallUserId(new Date());
       if (oncallUserId) {
         return [oncallUserId];
       }
@@ -297,8 +299,10 @@ async function checkAndAdvanceRotations(): Promise<void> {
     const userRepo = dataSource.getRepository(User);
 
     // Find all schedules with rotation configs (daily or weekly)
+    // Include layers relation to check if schedule uses layer-based rotations
     const rotatingSchedules = await scheduleRepo.find({
       where: { type: In(['daily', 'weekly']) },
+      relations: ['layers'],
     });
 
     if (rotatingSchedules.length === 0) {
@@ -327,6 +331,12 @@ async function processRotationHandoff(
   scheduleRepo: any,
   userRepo: any
 ): Promise<void> {
+  // Skip legacy rotation processing if schedule has layers configured
+  // Layer-based rotations are calculated dynamically by getEffectiveOncallUserId()
+  if (schedule.hasLayers && schedule.hasLayers()) {
+    return;
+  }
+
   if (!schedule.rotation_config) {
     return;
   }

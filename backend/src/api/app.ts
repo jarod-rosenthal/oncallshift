@@ -21,6 +21,12 @@ import aiDiagnosisRoutes from './routes/ai-diagnosis';
 import runbookRoutes from './routes/runbooks';
 import actionsRoutes from './routes/actions';
 import setupRoutes from './routes/setup';
+import integrationsRoutes from './routes/integrations';
+import teamsRoutes from './routes/teams';
+import routingRulesRoutes from './routes/routing-rules';
+import prioritiesRoutes from './routes/priorities';
+import businessServicesRoutes from './routes/business-services';
+import tagsRoutes from './routes/tags';
 import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
@@ -241,6 +247,12 @@ export function createApp(): Express {
   app.use('/api/v1/runbooks', runbookRoutes);
   app.use('/api/v1/actions', actionsRoutes);
   app.use('/api/v1/setup', setupRoutes);
+  app.use('/api/v1/integrations', integrationsRoutes);
+  app.use('/api/v1/teams', teamsRoutes);
+  app.use('/api/v1/routing-rules', routingRulesRoutes);
+  app.use('/api/v1/priorities', prioritiesRoutes);
+  app.use('/api/v1/business-services', businessServicesRoutes);
+  app.use('/api/v1/tags', tagsRoutes);
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

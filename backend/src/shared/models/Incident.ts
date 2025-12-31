@@ -4,6 +4,8 @@ import { Service } from './Service';
 import { User } from './User';
 import { IncidentEvent } from './IncidentEvent';
 import { Notification } from './Notification';
+import { Alert } from './Alert';
+import { PriorityLevel } from './PriorityLevel';
 
 export type IncidentState = 'triggered' | 'acknowledged' | 'resolved';
 export type IncidentSeverity = 'info' | 'warning' | 'error' | 'critical';
@@ -82,6 +84,10 @@ export class Incident {
   @Column({ name: 'merged_into_incident_id', type: 'uuid', nullable: true })
   mergedIntoIncidentId: string | null;
 
+  // Priority level
+  @Column({ name: 'priority_id', type: 'uuid', nullable: true })
+  priorityId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -117,11 +123,18 @@ export class Incident {
   @JoinColumn({ name: 'merged_into_incident_id' })
   mergedIntoIncident: Incident | null;
 
+  @ManyToOne(() => PriorityLevel, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'priority_id' })
+  priority: PriorityLevel | null;
+
   @OneToMany(() => IncidentEvent, event => event.incident)
   events: IncidentEvent[];
 
   @OneToMany(() => Notification, notification => notification.incident)
   notifications: Notification[];
+
+  @OneToMany(() => Alert, alert => alert.incident)
+  alerts: Alert[];
 
   // Helper methods
   isOpen(): boolean {
