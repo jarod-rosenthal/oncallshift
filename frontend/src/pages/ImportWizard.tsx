@@ -227,12 +227,12 @@ export function ImportWizard() {
             className={`p-6 rounded-lg border-2 text-left transition-all ${
               state.source === 'pagerduty'
                 ? 'border-green-500 bg-green-50'
-                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                : 'border-border hover:border-border hover:bg-muted'
             }`}
           >
             <div className="text-3xl mb-2">📟</div>
             <div className="font-semibold text-lg">PagerDuty</div>
-            <div className="text-sm text-gray-600 mt-1">
+            <div className="text-sm text-muted-foreground mt-1">
               Import from PagerDuty using API key
             </div>
           </button>
@@ -242,12 +242,12 @@ export function ImportWizard() {
             className={`p-6 rounded-lg border-2 text-left transition-all ${
               state.source === 'opsgenie'
                 ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                : 'border-border hover:border-border hover:bg-muted'
             }`}
           >
             <div className="text-3xl mb-2">🔔</div>
             <div className="font-semibold text-lg">Opsgenie</div>
-            <div className="text-sm text-gray-600 mt-1">
+            <div className="text-sm text-muted-foreground mt-1">
               Import from Opsgenie using API key
             </div>
           </button>
@@ -281,12 +281,12 @@ export function ImportWizard() {
             className={`p-6 rounded-lg border-2 text-left transition-all ${
               state.method === 'api'
                 ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                : 'border-border hover:border-border hover:bg-muted'
             }`}
           >
             <div className="text-3xl mb-2">🔑</div>
             <div className="font-semibold text-lg">API Key (Recommended)</div>
-            <div className="text-sm text-gray-600 mt-1">
+            <div className="text-sm text-muted-foreground mt-1">
               Enter your API key and we'll fetch your data automatically
             </div>
             <div className="mt-3 flex flex-wrap gap-1">
@@ -300,16 +300,16 @@ export function ImportWizard() {
             className={`p-6 rounded-lg border-2 text-left transition-all ${
               state.method === 'json'
                 ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                : 'border-border hover:border-border hover:bg-muted'
             }`}
           >
             <div className="text-3xl mb-2">📋</div>
             <div className="font-semibold text-lg">Paste JSON</div>
-            <div className="text-sm text-gray-600 mt-1">
+            <div className="text-sm text-muted-foreground mt-1">
               Manually export data and paste the JSON here
             </div>
             <div className="mt-3 flex flex-wrap gap-1">
-              <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">Manual</span>
+              <span className="px-2 py-0.5 bg-muted text-foreground text-xs rounded">Manual</span>
             </div>
           </button>
         </div>
@@ -350,7 +350,7 @@ export function ImportWizard() {
               placeholder={state.source === 'pagerduty' ? 'Enter your PagerDuty API key' : 'Enter your Opsgenie API key'}
               className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {state.source === 'pagerduty' ? (
                 <>Get your API key from PagerDuty → User Icon → My Profile → User Settings → API Access</>
               ) : (
@@ -453,7 +453,7 @@ export function ImportWizard() {
               className={`flex items-start gap-3 p-4 rounded-lg border cursor-pointer transition-all ${
                 state.entities[key as keyof EntitySelection]
                   ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                  : 'border-border hover:border-border'
               }`}
             >
               <input
@@ -466,7 +466,7 @@ export function ImportWizard() {
               />
               <div>
                 <div className="font-medium">{label}</div>
-                <div className="text-sm text-gray-500">{desc}</div>
+                <div className="text-sm text-muted-foreground">{desc}</div>
               </div>
             </label>
           ))}
@@ -632,8 +632,8 @@ export function ImportWizard() {
 
           {/* Matched users info */}
           {estimatedChanges.usersToMatch > 0 && (
-            <div className="bg-gray-50 border rounded-lg p-4">
-              <div className="text-sm text-gray-600">
+            <div className="bg-muted border rounded-lg p-4">
+              <div className="text-sm text-muted-foreground">
                 {estimatedChanges.usersToMatch} existing user(s) will be matched by email address.
               </div>
             </div>
@@ -665,15 +665,15 @@ export function ImportWizard() {
           <div className="space-y-4">
             {preview.preview.users.length > 0 && (
               <details className="border rounded-lg">
-                <summary className="px-4 py-3 cursor-pointer font-medium bg-gray-50 hover:bg-gray-100">
+                <summary className="px-4 py-3 cursor-pointer font-medium bg-muted hover:bg-muted">
                   Users ({preview.preview.users.length})
                 </summary>
                 <div className="p-4 space-y-2 max-h-48 overflow-y-auto">
                   {preview.preview.users.map((user, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
                       <div>
                         <span className="font-medium">{user.name}</span>
-                        <span className="text-gray-500 ml-2">{user.email}</span>
+                        <span className="text-muted-foreground ml-2">{user.email}</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded text-xs ${
                         user.action === 'create' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
@@ -688,14 +688,14 @@ export function ImportWizard() {
 
             {preview.preview.teams.length > 0 && (
               <details className="border rounded-lg">
-                <summary className="px-4 py-3 cursor-pointer font-medium bg-gray-50 hover:bg-gray-100">
+                <summary className="px-4 py-3 cursor-pointer font-medium bg-muted hover:bg-muted">
                   Teams ({preview.preview.teams.length})
                 </summary>
                 <div className="p-4 space-y-2 max-h-48 overflow-y-auto">
                   {preview.preview.teams.map((team, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
                       <span className="font-medium">{team.name}</span>
-                      <span className="text-gray-500">{team.memberCount} members</span>
+                      <span className="text-muted-foreground">{team.memberCount} members</span>
                     </div>
                   ))}
                 </div>
@@ -704,14 +704,14 @@ export function ImportWizard() {
 
             {preview.preview.schedules.length > 0 && (
               <details className="border rounded-lg">
-                <summary className="px-4 py-3 cursor-pointer font-medium bg-gray-50 hover:bg-gray-100">
+                <summary className="px-4 py-3 cursor-pointer font-medium bg-muted hover:bg-muted">
                   Schedules ({preview.preview.schedules.length})
                 </summary>
                 <div className="p-4 space-y-2 max-h-48 overflow-y-auto">
                   {preview.preview.schedules.map((schedule, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
                       <span className="font-medium">{schedule.name}</span>
-                      <span className="text-gray-500">{schedule.layerCount} layers</span>
+                      <span className="text-muted-foreground">{schedule.layerCount} layers</span>
                     </div>
                   ))}
                 </div>
@@ -720,14 +720,14 @@ export function ImportWizard() {
 
             {preview.preview.escalationPolicies.length > 0 && (
               <details className="border rounded-lg">
-                <summary className="px-4 py-3 cursor-pointer font-medium bg-gray-50 hover:bg-gray-100">
+                <summary className="px-4 py-3 cursor-pointer font-medium bg-muted hover:bg-muted">
                   Escalation Policies ({preview.preview.escalationPolicies.length})
                 </summary>
                 <div className="p-4 space-y-2 max-h-48 overflow-y-auto">
                   {preview.preview.escalationPolicies.map((policy, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+                    <div key={i} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
                       <span className="font-medium">{policy.name}</span>
-                      <span className="text-gray-500">{policy.stepCount} steps</span>
+                      <span className="text-muted-foreground">{policy.stepCount} steps</span>
                     </div>
                   ))}
                 </div>
@@ -736,15 +736,15 @@ export function ImportWizard() {
 
             {preview.preview.services.length > 0 && (
               <details className="border rounded-lg">
-                <summary className="px-4 py-3 cursor-pointer font-medium bg-gray-50 hover:bg-gray-100">
+                <summary className="px-4 py-3 cursor-pointer font-medium bg-muted hover:bg-muted">
                   Services ({preview.preview.services.length})
                 </summary>
                 <div className="p-4 space-y-2 max-h-48 overflow-y-auto">
                   {preview.preview.services.map((service, i) => (
-                    <div key={i} className="text-sm p-2 bg-gray-50 rounded">
+                    <div key={i} className="text-sm p-2 bg-muted rounded">
                       <div className="font-medium">{service.name}</div>
                       {service.description && (
-                        <div className="text-gray-500 text-xs mt-1">{service.description}</div>
+                        <div className="text-muted-foreground text-xs mt-1">{service.description}</div>
                       )}
                     </div>
                   ))}
@@ -781,7 +781,7 @@ export function ImportWizard() {
           <h2 className="text-2xl font-bold">
             {importResult.success ? 'Import Complete!' : 'Import Completed with Issues'}
           </h2>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             {importResult.message}
           </p>
 
@@ -895,12 +895,12 @@ export function ImportWizard() {
   const isComplete = (state.method === 'api' && step === 6) || (state.method === 'json' && step === 5);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-muted py-8 px-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-2">{getStepTitle()}</h1>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             {isComplete ? 'Import complete!' : `Step ${current} of ${total}`}
           </p>
         </div>
@@ -908,7 +908,7 @@ export function ImportWizard() {
         {/* Progress bar */}
         {!isComplete && (
           <div className="w-full max-w-md mx-auto mb-8">
-            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-600 transition-all duration-300"
                 style={{ width: `${(current / total) * 100}%` }}
@@ -925,7 +925,7 @@ export function ImportWizard() {
           <div className="text-center mt-6">
             <button
               onClick={() => navigate(-1)}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-muted-foreground hover:text-foreground"
             >
               Cancel and go back
             </button>

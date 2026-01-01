@@ -11,6 +11,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [openIncidentCount, setOpenIncidentCount] = useState(0);
 
+  // Initialize theme on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('theme');
+    // Default to dark mode if no preference stored
+    const isDark = stored ? stored === 'dark' : true;
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
   useEffect(() => {
     const fetchIncidentCount = async () => {
       try {
@@ -35,7 +47,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={handleToggleSidebar}

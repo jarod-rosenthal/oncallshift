@@ -42,7 +42,7 @@ export function createApp(): Express {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         "script-src": ["'self'", "'unsafe-inline'"],
         "style-src": ["'self'", "'unsafe-inline'"],
-        "img-src": ["'self'", "data:", "blob:"],
+        "img-src": ["'self'", "data:", "blob:", "https://pagerduty-lite-dev-uploads.s3.us-east-1.amazonaws.com", "https://api.dicebear.com"],
         "connect-src": ["'self'", "https://api.oncallshift.com", "https://api.anthropic.com", "http://localhost:3000"],
         "upgrade-insecure-requests": null, // Disable for demo (no SSL certificate)
       },

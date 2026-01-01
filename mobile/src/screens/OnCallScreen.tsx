@@ -466,6 +466,7 @@ export default function OnCallScreen({ navigation }: any) {
               <OwnerAvatar
                 name={item.oncallUser.fullName}
                 email={item.oncallUser.email}
+                profilePictureUrl={item.oncallUser.profilePictureUrl}
                 size={48}
               />
               <View style={themedStyles.userInfo}>

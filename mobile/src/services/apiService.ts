@@ -61,11 +61,13 @@ export interface Incident {
     id: string;
     fullName: string;
     email: string;
+    profilePictureUrl?: string | null;
   };
   resolvedBy?: {
     id: string;
     fullName: string;
     email: string;
+    profilePictureUrl?: string | null;
   };
   eventCount: number;
   lastEventAt: string;
@@ -140,6 +142,7 @@ export interface OnCallData {
     id: string;
     fullName: string;
     email: string;
+    profilePictureUrl?: string | null;
   } | null;
   isOverride: boolean;
   overrideUntil?: string;
@@ -710,6 +713,7 @@ export interface User {
   role: 'admin' | 'member';
   status: 'active' | 'inactive';
   phoneNumber?: string;
+  profilePictureUrl?: string | null;
   hasAvailability: boolean;
   createdAt: string;
 }
@@ -2561,20 +2565,20 @@ export const deleteHandoffNote = async (
 
 // ============ PROFILE PICTURE ============
 
-// Default avatar options (abstract/icons for users who don't want to upload photos)
+// Default avatar options - uses PNG format for React Native compatibility
 export const DEFAULT_AVATARS = [
-  { id: 'shapes-blue', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=blue' },
-  { id: 'shapes-purple', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=purple' },
-  { id: 'shapes-green', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=green' },
-  { id: 'shapes-orange', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=orange' },
-  { id: 'shapes-pink', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=pink' },
-  { id: 'shapes-teal', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=teal' },
-  { id: 'bottts-1', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=robot1' },
-  { id: 'bottts-2', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=robot2' },
-  { id: 'thumbs-1', url: 'https://api.dicebear.com/9.x/thumbs/svg?seed=happy1' },
-  { id: 'thumbs-2', url: 'https://api.dicebear.com/9.x/thumbs/svg?seed=happy2' },
-  { id: 'identicon-1', url: 'https://api.dicebear.com/9.x/identicon/svg?seed=user1' },
-  { id: 'identicon-2', url: 'https://api.dicebear.com/9.x/identicon/svg?seed=user2' },
+  { id: 'shapes-blue', url: 'https://api.dicebear.com/9.x/shapes/png?seed=blue&size=128', label: 'Blue Shapes' },
+  { id: 'shapes-purple', url: 'https://api.dicebear.com/9.x/shapes/png?seed=purple&size=128', label: 'Purple Shapes' },
+  { id: 'shapes-green', url: 'https://api.dicebear.com/9.x/shapes/png?seed=green&size=128', label: 'Green Shapes' },
+  { id: 'shapes-orange', url: 'https://api.dicebear.com/9.x/shapes/png?seed=orange&size=128', label: 'Orange Shapes' },
+  { id: 'identicon-1', url: 'https://api.dicebear.com/9.x/identicon/png?seed=oncall1&size=128', label: 'Identicon 1' },
+  { id: 'identicon-2', url: 'https://api.dicebear.com/9.x/identicon/png?seed=oncall2&size=128', label: 'Identicon 2' },
+  { id: 'bottts-1', url: 'https://api.dicebear.com/9.x/bottts/png?seed=robot1&size=128', label: 'Robot 1' },
+  { id: 'bottts-2', url: 'https://api.dicebear.com/9.x/bottts/png?seed=robot2&size=128', label: 'Robot 2' },
+  { id: 'thumbs-1', url: 'https://api.dicebear.com/9.x/thumbs/png?seed=happy1&size=128', label: 'Thumbs 1' },
+  { id: 'thumbs-2', url: 'https://api.dicebear.com/9.x/thumbs/png?seed=happy2&size=128', label: 'Thumbs 2' },
+  { id: 'rings-1', url: 'https://api.dicebear.com/9.x/rings/png?seed=ring1&size=128', label: 'Rings 1' },
+  { id: 'rings-2', url: 'https://api.dicebear.com/9.x/rings/png?seed=ring2&size=128', label: 'Rings 2' },
 ];
 
 export interface UploadUrlResponse {

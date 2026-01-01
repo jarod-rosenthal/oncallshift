@@ -322,6 +322,7 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
           <OwnerAvatar
             name={profile?.fullName || profile?.email || 'User'}
             email={profile?.email}
+            profilePictureUrl={profile?.profilePictureUrl}
             size={64}
           />
           <View style={styles.profileInfo}>

@@ -51,14 +51,14 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
 
   return (
     <header
-      className={`fixed top-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 z-30 transition-all duration-300 ${
+      className={`fixed top-0 right-0 h-16 bg-card border-b border-border flex items-center justify-between px-6 z-30 transition-all duration-300 ${
         sidebarCollapsed ? 'left-16' : 'left-64'
       }`}
     >
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="flex-1 max-w-xl">
-        <div className={`relative flex items-center ${searchFocused ? 'ring-2 ring-blue-500' : ''} rounded-lg`}>
-          <div className="absolute left-3 text-gray-400">
+        <div className={`relative flex items-center ${searchFocused ? 'ring-2 ring-ring' : ''} rounded-lg`}>
+          <div className="absolute left-3 text-muted-foreground">
             <Icons.Search />
           </div>
           <input
@@ -68,7 +68,7 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setSearchFocused(false)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 border border-transparent rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:bg-white focus:border-gray-300"
+            className="w-full pl-10 pr-4 py-2 bg-muted border border-transparent rounded-lg text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:bg-background focus:border-border"
           />
         </div>
       </form>
@@ -77,7 +77,7 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
       <div className="flex items-center gap-2 ml-4">
         {/* Help */}
         <button
-          className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+          className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
           title="Help & Documentation"
         >
           <Icons.Question />
@@ -86,7 +86,7 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
         {/* Notifications */}
         <Link
           to="/incidents"
-          className="relative p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+          className="relative p-2 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
           title="Notifications"
         >
           <Icons.Bell />
@@ -95,7 +95,7 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
         {/* Logout */}
         <button
           onClick={handleLogout}
-          className="p-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
+          className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
           title="Log Out"
         >
           <Icons.Logout />

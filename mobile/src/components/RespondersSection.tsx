@@ -9,6 +9,7 @@ interface Responder {
   id: string;
   fullName: string;
   email: string;
+  profilePictureUrl?: string | null;
   status: 'notified' | 'acknowledged' | 'pending';
   notifiedAt?: string;
   acknowledgedAt?: string;
@@ -20,6 +21,7 @@ interface RespondersSectionProps {
     id: string;
     fullName: string;
     email: string;
+    profilePictureUrl?: string | null;
   };
 }
 
@@ -110,7 +112,7 @@ export const RespondersSection: React.FC<RespondersSectionProps> = ({
                 index < displayResponders.length - 1 && dynamicStyles.responderBorder,
               ]}
             >
-              <OwnerAvatar name={responder.fullName} email={responder.email} size={32} />
+              <OwnerAvatar name={responder.fullName} email={responder.email} profilePictureUrl={responder.profilePictureUrl} size={32} />
               <View style={styles.responderInfo}>
                 <Text variant="bodyMedium" style={dynamicStyles.responderName}>
                   {responder.fullName}

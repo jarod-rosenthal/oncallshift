@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth-store';
 import { authAPI } from '../lib/api-client';
+import { UserAvatar } from './UserAvatar';
 
 interface NavItem {
   path: string;
@@ -131,6 +132,16 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
     </svg>
   ),
+  Sun: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  ),
+  Moon: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+    </svg>
+  ),
 };
 
 export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps) {
@@ -140,8 +151,32 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['People', 'Settings']));
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('theme');
+      // Default to dark mode if no preference stored
+      return stored ? stored === 'dark' : true;
+    }
+    return true;
+  });
 
   const isAdmin = user?.role === 'admin';
+
+  // Apply theme on mount and when changed
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDarkMode) {
+      root.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      root.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => {
+    setIsDarkMode(!isDarkMode);
+  };
 
   const handleLogout = () => {
     authAPI.logout();
@@ -219,18 +254,18 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         to={item.path}
         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
           isActive(item.path)
-            ? 'bg-blue-50 text-blue-700 border-l-3 border-blue-600'
-            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
         }`}
       >
-        <span className={isActive(item.path) ? 'text-blue-600' : 'text-gray-400'}>
+        <span className={isActive(item.path) ? 'text-primary' : 'text-muted-foreground'}>
           {item.icon}
         </span>
         {!collapsed && (
           <>
             <span className="flex-1">{item.label}</span>
             {item.badge !== undefined && item.badge > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              <span className="bg-destructive text-destructive-foreground text-xs font-bold px-2 py-0.5 rounded-full">
                 {item.badge}
               </span>
             )}
@@ -254,8 +289,8 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         {!collapsed && (
           <button
             onClick={() => hasSubItems && toggleSection(section.title)}
-            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider ${
-              hasSubItems ? 'hover:text-gray-600 cursor-pointer' : ''
+            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${
+              hasSubItems ? 'hover:text-foreground cursor-pointer' : ''
             }`}
           >
             <span>{section.title}</span>
@@ -277,20 +312,20 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
 
   return (
     <aside
-      className={`fixed left-0 top-0 h-screen bg-white border-r border-gray-200 flex flex-col transition-all duration-300 z-40 ${
+      className={`fixed left-0 top-0 h-screen bg-card border-r border-border flex flex-col transition-all duration-300 z-40 ${
         collapsed ? 'w-16' : 'w-64'
       }`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-4 border-b border-border">
         {!collapsed && (
-          <Link to="/dashboard" className="text-xl font-bold text-gray-900">
+          <Link to="/dashboard" className="text-xl font-bold text-foreground">
             OnCallShift
           </Link>
         )}
         <button
           onClick={onToggle}
-          className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+          className="p-2 rounded-lg hover:bg-muted text-muted-foreground"
         >
           <Icons.Menu />
         </button>
@@ -301,25 +336,41 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         {navSections.map(renderSection)}
       </nav>
 
+      {/* Theme Toggle */}
+      <div className="px-2 py-2 border-t border-border">
+        <button
+          onClick={toggleTheme}
+          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDarkMode ? <Icons.Sun /> : <Icons.Moon />}
+          {!collapsed && <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>}
+        </button>
+      </div>
+
       {/* User Menu */}
-      <div className="border-t border-gray-200 p-2">
+      <div className="border-t border-border p-2">
         <div className="relative">
           <button
             onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors ${
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted transition-colors ${
               collapsed ? 'justify-center' : ''
             }`}
           >
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
-              {user?.fullName?.charAt(0) || 'U'}
-            </div>
+            <UserAvatar
+              src={user?.profilePictureUrl}
+              name={user?.fullName}
+              size="sm"
+            />
             {!collapsed && (
               <>
                 <div className="flex-1 text-left">
-                  <div className="text-sm font-medium text-gray-900 truncate">
+                  <div className="text-sm font-medium text-foreground truncate">
                     {user?.fullName || 'User'}
                   </div>
-                  <div className="text-xs text-gray-500 truncate">
+                  <div className="text-xs text-muted-foreground truncate">
                     {user?.email || ''}
                   </div>
                 </div>
@@ -330,11 +381,11 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
 
           {/* Dropdown Menu */}
           {userMenuOpen && (
-            <div className={`absolute bottom-full mb-2 ${collapsed ? 'left-full ml-2' : 'left-0 right-0'} bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50`}>
+            <div className={`absolute bottom-full mb-2 ${collapsed ? 'left-full ml-2' : 'left-0 right-0'} bg-popover border border-border rounded-lg shadow-lg py-1 z-50`}>
               <Link
                 to="/profile"
                 onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
               >
                 <Icons.User />
                 <span>My Profile</span>
@@ -342,15 +393,15 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
               <Link
                 to="/availability"
                 onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
               >
                 <Icons.Clock />
                 <span>My Availability</span>
               </Link>
-              <hr className="my-1 border-gray-200" />
+              <hr className="my-1 border-border" />
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-destructive hover:bg-destructive/10"
               >
                 <Icons.Logout />
                 <span>Log Out</span>

@@ -191,7 +191,7 @@ export function RoutingRules() {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="text-center py-12 text-gray-500">Loading routing rules...</div>
+        <div className="text-center py-12 text-muted-foreground">Loading routing rules...</div>
       </div>
     );
   }
@@ -201,8 +201,8 @@ export function RoutingRules() {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Alert Routing Rules</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Alert Routing Rules</h1>
+          <p className="text-muted-foreground mt-1">
             Route incoming alerts to services based on content conditions
           </p>
         </div>
@@ -225,10 +225,10 @@ export function RoutingRules() {
 
       {/* Rules List */}
       {rules.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <div className="text-gray-400 text-5xl mb-4">...</div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No routing rules yet</h3>
-          <p className="text-gray-600 mb-4">
+        <div className="bg-card rounded-lg shadow p-12 text-center">
+          <div className="text-muted-foreground text-5xl mb-4">...</div>
+          <h3 className="text-lg font-medium text-foreground mb-2">No routing rules yet</h3>
+          <p className="text-muted-foreground mb-4">
             Create routing rules to automatically route alerts to the right service based on their content.
           </p>
           <button
@@ -239,55 +239,55 @@ export function RoutingRules() {
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="bg-card rounded-lg shadow overflow-hidden">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-muted">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Order
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Rule
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Conditions
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Target
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-card divide-y divide-border">
               {rules.map((rule) => (
-                <tr key={rule.id} className={!rule.enabled ? 'bg-gray-50 opacity-60' : ''}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <tr key={rule.id} className={!rule.enabled ? 'bg-muted opacity-60' : ''}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                     #{rule.ruleOrder + 1}
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-gray-900">{rule.name}</div>
+                    <div className="text-sm font-medium text-foreground">{rule.name}</div>
                     {rule.description && (
-                      <div className="text-sm text-gray-500">{rule.description}</div>
+                      <div className="text-sm text-muted-foreground">{rule.description}</div>
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">
+                    <div className="text-sm text-foreground">
                       {rule.conditions.length === 0 ? (
-                        <span className="text-gray-500 italic">Match all alerts</span>
+                        <span className="text-muted-foreground italic">Match all alerts</span>
                       ) : (
                         <div className="space-y-1">
                           {rule.conditions.slice(0, 2).map((c, i) => (
-                            <div key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            <div key={i} className="text-xs bg-muted px-2 py-1 rounded">
                               {c.field} {c.operator.replace('_', ' ')} "{String(c.value)}"
                             </div>
                           ))}
                           {rule.conditions.length > 2 && (
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-muted-foreground">
                               +{rule.conditions.length - 2} more ({rule.matchType === 'all' ? 'AND' : 'OR'})
                             </span>
                           )}
@@ -297,12 +297,12 @@ export function RoutingRules() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     {rule.targetService && (
-                      <div className="text-gray-900">
+                      <div className="text-foreground">
                         Route to: <span className="font-medium">{rule.targetService.name}</span>
                       </div>
                     )}
                     {rule.setSeverity && (
-                      <div className="text-gray-600">
+                      <div className="text-muted-foreground">
                         Set severity: <span className={`font-medium ${
                           rule.setSeverity === 'critical' ? 'text-red-600' :
                           rule.setSeverity === 'error' ? 'text-orange-600' :
@@ -312,7 +312,7 @@ export function RoutingRules() {
                       </div>
                     )}
                     {!rule.targetService && !rule.setSeverity && (
-                      <span className="text-gray-400 italic">No action</span>
+                      <span className="text-muted-foreground italic">No action</span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -321,7 +321,7 @@ export function RoutingRules() {
                       className={`px-2 py-1 text-xs font-medium rounded ${
                         rule.enabled
                           ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-600'
+                          : 'bg-muted text-muted-foreground'
                       }`}
                     >
                       {rule.enabled ? 'Enabled' : 'Disabled'}
@@ -351,10 +351,10 @@ export function RoutingRules() {
       {/* Create/Edit Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-card rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleSubmit}>
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl font-bold text-gray-900">
+              <div className="p-6 border-b border-border">
+                <h2 className="text-xl font-bold text-foreground">
                   {editingRule ? 'Edit Routing Rule' : 'Create Routing Rule'}
                 </h2>
               </div>
@@ -362,14 +362,14 @@ export function RoutingRules() {
               <div className="p-6 space-y-6">
                 {/* Name */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Rule Name *
                   </label>
                   <input
                     type="text"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., Route Production Alerts"
                     required
                   />
@@ -377,13 +377,13 @@ export function RoutingRules() {
 
                 {/* Description */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Description
                   </label>
                   <textarea
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={2}
                     placeholder="Optional description"
                   />
@@ -391,7 +391,7 @@ export function RoutingRules() {
 
                 {/* Match Type */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Match Type
                   </label>
                   <div className="flex gap-4">
@@ -418,18 +418,18 @@ export function RoutingRules() {
 
                 {/* Conditions */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-foreground mb-2">
                     Conditions
                   </label>
                   <div className="space-y-3">
                     {formConditions.map((condition, index) => (
-                      <div key={index} className="flex gap-2 items-start bg-gray-50 p-3 rounded-lg">
+                      <div key={index} className="flex gap-2 items-start bg-muted p-3 rounded-lg">
                         <div className="flex-1 grid grid-cols-3 gap-2">
                           <div>
                             <select
                               value={condition.field}
                               onChange={(e) => updateCondition(index, { field: e.target.value })}
-                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                              className="w-full border border-border rounded px-2 py-1 text-sm"
                             >
                               {COMMON_FIELDS.map((f) => (
                                 <option key={f} value={f}>{f}</option>
@@ -440,7 +440,7 @@ export function RoutingRules() {
                             <select
                               value={condition.operator}
                               onChange={(e) => updateCondition(index, { operator: e.target.value as ConditionOperator })}
-                              className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                              className="w-full border border-border rounded px-2 py-1 text-sm"
                             >
                               {OPERATORS.map((op) => (
                                 <option key={op.value} value={op.value}>{op.label}</option>
@@ -453,7 +453,7 @@ export function RoutingRules() {
                                 type="text"
                                 value={String(condition.value || '')}
                                 onChange={(e) => updateCondition(index, { value: e.target.value })}
-                                className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                className="w-full border border-border rounded px-2 py-1 text-sm"
                                 placeholder="Value"
                               />
                             )}
@@ -477,7 +477,7 @@ export function RoutingRules() {
                     + Add Condition
                   </button>
                   {formConditions.length === 0 && (
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       No conditions = matches all alerts
                     </p>
                   )}
@@ -485,13 +485,13 @@ export function RoutingRules() {
 
                 {/* Target Service */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Route to Service
                   </label>
                   <select
                     value={formTargetServiceId}
                     onChange={(e) => setFormTargetServiceId(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- No routing (keep original) --</option>
                     {services.map((s) => (
@@ -502,13 +502,13 @@ export function RoutingRules() {
 
                 {/* Set Severity */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Override Severity
                   </label>
                   <select
                     value={formSetSeverity}
                     onChange={(e) => setFormSetSeverity(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- No override (keep original) --</option>
                     {SEVERITIES.map((s) => (
@@ -526,16 +526,16 @@ export function RoutingRules() {
                       onChange={(e) => setFormEnabled(e.target.checked)}
                       className="mr-2"
                     />
-                    <span className="text-sm font-medium text-gray-700">Enabled</span>
+                    <span className="text-sm font-medium text-foreground">Enabled</span>
                   </label>
                 </div>
               </div>
 
-              <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <div className="p-6 border-t border-border flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  className="px-4 py-2 text-foreground bg-muted rounded-lg hover:bg-muted"
                 >
                   Cancel
                 </button>

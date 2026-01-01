@@ -884,6 +884,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                     <OwnerAvatar
                       name={incident.acknowledgedBy.fullName || ''}
                       email={incident.acknowledgedBy.email || ''}
+                      profilePictureUrl={incident.acknowledgedBy.profilePictureUrl}
                       size={36}
                     />
                   </View>
@@ -1592,7 +1593,18 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         {/* Resolved Notice */}
         {incident.state === 'resolved' && (
           <Surface style={themedStyles.resolvedNotice} elevation={0}>
-            <MaterialCommunityIcons name="check-circle" size={24} color={colors.success} />
+            {incident.resolvedBy ? (
+              <View style={themedStyles.resolverAvatarRing}>
+                <OwnerAvatar
+                  name={incident.resolvedBy.fullName || ''}
+                  email={incident.resolvedBy.email || ''}
+                  profilePictureUrl={incident.resolvedBy.profilePictureUrl}
+                  size={36}
+                />
+              </View>
+            ) : (
+              <MaterialCommunityIcons name="check-circle" size={24} color={colors.success} />
+            )}
             <View style={themedStyles.resolvedTextContainer}>
               <Text variant="titleSmall" style={themedStyles.resolvedText}>
                 This incident has been resolved
@@ -1787,7 +1799,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                     ]}
                     onPress={() => setSelectedUserId(user.id)}
                   >
-                    <OwnerAvatar name={user.fullName} email={user.email} size={40} />
+                    <OwnerAvatar name={user.fullName} email={user.email} profilePictureUrl={user.profilePictureUrl} size={40} />
                     <View style={themedStyles.userItemInfo}>
                       <Text variant="titleSmall" style={themedStyles.userItemName}>
                         {user.fullName}
@@ -2183,6 +2195,12 @@ const styles = (colors: any) => StyleSheet.create({
   resolvedBy: {
     color: colors.success,
     marginTop: 2,
+  },
+  resolverAvatarRing: {
+    borderWidth: 2,
+    borderColor: colors.success,
+    borderRadius: 22,
+    padding: 2,
   },
   bottomPadding: {
     height: 40,

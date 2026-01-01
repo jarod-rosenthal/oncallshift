@@ -16,7 +16,7 @@ const STATUS_OPTIONS: { value: BusinessServiceStatus; label: string; color: stri
   { value: 'degraded', label: 'Degraded', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'major_outage', label: 'Major Outage', color: 'bg-red-100 text-red-800' },
   { value: 'maintenance', label: 'Maintenance', color: 'bg-blue-100 text-blue-800' },
-  { value: 'unknown', label: 'Unknown', color: 'bg-gray-100 text-gray-800' },
+  { value: 'unknown', label: 'Unknown', color: 'bg-muted text-muted-foreground' },
 ];
 
 const IMPACT_TIERS: { value: ImpactTier; label: string; description: string }[] = [
@@ -184,7 +184,7 @@ export function BusinessServices() {
   const getStatusBadge = (status: BusinessServiceStatus) => {
     const statusOpt = STATUS_OPTIONS.find(s => s.value === status);
     return (
-      <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusOpt?.color || 'bg-gray-100 text-gray-800'}`}>
+      <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusOpt?.color || 'bg-muted text-muted-foreground'}`}>
         {statusOpt?.label || status}
       </span>
     );
@@ -219,7 +219,7 @@ export function BusinessServices() {
   if (loading) {
     return (
       <div className="p-6">
-        <div className="text-center py-12 text-gray-500">Loading business services...</div>
+        <div className="text-center py-12 text-muted-foreground">Loading business services...</div>
       </div>
     );
   }
@@ -229,8 +229,8 @@ export function BusinessServices() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Business Services</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-foreground">Business Services</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             High-level services representing business capabilities
           </p>
         </div>
@@ -256,7 +256,7 @@ export function BusinessServices() {
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          className="px-3 py-2 border border-border rounded-lg text-sm bg-background"
         >
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map(opt => (
@@ -266,7 +266,7 @@ export function BusinessServices() {
         <select
           value={filterTier}
           onChange={(e) => setFilterTier(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          className="px-3 py-2 border border-border rounded-lg text-sm bg-background"
         >
           <option value="">All Impact Tiers</option>
           {IMPACT_TIERS.map(opt => (
@@ -277,8 +277,8 @@ export function BusinessServices() {
 
       {/* Business Services Grid */}
       {filteredServices.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
-          <p className="text-gray-500">No business services found</p>
+        <div className="text-center py-12 bg-muted rounded-lg">
+          <p className="text-muted-foreground">No business services found</p>
           <button
             onClick={openCreateModal}
             className="mt-4 text-indigo-600 hover:text-indigo-800 font-medium"
@@ -291,14 +291,14 @@ export function BusinessServices() {
           {filteredServices.map((bs) => (
             <div
               key={bs.id}
-              className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow"
+              className="bg-card border border-border rounded-lg shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{bs.name}</h3>
+                    <h3 className="text-lg font-semibold text-foreground">{bs.name}</h3>
                     {bs.description && (
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">{bs.description}</p>
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{bs.description}</p>
                     )}
                   </div>
                   <div className="flex gap-2">
@@ -311,23 +311,23 @@ export function BusinessServices() {
                 </div>
 
                 {/* Owner & Contact */}
-                <div className="text-sm text-gray-600 space-y-1 mb-4">
+                <div className="text-sm text-muted-foreground space-y-1 mb-4">
                   {bs.ownerTeam && (
                     <p>
-                      <span className="text-gray-400">Team:</span> {bs.ownerTeam.name}
+                      <span className="text-muted-foreground">Team:</span> {bs.ownerTeam.name}
                     </p>
                   )}
                   {bs.pointOfContact && (
                     <p>
-                      <span className="text-gray-400">Contact:</span> {bs.pointOfContact.fullName}
+                      <span className="text-muted-foreground">Contact:</span> {bs.pointOfContact.fullName}
                     </p>
                   )}
                 </div>
 
                 {/* Linked Services */}
-                <div className="border-t border-gray-100 pt-4">
+                <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className="text-sm font-medium text-foreground">
                       Technical Services ({bs.services?.length || 0})
                     </span>
                     <button
@@ -342,24 +342,24 @@ export function BusinessServices() {
                       {bs.services.slice(0, 3).map((s) => (
                         <span
                           key={s.id}
-                          className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded"
+                          className="px-2 py-0.5 bg-muted text-foreground text-xs rounded"
                         >
                           {s.name}
                         </span>
                       ))}
                       {bs.services.length > 3 && (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded">
+                        <span className="px-2 py-0.5 bg-muted text-muted-foreground text-xs rounded">
                           +{bs.services.length - 3} more
                         </span>
                       )}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-400">No services linked</p>
+                    <p className="text-xs text-muted-foreground">No services linked</p>
                   )}
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+                <div className="flex gap-2 mt-4 pt-4 border-t border-border">
                   <button
                     onClick={() => openEditModal(bs)}
                     className="flex-1 px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50 rounded"
@@ -371,7 +371,7 @@ export function BusinessServices() {
                       href={bs.documentationUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 rounded text-center"
+                      className="flex-1 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted rounded text-center"
                     >
                       Docs
                     </a>
@@ -416,51 +416,51 @@ export function BusinessServices() {
       {/* Create/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-card rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleSubmit}>
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl font-semibold text-gray-900">
+              <div className="p-6 border-b border-border">
+                <h2 className="text-xl font-semibold text-foreground">
                   {editingService ? 'Edit Business Service' : 'Create Business Service'}
                 </h2>
               </div>
 
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Name *
                   </label>
                   <input
                     type="text"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="e.g., E-Commerce Platform"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Description
                   </label>
                   <textarea
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="Describe this business service..."
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       Status
                     </label>
                     <select
                       value={formStatus}
                       onChange={(e) => setFormStatus(e.target.value as BusinessServiceStatus)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       {STATUS_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -471,13 +471,13 @@ export function BusinessServices() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       Impact Tier
                     </label>
                     <select
                       value={formImpactTier}
                       onChange={(e) => setFormImpactTier(e.target.value as ImpactTier)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       {IMPACT_TIERS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -490,13 +490,13 @@ export function BusinessServices() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       Owner Team
                     </label>
                     <select
                       value={formOwnerTeamId}
                       onChange={(e) => setFormOwnerTeamId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       <option value="">Select a team...</option>
                       {teams.map((team) => (
@@ -508,13 +508,13 @@ export function BusinessServices() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground mb-1">
                       Point of Contact
                     </label>
                     <select
                       value={formPointOfContactId}
                       onChange={(e) => setFormPointOfContactId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
                       <option value="">Select a user...</option>
                       {users.map((user) => (
@@ -527,37 +527,37 @@ export function BusinessServices() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     External ID
                   </label>
                   <input
                     type="text"
                     value={formExternalId}
                     onChange={(e) => setFormExternalId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="Optional external reference ID"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground mb-1">
                     Documentation URL
                   </label>
                   <input
                     type="url"
                     value={formDocumentationUrl}
                     onChange={(e) => setFormDocumentationUrl(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="https://..."
                   />
                 </div>
               </div>
 
-              <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <div className="p-6 border-t border-border flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  className="px-4 py-2 text-foreground bg-muted rounded-lg hover:bg-muted"
                 >
                   Cancel
                 </button>
@@ -611,34 +611,34 @@ function ServiceSelectorModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Link Technical Services</h2>
-          <p className="text-sm text-gray-500 mt-1">
+      <div className="bg-card rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-xl font-semibold text-foreground">Link Technical Services</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Select the technical services that belong to this business service
           </p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
           {allServices.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No technical services available</p>
+            <p className="text-muted-foreground text-center py-4">No technical services available</p>
           ) : (
             <div className="space-y-2">
               {allServices.map((service) => (
                 <label
                   key={service.id}
-                  className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  className="flex items-center p-3 border border-border rounded-lg hover:bg-muted cursor-pointer"
                 >
                   <input
                     type="checkbox"
                     checked={selectedServices.includes(service.id)}
                     onChange={() => toggleService(service.id)}
-                    className="h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                    className="h-4 w-4 text-indigo-600 rounded border-border focus:ring-indigo-500"
                   />
                   <div className="ml-3">
-                    <p className="font-medium text-gray-900">{service.name}</p>
+                    <p className="font-medium text-foreground">{service.name}</p>
                     {service.description && (
-                      <p className="text-sm text-gray-500">{service.description}</p>
+                      <p className="text-sm text-muted-foreground">{service.description}</p>
                     )}
                   </div>
                   <span
@@ -647,7 +647,7 @@ function ServiceSelectorModal({
                         ? 'bg-green-100 text-green-800'
                         : service.status === 'maintenance'
                         ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-gray-100 text-gray-800'
+                        : 'bg-muted text-gray-800'
                     }`}
                   >
                     {service.status}
@@ -658,14 +658,14 @@ function ServiceSelectorModal({
           )}
         </div>
 
-        <div className="p-6 border-t border-gray-200 flex justify-between items-center">
-          <span className="text-sm text-gray-500">
+        <div className="p-6 border-t border-border flex justify-between items-center">
+          <span className="text-sm text-muted-foreground">
             {selectedServices.length} service{selectedServices.length !== 1 ? 's' : ''} selected
           </span>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              className="px-4 py-2 text-foreground bg-muted rounded-lg hover:bg-muted"
             >
               Cancel
             </button>

@@ -69,56 +69,56 @@
   }
 
   .dark {
-    /* Dark mode palette */
+    /* Dark mode palette - lighter variation */
     --primary: 217 91% 60%;
     --primary-hover: 217 91% 65%;
-    --primary-foreground: 222 47% 11%;
+    --primary-foreground: 0 0% 100%;
 
-    --neutral-50: 222 47% 11%;
-    --neutral-100: 222 47% 11%;
-    --neutral-200: 217 33% 17%;
-    --neutral-300: 217 33% 17%;
-    --neutral-400: 215 20% 65%;
-    --neutral-500: 215 20% 65%;
-    --neutral-600: 210 40% 80%;
-    --neutral-700: 210 40% 90%;
+    --neutral-50: 220 20% 14%;
+    --neutral-100: 220 18% 16%;
+    --neutral-200: 220 16% 22%;
+    --neutral-300: 220 14% 28%;
+    --neutral-400: 215 16% 50%;
+    --neutral-500: 215 14% 60%;
+    --neutral-600: 210 20% 75%;
+    --neutral-700: 210 25% 88%;
     --neutral-900: 210 40% 98%;
 
-    --blue-50: 222 47% 11%;
-    --blue-100: 217 33% 17%;
+    --blue-50: 220 30% 18%;
+    --blue-100: 217 33% 22%;
     --blue-600: 217 91% 60%;
 
-    --purple-50: 222 47% 11%;
-    --purple-100: 270 33% 20%;
+    --purple-50: 260 25% 18%;
+    --purple-100: 270 30% 25%;
 
     --success: 145 65% 50%;
     --warning: 36 100% 55%;
-    --danger: 0 63% 31%;
+    --danger: 0 72% 51%;
 
-    --background: 222 84% 5%;
+    --background: 220 20% 14%;
     --foreground: 210 40% 98%;
 
-    --card: 222 84% 5%;
+    --card: 220 18% 18%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222 84% 5%;
+    --popover: 220 18% 18%;
     --popover-foreground: 210 40% 98%;
 
-    --secondary: 217 33% 17%;
+    --secondary: 220 16% 24%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 220 16% 22%;
+    --muted-foreground: 215 14% 65%;
 
-    --accent: 217 33% 17%;
+    --accent: 220 16% 24%;
     --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 63% 31%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 224 76% 48%;
+    --border: 220 14% 26%;
+    --input: 220 14% 26%;
+    --ring: 217 91% 60%;
   }
 }
 

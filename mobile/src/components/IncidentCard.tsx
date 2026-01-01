@@ -207,6 +207,7 @@ export function IncidentCard({
                   <OwnerAvatar
                     name={assignee.fullName}
                     email={assignee.email}
+                    profilePictureUrl={assignee.profilePictureUrl}
                     size={26}
                     showName
                   />
