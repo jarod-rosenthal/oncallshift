@@ -40,6 +40,7 @@ router.get('/', async (req: Request, res: Response) => {
               id: user.id,
               fullName: user.fullName,
               email: user.email,
+              profilePictureUrl: user.profilePictureUrl,
             };
           }
         }
@@ -94,6 +95,7 @@ router.get('/oncall', async (req: Request, res: Response) => {
               id: user.id,
               fullName: user.fullName,
               email: user.email,
+              profilePictureUrl: user.profilePictureUrl,
             };
           }
         }
@@ -180,6 +182,7 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
               id: user.id,
               fullName: user.fullName || user.email,
               email: user.email,
+              profilePictureUrl: user.profilePictureUrl,
             };
           }
         }
@@ -303,6 +306,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         id: oncallUser.id,
         fullName: oncallUser.fullName,
         email: oncallUser.email,
+        profilePictureUrl: oncallUser.profilePictureUrl,
       } : null,
     });
   } catch (error) {
@@ -503,6 +507,7 @@ router.put(
           id: user.id,
           fullName: user.fullName,
           email: user.email,
+          profilePictureUrl: user.profilePictureUrl,
         },
       });
     } catch (error) {

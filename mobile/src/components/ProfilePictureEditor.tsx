@@ -21,6 +21,14 @@ try {
   console.log('expo-image-picker not available');
 }
 
+// Convert SVG URLs to PNG for React Native compatibility
+const convertToPngUrl = (url: string): string => {
+  if (url.includes('dicebear.com') && url.includes('/svg')) {
+    return url.replace('/svg', '/png') + (url.includes('?') ? '&size=128' : '?size=128');
+  }
+  return url;
+};
+
 interface ProfilePictureEditorProps {
   currentPictureUrl: string | null;
   userName: string | null;
@@ -184,7 +192,7 @@ export function ProfilePictureEditor({
         onPress={() => setShowModal(true)}
       >
         {currentPictureUrl ? (
-          <Image source={{ uri: currentPictureUrl }} style={styles.avatar} />
+          <Image source={{ uri: convertToPngUrl(currentPictureUrl) }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
             <Text style={styles.avatarInitials}>{getInitials()}</Text>
@@ -226,7 +234,7 @@ export function ProfilePictureEditor({
             {/* Current Picture Preview */}
             <View style={styles.previewSection}>
               {currentPictureUrl ? (
-                <Image source={{ uri: currentPictureUrl }} style={styles.previewImage} />
+                <Image source={{ uri: convertToPngUrl(currentPictureUrl) }} style={styles.previewImage} />
               ) : (
                 <View style={styles.previewPlaceholder}>
                   <Text style={styles.previewInitials}>{getInitials()}</Text>

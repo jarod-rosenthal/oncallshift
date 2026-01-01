@@ -1317,8 +1317,10 @@ router.put(
       const user = req.user!;
       const { profilePictureUrl } = req.body;
 
-      // Validate the URL is from our uploads bucket
-      if (!profilePictureUrl.includes(UPLOADS_BUCKET)) {
+      // Validate the URL is from allowed sources (our S3 bucket or DiceBear for default avatars)
+      const isS3Url = profilePictureUrl.includes(UPLOADS_BUCKET);
+      const isDiceBearUrl = profilePictureUrl.startsWith('https://api.dicebear.com/');
+      if (!isS3Url && !isDiceBearUrl) {
         return res.status(400).json({ error: 'Invalid profile picture URL' });
       }
 

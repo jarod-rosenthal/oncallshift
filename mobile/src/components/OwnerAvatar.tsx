@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, Image } from 'react-native';
 import { Avatar, Text } from 'react-native-paper';
 import { useAppTheme } from '../context/ThemeContext';
@@ -11,6 +11,15 @@ interface OwnerAvatarProps {
   size?: number;
   showName?: boolean;
 }
+
+// Convert SVG URLs to PNG for React Native compatibility
+const convertToPngUrl = (url: string): string => {
+  if (url.includes('dicebear.com') && url.includes('/svg')) {
+    // Convert DiceBear SVG to PNG and add size parameter
+    return url.replace('/svg', '/png') + (url.includes('?') ? '&size=128' : '?size=128');
+  }
+  return url;
+};
 
 const getInitials = (name?: string, email?: string): string => {
   if (name) {
@@ -54,18 +63,24 @@ export const OwnerAvatar: React.FC<OwnerAvatarProps> = ({
   showName = false,
 }) => {
   const { colors } = useAppTheme();
+  const [imageError, setImageError] = useState(false);
   const initials = getInitials(name, email);
   const bgColor = getAvatarColor(name, email);
 
+  // Get the image URL, converting SVG to PNG if needed
+  const imageUrl = profilePictureUrl ? convertToPngUrl(profilePictureUrl) : null;
+  const showImage = imageUrl && !imageError;
+
   return (
     <View style={styles.container}>
-      {profilePictureUrl ? (
+      {showImage ? (
         <Image
-          source={{ uri: profilePictureUrl }}
+          source={{ uri: imageUrl }}
           style={[
             styles.avatarImage,
             { width: size, height: size, borderRadius: size / 2 },
           ]}
+          onError={() => setImageError(true)}
         />
       ) : (
         <Avatar.Text

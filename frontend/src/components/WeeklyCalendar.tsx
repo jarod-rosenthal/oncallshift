@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { schedulesAPI } from '../lib/api-client';
+import { UserAvatar } from './UserAvatar';
 
 interface WeeklyForecast {
   forecast: Array<{
@@ -11,7 +12,7 @@ interface WeeklyForecast {
       date: string;
       dayOfWeek: string;
       isToday: boolean;
-      oncallUser: { id: string; fullName: string; email: string } | null;
+      oncallUser: { id: string; fullName: string; email: string; profilePictureUrl?: string | null } | null;
     }>;
   }>;
   weekStart: string;
@@ -70,21 +71,6 @@ export function WeeklyCalendar() {
     );
   }
 
-  // Get initials from name
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  };
-
-  // Get color for user (consistent color based on name)
-  const getUserColor = (name: string) => {
-    const colors = [
-      'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500',
-      'bg-pink-500', 'bg-teal-500', 'bg-indigo-500', 'bg-red-500'
-    ];
-    const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return colors[hash % colors.length];
-  };
-
   // Get who's currently on call (today)
   const getCurrentlyOnCall = () => {
     return forecast.forecast.map(schedule => {
@@ -141,11 +127,11 @@ export function WeeklyCalendar() {
                 </div>
                 {oncallUser ? (
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-full ${getUserColor(oncallUser.fullName)} flex items-center justify-center text-white text-sm font-semibold shadow-sm`}
-                    >
-                      {getInitials(oncallUser.fullName)}
-                    </div>
+                    <UserAvatar
+                      src={oncallUser.profilePictureUrl}
+                      name={oncallUser.fullName}
+                      size="md"
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm truncate">{oncallUser.fullName}</div>
                       <div className="text-xs text-muted-foreground truncate">{oncallUser.email}</div>
@@ -225,14 +211,12 @@ export function WeeklyCalendar() {
                       >
                         {day.oncallUser ? (
                           <div className="flex flex-col items-center gap-0.5">
-                            <div
-                              className={`w-9 h-9 rounded-full ${getUserColor(day.oncallUser.fullName)} flex items-center justify-center text-white text-xs font-semibold shadow-sm ${
-                                day.isToday ? 'ring-2 ring-blue-500 ring-offset-1' : ''
-                              }`}
-                              title={day.oncallUser.fullName}
-                            >
-                              {getInitials(day.oncallUser.fullName)}
-                            </div>
+                            <UserAvatar
+                              src={day.oncallUser.profilePictureUrl}
+                              name={day.oncallUser.fullName}
+                              size="sm"
+                              className={day.isToday ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
+                            />
                             <span
                               className="text-[10px] truncate max-w-[60px] font-medium"
                               title={day.oncallUser.fullName}
@@ -242,7 +226,7 @@ export function WeeklyCalendar() {
                           </div>
                         ) : (
                           <div className="flex flex-col items-center gap-0.5">
-                            <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600">
+                            <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600">
                               <span className="text-gray-400 text-xs">-</span>
                             </div>
                             <span className="text-[10px] text-muted-foreground">None</span>

@@ -282,6 +282,7 @@ export default function ManageUsersScreen() {
                 <OwnerAvatar
                   name={user.fullName || user.email}
                   email={user.email}
+                  profilePictureUrl={user.profilePictureUrl}
                   size={48}
                 />
                 <View style={styles.userInfo}>
@@ -457,6 +458,7 @@ export default function ManageUsersScreen() {
             <OwnerAvatar
               name={selectedUser?.fullName || selectedUser?.email || ''}
               email={selectedUser?.email}
+              profilePictureUrl={selectedUser?.profilePictureUrl}
               size={40}
             />
             <View style={{ marginLeft: 12 }}>

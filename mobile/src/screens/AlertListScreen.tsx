@@ -649,6 +649,7 @@ export default function AlertListScreen({ navigation }: any) {
                   <OwnerAvatar
                     name={assignee.fullName}
                     email={assignee.email}
+                    profilePictureUrl={assignee.profilePictureUrl}
                     size={26}
                     showName
                   />
