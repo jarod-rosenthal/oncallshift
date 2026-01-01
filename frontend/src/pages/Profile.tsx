@@ -78,11 +78,19 @@ export function Profile() {
   });
   const [savingRule, setSavingRule] = useState(false);
 
+  // DND (Do Not Disturb) state
+  const [dndEnabled, setDndEnabled] = useState(false);
+  const [dndStartTime, setDndStartTime] = useState('22:00');
+  const [dndEndTime, setDndEndTime] = useState('08:00');
+  const [dndTimezone, setDndTimezone] = useState('America/New_York');
+  const [savingDnd, setSavingDnd] = useState(false);
+
   useEffect(() => {
     loadProfile();
     loadCredentialStatus();
     loadContactMethods();
     loadNotificationRules();
+    loadDNDSettings();
   }, []);
 
   const loadProfile = async () => {
@@ -138,6 +146,39 @@ export function Profile() {
       setNotificationRules(response.notificationRules);
     } catch (err) {
       console.error('Failed to load notification rules:', err);
+    }
+  };
+
+  const loadDNDSettings = async () => {
+    try {
+      const response = await usersAPI.getDNDSettings();
+      setDndEnabled(response.dnd.enabled);
+      if (response.dnd.startTime) setDndStartTime(response.dnd.startTime);
+      if (response.dnd.endTime) setDndEndTime(response.dnd.endTime);
+      if (response.dnd.timezone) setDndTimezone(response.dnd.timezone);
+    } catch (err) {
+      console.error('Failed to load DND settings:', err);
+    }
+  };
+
+  const handleSaveDND = async () => {
+    try {
+      setSavingDnd(true);
+      setError(null);
+
+      await usersAPI.updateDNDSettings({
+        enabled: dndEnabled,
+        startTime: dndEnabled ? dndStartTime : null,
+        endTime: dndEnabled ? dndEndTime : null,
+        timezone: dndEnabled ? dndTimezone : null,
+      });
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update DND settings');
+    } finally {
+      setSavingDnd(false);
     }
   };
 
@@ -537,6 +578,84 @@ export function Profile() {
                       ))}
                     </div>
                   )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Do Not Disturb (DND) Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 9h6"/></svg>
+                  Do Not Disturb
+                </CardTitle>
+                <CardDescription>
+                  Set quiet hours when you don't want to receive non-critical notifications
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base">Enable Quiet Hours</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Block non-critical notifications during specified hours
+                    </p>
+                  </div>
+                  <Switch
+                    checked={dndEnabled}
+                    onCheckedChange={setDndEnabled}
+                  />
+                </div>
+
+                {dndEnabled && (
+                  <div className="space-y-4 pt-4 border-t">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="dnd-start">Start Time</Label>
+                        <Input
+                          id="dnd-start"
+                          type="time"
+                          value={dndStartTime}
+                          onChange={(e) => setDndStartTime(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="dnd-end">End Time</Label>
+                        <Input
+                          id="dnd-end"
+                          type="time"
+                          value={dndEndTime}
+                          onChange={(e) => setDndEndTime(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="dnd-timezone">Timezone</Label>
+                      <Select
+                        id="dnd-timezone"
+                        value={dndTimezone}
+                        onChange={(e) => setDndTimezone(e.target.value)}
+                        className="w-full"
+                      >
+                        {TIMEZONES.map(tz => (
+                          <option key={tz} value={tz}>{tz}</option>
+                        ))}
+                      </Select>
+                    </div>
+
+                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md">
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        <strong>Note:</strong> Critical and error severity incidents will still notify you during quiet hours.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-4">
+                  <Button onClick={handleSaveDND} disabled={savingDnd}>
+                    {savingDnd ? 'Saving...' : 'Save DND Settings'}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

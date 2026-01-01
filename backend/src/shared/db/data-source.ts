@@ -36,6 +36,29 @@ import { ServiceIntegration } from '../models/ServiceIntegration';
 import { EventTransformRule } from '../models/EventTransformRule';
 import { Tag } from '../models/Tag';
 import { EntityTag } from '../models/EntityTag';
+import { Heartbeat } from '../models/Heartbeat';
+import { ChangeEvent } from '../models/ChangeEvent';
+import { WebhookRequest } from '../models/WebhookRequest';
+import { ShiftHandoffNote } from '../models/ShiftHandoffNote';
+import { IncidentResponder } from '../models/IncidentResponder';
+import { StatusPage } from '../models/StatusPage';
+import { StatusPageService } from '../models/StatusPageService';
+import { StatusPageSubscriber } from '../models/StatusPageSubscriber';
+import { StatusPageUpdate } from '../models/StatusPageUpdate';
+import { IncidentWorkflow } from '../models/IncidentWorkflow';
+import { WorkflowAction } from '../models/WorkflowAction';
+import { WorkflowExecution } from '../models/WorkflowExecution';
+import { TeamMemberRole } from '../models/TeamMemberRole';
+import { ObjectPermission } from '../models/ObjectPermission';
+import { WebhookSubscription } from '../models/WebhookSubscription';
+import { IncidentReport } from '../models/IncidentReport';
+import { ReportExecution } from '../models/ReportExecution';
+import { IncidentSubscriber } from '../models/IncidentSubscriber';
+import { IncidentStatusUpdate } from '../models/IncidentStatusUpdate';
+import { ConferenceBridge } from '../models/ConferenceBridge';
+import { Postmortem } from '../models/Postmortem';
+import { PostmortemTemplate } from '../models/PostmortemTemplate';
+import { NotificationBundle } from '../models/NotificationBundle';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -85,6 +108,29 @@ export async function createDataSource(): Promise<DataSource> {
       EventTransformRule,
       Tag,
       EntityTag,
+      Heartbeat,
+      ChangeEvent,
+      WebhookRequest,
+      ShiftHandoffNote,
+      IncidentResponder,
+      StatusPage,
+      StatusPageService,
+      StatusPageSubscriber,
+      StatusPageUpdate,
+      IncidentWorkflow,
+      WorkflowAction,
+      WorkflowExecution,
+      TeamMemberRole,
+      ObjectPermission,
+      WebhookSubscription,
+      IncidentReport,
+      ReportExecution,
+      IncidentSubscriber,
+      IncidentStatusUpdate,
+      ConferenceBridge,
+      Postmortem,
+      PostmortemTemplate,
+      NotificationBundle,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],

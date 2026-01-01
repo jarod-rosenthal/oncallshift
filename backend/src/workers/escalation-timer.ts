@@ -8,6 +8,7 @@ import { In } from 'typeorm';
 const CHECK_INTERVAL_MS = parseInt(process.env.ESCALATION_CHECK_INTERVAL_MS || '30000', 10); // Default 30 seconds
 const ROTATION_CHECK_INTERVAL_MS = parseInt(process.env.ROTATION_CHECK_INTERVAL_MS || '60000', 10); // Default 60 seconds
 const HEARTBEAT_CHECK_INTERVAL_MS = parseInt(process.env.HEARTBEAT_CHECK_INTERVAL_MS || '60000', 10); // Default 60 seconds
+const ACK_TIMEOUT_CHECK_INTERVAL_MS = parseInt(process.env.ACK_TIMEOUT_CHECK_INTERVAL_MS || '30000', 10); // Default 30 seconds
 
 /**
  * Escalation Timer Worker
@@ -548,6 +549,166 @@ async function checkHeartbeats(): Promise<void> {
   }
 }
 
+/**
+ * Check for acknowledged incidents that have exceeded their ack timeout
+ * and auto-unacknowledge them
+ */
+async function checkAcknowledgementTimeouts(): Promise<void> {
+  try {
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const eventRepo = dataSource.getRepository(IncidentEvent);
+    const serviceRepo = dataSource.getRepository(Service);
+
+    // Find all acknowledged incidents
+    const acknowledgedIncidents = await incidentRepo.find({
+      where: { state: 'acknowledged' },
+      relations: ['service'],
+    });
+
+    if (acknowledgedIncidents.length === 0) {
+      return;
+    }
+
+    logger.debug(`Checking ${acknowledgedIncidents.length} acknowledged incidents for ack timeout`);
+
+    for (const incident of acknowledgedIncidents) {
+      try {
+        // Check if service has ack timeout configured
+        const service = incident.service;
+        if (!service || !service.ackTimeoutSeconds || service.ackTimeoutSeconds <= 0) {
+          continue; // No timeout configured
+        }
+
+        // Check if acknowledged_at exists
+        if (!incident.acknowledgedAt) {
+          continue; // No ack time, can't check timeout
+        }
+
+        // Calculate time since acknowledgement
+        const ackTime = new Date(incident.acknowledgedAt).getTime();
+        const now = Date.now();
+        const elapsed = now - ackTime;
+        const timeoutMs = service.ackTimeoutSeconds * 1000;
+
+        if (elapsed < timeoutMs) {
+          continue; // Not timed out yet
+        }
+
+        // Auto-unacknowledge the incident
+        logger.warn('Auto-unacknowledging incident due to ack timeout', {
+          incidentId: incident.id,
+          incidentNumber: incident.incidentNumber,
+          serviceId: service.id,
+          serviceName: service.name,
+          ackTimeoutSeconds: service.ackTimeoutSeconds,
+          elapsedSeconds: Math.floor(elapsed / 1000),
+          acknowledgedAt: incident.acknowledgedAt.toISOString(),
+        });
+
+        // Revert to triggered state
+        incident.state = 'triggered';
+        incident.acknowledgedAt = null;
+        incident.acknowledgedBy = null;
+
+        // Restart escalation from current step
+        incident.escalationStartedAt = new Date();
+
+        await incidentRepo.save(incident);
+
+        // Create timeline event
+        const event = eventRepo.create({
+          incidentId: incident.id,
+          type: 'unacknowledge',
+          message: `Incident auto-unacknowledged after ${service.ackTimeoutSeconds}s timeout (no response)`,
+          payload: {
+            reason: 'ack_timeout',
+            timeoutSeconds: service.ackTimeoutSeconds,
+            elapsedSeconds: Math.floor(elapsed / 1000),
+            automaticAction: true,
+          },
+        });
+        await eventRepo.save(event);
+
+        logger.info('Incident auto-unacknowledged', {
+          incidentId: incident.id,
+          incidentNumber: incident.incidentNumber,
+          timeoutSeconds: service.ackTimeoutSeconds,
+        });
+
+        // Send notifications to current escalation step
+        // Get service with escalation policy
+        const serviceWithPolicy = await serviceRepo.findOne({
+          where: { id: service.id },
+          relations: ['escalationPolicy', 'escalationPolicy.steps'],
+        });
+
+        if (serviceWithPolicy?.escalationPolicy) {
+          const policy = serviceWithPolicy.escalationPolicy;
+          const steps = policy.steps.sort((a: EscalationStep, b: EscalationStep) => a.stepOrder - b.stepOrder);
+
+          if (steps.length > 0) {
+            const currentStepIndex = incident.currentEscalationStep - 1;
+            if (currentStepIndex >= 0 && currentStepIndex < steps.length) {
+              const currentStep = steps[currentStepIndex];
+
+              // Get target users
+              const scheduleRepo = dataSource.getRepository(Schedule);
+              const targetRepo = dataSource.getRepository(EscalationTarget);
+              const targetUserIds = await getStepTargetUsers(currentStep, scheduleRepo, targetRepo);
+
+              // Determine priority
+              const priority = incident.severity === 'critical' || incident.severity === 'error' ? 'high' : 'normal';
+
+              // Re-send notifications
+              for (const userId of targetUserIds) {
+                await sendNotificationMessage({
+                  incidentId: incident.id,
+                  userId,
+                  channel: 'push',
+                  priority,
+                  incidentState: 'triggered',
+                });
+
+                await sendNotificationMessage({
+                  incidentId: incident.id,
+                  userId,
+                  channel: 'email',
+                  priority,
+                  incidentState: 'triggered',
+                });
+
+                // For critical/error, also send SMS
+                if (incident.severity === 'critical' || incident.severity === 'error') {
+                  await sendNotificationMessage({
+                    incidentId: incident.id,
+                    userId,
+                    channel: 'sms',
+                    priority: 'high',
+                    incidentState: 'triggered',
+                  });
+                }
+              }
+
+              logger.info('Re-sent notifications after auto-unacknowledge', {
+                incidentId: incident.id,
+                targetUserCount: targetUserIds.length,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        logger.error('Error processing ack timeout for incident:', {
+          incidentId: incident.id,
+          error,
+        });
+      }
+    }
+  } catch (error) {
+    logger.error('Error in ack timeout check:', error);
+  }
+}
+
 async function startWorker() {
   try {
     logger.info('Starting escalation timer worker...');
@@ -557,11 +718,12 @@ async function startWorker() {
     await getDataSource();
     logger.info('Database connected successfully');
 
-    logger.info(`Escalation timer worker started, checking escalations every ${CHECK_INTERVAL_MS}ms, rotations every ${ROTATION_CHECK_INTERVAL_MS}ms, heartbeats every ${HEARTBEAT_CHECK_INTERVAL_MS}ms`);
+    logger.info(`Escalation timer worker started, checking escalations every ${CHECK_INTERVAL_MS}ms, rotations every ${ROTATION_CHECK_INTERVAL_MS}ms, heartbeats every ${HEARTBEAT_CHECK_INTERVAL_MS}ms, ack timeouts every ${ACK_TIMEOUT_CHECK_INTERVAL_MS}ms`);
 
     // Track last check times
     let lastRotationCheck = 0;
     let lastHeartbeatCheck = 0;
+    let lastAckTimeoutCheck = 0;
 
     // Run check loop
     while (true) {
@@ -579,6 +741,12 @@ async function startWorker() {
       if (now - lastHeartbeatCheck >= HEARTBEAT_CHECK_INTERVAL_MS) {
         await checkHeartbeats();
         lastHeartbeatCheck = now;
+      }
+
+      // Check acknowledgement timeouts
+      if (now - lastAckTimeoutCheck >= ACK_TIMEOUT_CHECK_INTERVAL_MS) {
+        await checkAcknowledgementTimeouts();
+        lastAckTimeoutCheck = now;
       }
 
       await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));

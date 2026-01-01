@@ -1,139 +1,80 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { incidentsAPI } from '../lib/api-client';
-import type { Incident } from '../types/api';
-
-interface AnalyticsData {
-  totalIncidents: number;
-  triggeredCount: number;
-  acknowledgedCount: number;
-  resolvedCount: number;
-  mtta: number; // Mean Time To Acknowledge (minutes)
-  mttr: number; // Mean Time To Resolve (minutes)
-  incidentsBySeverity: {
-    critical: number;
-    error: number;
-    warning: number;
-    info: number;
-  };
-  incidentsByService: Array<{
-    serviceName: string;
-    count: number;
-  }>;
-  dailyTrend: Array<{
-    date: string;
-    count: number;
-  }>;
-}
+import { Select } from '../components/ui/select';
+import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
+import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam } from '../lib/api-client';
 
 type TimeRange = '24h' | '7d' | '30d';
+type Tab = 'overview' | 'responders' | 'sla';
 
 export function Analytics() {
-  const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+
+  // Data states
+  const [teams, setTeams] = useState<AnalyticsTeam[]>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
+  const [overviewData, setOverviewData] = useState<AnalyticsOverview | null>(null);
+  const [topResponders, setTopResponders] = useState<TopResponder[]>([]);
+  const [slaData, setSlaData] = useState<SLAData | null>(null);
+  const [teamData, setTeamData] = useState<TeamAnalyticsDetail | null>(null);
+
+  const getDateRange = () => {
+    const end = new Date();
+    const start = new Date();
+    if (timeRange === '24h') {
+      start.setHours(start.getHours() - 24);
+    } else if (timeRange === '7d') {
+      start.setDate(start.getDate() - 7);
+    } else {
+      start.setDate(start.getDate() - 30);
+    }
+    return {
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+    };
+  };
 
   useEffect(() => {
-    fetchAnalytics();
-  }, [timeRange]);
+    loadTeams();
+  }, []);
 
-  const fetchAnalytics = async () => {
+  useEffect(() => {
+    loadData();
+  }, [timeRange, selectedTeamId]);
+
+  const loadTeams = async () => {
     try {
-      setLoading(true);
-      const response = await incidentsAPI.list();
-      const incidents = response.incidents;
+      const response = await analyticsAPI.getTeams();
+      setTeams(response.teams);
+    } catch (error) {
+      console.error('Failed to load teams:', error);
+    }
+  };
 
-      const rangeStart = new Date();
-      if (timeRange === '24h') {
-        rangeStart.setHours(rangeStart.getHours() - 24);
-      } else if (timeRange === '7d') {
-        rangeStart.setDate(rangeStart.getDate() - 7);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { startDate, endDate } = getDateRange();
+
+      const [overview, responders, sla] = await Promise.all([
+        analyticsAPI.getOverview(startDate, endDate),
+        analyticsAPI.getTopResponders(startDate, endDate, 10),
+        analyticsAPI.getSLA(startDate, endDate, 15, 60),
+      ]);
+
+      setOverviewData(overview);
+      setTopResponders(responders.responders);
+      setSlaData(sla);
+
+      if (selectedTeamId !== 'all') {
+        const team = await analyticsAPI.getTeamAnalytics(selectedTeamId, startDate, endDate);
+        setTeamData(team);
       } else {
-        rangeStart.setDate(rangeStart.getDate() - 30);
+        setTeamData(null);
       }
-
-      const filteredIncidents = incidents.filter(
-        (i: Incident) => new Date(i.triggeredAt) >= rangeStart
-      );
-
-      // Calculate metrics
-      const triggeredCount = filteredIncidents.filter((i: Incident) => i.state === 'triggered').length;
-      const acknowledgedCount = filteredIncidents.filter((i: Incident) => i.state === 'acknowledged').length;
-      const resolvedCount = filteredIncidents.filter((i: Incident) => i.state === 'resolved').length;
-
-      // Calculate MTTA and MTTR
-      let totalAckTime = 0;
-      let ackCount = 0;
-      let totalResolveTime = 0;
-      let resolveCount = 0;
-
-      filteredIncidents.forEach((incident: Incident) => {
-        const triggeredAt = new Date(incident.triggeredAt).getTime();
-        if (incident.acknowledgedAt) {
-          const ackAt = new Date(incident.acknowledgedAt).getTime();
-          totalAckTime += (ackAt - triggeredAt) / 60000;
-          ackCount++;
-        }
-        if (incident.resolvedAt) {
-          const resolvedAt = new Date(incident.resolvedAt).getTime();
-          totalResolveTime += (resolvedAt - triggeredAt) / 60000;
-          resolveCount++;
-        }
-      });
-
-      const mtta = ackCount > 0 ? Math.round(totalAckTime / ackCount) : 0;
-      const mttr = resolveCount > 0 ? Math.round(totalResolveTime / resolveCount) : 0;
-
-      // Count by severity
-      const incidentsBySeverity = {
-        critical: filteredIncidents.filter((i: Incident) => i.severity === 'critical').length,
-        error: filteredIncidents.filter((i: Incident) => i.severity === 'error').length,
-        warning: filteredIncidents.filter((i: Incident) => i.severity === 'warning').length,
-        info: filteredIncidents.filter((i: Incident) => i.severity === 'info').length,
-      };
-
-      // Count by service
-      const serviceMap = new Map<string, number>();
-      filteredIncidents.forEach((incident: Incident) => {
-        const serviceName = incident.service.name;
-        serviceMap.set(serviceName, (serviceMap.get(serviceName) || 0) + 1);
-      });
-      const incidentsByService = Array.from(serviceMap.entries())
-        .map(([serviceName, count]) => ({ serviceName, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5);
-
-      // Daily trend
-      const dailyMap = new Map<string, number>();
-      const days = timeRange === '24h' ? 1 : timeRange === '7d' ? 7 : 30;
-      for (let i = 0; i < days; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        dailyMap.set(dateStr, 0);
-      }
-      filteredIncidents.forEach((incident: Incident) => {
-        const dateStr = incident.triggeredAt.split('T')[0];
-        if (dailyMap.has(dateStr)) {
-          dailyMap.set(dateStr, (dailyMap.get(dateStr) || 0) + 1);
-        }
-      });
-      const dailyTrend = Array.from(dailyMap.entries())
-        .map(([date, count]) => ({ date, count }))
-        .reverse();
-
-      setData({
-        totalIncidents: filteredIncidents.length,
-        triggeredCount,
-        acknowledgedCount,
-        resolvedCount,
-        mtta,
-        mttr,
-        incidentsBySeverity,
-        incidentsByService,
-        dailyTrend,
-      });
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
     } finally {
@@ -141,22 +82,31 @@ export function Analytics() {
     }
   };
 
-  const formatDuration = (minutes: number) => {
-    if (minutes === 0) return '-';
-    if (minutes < 60) return `${minutes}m`;
+  const formatDuration = (minutes: number | null | undefined) => {
+    if (!minutes || minutes === 0) return '-';
+    if (minutes < 60) return `${Math.round(minutes)}m`;
     const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
+    const mins = Math.round(minutes % 60);
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'critical': return 'bg-red-500';
+      case 'high':
       case 'error': return 'bg-orange-500';
+      case 'medium':
       case 'warning': return 'bg-yellow-500';
+      case 'low':
       case 'info': return 'bg-blue-500';
       default: return 'bg-gray-500';
     }
+  };
+
+  const getComplianceColor = (rate: number) => {
+    if (rate >= 90) return 'text-green-600';
+    if (rate >= 70) return 'text-yellow-600';
+    return 'text-red-600';
   };
 
   const getTimeRangeLabel = () => {
@@ -167,7 +117,16 @@ export function Analytics() {
     }
   };
 
-  if (loading) {
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  if (loading && !overviewData) {
     return (
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
@@ -190,11 +149,15 @@ export function Analytics() {
     );
   }
 
-  const maxDailyCount = Math.max(...(data?.dailyTrend.map(d => d.count) || [1]), 1);
+  const maxDailyCount = Math.max(...(overviewData?.incidentsByDay?.map(d => d.count) || [1]), 1);
+
+  // Extract metrics from overview data
+  const mtta = overviewData?.mtta?.minutes || 0;
+  const mttr = overviewData?.mttr?.minutes || 0;
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Header with Time Range Selector */}
+      {/* Header with Controls */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold mb-2">Analytics</h2>
@@ -202,7 +165,25 @@ export function Analytics() {
             Incident metrics and team performance insights · {getTimeRangeLabel()}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* Team Selector */}
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <Select
+              value={selectedTeamId}
+              onChange={(e) => setSelectedTeamId(e.target.value)}
+              className="w-[180px]"
+            >
+              <option value="all">All Teams</option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Time Range */}
           <Button
             variant={timeRange === '24h' ? 'default' : 'outline'}
             size="sm"
@@ -227,163 +208,483 @@ export function Analytics() {
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Incidents</CardDescription>
-            <CardTitle className="text-4xl text-red-600">{data?.totalIncidents || 0}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              {data?.triggeredCount || 0} active, {data?.acknowledgedCount || 0} acknowledged
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Mean Time to Acknowledge</CardDescription>
-            <CardTitle className="text-4xl text-yellow-600">{formatDuration(data?.mtta || 0)}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Average response time</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Mean Time to Resolve</CardDescription>
-            <CardTitle className="text-4xl text-green-600">{formatDuration(data?.mttr || 0)}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Average resolution time</p>
-          </CardContent>
-        </Card>
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6">
+        <Button
+          variant={activeTab === 'overview' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('overview')}
+        >
+          Overview
+        </Button>
+        <Button
+          variant={activeTab === 'responders' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('responders')}
+        >
+          Top Responders
+        </Button>
+        <Button
+          variant={activeTab === 'sla' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('sla')}
+        >
+          SLA Compliance
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Status Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Status Breakdown</CardTitle>
-            <CardDescription>Current incident states</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex justify-between">
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                  <span className="text-sm text-muted-foreground">Triggered</span>
-                </div>
-                <div className="text-3xl font-bold">{data?.triggeredCount || 0}</div>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                  <span className="text-sm text-muted-foreground">Acknowledged</span>
-                </div>
-                <div className="text-3xl font-bold">{data?.acknowledgedCount || 0}</div>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                  <span className="text-sm text-muted-foreground">Resolved</span>
-                </div>
-                <div className="text-3xl font-bold">{data?.resolvedCount || 0}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Key Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total Incidents</CardDescription>
+                <CardTitle className="text-4xl text-red-600">{overviewData?.totalIncidents || 0}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  {overviewData?.byState?.triggered || 0} active, {overviewData?.byState?.acknowledged || 0} acknowledged
+                </p>
+              </CardContent>
+            </Card>
 
-        {/* Severity Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>By Severity</CardTitle>
-            <CardDescription>Incident distribution by severity level</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {Object.entries(data?.incidentsBySeverity || {}).map(([severity, count]) => (
-              <div key={severity}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="capitalize">{severity}</span>
-                  <span className="font-medium">{count}</span>
-                </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${getSeverityColor(severity)} transition-all duration-300`}
-                    style={{
-                      width: `${Math.min((count / (data?.totalIncidents || 1)) * 100, 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Mean Time to Acknowledge
+                </CardDescription>
+                <CardTitle className="text-4xl text-yellow-600">{formatDuration(mtta)}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Average response time</p>
+              </CardContent>
+            </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Services */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Services</CardTitle>
-            <CardDescription>Services with most incidents</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data?.incidentsByService.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No incidents in this period</p>
-            ) : (
-              <div className="space-y-3">
-                {data?.incidentsByService.map((service, index) => (
-                  <div key={service.serviceName} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-medium">
-                      #{index + 1}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Mean Time to Resolve
+                </CardDescription>
+                <CardTitle className="text-4xl text-green-600">{formatDuration(mttr)}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Average resolution time</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Status Breakdown */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Status Breakdown</CardTitle>
+                <CardDescription>Current incident states</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-between">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span className="text-sm text-muted-foreground">Triggered</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{service.serviceName}</p>
-                    </div>
-                    <div className="text-lg font-semibold">{service.count}</div>
+                    <div className="text-3xl font-bold">{overviewData?.byState?.triggered || 0}</div>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                      <span className="text-sm text-muted-foreground">Acknowledged</span>
+                    </div>
+                    <div className="text-3xl font-bold">{overviewData?.byState?.acknowledged || 0}</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span className="text-sm text-muted-foreground">Resolved</span>
+                    </div>
+                    <div className="text-3xl font-bold">{overviewData?.byState?.resolved || 0}</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-        {/* Daily Trend */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Daily Trend</CardTitle>
-            <CardDescription>Incidents per day</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {data?.dailyTrend.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No data available</p>
-            ) : (
-              <div className="flex items-end gap-1 h-32">
-                {data?.dailyTrend.map((day) => (
-                  <div key={day.date} className="flex-1 flex flex-col items-center">
-                    <div className="w-full flex justify-center mb-1">
+            {/* Severity Breakdown */}
+            <Card>
+              <CardHeader>
+                <CardTitle>By Severity</CardTitle>
+                <CardDescription>Incident distribution by severity level</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {overviewData?.bySeverity && Object.entries(overviewData.bySeverity).map(([severity, count]) => (
+                  <div key={severity}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="capitalize">{severity}</span>
+                      <span className="font-medium">{count}</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
-                        className="w-full max-w-8 bg-primary rounded-t transition-all duration-300"
+                        className={`h-full ${getSeverityColor(severity)} transition-all duration-300`}
                         style={{
-                          height: `${Math.max((day.count / maxDailyCount) * 100, 4)}%`,
-                          minHeight: day.count > 0 ? '8px' : '4px',
+                          width: `${Math.min((count / (overviewData?.totalIncidents || 1)) * 100, 100)}%`,
                         }}
-                        title={`${day.date}: ${day.count} incidents`}
                       />
                     </div>
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(day.date).getDate()}
-                    </span>
                   </div>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Daily Trend */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Daily Trend
+              </CardTitle>
+              <CardDescription>Incidents per day</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(overviewData?.incidentsByDay || []).length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No data available</p>
+              ) : (
+                <div className="flex items-end gap-1 h-32">
+                  {overviewData?.incidentsByDay?.map((day) => (
+                    <div key={day.date} className="flex-1 flex flex-col items-center">
+                      <div className="w-full flex justify-center mb-1">
+                        <div
+                          className="w-full max-w-8 bg-primary rounded-t transition-all duration-300"
+                          style={{
+                            height: `${Math.max((day.count / maxDailyCount) * 100, 4)}%`,
+                            minHeight: day.count > 0 ? '8px' : '4px',
+                          }}
+                          title={`${day.date}: ${day.count} incidents`}
+                        />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(day.date).getDate()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Top Responders Tab */}
+      {activeTab === 'responders' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Top Responders
+              </CardTitle>
+              <CardDescription>
+                Team members who have handled the most incidents in {getTimeRangeLabel().toLowerCase()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {topResponders.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">No responder data in this period</p>
+              ) : (
+                <div className="space-y-4">
+                  {topResponders.map((responder, index) => (
+                    <div key={responder.id} className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="relative">
+                          {responder.profilePictureUrl ? (
+                            <img
+                              src={responder.profilePictureUrl}
+                              alt={responder.fullName}
+                              className="h-10 w-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-medium">
+                              {getInitials(responder.fullName)}
+                            </div>
+                          )}
+                          <span className={`absolute -top-2 -left-2 h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                            index === 0 ? 'bg-yellow-500 text-white' : 'bg-muted border'
+                          }`}>
+                            {index + 1}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{responder.fullName}</p>
+                          <p className="text-sm text-muted-foreground truncate">{responder.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-6 text-right">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Acknowledged</p>
+                          <p className="text-xl font-semibold text-yellow-600">{responder.incidentsAcknowledged}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Resolved</p>
+                          <p className="text-xl font-semibold text-green-600">{responder.incidentsResolved}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Avg Response</p>
+                          <p className="text-xl font-semibold">{formatDuration(responder.averageResponseTimeMinutes)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Team Responders (if team selected) */}
+          {teamData && (
+            <Card>
+              <CardHeader>
+                <CardTitle>{teamData.team.name} - Team Stats</CardTitle>
+                <CardDescription>
+                  Team performance for {getTimeRangeLabel().toLowerCase()}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-muted/30 rounded-lg">
+                    <p className="text-2xl font-bold">{teamData.totalIncidents}</p>
+                    <p className="text-sm text-muted-foreground">Total Incidents</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/30 rounded-lg">
+                    <p className="text-2xl font-bold text-yellow-600">{formatDuration(teamData.mtta?.minutes)}</p>
+                    <p className="text-sm text-muted-foreground">MTTA</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/30 rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">{formatDuration(teamData.mttr?.minutes)}</p>
+                    <p className="text-sm text-muted-foreground">MTTR</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/30 rounded-lg">
+                    <p className="text-2xl font-bold">{teamData.topServices?.length || 0}</p>
+                    <p className="text-sm text-muted-foreground">Services</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* SLA Compliance Tab */}
+      {activeTab === 'sla' && (
+        <div className="space-y-6">
+          {/* SLA Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Ack Target
+                </CardDescription>
+                <CardTitle className="text-2xl">{slaData?.targets?.ackTargetMinutes || 15} min</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Target acknowledgement time</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Ack Compliance Rate</CardDescription>
+                <CardTitle className={`text-4xl ${getComplianceColor(slaData?.overall?.ackComplianceRate || 0)}`}>
+                  {slaData?.overall?.ackComplianceRate || 0}%
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${slaData?.overall?.ackComplianceRate || 0}%` }}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {slaData?.overall?.ackWithinTarget || 0} / {slaData?.overall?.totalIncidents || 0} within target
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Resolve Target
+                </CardDescription>
+                <CardTitle className="text-2xl">{slaData?.targets?.resolveTargetMinutes || 60} min</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Target resolution time</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Resolve Compliance Rate</CardDescription>
+                <CardTitle className={`text-4xl ${getComplianceColor(slaData?.overall?.resolveComplianceRate || 0)}`}>
+                  {slaData?.overall?.resolveComplianceRate || 0}%
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${slaData?.overall?.resolveComplianceRate || 0}%` }}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {slaData?.overall?.resolveWithinTarget || 0} / {slaData?.overall?.totalIncidents || 0} within target
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* SLA by Severity */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  SLA by Severity
+                </CardTitle>
+                <CardDescription>Compliance rates by incident severity</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {(slaData?.bySeverity || []).map((item) => (
+                    <div key={item.severity} className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="capitalize font-medium">{item.severity}</span>
+                        <span className="text-sm text-muted-foreground">{item.totalIncidents} incidents</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-muted-foreground">Ack</span>
+                            <span className={getComplianceColor(item.ackComplianceRate)}>{item.ackComplianceRate}%</span>
+                          </div>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-all duration-300"
+                              style={{ width: `${item.ackComplianceRate}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-muted-foreground">Resolve</span>
+                            <span className={getComplianceColor(item.resolveComplianceRate)}>{item.resolveComplianceRate}%</span>
+                          </div>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary transition-all duration-300"
+                              style={{ width: `${item.resolveComplianceRate}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* SLA by Service */}
+            <Card>
+              <CardHeader>
+                <CardTitle>SLA by Service</CardTitle>
+                <CardDescription>Top services by incident volume with compliance rates</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(slaData?.byService || []).length === 0 ? (
+                  <p className="text-muted-foreground text-center py-4">No service data available</p>
+                ) : (
+                  <div className="space-y-3">
+                    {slaData?.byService.slice(0, 5).map((service) => (
+                      <div key={service.serviceId} className="p-3 rounded-lg bg-muted/30">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium truncate">{service.serviceName}</span>
+                          <span className="text-sm px-2 py-1 bg-muted rounded">{service.totalIncidents} incidents</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Ack:</span>
+                            <span className={getComplianceColor(service.ackComplianceRate)}>{service.ackComplianceRate}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Resolve:</span>
+                            <span className={getComplianceColor(service.resolveComplianceRate)}>{service.resolveComplianceRate}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* SLA Trend */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                SLA Compliance Trend
+              </CardTitle>
+              <CardDescription>Daily acknowledgement compliance rate over time</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(slaData?.dailyTrend || []).length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No trend data available</p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-end gap-1 h-32">
+                    {slaData?.dailyTrend.map((day) => (
+                      <div key={day.date} className="flex-1 flex flex-col items-center">
+                        <div className="w-full flex justify-center mb-1">
+                          <div
+                            className={`w-full max-w-8 rounded-t transition-all duration-300 ${
+                              day.ackComplianceRate >= 90 ? 'bg-green-500' :
+                              day.ackComplianceRate >= 70 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}
+                            style={{
+                              height: `${Math.max(day.ackComplianceRate, 4)}%`,
+                              minHeight: '4px',
+                            }}
+                            title={`${day.date}: ${day.ackComplianceRate}% ack compliance`}
+                          />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(day.date).getDate()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded bg-green-500"></div>
+                      <span className="text-muted-foreground">≥90% (Good)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded bg-yellow-500"></div>
+                      <span className="text-muted-foreground">70-89% (Warning)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded bg-red-500"></div>
+                      <span className="text-muted-foreground">&lt;70% (Critical)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

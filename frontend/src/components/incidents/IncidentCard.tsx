@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Clock, User, Server, ChevronRight } from 'lucide-react';
+import { Clock, User, Server, ChevronRight, BellOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { SeverityBadge } from './SeverityBadge';
@@ -73,6 +73,12 @@ export function IncidentCard({
               {incident.currentEscalationStep > 0 && (
                 <span className="text-body-xs text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded">
                   Step {incident.currentEscalationStep}
+                </span>
+              )}
+              {incident.snoozedUntil && new Date(incident.snoozedUntil) > new Date() && (
+                <span className="flex items-center gap-1 text-body-xs text-purple-700 bg-purple-100 dark:bg-purple-900 dark:text-purple-200 px-2 py-0.5 rounded">
+                  <BellOff className="w-3 h-3" />
+                  Snoozed
                 </span>
               )}
             </div>

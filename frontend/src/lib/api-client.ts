@@ -65,6 +65,11 @@ import type {
   BulkCreateTagRequest,
   EntityType,
   TagEntitiesResponse,
+  Postmortem,
+  PostmortemTemplate,
+  CreatePostmortemRequest,
+  UpdatePostmortemRequest,
+  CreatePostmortemTemplateRequest,
 } from '../types/api';
 
 // API base URL - will be same origin when served from Express
@@ -441,7 +446,137 @@ export const incidentsAPI = {
     const response = await apiClient.get(`/incidents/${id}/similar`);
     return response.data;
   },
+
+  // Snooze
+  snooze: async (id: string, duration: number): Promise<{ incident: Incident; message: string }> => {
+    const response = await apiClient.post<{ incident: Incident; message: string }>(
+      `/incidents/${id}/snooze`,
+      { duration }
+    );
+    return response.data;
+  },
+
+  unsnooze: async (id: string): Promise<{ incident: Incident; message: string }> => {
+    const response = await apiClient.delete<{ incident: Incident; message: string }>(
+      `/incidents/${id}/snooze`
+    );
+    return response.data;
+  },
+
+  // Postmortem
+  getPostmortem: async (id: string): Promise<{ postmortem: any }> => {
+    const response = await apiClient.get<{ postmortem: any }>(
+      `/incidents/${id}/postmortem`
+    );
+    return response.data;
+  },
+
+  createPostmortem: async (id: string, title?: string): Promise<{ postmortem: any; message: string }> => {
+    const response = await apiClient.post<{ postmortem: any; message: string }>(
+      `/incidents/${id}/postmortem`,
+      title ? { title } : {}
+    );
+    return response.data;
+  },
+
+  // Responders
+  getResponders: async (id: string): Promise<{
+    responders: Array<{
+      id: string;
+      userId: string;
+      user: { id: string; fullName: string; email: string };
+      requestedBy: { id: string; fullName: string; email: string };
+      status: 'pending' | 'accepted' | 'declined';
+      message: string | null;
+      respondedAt: string | null;
+      createdAt: string;
+    }>;
+  }> => {
+    const response = await apiClient.get(`/incidents/${id}/responders`);
+    return response.data;
+  },
+
+  addResponders: async (id: string, userIds: string[], message?: string): Promise<{
+    responders: Array<{
+      id: string;
+      userId: string;
+      status: string;
+    }>;
+    message: string;
+  }> => {
+    const response = await apiClient.post(`/incidents/${id}/responders`, { userIds, message });
+    return response.data;
+  },
+
+  respondToRequest: async (incidentId: string, responderId: string, accept: boolean): Promise<{
+    responder: { id: string; status: string };
+    message: string;
+  }> => {
+    const response = await apiClient.put(`/incidents/${incidentId}/responders/${responderId}`, { accept });
+    return response.data;
+  },
+
+  // Conference Bridge
+  getConferenceBridge: async (id: string): Promise<{
+    bridge: ConferenceBridge | null;
+  }> => {
+    const response = await apiClient.get(`/incidents/${id}/conference-bridge`);
+    return response.data;
+  },
+
+  createConferenceBridge: async (id: string, data: {
+    provider: 'zoom' | 'google_meet' | 'microsoft_teams' | 'manual';
+    meetingUrl?: string;
+    passcode?: string;
+    dialInNumber?: string;
+  }): Promise<{
+    bridge: ConferenceBridge;
+    message: string;
+  }> => {
+    const response = await apiClient.post(`/incidents/${id}/conference-bridge`, data);
+    return response.data;
+  },
+
+  endConferenceBridge: async (incidentId: string, bridgeId: string): Promise<{
+    message: string;
+  }> => {
+    const response = await apiClient.put(`/incidents/${incidentId}/conference-bridge/${bridgeId}/end`);
+    return response.data;
+  },
+
+  getConferenceBridgeProviders: async (): Promise<{
+    providers: Array<{
+      id: string;
+      name: string;
+      configured: boolean;
+      description: string;
+    }>;
+  }> => {
+    const response = await apiClient.get('/conference-bridge/providers');
+    return response.data;
+  },
 };
+
+// Conference Bridge type
+export interface ConferenceBridge {
+  id: string;
+  provider: 'zoom' | 'google_meet' | 'microsoft_teams' | 'manual';
+  providerLabel: string;
+  status: 'creating' | 'active' | 'ended' | 'failed';
+  meetingUrl: string;
+  meetingId?: string;
+  passcode?: string;
+  dialInNumber?: string;
+  dialInPin?: string;
+  participantCount: number;
+  createdBy?: {
+    id: string;
+    fullName: string;
+  };
+  startedAt?: string;
+  endedAt?: string;
+  createdAt: string;
+}
 
 // Similar Incident type for the similar incidents endpoint
 export interface SimilarIncident {
@@ -599,7 +734,33 @@ export const usersAPI = {
     const response = await apiClient.delete<{ message: string }>('/users/me/profile-picture');
     return response.data;
   },
+
+  // Do Not Disturb (DND) Settings
+  getDNDSettings: async (): Promise<{ dnd: DNDSettings }> => {
+    const response = await apiClient.get<{ dnd: DNDSettings }>('/users/me/dnd');
+    return response.data;
+  },
+
+  updateDNDSettings: async (data: UpdateDNDRequest): Promise<{ dnd: DNDSettings; message: string }> => {
+    const response = await apiClient.put<{ dnd: DNDSettings; message: string }>('/users/me/dnd', data);
+    return response.data;
+  },
 };
+
+// DND Settings types
+export interface DNDSettings {
+  enabled: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  timezone: string | null;
+}
+
+export interface UpdateDNDRequest {
+  enabled: boolean;
+  startTime?: string | null;
+  endTime?: string | null;
+  timezone?: string | null;
+}
 
 // AI Credentials API
 export interface AnthropicCredentialStatus {
@@ -1530,6 +1691,339 @@ export const importAPI = {
       source,
       data,
     });
+    return response.data;
+  },
+};
+
+// Status Pages API
+export interface StatusPage {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  visibility: 'internal' | 'public';
+  customDomain: string | null;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  primaryColor: string;
+  showUptimeHistory: boolean;
+  uptimeHistoryDays: number;
+  allowSubscriptions: boolean;
+  enabled: boolean;
+  services: {
+    id: string;
+    name: string;
+    displayOrder: number;
+    showIncidents: boolean;
+  }[];
+  subscriberCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StatusPageUpdate {
+  id: string;
+  title: string;
+  message: string;
+  status: 'investigating' | 'identified' | 'monitoring' | 'resolved';
+  severity: 'none' | 'minor' | 'major' | 'critical';
+  affectedServiceIds: string[];
+  author: { id: string; fullName: string } | null;
+  incidentId: string | null;
+  isScheduled: boolean;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StatusPageSubscriber {
+  id: string;
+  email: string;
+  channel: string;
+  confirmed: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface CreateStatusPageRequest {
+  name: string;
+  slug: string;
+  description?: string;
+  visibility?: 'internal' | 'public';
+  primaryColor?: string;
+  showUptimeHistory?: boolean;
+  uptimeHistoryDays?: number;
+  allowSubscriptions?: boolean;
+  serviceIds?: string[];
+}
+
+export interface UpdateStatusPageRequest {
+  name?: string;
+  slug?: string;
+  description?: string;
+  visibility?: 'internal' | 'public';
+  primaryColor?: string;
+  showUptimeHistory?: boolean;
+  uptimeHistoryDays?: number;
+  allowSubscriptions?: boolean;
+  enabled?: boolean;
+  logoUrl?: string;
+  customDomain?: string;
+  serviceIds?: string[];
+}
+
+export interface CreateStatusUpdateRequest {
+  title: string;
+  message: string;
+  status: 'investigating' | 'identified' | 'monitoring' | 'resolved';
+  severity?: 'none' | 'minor' | 'major' | 'critical';
+  affectedServiceIds?: string[];
+  incidentId?: string;
+  isScheduled?: boolean;
+  scheduledStart?: string;
+  scheduledEnd?: string;
+}
+
+export const statusPagesAPI = {
+  list: async (): Promise<{ statusPages: StatusPage[] }> => {
+    const response = await apiClient.get<{ statusPages: StatusPage[] }>('/status-pages');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ statusPage: StatusPage }> => {
+    const response = await apiClient.get<{ statusPage: StatusPage }>(`/status-pages/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateStatusPageRequest): Promise<{ statusPage: StatusPage }> => {
+    const response = await apiClient.post<{ statusPage: StatusPage }>('/status-pages', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateStatusPageRequest): Promise<{ statusPage: StatusPage }> => {
+    const response = await apiClient.put<{ statusPage: StatusPage }>(`/status-pages/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/status-pages/${id}`);
+    return response.data;
+  },
+
+  // Updates
+  getUpdates: async (id: string): Promise<{ updates: StatusPageUpdate[] }> => {
+    const response = await apiClient.get<{ updates: StatusPageUpdate[] }>(`/status-pages/${id}/updates`);
+    return response.data;
+  },
+
+  createUpdate: async (id: string, data: CreateStatusUpdateRequest): Promise<{ update: StatusPageUpdate }> => {
+    const response = await apiClient.post<{ update: StatusPageUpdate }>(`/status-pages/${id}/updates`, data);
+    return response.data;
+  },
+
+  // Subscribers
+  getSubscribers: async (id: string): Promise<{ subscribers: StatusPageSubscriber[] }> => {
+    const response = await apiClient.get<{ subscribers: StatusPageSubscriber[] }>(`/status-pages/${id}/subscribers`);
+    return response.data;
+  },
+
+  removeSubscriber: async (statusPageId: string, subscriberId: string): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>(`/status-pages/${statusPageId}/subscribers/${subscriberId}`);
+    return response.data;
+  },
+};
+
+// Analytics API
+export interface AnalyticsOverview {
+  period: { startDate: string; endDate: string };
+  totalIncidents: number;
+  byState: { triggered: number; acknowledged: number; resolved: number };
+  bySeverity: { critical: number; high: number; medium: number; low: number };
+  mtta: { minutes: number; formatted: string } | null;
+  mttr: { minutes: number; formatted: string } | null;
+  incidentsByDay: Array<{ date: string; count: number }>;
+}
+
+export interface AnalyticsTeam {
+  id: string;
+  name: string;
+  incidentCount: number;
+  mtta: { minutes: number; formatted: string } | null;
+  mttr: { minutes: number; formatted: string } | null;
+}
+
+export interface TeamAnalyticsDetail {
+  team: { id: string; name: string };
+  period: { startDate: string; endDate: string };
+  totalIncidents: number;
+  byState: { triggered: number; acknowledged: number; resolved: number };
+  bySeverity: { critical: number; high: number; medium: number; low: number };
+  mtta: { minutes: number; formatted: string } | null;
+  mttr: { minutes: number; formatted: string } | null;
+  incidentsByDay: Array<{ date: string; count: number }>;
+  topServices: Array<{ id: string; name: string; incidentCount: number }>;
+}
+
+export interface UserAnalyticsDetail {
+  user: { id: string; fullName: string; email: string };
+  period: { startDate: string; endDate: string };
+  incidentsAssigned: number;
+  incidentsAcknowledged: number;
+  incidentsResolved: number;
+  averageResponseTimeMinutes: number | null;
+  incidentsByDay: Array<{ date: string; count: number }>;
+}
+
+export interface TopResponder {
+  id: string;
+  fullName: string;
+  email: string;
+  profilePictureUrl: string | null;
+  incidentsResolved: number;
+  incidentsAcknowledged: number;
+  averageResponseTimeMinutes: number | null;
+}
+
+export interface SLAData {
+  period: { startDate: string; endDate: string };
+  targets: { ackTargetMinutes: number; resolveTargetMinutes: number };
+  overall: {
+    totalIncidents: number;
+    ackWithinTarget: number;
+    resolveWithinTarget: number;
+    ackComplianceRate: number;
+    resolveComplianceRate: number;
+  };
+  bySeverity: Array<{
+    severity: string;
+    totalIncidents: number;
+    ackWithinTarget: number;
+    resolveWithinTarget: number;
+    ackComplianceRate: number;
+    resolveComplianceRate: number;
+  }>;
+  byService: Array<{
+    serviceId: string;
+    serviceName: string;
+    totalIncidents: number;
+    ackWithinTarget: number;
+    resolveWithinTarget: number;
+    ackComplianceRate: number;
+    resolveComplianceRate: number;
+  }>;
+  dailyTrend: Array<{
+    date: string;
+    ackComplianceRate: number;
+    resolveComplianceRate: number;
+  }>;
+}
+
+export const analyticsAPI = {
+  getOverview: async (startDate?: string, endDate?: string): Promise<AnalyticsOverview> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const response = await apiClient.get<AnalyticsOverview>('/analytics/overview', { params });
+    return response.data;
+  },
+
+  getTeams: async (): Promise<{ teams: AnalyticsTeam[] }> => {
+    const response = await apiClient.get<{ teams: AnalyticsTeam[] }>('/analytics/teams');
+    return response.data;
+  },
+
+  getTeamAnalytics: async (
+    teamId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<TeamAnalyticsDetail> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const response = await apiClient.get<TeamAnalyticsDetail>(`/analytics/teams/${teamId}`, { params });
+    return response.data;
+  },
+
+  getUserAnalytics: async (
+    userId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<UserAnalyticsDetail> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const response = await apiClient.get<UserAnalyticsDetail>(`/analytics/users/${userId}`, { params });
+    return response.data;
+  },
+
+  getTopResponders: async (
+    startDate?: string,
+    endDate?: string,
+    limit?: number
+  ): Promise<{ responders: TopResponder[] }> => {
+    const params: Record<string, string | number> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (limit) params.limit = limit;
+    const response = await apiClient.get<{ responders: TopResponder[] }>('/analytics/top-responders', { params });
+    return response.data;
+  },
+
+  getSLA: async (
+    startDate?: string,
+    endDate?: string,
+    ackTargetMinutes?: number,
+    resolveTargetMinutes?: number
+  ): Promise<SLAData> => {
+    const params: Record<string, string | number> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (ackTargetMinutes) params.ackTargetMinutes = ackTargetMinutes;
+    if (resolveTargetMinutes) params.resolveTargetMinutes = resolveTargetMinutes;
+    const response = await apiClient.get<SLAData>('/analytics/sla', { params });
+    return response.data;
+  },
+};
+
+// Postmortems API
+export const postmortemsAPI = {
+  list: async (params?: { status?: string; limit?: number; offset?: number }): Promise<{ postmortems: Postmortem[]; pagination: { total: number; limit: number; offset: number } }> => {
+    const response = await apiClient.get<{ postmortems: Postmortem[]; pagination: { total: number; limit: number; offset: number } }>('/postmortems', { params });
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ postmortem: Postmortem }> => {
+    const response = await apiClient.get<{ postmortem: Postmortem }>(`/postmortems/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreatePostmortemRequest): Promise<{ postmortem: Postmortem }> => {
+    const response = await apiClient.post<{ postmortem: Postmortem }>('/postmortems', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdatePostmortemRequest): Promise<{ postmortem: Postmortem }> => {
+    const response = await apiClient.put<{ postmortem: Postmortem }>(`/postmortems/${id}`, data);
+    return response.data;
+  },
+
+  publish: async (id: string): Promise<{ postmortem: Postmortem; message: string }> => {
+    const response = await apiClient.post<{ postmortem: Postmortem; message: string }>(`/postmortems/${id}/publish`);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/postmortems/${id}`);
+  },
+
+  listTemplates: async (): Promise<{ templates: PostmortemTemplate[] }> => {
+    const response = await apiClient.get<{ templates: PostmortemTemplate[] }>('/postmortems/templates/list');
+    return response.data;
+  },
+
+  createTemplate: async (data: CreatePostmortemTemplateRequest): Promise<{ template: PostmortemTemplate }> => {
+    const response = await apiClient.post<{ template: PostmortemTemplate }>('/postmortems/templates', data);
     return response.data;
   },
 };

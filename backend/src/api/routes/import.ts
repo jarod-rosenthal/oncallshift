@@ -193,7 +193,196 @@ interface ImportOptions {
    * so existing monitoring tools can send webhooks without reconfiguration.
    */
   preserveKeys?: boolean;
+  /**
+   * When true, validates the import without making changes (dry-run mode).
+   */
+  dryRun?: boolean;
 }
+
+interface ValidationResult {
+  isValid: boolean;
+  summary: {
+    users: { willCreate: number; willSkip: number; errors: string[] };
+    teams: { willCreate: number; willSkip: number; errors: string[] };
+    schedules: { willCreate: number; willSkip: number; errors: string[] };
+    escalationPolicies: { willCreate: number; willSkip: number; errors: string[] };
+    services: { willCreate: number; willSkip: number; errors: string[] };
+    routingRules: { willCreate: number; willSkip: number; errors: string[] };
+  };
+  warnings: string[];
+  errors: string[];
+}
+
+/**
+ * Validate PagerDuty import (dry-run)
+ * POST /api/v1/import/pagerduty/validate
+ *
+ * Validates import data without making changes.
+ */
+router.post('/pagerduty/validate', async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const orgId = user.orgId;
+
+  const { data: importData }: { data: PagerDutyImportData } =
+    req.body.data ? req.body : { data: req.body };
+
+  const result: ValidationResult = {
+    isValid: true,
+    summary: {
+      users: { willCreate: 0, willSkip: 0, errors: [] },
+      teams: { willCreate: 0, willSkip: 0, errors: [] },
+      schedules: { willCreate: 0, willSkip: 0, errors: [] },
+      escalationPolicies: { willCreate: 0, willSkip: 0, errors: [] },
+      services: { willCreate: 0, willSkip: 0, errors: [] },
+      routingRules: { willCreate: 0, willSkip: 0, errors: [] },
+    },
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    const dataSource = await getDataSource();
+
+    // Validate Users
+    if (importData.users && importData.users.length > 0) {
+      const userRepo = dataSource.getRepository(User);
+      for (const pdUser of importData.users) {
+        if (!pdUser.email) {
+          result.summary.users.errors.push(`User ${pdUser.id || pdUser.name} missing email`);
+          result.isValid = false;
+          continue;
+        }
+        const existing = await userRepo.findOne({ where: { email: pdUser.email, orgId } });
+        if (existing) {
+          result.summary.users.willSkip++;
+        } else {
+          result.summary.users.willCreate++;
+          result.warnings.push(`User ${pdUser.email} will need to set up authentication`);
+        }
+      }
+    }
+
+    // Validate Teams
+    if (importData.teams && importData.teams.length > 0) {
+      const teamRepo = dataSource.getRepository(Team);
+      for (const pdTeam of importData.teams) {
+        if (!pdTeam.name) {
+          result.summary.teams.errors.push(`Team ${pdTeam.id} missing name`);
+          result.isValid = false;
+          continue;
+        }
+        const existing = await teamRepo.findOne({ where: { name: pdTeam.name, orgId } });
+        if (existing) {
+          result.summary.teams.willSkip++;
+        } else {
+          result.summary.teams.willCreate++;
+        }
+      }
+    }
+
+    // Validate Schedules
+    if (importData.schedules && importData.schedules.length > 0) {
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      for (const pdSchedule of importData.schedules) {
+        if (!pdSchedule.name) {
+          result.summary.schedules.errors.push(`Schedule ${pdSchedule.id} missing name`);
+          result.isValid = false;
+          continue;
+        }
+        const existing = await scheduleRepo.findOne({ where: { name: pdSchedule.name, orgId } });
+        if (existing) {
+          result.summary.schedules.willSkip++;
+        } else {
+          result.summary.schedules.willCreate++;
+        }
+        // Validate schedule layers have users
+        if (pdSchedule.schedule_layers) {
+          for (const layer of pdSchedule.schedule_layers) {
+            if (!layer.users || layer.users.length === 0) {
+              result.warnings.push(`Schedule "${pdSchedule.name}" layer "${layer.name}" has no users`);
+            }
+          }
+        }
+      }
+    }
+
+    // Validate Escalation Policies
+    if (importData.escalation_policies && importData.escalation_policies.length > 0) {
+      const policyRepo = dataSource.getRepository(EscalationPolicy);
+      for (const pdPolicy of importData.escalation_policies) {
+        if (!pdPolicy.name) {
+          result.summary.escalationPolicies.errors.push(`Policy ${pdPolicy.id} missing name`);
+          result.isValid = false;
+          continue;
+        }
+        const existing = await policyRepo.findOne({ where: { name: pdPolicy.name, orgId } });
+        if (existing) {
+          result.summary.escalationPolicies.willSkip++;
+        } else {
+          result.summary.escalationPolicies.willCreate++;
+        }
+        // Validate escalation rules have targets
+        if (!pdPolicy.escalation_rules || pdPolicy.escalation_rules.length === 0) {
+          result.warnings.push(`Policy "${pdPolicy.name}" has no escalation rules`);
+        }
+      }
+    }
+
+    // Validate Services
+    if (importData.services && importData.services.length > 0) {
+      const serviceRepo = dataSource.getRepository(Service);
+      for (const pdService of importData.services) {
+        if (!pdService.name) {
+          result.summary.services.errors.push(`Service ${pdService.id} missing name`);
+          result.isValid = false;
+          continue;
+        }
+        const existing = await serviceRepo.findOne({ where: { name: pdService.name, orgId } });
+        if (existing) {
+          result.summary.services.willSkip++;
+        } else {
+          result.summary.services.willCreate++;
+        }
+        // Check if escalation policy reference exists
+        if (pdService.escalation_policy?.id) {
+          const matchingPolicy = importData.escalation_policies?.find(p => p.id === pdService.escalation_policy?.id);
+          if (!matchingPolicy) {
+            result.warnings.push(`Service "${pdService.name}" references unknown escalation policy`);
+          }
+        }
+      }
+    }
+
+    // Validate Routing Rules
+    if (importData.routing_rules && importData.routing_rules.length > 0) {
+      result.summary.routingRules.willCreate = importData.routing_rules.length;
+    }
+
+    // Set overall validity
+    const allErrors = [
+      ...result.summary.users.errors,
+      ...result.summary.teams.errors,
+      ...result.summary.schedules.errors,
+      ...result.summary.escalationPolicies.errors,
+      ...result.summary.services.errors,
+      ...result.summary.routingRules.errors,
+    ];
+    result.errors = allErrors;
+    result.isValid = allErrors.length === 0;
+
+    logger.info('Import validation completed', {
+      orgId,
+      isValid: result.isValid,
+      warnings: result.warnings.length,
+      errors: result.errors.length,
+    });
+
+    res.json(result);
+  } catch (error) {
+    logger.error('Import validation failed', { error });
+    res.status(500).json({ error: 'Validation failed', details: (error as Error).message });
+  }
+});
 
 /**
  * Import from PagerDuty

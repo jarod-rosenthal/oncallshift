@@ -4,6 +4,8 @@ import { processQueue, AlertMessage, sendNotificationMessage } from '../shared/q
 import { Incident, IncidentEvent, Service, MaintenanceWindow, AlertRoutingRule } from '../shared/models';
 import { logger } from '../shared/utils/logger';
 import { LessThanOrEqual, MoreThan } from 'typeorm';
+import { workflowEngine } from '../shared/services/workflow-engine';
+import { deliverToMatchingWebhooks } from '../shared/services/webhook-delivery';
 
 const QUEUE_URL = process.env.ALERTS_QUEUE_URL;
 
@@ -146,6 +148,31 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
       message,
       dataSource
     );
+
+    // Check if alert should be suppressed by routing rule
+    if (routingResult.matchedRule?.suppress) {
+      logger.info('Alert suppressed by routing rule', {
+        ruleId: routingResult.matchedRule.id,
+        ruleName: routingResult.matchedRule.name,
+        summary: message.summary,
+        serviceId: service.id,
+      });
+      // Alert is suppressed - no incident created, no notifications sent
+      return;
+    }
+
+    // Check if alert should be suspended by routing rule (hold for manual review)
+    if (routingResult.matchedRule?.suspend) {
+      logger.info('Alert suspended by routing rule - holding for manual review', {
+        ruleId: routingResult.matchedRule.id,
+        ruleName: routingResult.matchedRule.name,
+        summary: message.summary,
+        serviceId: service.id,
+      });
+      // TODO: In future, create suspended alert record for manual review
+      // For now, treat like suppression (no incident created)
+      return;
+    }
 
     // If routing rule matched and specified a different target service, fetch it
     let targetService = service;
@@ -302,6 +329,48 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
         severity: effectiveSeverity,
         routedByRule: routingResult.matchedRule?.name,
       });
+
+      // Trigger automatic workflows for new incidents
+      try {
+        await workflowEngine.processEvent(targetService.orgId, incident.id, 'incident.created');
+      } catch (workflowError) {
+        logger.error('Error triggering workflows on incident creation', workflowError);
+        // Don't fail alert processing if workflows fail
+      }
+
+      // Deliver webhook events for incident.triggered
+      try {
+        await deliverToMatchingWebhooks(
+          targetService.orgId,
+          'incident.triggered',
+          {
+            event: {
+              id: event.id,
+              event_type: 'incident.triggered',
+              resource_type: 'incident',
+              occurred_at: new Date().toISOString(),
+              agent: {
+                id: 'system',
+                type: 'system',
+              },
+              data: {
+                id: incident.id,
+                type: 'incident',
+                incident_number: incident.incidentNumber,
+                summary: incident.summary,
+                service_id: incident.serviceId,
+                severity: incident.severity,
+                state: incident.state,
+                triggered_at: incident.triggeredAt.toISOString(),
+              },
+            },
+          },
+          incident.serviceId
+        );
+      } catch (webhookError) {
+        logger.error('Error delivering webhook on incident triggered', webhookError);
+        // Don't fail alert processing if webhooks fail
+      }
 
       // Trigger notifications to on-call user(s)
       await triggerNotifications(incident, targetService);

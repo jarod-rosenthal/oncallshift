@@ -12,12 +12,17 @@ export interface AlertMessage {
   source?: string;
 }
 
+export type NotificationType = 'incident' | 'responder_request' | 'escalation' | 'handoff';
+
 export interface NotificationMessage {
   incidentId: string;
   userId: string;
-  channel: 'push' | 'sms' | 'email' | 'voice';
-  priority: 'high' | 'normal';
-  incidentState: 'triggered' | 'acknowledged' | 'resolved';
+  orgId?: string;
+  type?: NotificationType;
+  channel?: 'push' | 'sms' | 'email' | 'voice';
+  priority?: 'high' | 'normal';
+  incidentState?: 'triggered' | 'acknowledged' | 'resolved';
+  payload?: Record<string, any>;
 }
 
 /**
@@ -55,29 +60,44 @@ export async function sendAlertMessage(alert: AlertMessage): Promise<void> {
 export async function sendNotificationMessage(notification: NotificationMessage): Promise<void> {
   const queueUrl = process.env.NOTIFICATIONS_QUEUE_URL;
   if (!queueUrl) {
-    throw new Error('NOTIFICATIONS_QUEUE_URL not configured');
+    // In development, just log the notification
+    logger.info('Notification would be sent (queue not configured)', notification);
+    return;
   }
 
   try {
+    const messageAttributes: Record<string, any> = {
+      type: {
+        DataType: 'String',
+        StringValue: notification.type || 'incident',
+      },
+    };
+
+    if (notification.channel) {
+      messageAttributes.channel = {
+        DataType: 'String',
+        StringValue: notification.channel,
+      };
+    }
+
+    if (notification.priority) {
+      messageAttributes.priority = {
+        DataType: 'String',
+        StringValue: notification.priority,
+      };
+    }
+
     const command = new SendMessageCommand({
       QueueUrl: queueUrl,
       MessageBody: JSON.stringify(notification),
-      MessageAttributes: {
-        channel: {
-          DataType: 'String',
-          StringValue: notification.channel,
-        },
-        priority: {
-          DataType: 'String',
-          StringValue: notification.priority,
-        },
-      },
+      MessageAttributes: messageAttributes,
     });
 
     await sqsClient.send(command);
     logger.info(`Notification message sent to queue`, {
       incidentId: notification.incidentId,
       userId: notification.userId,
+      type: notification.type,
       channel: notification.channel,
     });
   } catch (error) {

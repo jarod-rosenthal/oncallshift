@@ -15,7 +15,6 @@ export function Schedules() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -25,17 +24,7 @@ export function Schedules() {
 
   useEffect(() => {
     loadSchedules();
-    loadCurrentUser();
   }, []);
-
-  const loadCurrentUser = async () => {
-    try {
-      const response = await usersAPI.getMe();
-      setIsAdmin(response.user.role === 'admin');
-    } catch (err) {
-      console.error('Failed to load user role:', err);
-    }
-  };
 
   const loadSchedules = async () => {
     try {
@@ -90,22 +79,6 @@ export function Schedules() {
       setError(err.response?.data?.error || 'Failed to create schedule');
     } finally {
       setIsCreating(false);
-    }
-  };
-
-  const handleDeleteSchedule = async (scheduleId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!confirm('Are you sure you want to delete this schedule? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      await schedulesAPI.delete(scheduleId);
-      loadSchedules(); // Refresh the list
-    } catch (err: any) {
-      alert('Failed to delete schedule: ' + (err.response?.data?.error || err.message));
     }
   };
 
@@ -275,20 +248,10 @@ export function Schedules() {
                         </div>
                       )}
                     </div>
-                    <div className="mt-4 space-y-2">
+                    <div className="mt-4">
                       <Button variant="outline" className="w-full" size="sm">
                         Manage Schedule
                       </Button>
-                      {isAdmin && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="w-full"
-                          onClick={(e) => handleDeleteSchedule(schedule.id, e)}
-                        >
-                          Delete Schedule
-                        </Button>
-                      )}
                     </div>
                   </CardContent>
                 </Card>

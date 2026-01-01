@@ -52,6 +52,8 @@ export function RoutingRules() {
   const [formTargetServiceId, setFormTargetServiceId] = useState<string>('');
   const [formSetSeverity, setFormSetSeverity] = useState<string>('');
   const [formEnabled, setFormEnabled] = useState(true);
+  const [formSuppress, setFormSuppress] = useState(false);
+  const [formSuspend, setFormSuspend] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -84,6 +86,8 @@ export function RoutingRules() {
     setFormTargetServiceId('');
     setFormSetSeverity('');
     setFormEnabled(true);
+    setFormSuppress(false);
+    setFormSuspend(false);
     setEditingRule(null);
   };
 
@@ -100,6 +104,8 @@ export function RoutingRules() {
     setFormTargetServiceId(rule.targetServiceId || '');
     setFormSetSeverity(rule.setSeverity || '');
     setFormEnabled(rule.enabled);
+    setFormSuppress(rule.suppress || false);
+    setFormSuspend(rule.suspend || false);
     setEditingRule(rule);
     setShowCreateModal(true);
   };
@@ -142,6 +148,8 @@ export function RoutingRules() {
           targetServiceId: formTargetServiceId || null,
           setSeverity: (formSetSeverity as any) || null,
           enabled: formEnabled,
+          suppress: formSuppress,
+          suspend: formSuspend,
         };
         await routingRulesAPI.update(editingRule.id, updateData);
       } else {
@@ -153,6 +161,8 @@ export function RoutingRules() {
           targetServiceId: formTargetServiceId || undefined,
           setSeverity: (formSetSeverity as any) || undefined,
           enabled: formEnabled,
+          suppress: formSuppress,
+          suspend: formSuspend,
         };
         await routingRulesAPI.create(createData);
       }
@@ -296,12 +306,22 @@ export function RoutingRules() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    {rule.targetService && (
+                    {rule.suppress && (
+                      <div className="text-red-600 font-medium">
+                        Suppress
+                      </div>
+                    )}
+                    {rule.suspend && (
+                      <div className="text-yellow-600 font-medium">
+                        Suspend for review
+                      </div>
+                    )}
+                    {rule.targetService && !rule.suppress && !rule.suspend && (
                       <div className="text-foreground">
                         Route to: <span className="font-medium">{rule.targetService.name}</span>
                       </div>
                     )}
-                    {rule.setSeverity && (
+                    {rule.setSeverity && !rule.suppress && (
                       <div className="text-muted-foreground">
                         Set severity: <span className={`font-medium ${
                           rule.setSeverity === 'critical' ? 'text-red-600' :
@@ -311,7 +331,7 @@ export function RoutingRules() {
                         }`}>{rule.setSeverity}</span>
                       </div>
                     )}
-                    {!rule.targetService && !rule.setSeverity && (
+                    {!rule.targetService && !rule.setSeverity && !rule.suppress && !rule.suspend && (
                       <span className="text-muted-foreground italic">No action</span>
                     )}
                   </td>
@@ -515,6 +535,49 @@ export function RoutingRules() {
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* Event Suppression */}
+                <div className="border-t border-border pt-4">
+                  <label className="block text-sm font-medium text-foreground mb-3">
+                    Event Actions
+                  </label>
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formSuppress}
+                        onChange={(e) => {
+                          setFormSuppress(e.target.checked);
+                          if (e.target.checked) setFormSuspend(false);
+                        }}
+                        className="mt-1"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-foreground">Suppress alerts</span>
+                        <p className="text-xs text-muted-foreground">
+                          Matching alerts are silently dropped. No incident is created, no notifications sent.
+                        </p>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formSuspend}
+                        onChange={(e) => {
+                          setFormSuspend(e.target.checked);
+                          if (e.target.checked) setFormSuppress(false);
+                        }}
+                        className="mt-1"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-foreground">Suspend alerts</span>
+                        <p className="text-xs text-muted-foreground">
+                          Matching alerts create a suspended incident for manual review before triggering notifications.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
                 {/* Enabled */}

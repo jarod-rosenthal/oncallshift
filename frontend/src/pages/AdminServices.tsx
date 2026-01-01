@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { servicesAPI, schedulesAPI } from '../lib/api-client';
-import type { Service, Schedule, MaintenanceWindow } from '../types/api';
+import type { Service, Schedule, MaintenanceWindow, ServiceUrgency, SupportHours } from '../types/api';
 
 interface EscalationPolicy {
   id: string;
@@ -28,6 +28,16 @@ export function AdminServices() {
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
   const [selectedEscalationPolicyId, setSelectedEscalationPolicyId] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Urgency settings
+  const [urgency, setUrgency] = useState<ServiceUrgency>('high');
+  const [supportHoursEnabled, setSupportHoursEnabled] = useState(false);
+  const [supportHoursTimezone, setSupportHoursTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [supportHoursDays, setSupportHoursDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon-Fri
+  const [supportHoursStart, setSupportHoursStart] = useState('09:00');
+  const [supportHoursEnd, setSupportHoursEnd] = useState('17:00');
+  const [ackTimeoutEnabled, setAckTimeoutEnabled] = useState(false);
+  const [ackTimeoutMinutes, setAckTimeoutMinutes] = useState(30);
 
   // API key visibility
   const [visibleApiKeys, setVisibleApiKeys] = useState<Set<string>>(new Set());
@@ -99,6 +109,14 @@ export function AdminServices() {
     setNewServiceDescription('');
     setSelectedScheduleId('');
     setSelectedEscalationPolicyId('');
+    setUrgency('high');
+    setSupportHoursEnabled(false);
+    setSupportHoursTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    setSupportHoursDays([1, 2, 3, 4, 5]);
+    setSupportHoursStart('09:00');
+    setSupportHoursEnd('17:00');
+    setAckTimeoutEnabled(false);
+    setAckTimeoutMinutes(30);
     setEditingService(null);
     setShowCreateForm(false);
   };
@@ -109,6 +127,23 @@ export function AdminServices() {
     setNewServiceDescription(service.description || '');
     setSelectedScheduleId(service.schedule?.id || '');
     setSelectedEscalationPolicyId(service.escalationPolicy?.id || '');
+    // Urgency settings
+    setUrgency(service.urgency || 'high');
+    if (service.supportHours) {
+      setSupportHoursEnabled(service.supportHours.enabled);
+      setSupportHoursTimezone(service.supportHours.timezone);
+      setSupportHoursDays(service.supportHours.days);
+      setSupportHoursStart(service.supportHours.startTime);
+      setSupportHoursEnd(service.supportHours.endTime);
+    } else {
+      setSupportHoursEnabled(false);
+      setSupportHoursTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+      setSupportHoursDays([1, 2, 3, 4, 5]);
+      setSupportHoursStart('09:00');
+      setSupportHoursEnd('17:00');
+    }
+    setAckTimeoutEnabled(!!service.ackTimeoutSeconds);
+    setAckTimeoutMinutes(service.ackTimeoutSeconds ? Math.round(service.ackTimeoutSeconds / 60) : 30);
     setShowCreateForm(true);
   };
 
@@ -118,15 +153,31 @@ export function AdminServices() {
       setIsCreating(true);
       setError(null);
 
+      // Build support hours config if dynamic urgency is selected
+      const supportHours: SupportHours | undefined = urgency === 'dynamic' && supportHoursEnabled ? {
+        enabled: true,
+        timezone: supportHoursTimezone,
+        days: supportHoursDays,
+        startTime: supportHoursStart,
+        endTime: supportHoursEnd,
+      } : undefined;
+
       const serviceData = {
         name: newServiceName,
         description: newServiceDescription || undefined,
         scheduleId: selectedScheduleId || undefined,
         escalationPolicyId: selectedEscalationPolicyId || undefined,
+        urgency,
+        supportHours: urgency === 'dynamic' ? supportHours : undefined,
+        ackTimeoutSeconds: ackTimeoutEnabled ? ackTimeoutMinutes * 60 : undefined,
       };
 
       if (editingService) {
-        await servicesAPI.update(editingService.id, serviceData);
+        await servicesAPI.update(editingService.id, {
+          ...serviceData,
+          supportHours: urgency === 'dynamic' ? supportHours : null,
+          ackTimeoutSeconds: ackTimeoutEnabled ? ackTimeoutMinutes * 60 : null,
+        });
         setSuccess('Service updated successfully');
       } else {
         await servicesAPI.create(serviceData);
@@ -392,6 +443,162 @@ export function AdminServices() {
                     <p className="text-xs text-muted-foreground mt-1">
                       Defines how incidents are escalated if not acknowledged
                     </p>
+                  </div>
+                </div>
+
+                {/* Urgency Settings */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="font-medium mb-3">Notification Urgency</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="urgency">Urgency Mode</Label>
+                      <select
+                        id="urgency"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        value={urgency}
+                        onChange={(e) => setUrgency(e.target.value as ServiceUrgency)}
+                      >
+                        <option value="high">High urgency (always notify immediately)</option>
+                        <option value="low">Low urgency (respect quiet hours)</option>
+                        <option value="dynamic">Dynamic (based on support hours)</option>
+                      </select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        High urgency incidents notify responders immediately. Low urgency respects user notification preferences.
+                      </p>
+                    </div>
+
+                    {/* Support Hours (only for dynamic urgency) */}
+                    {urgency === 'dynamic' && (
+                      <div className="border rounded-md p-4 bg-muted/30 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="supportHoursEnabled"
+                            checked={supportHoursEnabled}
+                            onChange={(e) => setSupportHoursEnabled(e.target.checked)}
+                            className="rounded border-gray-300"
+                          />
+                          <label htmlFor="supportHoursEnabled" className="text-sm font-medium">
+                            Enable support hours
+                          </label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          During support hours, incidents are high urgency. Outside support hours, they're low urgency.
+                        </p>
+
+                        {supportHoursEnabled && (
+                          <>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label htmlFor="supportHoursStart">Start Time</Label>
+                                <Input
+                                  id="supportHoursStart"
+                                  type="time"
+                                  value={supportHoursStart}
+                                  onChange={(e) => setSupportHoursStart(e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <Label htmlFor="supportHoursEnd">End Time</Label>
+                                <Input
+                                  id="supportHoursEnd"
+                                  type="time"
+                                  value={supportHoursEnd}
+                                  onChange={(e) => setSupportHoursEnd(e.target.value)}
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label>Support Days</Label>
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                                  <label
+                                    key={day}
+                                    className={`px-3 py-1 rounded-md cursor-pointer text-sm border transition-colors ${
+                                      supportHoursDays.includes(index)
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'bg-background border-input hover:border-primary/50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="sr-only"
+                                      checked={supportHoursDays.includes(index)}
+                                      onChange={() => {
+                                        if (supportHoursDays.includes(index)) {
+                                          setSupportHoursDays(supportHoursDays.filter(d => d !== index));
+                                        } else {
+                                          setSupportHoursDays([...supportHoursDays, index].sort());
+                                        }
+                                      }}
+                                    />
+                                    {day}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label htmlFor="supportHoursTimezone">Timezone</Label>
+                              <select
+                                id="supportHoursTimezone"
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                value={supportHoursTimezone}
+                                onChange={(e) => setSupportHoursTimezone(e.target.value)}
+                              >
+                                <option value="America/New_York">Eastern Time (ET)</option>
+                                <option value="America/Chicago">Central Time (CT)</option>
+                                <option value="America/Denver">Mountain Time (MT)</option>
+                                <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                                <option value="UTC">UTC</option>
+                                <option value="Europe/London">London (GMT/BST)</option>
+                                <option value="Europe/Paris">Central European (CET)</option>
+                                <option value="Asia/Tokyo">Japan (JST)</option>
+                                <option value="Asia/Shanghai">China (CST)</option>
+                                <option value="Australia/Sydney">Sydney (AEST)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Acknowledgement Timeout */}
+                    <div className="border-t pt-4 mt-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <input
+                          type="checkbox"
+                          id="ackTimeoutEnabled"
+                          checked={ackTimeoutEnabled}
+                          onChange={(e) => setAckTimeoutEnabled(e.target.checked)}
+                          className="rounded border-gray-300"
+                        />
+                        <label htmlFor="ackTimeoutEnabled" className="text-sm font-medium">
+                          Enable acknowledgement timeout
+                        </label>
+                      </div>
+                      {ackTimeoutEnabled && (
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="ackTimeoutMinutes" className="whitespace-nowrap">
+                            Auto-unacknowledge after
+                          </Label>
+                          <Input
+                            id="ackTimeoutMinutes"
+                            type="number"
+                            min={1}
+                            max={1440}
+                            value={ackTimeoutMinutes}
+                            onChange={(e) => setAckTimeoutMinutes(parseInt(e.target.value) || 30)}
+                            className="w-24"
+                          />
+                          <span className="text-sm text-muted-foreground">minutes</span>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        If enabled, acknowledged incidents will automatically return to triggered state if not resolved within this time.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
