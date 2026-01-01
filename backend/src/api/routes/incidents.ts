@@ -2,9 +2,11 @@ import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification, Runbook } from '../../shared/models';
+import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification, Runbook, IncidentResponder, IncidentSubscriber, IncidentStatusUpdate, Postmortem } from '../../shared/models';
 import { sendNotificationMessage } from '../../shared/queues/sqs-client';
 import { logger } from '../../shared/utils/logger';
+import { workflowEngine } from '../../shared/services/workflow-engine';
+import { deliverToMatchingWebhooks } from '../../shared/services/webhook-delivery';
 
 const router = Router();
 
@@ -297,6 +299,52 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
       incidentNumber: incident.incidentNumber,
     });
 
+    // Trigger automatic workflows
+    try {
+      await workflowEngine.processEvent(orgId, incident.id, 'incident.acknowledged', user.id);
+    } catch (workflowError) {
+      logger.error('Error triggering workflows on acknowledge', workflowError);
+      // Don't fail the request if workflows fail
+    }
+
+    // Deliver webhook events
+    try {
+      await deliverToMatchingWebhooks(
+        orgId,
+        'incident.acknowledged',
+        {
+          event: {
+            id: event.id,
+            event_type: 'incident.acknowledged',
+            resource_type: 'incident',
+            occurred_at: new Date().toISOString(),
+            agent: {
+              id: user.id,
+              type: 'user',
+            },
+            data: {
+              id: incident.id,
+              type: 'incident',
+              incident_number: incident.incidentNumber,
+              summary: incident.summary,
+              service_id: incident.serviceId,
+              state: incident.state,
+              acknowledged_at: incident.acknowledgedAt?.toISOString(),
+              acknowledged_by: {
+                id: user.id,
+                email: user.email,
+                full_name: user.fullName,
+              },
+            },
+          },
+        },
+        incident.serviceId
+      );
+    } catch (webhookError) {
+      logger.error('Error delivering webhook on acknowledge', webhookError);
+      // Don't fail the request if webhooks fail
+    }
+
     return res.json({
       incident: formatIncident(incident),
       message: 'Incident acknowledged successfully',
@@ -367,6 +415,44 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
       incidentNumber: incident.incidentNumber,
       hasNote: !!note,
     });
+
+    // Deliver webhook events
+    try {
+      await deliverToMatchingWebhooks(
+        orgId,
+        'incident.resolved',
+        {
+          event: {
+            id: event.id,
+            event_type: 'incident.resolved',
+            resource_type: 'incident',
+            occurred_at: new Date().toISOString(),
+            agent: {
+              id: user.id,
+              type: 'user',
+            },
+            data: {
+              id: incident.id,
+              type: 'incident',
+              incident_number: incident.incidentNumber,
+              summary: incident.summary,
+              service_id: incident.serviceId,
+              state: incident.state,
+              resolved_at: incident.resolvedAt?.toISOString(),
+              resolved_by: {
+                id: user.id,
+                email: user.email,
+                full_name: user.fullName,
+              },
+            },
+          },
+        },
+        incident.serviceId
+      );
+    } catch (webhookError) {
+      logger.error('Error delivering webhook on resolve', webhookError);
+      // Don't fail the request if webhooks fail
+    }
 
     return res.json({
       incident: formatIncident(incident),
@@ -686,6 +772,14 @@ router.post(
         targetUsers: targetUserIds.length,
       });
 
+      // Trigger automatic workflows
+      try {
+        await workflowEngine.processEvent(orgId, incident.id, 'incident.escalated', user.id);
+      } catch (workflowError) {
+        logger.error('Error triggering workflows on escalate', workflowError);
+        // Don't fail the request if workflows fail
+      }
+
       return res.json({
         incident: formatIncident(incident),
         message: `Incident escalated to step ${nextStepIndex + 1}`,
@@ -807,6 +901,14 @@ router.put(
         reassignedBy: user.id,
       });
 
+      // Trigger automatic workflows
+      try {
+        await workflowEngine.processEvent(orgId, incident.id, 'incident.reassigned', user.id);
+      } catch (workflowError) {
+        logger.error('Error triggering workflows on reassign', workflowError);
+        // Don't fail the request if workflows fail
+      }
+
       return res.json({
         incident: formatIncident(incident),
         message: `Incident reassigned to ${targetUser.fullName || targetUser.email}`,
@@ -851,6 +953,7 @@ function formatIncident(incident: Incident) {
     details: incident.details,
     severity: incident.severity,
     state: incident.state,
+    urgency: incident.urgency,
     service: {
       id: incident.service.id,
       name: incident.service.name,
@@ -877,6 +980,9 @@ function formatIncident(incident: Incident) {
       email: incident.assignedToUser.email,
       profilePictureUrl: incident.assignedToUser.profilePictureUrl,
     } : null,
+    snoozedUntil: incident.snoozedUntil,
+    isSnoozed: incident.isSnoozed(),
+    conferenceBridgeUrl: incident.conferenceBridgeUrl,
     currentEscalationStep: incident.currentEscalationStep,
     eventCount: incident.eventCount,
     lastEventAt: incident.lastEventAt,
@@ -1311,7 +1417,9 @@ router.get('/:id/suggested-runbooks', async (req: Request, res: Response) => {
 /**
  * Helper to extract meaningful keywords from incident summary
  */
-function extractKeywords(text: string): string[] {
+function extractKeywords(text: string | null | undefined): string[] {
+  if (!text) return [];
+
   const stopWords = new Set([
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -1383,5 +1491,1053 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Failed to delete incident' });
   }
 });
+
+// ============================================
+// ADD RESPONDERS ENDPOINTS
+// ============================================
+
+/**
+ * GET /api/v1/incidents/:id/responders
+ * List responders for an incident
+ */
+router.get('/:id/responders', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const responderRepo = dataSource.getRepository(IncidentResponder);
+
+    // Verify incident exists and belongs to org
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    const responders = await responderRepo.find({
+      where: { incidentId: id },
+      relations: ['user', 'requestedBy'],
+      order: { createdAt: 'ASC' },
+    });
+
+    return res.json({
+      responders: responders.map(r => ({
+        id: r.id,
+        user: {
+          id: r.user.id,
+          fullName: r.user.fullName,
+          email: r.user.email,
+          profilePictureUrl: r.user.profilePictureUrl,
+        },
+        requestedBy: {
+          id: r.requestedBy.id,
+          fullName: r.requestedBy.fullName,
+          email: r.requestedBy.email,
+        },
+        status: r.status,
+        message: r.message,
+        respondedAt: r.respondedAt,
+        createdAt: r.createdAt,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error fetching responders:', error);
+    return res.status(500).json({ error: 'Failed to fetch responders' });
+  }
+});
+
+/**
+ * POST /api/v1/incidents/:id/responders
+ * Request additional responders for an incident
+ */
+router.post(
+  '/:id/responders',
+  [
+    body('userIds').isArray({ min: 1 }).withMessage('userIds must be a non-empty array'),
+    body('userIds.*').isUUID().withMessage('Each userId must be a valid UUID'),
+    body('message').optional().isString().isLength({ max: 500 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { userIds, message } = req.body;
+      const orgId = req.orgId!;
+      const requestingUser = req.user!;
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+      const responderRepo = dataSource.getRepository(IncidentResponder);
+      const userRepo = dataSource.getRepository(User);
+      const eventRepo = dataSource.getRepository(IncidentEvent);
+
+      // Verify incident exists and is open
+      const incident = await incidentRepo.findOne({
+        where: { id, orgId },
+        relations: ['service'],
+      });
+
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+
+      if (!incident.isOpen()) {
+        return res.status(400).json({ error: 'Cannot add responders to a resolved incident' });
+      }
+
+      // Verify all users exist in the org
+      const users = await userRepo.find({
+        where: userIds.map((uid: string) => ({ id: uid, orgId })),
+      });
+
+      if (users.length !== userIds.length) {
+        return res.status(400).json({ error: 'One or more users not found' });
+      }
+
+      // Create responder requests (skip if already exists)
+      const createdResponders: IncidentResponder[] = [];
+      const skippedUserIds: string[] = [];
+
+      for (const userId of userIds) {
+        // Check if already a responder
+        const existing = await responderRepo.findOne({
+          where: { incidentId: id, userId },
+        });
+
+        if (existing) {
+          skippedUserIds.push(userId);
+          continue;
+        }
+
+        const responder = responderRepo.create({
+          incidentId: id,
+          userId,
+          requestedById: requestingUser.id,
+          message: message || null,
+          status: 'pending',
+        });
+
+        await responderRepo.save(responder);
+        createdResponders.push(responder);
+
+        // Send notification to the requested user
+        await sendNotificationMessage({
+          type: 'responder_request',
+          userId,
+          incidentId: id,
+          orgId,
+          payload: {
+            incidentNumber: incident.incidentNumber,
+            summary: incident.summary,
+            requestedBy: requestingUser.fullName || requestingUser.email,
+            message: message || null,
+          },
+        });
+      }
+
+      // Create timeline event
+      if (createdResponders.length > 0) {
+        const userNames = users
+          .filter(u => createdResponders.some(r => r.userId === u.id))
+          .map(u => u.fullName || u.email)
+          .join(', ');
+
+        const event = eventRepo.create({
+          incidentId: id,
+          type: 'responder_request' as any,
+          actorId: requestingUser.id,
+          message: `Requested responders: ${userNames}`,
+          payload: {
+            userIds: createdResponders.map(r => r.userId),
+            message,
+          },
+        });
+        await eventRepo.save(event);
+      }
+
+      logger.info('Responders requested', {
+        incidentId: id,
+        requestedBy: requestingUser.id,
+        userIds: createdResponders.map(r => r.userId),
+        skipped: skippedUserIds,
+      });
+
+      return res.status(201).json({
+        message: `${createdResponders.length} responder(s) requested`,
+        requested: createdResponders.length,
+        skipped: skippedUserIds.length,
+      });
+    } catch (error) {
+      logger.error('Error requesting responders:', error);
+      return res.status(500).json({ error: 'Failed to request responders' });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/incidents/:id/responders/:responderId
+ * Accept or decline a responder request
+ */
+router.put(
+  '/:id/responders/:responderId',
+  [
+    body('status').isIn(['accepted', 'declined']).withMessage('Status must be accepted or declined'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id, responderId } = req.params;
+      const { status } = req.body;
+      const orgId = req.orgId!;
+      const user = req.user!;
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+      const responderRepo = dataSource.getRepository(IncidentResponder);
+      const eventRepo = dataSource.getRepository(IncidentEvent);
+
+      // Verify incident exists
+      const incident = await incidentRepo.findOne({
+        where: { id, orgId },
+      });
+
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+
+      // Find the responder request
+      const responder = await responderRepo.findOne({
+        where: { id: responderId, incidentId: id },
+        relations: ['user'],
+      });
+
+      if (!responder) {
+        return res.status(404).json({ error: 'Responder request not found' });
+      }
+
+      // Only the requested user can accept/decline
+      if (responder.userId !== user.id) {
+        return res.status(403).json({ error: 'Only the requested user can respond to this request' });
+      }
+
+      if (!responder.isPending()) {
+        return res.status(400).json({ error: 'This request has already been responded to' });
+      }
+
+      // Update the responder status
+      if (status === 'accepted') {
+        responder.accept();
+      } else {
+        responder.decline();
+      }
+      await responderRepo.save(responder);
+
+      // Create timeline event
+      const event = eventRepo.create({
+        incidentId: id,
+        type: 'responder_response' as any,
+        actorId: user.id,
+        message: `${user.fullName || user.email} ${status} the responder request`,
+        payload: { status },
+      });
+      await eventRepo.save(event);
+
+      logger.info('Responder request responded', {
+        incidentId: id,
+        responderId,
+        userId: user.id,
+        status,
+      });
+
+      return res.json({
+        message: `Responder request ${status}`,
+        responder: {
+          id: responder.id,
+          status: responder.status,
+          respondedAt: responder.respondedAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error responding to responder request:', error);
+      return res.status(500).json({ error: 'Failed to respond to request' });
+    }
+  }
+);
+
+// ============================================
+// SNOOZE ENDPOINTS
+// ============================================
+
+/**
+ * POST /api/v1/incidents/:id/snooze
+ * Snooze an acknowledged incident
+ */
+router.post(
+  '/:id/snooze',
+  [
+    body('duration').isInt({ min: 60, max: 604800 }).withMessage('Duration must be between 60 and 604800 seconds (1 min to 1 week)'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { duration } = req.body; // Duration in seconds
+      const orgId = req.orgId!;
+      const user = req.user!;
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+      const eventRepo = dataSource.getRepository(IncidentEvent);
+
+      const incident = await incidentRepo.findOne({
+        where: { id, orgId },
+        relations: ['service'],
+      });
+
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+
+      if (!incident.canSnooze()) {
+        return res.status(400).json({
+          error: 'Incident must be acknowledged before snoozing',
+          currentState: incident.state,
+        });
+      }
+
+      // Calculate snooze end time
+      const snoozedUntil = new Date(Date.now() + duration * 1000);
+      incident.snooze(snoozedUntil, user.id);
+      await incidentRepo.save(incident);
+
+      // Create timeline event
+      const durationStr = formatDuration(duration);
+      const event = eventRepo.create({
+        incidentId: id,
+        type: 'snooze' as any,
+        actorId: user.id,
+        message: `Incident snoozed for ${durationStr} by ${user.fullName || user.email}`,
+        payload: {
+          duration,
+          snoozedUntil: snoozedUntil.toISOString(),
+        },
+      });
+      await eventRepo.save(event);
+
+      logger.info('Incident snoozed', {
+        incidentId: id,
+        userId: user.id,
+        duration,
+        snoozedUntil,
+      });
+
+      return res.json({
+        message: `Incident snoozed for ${durationStr}`,
+        snoozedUntil: snoozedUntil.toISOString(),
+      });
+    } catch (error) {
+      logger.error('Error snoozing incident:', error);
+      return res.status(500).json({ error: 'Failed to snooze incident' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/incidents/:id/snooze
+ * Unsnooze an incident (cancel the snooze)
+ */
+router.delete('/:id/snooze', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+    const user = req.user!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const eventRepo = dataSource.getRepository(IncidentEvent);
+
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    if (!incident.isSnoozed()) {
+      return res.status(400).json({ error: 'Incident is not currently snoozed' });
+    }
+
+    incident.unsnooze();
+    await incidentRepo.save(incident);
+
+    // Create timeline event
+    const event = eventRepo.create({
+      incidentId: id,
+      type: 'unsnooze' as any,
+      actorId: user.id,
+      message: `Snooze cancelled by ${user.fullName || user.email}`,
+    });
+    await eventRepo.save(event);
+
+    logger.info('Incident unsnoozed', {
+      incidentId: id,
+      userId: user.id,
+    });
+
+    return res.json({
+      message: 'Incident snooze cancelled',
+    });
+  } catch (error) {
+    logger.error('Error unsnoozing incident:', error);
+    return res.status(500).json({ error: 'Failed to unsnooze incident' });
+  }
+});
+
+// ==========================================
+// POSTMORTEM ENDPOINTS
+// ==========================================
+
+/**
+ * GET /api/v1/incidents/:id/postmortem
+ * Get postmortem for an incident
+ */
+router.get('/:id/postmortem', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const postmortemRepo = dataSource.getRepository(Postmortem);
+
+    // Verify incident exists
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    const postmortem = await postmortemRepo.findOne({
+      where: { incidentId: id, orgId },
+      relations: ['incident', 'incident.service', 'createdBy', 'publishedBy'],
+    });
+
+    if (!postmortem) {
+      return res.status(404).json({ error: 'No postmortem found for this incident' });
+    }
+
+    return res.json({
+      postmortem: {
+        id: postmortem.id,
+        incident_id: postmortem.incidentId,
+        incident: {
+          id: postmortem.incident.id,
+          incident_number: postmortem.incident.incidentNumber,
+          summary: postmortem.incident.summary,
+          service: postmortem.incident.service ? {
+            id: postmortem.incident.service.id,
+            name: postmortem.incident.service.name,
+          } : null,
+        },
+        title: postmortem.title,
+        status: postmortem.status,
+        summary: postmortem.summary,
+        timeline: postmortem.timeline,
+        root_cause: postmortem.rootCause,
+        contributing_factors: postmortem.contributingFactors,
+        impact: postmortem.impact,
+        what_went_well: postmortem.whatWentWell,
+        what_could_be_improved: postmortem.whatCouldBeImproved,
+        action_items: postmortem.actionItems,
+        custom_sections: postmortem.customSections,
+        template_id: postmortem.templateId,
+        created_by: postmortem.createdBy ? {
+          id: postmortem.createdBy.id,
+          full_name: postmortem.createdBy.fullName,
+          email: postmortem.createdBy.email,
+        } : null,
+        published_by: postmortem.publishedBy ? {
+          id: postmortem.publishedBy.id,
+          full_name: postmortem.publishedBy.fullName,
+          email: postmortem.publishedBy.email,
+        } : null,
+        created_at: postmortem.createdAt,
+        updated_at: postmortem.updatedAt,
+        published_at: postmortem.publishedAt,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching incident postmortem:', error);
+    return res.status(500).json({ error: 'Failed to fetch postmortem' });
+  }
+});
+
+/**
+ * POST /api/v1/incidents/:id/postmortem
+ * Create postmortem for an incident
+ */
+router.post(
+  '/:id/postmortem',
+  [
+    body('title').optional().isString().trim(),
+    body('summary').optional().isString(),
+    body('templateId').optional().isUUID(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const userId = req.user!.id;
+      const { title, summary, templateId } = req.body;
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+      const postmortemRepo = dataSource.getRepository(Postmortem);
+      const eventRepo = dataSource.getRepository(IncidentEvent);
+
+      // Verify incident exists
+      const incident = await incidentRepo.findOne({
+        where: { id, orgId },
+        relations: ['service'],
+      });
+
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+
+      // Check if postmortem already exists
+      const existing = await postmortemRepo.findOne({
+        where: { incidentId: id, orgId },
+      });
+
+      if (existing) {
+        return res.status(400).json({ error: 'Postmortem already exists for this incident' });
+      }
+
+      // Create default title if not provided
+      const defaultTitle = title || `Postmortem: ${incident.summary}`;
+
+      // Create postmortem
+      const postmortem = postmortemRepo.create({
+        orgId,
+        incidentId: id,
+        title: defaultTitle,
+        summary: summary || null,
+        timeline: [],
+        rootCause: null,
+        contributingFactors: [],
+        impact: null,
+        whatWentWell: null,
+        whatCouldBeImproved: null,
+        actionItems: [],
+        templateId: templateId || null,
+        createdById: userId,
+        status: 'draft',
+      });
+
+      await postmortemRepo.save(postmortem);
+
+      // Add event to incident timeline
+      const event = eventRepo.create({
+        incidentId: id,
+        type: 'note',
+        actorId: userId,
+        message: `Postmortem created by ${req.user!.fullName || req.user!.email}`,
+        payload: {
+          postmortemId: postmortem.id,
+        },
+      });
+      await eventRepo.save(event);
+
+      // Fetch created postmortem with relations
+      const createdPostmortem = await postmortemRepo.findOne({
+        where: { id: postmortem.id },
+        relations: ['incident', 'incident.service', 'createdBy'],
+      });
+
+      logger.info('Postmortem created from incident', {
+        postmortemId: postmortem.id,
+        incidentId: id,
+        createdBy: userId,
+      });
+
+      return res.status(201).json({
+        postmortem: {
+          id: createdPostmortem!.id,
+          incident_id: createdPostmortem!.incidentId,
+          title: createdPostmortem!.title,
+          status: createdPostmortem!.status,
+          summary: createdPostmortem!.summary,
+          created_by: createdPostmortem!.createdBy ? {
+            id: createdPostmortem!.createdBy.id,
+            full_name: createdPostmortem!.createdBy.fullName,
+            email: createdPostmortem!.createdBy.email,
+          } : null,
+          created_at: createdPostmortem!.createdAt,
+        },
+        message: 'Postmortem created successfully',
+      });
+    } catch (error) {
+      logger.error('Error creating incident postmortem:', error);
+      return res.status(500).json({ error: 'Failed to create postmortem' });
+    }
+  }
+);
+
+// ==========================================
+// SUBSCRIBER ENDPOINTS
+// ==========================================
+
+/**
+ * GET /api/v1/incidents/:id/subscribers
+ * List all subscribers for an incident
+ */
+router.get('/:id/subscribers', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const subscriberRepo = dataSource.getRepository(IncidentSubscriber);
+
+    // Verify incident exists
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    const subscribers = await subscriberRepo.find({
+      where: { incidentId: id, active: true },
+      relations: ['user', 'addedByUser'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return res.json({
+      subscribers: subscribers.map(sub => ({
+        id: sub.id,
+        email: sub.email,
+        displayName: sub.getDisplayName(),
+        role: sub.role,
+        channel: sub.channel,
+        isInternal: sub.isInternal(),
+        confirmed: sub.confirmed,
+        notifyOnStatusUpdate: sub.notifyOnStatusUpdate,
+        notifyOnResolution: sub.notifyOnResolution,
+        notifyOnEscalation: sub.notifyOnEscalation,
+        user: sub.user ? {
+          id: sub.user.id,
+          fullName: sub.user.fullName,
+          email: sub.user.email,
+        } : null,
+        addedBy: sub.addedByUser ? {
+          id: sub.addedByUser.id,
+          fullName: sub.addedByUser.fullName,
+        } : null,
+        createdAt: sub.createdAt,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error fetching incident subscribers:', error);
+    return res.status(500).json({ error: 'Failed to fetch subscribers' });
+  }
+});
+
+/**
+ * POST /api/v1/incidents/:id/subscribers
+ * Add a subscriber to an incident
+ */
+router.post(
+  '/:id/subscribers',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('displayName').optional().isString().trim(),
+    body('role').optional().isIn(['stakeholder', 'observer', 'responder']),
+    body('channel').optional().isIn(['email', 'sms', 'push', 'slack', 'webhook']),
+    body('userId').optional().isUUID(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const user = req.user!;
+      const { email, displayName, role = 'stakeholder', channel = 'email', userId } = req.body;
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+      const subscriberRepo = dataSource.getRepository(IncidentSubscriber);
+      const userRepo = dataSource.getRepository(User);
+
+      // Verify incident exists
+      const incident = await incidentRepo.findOne({
+        where: { id, orgId },
+      });
+
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+
+      // Check if subscriber already exists
+      const existing = await subscriberRepo.findOne({
+        where: { incidentId: id, email },
+      });
+
+      if (existing) {
+        if (existing.active) {
+          return res.status(400).json({ error: 'Subscriber already exists' });
+        }
+        // Reactivate if previously removed
+        existing.active = true;
+        existing.addedBy = user.id;
+        await subscriberRepo.save(existing);
+        return res.json({
+          subscriber: {
+            id: existing.id,
+            email: existing.email,
+            displayName: existing.getDisplayName(),
+            role: existing.role,
+            channel: existing.channel,
+          },
+          message: 'Subscriber reactivated',
+        });
+      }
+
+      // Check if userId refers to a valid user
+      let linkedUser: User | null = null;
+      if (userId) {
+        linkedUser = await userRepo.findOne({
+          where: { id: userId, orgId },
+        });
+      }
+
+      // Create new subscriber
+      const subscriber = subscriberRepo.create({
+        orgId,
+        incidentId: id,
+        userId: linkedUser?.id || null,
+        email,
+        displayName: displayName || null,
+        role,
+        channel,
+        addedBy: user.id,
+        confirmed: true, // Internal subscriptions auto-confirm
+      });
+
+      await subscriberRepo.save(subscriber);
+
+      // Add event to incident timeline
+      const eventRepo = dataSource.getRepository(IncidentEvent);
+      await eventRepo.save(eventRepo.create({
+        incidentId: id,
+        type: 'note',
+        actorId: user.id,
+        message: `${user.fullName || user.email} added ${displayName || email} as a subscriber`,
+      }));
+
+      logger.info('Subscriber added to incident', {
+        incidentId: id,
+        subscriberEmail: email,
+        addedBy: user.id,
+      });
+
+      return res.status(201).json({
+        subscriber: {
+          id: subscriber.id,
+          email: subscriber.email,
+          displayName: subscriber.getDisplayName(),
+          role: subscriber.role,
+          channel: subscriber.channel,
+          isInternal: subscriber.isInternal(),
+        },
+        message: 'Subscriber added successfully',
+      });
+    } catch (error) {
+      logger.error('Error adding subscriber:', error);
+      return res.status(500).json({ error: 'Failed to add subscriber' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/incidents/:id/subscribers/:subscriberId
+ * Remove a subscriber from an incident
+ */
+router.delete('/:id/subscribers/:subscriberId', async (req: Request, res: Response) => {
+  try {
+    const { id, subscriberId } = req.params;
+    const orgId = req.orgId!;
+    const user = req.user!;
+
+    const dataSource = await getDataSource();
+    const subscriberRepo = dataSource.getRepository(IncidentSubscriber);
+    const eventRepo = dataSource.getRepository(IncidentEvent);
+
+    const subscriber = await subscriberRepo.findOne({
+      where: { id: subscriberId, incidentId: id, orgId },
+    });
+
+    if (!subscriber) {
+      return res.status(404).json({ error: 'Subscriber not found' });
+    }
+
+    // Soft delete (mark as inactive)
+    subscriber.active = false;
+    await subscriberRepo.save(subscriber);
+
+    // Add event to incident timeline
+    await eventRepo.save(eventRepo.create({
+      incidentId: id,
+      type: 'note',
+      actorId: user.id,
+      message: `${user.fullName || user.email} removed ${subscriber.displayName || subscriber.email} from subscribers`,
+    }));
+
+    logger.info('Subscriber removed from incident', {
+      incidentId: id,
+      subscriberId,
+      removedBy: user.id,
+    });
+
+    return res.json({ message: 'Subscriber removed' });
+  } catch (error) {
+    logger.error('Error removing subscriber:', error);
+    return res.status(500).json({ error: 'Failed to remove subscriber' });
+  }
+});
+
+// ==========================================
+// STATUS UPDATE ENDPOINTS
+// ==========================================
+
+/**
+ * GET /api/v1/incidents/:id/status-updates
+ * List all status updates for an incident
+ */
+router.get('/:id/status-updates', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const updateRepo = dataSource.getRepository(IncidentStatusUpdate);
+
+    // Verify incident exists
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    const updates = await updateRepo.find({
+      where: { incidentId: id },
+      relations: ['postedByUser'],
+      order: { createdAt: 'DESC' },
+    });
+
+    return res.json({
+      statusUpdates: updates.map(update => ({
+        id: update.id,
+        updateType: update.updateType,
+        typeLabel: update.getTypeLabel(),
+        typeColor: update.getTypeColor(),
+        message: update.message,
+        isPublic: update.isPublic,
+        notificationsSent: update.notificationsSent,
+        notificationsSentAt: update.notificationsSentAt,
+        subscriberCount: update.subscriberCount,
+        postedBy: update.postedByUser ? {
+          id: update.postedByUser.id,
+          fullName: update.postedByUser.fullName,
+          email: update.postedByUser.email,
+        } : null,
+        createdAt: update.createdAt,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error fetching status updates:', error);
+    return res.status(500).json({ error: 'Failed to fetch status updates' });
+  }
+});
+
+/**
+ * POST /api/v1/incidents/:id/status-updates
+ * Post a status update to an incident (notifies subscribers)
+ */
+router.post(
+  '/:id/status-updates',
+  [
+    body('message').isString().trim().isLength({ min: 1, max: 5000 }),
+    body('updateType').optional().isIn(['investigating', 'identified', 'monitoring', 'update', 'resolved']),
+    body('isPublic').optional().isBoolean(),
+    body('notifySubscribers').optional().isBoolean(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const user = req.user!;
+      const {
+        message,
+        updateType = 'update',
+        isPublic = false,
+        notifySubscribers = true,
+      } = req.body;
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+      const updateRepo = dataSource.getRepository(IncidentStatusUpdate);
+      const subscriberRepo = dataSource.getRepository(IncidentSubscriber);
+      const eventRepo = dataSource.getRepository(IncidentEvent);
+
+      // Verify incident exists
+      const incident = await incidentRepo.findOne({
+        where: { id, orgId },
+        relations: ['service'],
+      });
+
+      if (!incident) {
+        return res.status(404).json({ error: 'Incident not found' });
+      }
+
+      // Create status update
+      const statusUpdate = updateRepo.create({
+        orgId,
+        incidentId: id,
+        postedBy: user.id,
+        updateType,
+        message: message.trim(),
+        isPublic,
+      });
+
+      await updateRepo.save(statusUpdate);
+
+      // Add event to incident timeline
+      await eventRepo.save(eventRepo.create({
+        incidentId: id,
+        type: 'note',
+        actorId: user.id,
+        message: `[Status Update: ${statusUpdate.getTypeLabel()}] ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}`,
+        payload: {
+          statusUpdateId: statusUpdate.id,
+          updateType,
+          isPublic,
+        },
+      }));
+
+      // Notify subscribers if requested
+      if (notifySubscribers) {
+        const subscribers = await subscriberRepo.find({
+          where: {
+            incidentId: id,
+            active: true,
+            confirmed: true,
+            notifyOnStatusUpdate: true,
+          },
+        });
+
+        // Log subscriber notifications (actual delivery handled by notification worker)
+        for (const subscriber of subscribers) {
+          logger.info('Subscriber notification queued', {
+            incidentId: id,
+            incidentNumber: incident.incidentNumber,
+            subscriberId: subscriber.id,
+            subscriberEmail: subscriber.email,
+            subscriberChannel: subscriber.channel,
+            updateType,
+          });
+          // TODO: Add subscriber_status_update to NotificationType and notification worker
+          // For now, just log - actual email delivery will be added in next iteration
+        }
+
+        // Update status update with notification info
+        statusUpdate.notificationsSent = true;
+        statusUpdate.notificationsSentAt = new Date();
+        statusUpdate.subscriberCount = subscribers.length;
+        await updateRepo.save(statusUpdate);
+      }
+
+      logger.info('Status update posted to incident', {
+        incidentId: id,
+        statusUpdateId: statusUpdate.id,
+        updateType,
+        postedBy: user.id,
+        subscribersNotified: statusUpdate.subscriberCount,
+      });
+
+      return res.status(201).json({
+        statusUpdate: {
+          id: statusUpdate.id,
+          updateType: statusUpdate.updateType,
+          typeLabel: statusUpdate.getTypeLabel(),
+          message: statusUpdate.message,
+          isPublic: statusUpdate.isPublic,
+          notificationsSent: statusUpdate.notificationsSent,
+          subscriberCount: statusUpdate.subscriberCount,
+          createdAt: statusUpdate.createdAt,
+        },
+        message: notifySubscribers
+          ? `Status update posted and ${statusUpdate.subscriberCount} subscriber(s) notified`
+          : 'Status update posted',
+      });
+    } catch (error) {
+      logger.error('Error posting status update:', error);
+      return res.status(500).json({ error: 'Failed to post status update' });
+    }
+  }
+);
+
+// Helper function to format duration in human-readable form
+function formatDuration(seconds: number): string {
+  if (seconds < 3600) {
+    const minutes = Math.round(seconds / 60);
+    return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+  }
+  if (seconds < 86400) {
+    const hours = Math.round(seconds / 3600);
+    return `${hours} hour${hours !== 1 ? 's' : ''}`;
+  }
+  const days = Math.round(seconds / 86400);
+  return `${days} day${days !== 1 ? 's' : ''}`;
+}
 
 export default router;

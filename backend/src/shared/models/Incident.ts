@@ -6,9 +6,11 @@ import { IncidentEvent } from './IncidentEvent';
 import { Notification } from './Notification';
 import { Alert } from './Alert';
 import { PriorityLevel } from './PriorityLevel';
+import { IncidentResponder } from './IncidentResponder';
 
 export type IncidentState = 'triggered' | 'acknowledged' | 'resolved';
 export type IncidentSeverity = 'info' | 'warning' | 'error' | 'critical';
+export type IncidentUrgency = 'high' | 'low';
 
 @Entity('incidents')
 export class Incident {
@@ -38,6 +40,9 @@ export class Incident {
 
   @Column({ type: 'varchar', length: 50, default: 'triggered' })
   state: IncidentState;
+
+  @Column({ type: 'varchar', length: 10, default: 'high' })
+  urgency: IncidentUrgency;
 
   @Column({ name: 'triggered_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   triggeredAt: Date;
@@ -80,6 +85,17 @@ export class Incident {
   // Priority level
   @Column({ name: 'priority_id', type: 'uuid', nullable: true })
   priorityId: string | null;
+
+  // Snooze support
+  @Column({ name: 'snoozed_until', type: 'timestamp', nullable: true })
+  snoozedUntil: Date | null;
+
+  @Column({ name: 'snoozed_by', type: 'uuid', nullable: true })
+  snoozedBy: string | null;
+
+  // Conference bridge for war room
+  @Column({ name: 'conference_bridge_url', type: 'varchar', length: 500, nullable: true })
+  conferenceBridgeUrl: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
@@ -126,6 +142,13 @@ export class Incident {
   @OneToMany(() => Alert, alert => alert.incident)
   alerts: Alert[];
 
+  @OneToMany(() => IncidentResponder, responder => responder.incident)
+  responders: IncidentResponder[];
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'snoozed_by' })
+  snoozedByUser: User | null;
+
   // Helper methods
   isOpen(): boolean {
     return this.state === 'triggered' || this.state === 'acknowledged';
@@ -151,5 +174,29 @@ export class Incident {
 
   isMerged(): boolean {
     return this.mergedIntoIncidentId !== null;
+  }
+
+  isSnoozed(): boolean {
+    return this.snoozedUntil !== null && new Date(this.snoozedUntil) > new Date();
+  }
+
+  canSnooze(): boolean {
+    return this.state === 'acknowledged';
+  }
+
+  snooze(until: Date, byUserId: string): void {
+    this.snoozedUntil = until;
+    this.snoozedBy = byUserId;
+  }
+
+  unsnooze(): void {
+    this.snoozedUntil = null;
+    this.snoozedBy = null;
+  }
+
+  getSnoozeRemainingMs(): number | null {
+    if (!this.snoozedUntil) return null;
+    const remaining = new Date(this.snoozedUntil).getTime() - Date.now();
+    return remaining > 0 ? remaining : 0;
   }
 }

@@ -9,6 +9,8 @@ export interface TeamSettings {
   teamsChannelId?: string;
 }
 
+export type TeamPrivacy = 'public' | 'private';
+
 @Entity('teams')
 export class Team {
   @PrimaryGeneratedColumn('uuid')
@@ -22,6 +24,9 @@ export class Team {
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'public' })
+  privacy: TeamPrivacy;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   slug: string | null;
@@ -96,5 +101,29 @@ export class Team {
   getMemberCount(): number {
     if (!this.memberships) return 0;
     return this.memberships.length;
+  }
+
+  /**
+   * Check if team is private
+   */
+  isPrivate(): boolean {
+    return this.privacy === 'private';
+  }
+
+  /**
+   * Check if a user can view this team
+   * Private teams are only visible to members (unless user is owner/admin)
+   */
+  canUserView(userId: string, userBaseRole: string): boolean {
+    // Owners and admins can see all teams
+    if (userBaseRole === 'owner' || userBaseRole === 'admin') {
+      return true;
+    }
+    // Public teams are visible to everyone
+    if (this.privacy === 'public') {
+      return true;
+    }
+    // Private teams only visible to members
+    return this.hasMember(userId);
   }
 }

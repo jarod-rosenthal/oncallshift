@@ -3,15 +3,22 @@ import { Incident } from './Incident';
 import { User } from './User';
 
 export type IncidentEventType =
-  | 'alert'           // New alert received
-  | 'note'            // User added note
-  | 'acknowledge'     // Incident acknowledged
-  | 'resolve'         // Incident resolved
-  | 'escalate'        // Escalation triggered
-  | 'notification'    // Notification sent
-  | 'state_change'    // State changed
-  | 'reassign'        // Incident reassigned
-  | 'ai_diagnosis';   // AI-powered diagnosis performed
+  | 'alert'              // New alert received
+  | 'note'               // User added note
+  | 'acknowledge'        // Incident acknowledged
+  | 'unacknowledge'      // Incident auto-unacknowledged due to timeout
+  | 'resolve'            // Incident resolved
+  | 'escalate'           // Escalation triggered
+  | 'notification'       // Notification sent
+  | 'state_change'       // State changed
+  | 'reassign'           // Incident reassigned
+  | 'ai_diagnosis'       // AI-powered diagnosis performed
+  | 'responder_request'  // Additional responder requested
+  | 'responder_response' // Responder accepted/declined
+  | 'snooze'             // Incident snoozed
+  | 'unsnooze'           // Snooze cancelled
+  | 'snooze_expired'     // Snooze period expired
+  | 'workflow_executed'; // Incident workflow executed
 
 @Entity('incident_events')
 export class IncidentEvent {

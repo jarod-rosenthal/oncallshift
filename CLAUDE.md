@@ -31,6 +31,7 @@ npm test -- --testPathPattern=webhooks  # Run single test file
 cd backend
 npm run start:worker             # Notification worker
 npm run start:escalation-timer   # Escalation timer worker
+npm run start:snooze-expiry      # Snooze expiry worker
 ```
 
 ### Frontend
@@ -67,9 +68,10 @@ terraform apply
 ## Architecture
 
 ### Component Structure
-- **backend/src/api/routes/**: REST API routes (incidents, services, schedules, runbooks, ai-diagnosis, notifications)
-- **backend/src/workers/**: Background processors (alert-processor, notification-worker, escalation-timer)
-- **backend/src/shared/**: Database models (TypeORM), middleware, utilities
+- **backend/src/api/routes/**: REST API routes (incidents, services, schedules, runbooks, ai-diagnosis, notifications, workflows, status-pages, webhooks, integrations)
+- **backend/src/workers/**: Background processors (alert-processor, notification-worker, escalation-timer, snooze-expiry)
+- **backend/src/shared/models/**: TypeORM database entities (47+ models)
+- **backend/src/shared/**: Middleware, utilities, database configuration
 - **frontend/src/pages/**: React page components
 - **frontend/src/components/**: Shared UI components
 - **mobile/src/screens/**: React Native screens (20 implemented)
@@ -90,8 +92,12 @@ terraform apply
 3. **Notifications**: Notification Worker → Email (SES), Push (Expo), SMS (SNS)
 4. **Authentication**: AWS Cognito JWT tokens verified by middleware
 
-### Database Models
-Key entities: Organization, User, Service, Schedule, ScheduleMember, Incident, IncidentEvent, EscalationPolicy, EscalationStep, Notification, DeviceToken, Runbook, RunbookStep
+### Database Models (TypeORM)
+Core entities: Organization, User, Team, Service, Schedule, ScheduleMember, Incident, IncidentEvent, EscalationPolicy, EscalationStep, Notification, DeviceToken, Runbook
+
+Advanced features: IncidentWorkflow, WorkflowAction, WorkflowExecution, IncidentResponder, StatusPage, StatusPageService, StatusPageUpdate, AlertRoutingRule, Integration, Heartbeat, PriorityLevel
+
+See `backend/src/shared/models/` for 47+ entity definitions
 
 ### Testing
 Tests are in `backend/src/**/__tests__/*.test.ts` using Jest with ts-jest. Test files are colocated near the code they test.
@@ -105,7 +111,11 @@ Routes in `backend/src/api/routes/` follow RESTful patterns. Auth middleware pro
 All queries scoped by `org_id`. Users belong to organizations.
 
 ### Workers
-Workers in `backend/src/workers/` consume from SQS queues using long polling. Deployed as separate ECS tasks.
+Workers in `backend/src/workers/` consume from SQS queues using long polling or run on timers. Each deployed as separate ECS tasks:
+- **alert-processor**: Processes incoming alerts from SQS queue
+- **notification-worker**: Delivers notifications via email/push/SMS
+- **escalation-timer**: Auto-advances escalation steps, handles heartbeats
+- **snooze-expiry**: Processes expired incident snoozes
 
 ### Frontend State
 - Server state: TanStack React Query
@@ -151,10 +161,33 @@ aws ecs describe-services --cluster pagerduty-lite-dev \
 ### View Logs
 ```bash
 aws logs tail /ecs/pagerduty-lite-dev/api --follow --region us-east-1
+aws logs tail /ecs/pagerduty-lite-dev/alert-processor --follow --region us-east-1
+aws logs tail /ecs/pagerduty-lite-dev/notification-worker --follow --region us-east-1
 ```
 
-## Recent Changes (December 2024)
+### Database Access
+```bash
+# Connect to production database
+PGPASSWORD='[redacted]' psql -h pagerduty-lite-dev.cn9wuodq8uyb.us-east-1.rds.amazonaws.com -U pgadmin -d pagerduty_lite
 
+# Run migrations
+cd backend && npm run migrate
+
+# Create new migration
+cd backend && npm run migrate:create
+```
+
+## Recent Changes (January 2025)
+
+### PagerDuty Compatibility Phase 1 (Jan 2025)
+- Status pages with public/private visibility
+- Incident workflows with automated actions
+- Incident responders (add responders to incidents)
+- Snooze expiry worker for time-based incident snoozing
+- Enhanced routing rules with conditions and filters
+- Additional database models for parity features
+
+### December 2024
 - Full mobile app implementation (20 screens)
 - Runbooks with one-click action execution
 - AI diagnosis and chat features

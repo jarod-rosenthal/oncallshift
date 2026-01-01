@@ -82,6 +82,10 @@ router.put(
     body('displayName').optional({ nullable: true }).isString().isLength({ max: 50 }).withMessage('Display name max 50 characters'),
     body('timezone').optional().isString().withMessage('Timezone must be a string'),
     body('notificationPreferences').optional().isObject().withMessage('Notification preferences must be an object'),
+    body('dndEnabled').optional().isBoolean().withMessage('DND enabled must be a boolean'),
+    body('dndStartTime').optional().matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Invalid time format (use HH:mm)'),
+    body('dndEndTime').optional().matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Invalid time format (use HH:mm)'),
+    body('dndTimezone').optional().isString().withMessage('DND timezone must be a string'),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -91,7 +95,7 @@ router.put(
       }
 
       const user = req.user!;
-      const { fullName, phoneNumber, displayName, timezone, notificationPreferences } = req.body;
+      const { fullName, phoneNumber, displayName, timezone, notificationPreferences, dndEnabled, dndStartTime, dndEndTime, dndTimezone } = req.body;
 
       const dataSource = await getDataSource();
       const userRepo = dataSource.getRepository(User);
@@ -130,6 +134,23 @@ router.put(
       if (timezone !== undefined) {
         currentSettings.profileTimezone = timezone;
         settingsUpdated = true;
+      }
+
+      // Handle DND settings
+      if (dndEnabled !== undefined) {
+        updateData.dndEnabled = dndEnabled;
+      }
+
+      if (dndStartTime !== undefined) {
+        updateData.dndStartTime = dndStartTime;
+      }
+
+      if (dndEndTime !== undefined) {
+        updateData.dndEndTime = dndEndTime;
+      }
+
+      if (dndTimezone !== undefined) {
+        updateData.dndTimezone = dndTimezone;
       }
 
       if (settingsUpdated) {
@@ -1248,6 +1269,104 @@ router.delete('/me/notification-rules/:id', async (req: Request, res: Response) 
     return res.status(500).json({ error: 'Failed to delete notification rule' });
   }
 });
+
+// ============================================================================
+// DO NOT DISTURB (DND) SETTINGS
+// ============================================================================
+
+/**
+ * GET /api/v1/users/me/dnd
+ * Get current user's Do Not Disturb settings
+ */
+router.get('/me/dnd', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    return res.json({
+      dnd: {
+        enabled: user.dndEnabled || false,
+        startTime: user.dndStartTime,
+        endTime: user.dndEndTime,
+        timezone: user.dndTimezone,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching DND settings:', error);
+    return res.status(500).json({ error: 'Failed to fetch DND settings' });
+  }
+});
+
+/**
+ * PUT /api/v1/users/me/dnd
+ * Update current user's Do Not Disturb settings
+ */
+router.put(
+  '/me/dnd',
+  [
+    body('enabled').isBoolean().withMessage('Enabled must be a boolean'),
+    body('startTime')
+      .optional({ nullable: true })
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .withMessage('Start time must be in HH:mm format'),
+    body('endTime')
+      .optional({ nullable: true })
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+      .withMessage('End time must be in HH:mm format'),
+    body('timezone')
+      .optional({ nullable: true })
+      .isString()
+      .withMessage('Timezone must be a valid IANA timezone string'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { enabled, startTime, endTime, timezone } = req.body;
+
+      // If enabling DND, require start time, end time, and timezone
+      if (enabled && (!startTime || !endTime || !timezone)) {
+        return res.status(400).json({
+          error: 'Start time, end time, and timezone are required when enabling DND',
+        });
+      }
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+
+      await userRepo.update(user.id, {
+        dndEnabled: enabled,
+        dndStartTime: enabled ? startTime : null,
+        dndEndTime: enabled ? endTime : null,
+        dndTimezone: enabled ? timezone : null,
+      });
+
+      logger.info('DND settings updated', {
+        userId: user.id,
+        enabled,
+        startTime: enabled ? startTime : null,
+        endTime: enabled ? endTime : null,
+        timezone: enabled ? timezone : null,
+      });
+
+      return res.json({
+        message: 'DND settings updated successfully',
+        dnd: {
+          enabled,
+          startTime: enabled ? startTime : null,
+          endTime: enabled ? endTime : null,
+          timezone: enabled ? timezone : null,
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating DND settings:', error);
+      return res.status(500).json({ error: 'Failed to update DND settings' });
+    }
+  }
+);
 
 // ============================================================================
 // PROFILE PICTURE

@@ -50,6 +50,13 @@ export interface UserSettings {
   profileTimezone?: string;
 }
 
+export interface DNDSettings {
+  enabled: boolean;
+  startTime: string | null;
+  endTime: string | null;
+  timezone: string | null;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -61,6 +68,8 @@ export interface User {
   settings?: UserSettings;
   hasAvailability?: boolean;
   availability?: UserAvailability | null;
+  // DND settings stored as direct user columns
+  dnd?: DNDSettings;
   organization?: {
     id: string;
     name: string;
@@ -75,6 +84,11 @@ export interface UpdateProfileRequest {
   displayName?: string | null;
   timezone?: string;
   notificationPreferences?: Partial<NotificationPreferences>;
+  // DND settings
+  dndEnabled?: boolean;
+  dndStartTime?: string;
+  dndEndTime?: string;
+  dndTimezone?: string;
 }
 
 export interface UpdateProfileResponse {
@@ -103,12 +117,25 @@ export interface Schedule {
   updatedAt: string;
 }
 
+export type ServiceUrgency = 'high' | 'low' | 'dynamic';
+
+export interface SupportHours {
+  enabled: boolean;
+  timezone: string;
+  days: number[];  // 0 = Sunday, 6 = Saturday
+  startTime: string;  // HH:mm format
+  endTime: string;    // HH:mm format
+}
+
 export interface Service {
   id: string;
   name: string;
   description: string | null;
   apiKey: string;
   status: 'active' | 'inactive' | 'maintenance';
+  urgency: ServiceUrgency;
+  supportHours: SupportHours | null;
+  ackTimeoutSeconds: number | null;
   schedule: {
     id: string;
     name: string;
@@ -132,6 +159,9 @@ export interface CreateServiceRequest {
   description?: string;
   scheduleId?: string;
   escalationPolicyId?: string;
+  urgency?: ServiceUrgency;
+  supportHours?: SupportHours;
+  ackTimeoutSeconds?: number;
 }
 
 export interface UpdateServiceRequest {
@@ -140,6 +170,9 @@ export interface UpdateServiceRequest {
   scheduleId?: string;
   escalationPolicyId?: string;
   status?: 'active' | 'inactive' | 'maintenance';
+  urgency?: ServiceUrgency;
+  supportHours?: SupportHours | null;
+  ackTimeoutSeconds?: number | null;
 }
 
 export interface IncidentUser {
@@ -154,6 +187,7 @@ export interface Incident {
   summary: string;
   severity: 'info' | 'warning' | 'error' | 'critical';
   state: 'triggered' | 'acknowledged' | 'resolved';
+  urgency?: 'high' | 'low';
   triggeredAt: string;
   acknowledgedAt: string | null;
   acknowledgedBy: IncidentUser | null;
@@ -163,6 +197,9 @@ export interface Incident {
   assignedTo: IncidentUser | null;
   currentEscalationStep: number;
   details: Record<string, any> | null;
+  snoozedUntil?: string | null;
+  isSnoozed?: boolean;
+  conferenceBridgeUrl?: string | null;
   service: {
     id: string;
     name: string;
@@ -609,6 +646,8 @@ export interface AlertRoutingRule {
     name: string;
   } | null;
   setSeverity: 'info' | 'warning' | 'error' | 'critical' | null;
+  suppress: boolean;
+  suspend: boolean;
   createdBy: {
     id: string;
     fullName: string;
@@ -625,6 +664,8 @@ export interface CreateRoutingRuleRequest {
   targetServiceId?: string;
   setSeverity?: 'info' | 'warning' | 'error' | 'critical';
   enabled?: boolean;
+  suppress?: boolean;
+  suspend?: boolean;
 }
 
 export interface UpdateRoutingRuleRequest {
@@ -636,6 +677,8 @@ export interface UpdateRoutingRuleRequest {
   setSeverity?: 'info' | 'warning' | 'error' | 'critical' | null;
   enabled?: boolean;
   ruleOrder?: number;
+  suppress?: boolean;
+  suspend?: boolean;
 }
 
 export interface RoutingRuleTestResult {
@@ -978,4 +1021,115 @@ export interface TagEntitiesResponse {
   tag: Tag;
   entities: Record<EntityType, string[]>;
   totalCount: number;
+}
+
+// Postmortem Types
+export type PostmortemStatus = 'draft' | 'in_review' | 'published';
+
+export interface PostmortemTimelineEntry {
+  timestamp: string;
+  event: string;
+  description?: string;
+}
+
+export interface PostmortemActionItem {
+  id: string;
+  description: string;
+  assignedTo?: string;
+  dueDate?: string;
+  completed: boolean;
+  completedAt?: string;
+}
+
+export interface PostmortemTemplateSection {
+  id: string;
+  title: string;
+  prompt: string;
+  required: boolean;
+  order: number;
+}
+
+export interface PostmortemTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  sections: PostmortemTemplateSection[];
+  is_default: boolean;
+  created_by: {
+    id: string;
+    full_name: string;
+    email: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Postmortem {
+  id: string;
+  incident_id: string;
+  incident: {
+    id: string;
+    incident_number: number;
+    summary: string;
+    service: {
+      id: string;
+      name: string;
+    } | null;
+  } | null;
+  title: string;
+  status: PostmortemStatus;
+  summary: string | null;
+  timeline: PostmortemTimelineEntry[];
+  root_cause: string | null;
+  contributing_factors: string[];
+  impact: string | null;
+  what_went_well: string | null;
+  what_could_be_improved: string | null;
+  action_items: PostmortemActionItem[];
+  custom_sections: Record<string, any> | null;
+  template_id: string | null;
+  created_by: {
+    id: string;
+    full_name: string;
+    email: string;
+  } | null;
+  published_by: {
+    id: string;
+    full_name: string;
+    email: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+}
+
+export interface CreatePostmortemRequest {
+  incidentId: string;
+  title: string;
+  summary?: string;
+  timeline?: PostmortemTimelineEntry[];
+  rootCause?: string;
+  impact?: string;
+  whatWentWell?: string;
+  whatCouldBeImproved?: string;
+  actionItems?: PostmortemActionItem[];
+  templateId?: string;
+}
+
+export interface UpdatePostmortemRequest {
+  title?: string;
+  summary?: string;
+  timeline?: PostmortemTimelineEntry[];
+  rootCause?: string;
+  impact?: string;
+  whatWentWell?: string;
+  whatCouldBeImproved?: string;
+  actionItems?: PostmortemActionItem[];
+}
+
+export interface CreatePostmortemTemplateRequest {
+  name: string;
+  description?: string;
+  sections: PostmortemTemplateSection[];
+  isDefault?: boolean;
 }

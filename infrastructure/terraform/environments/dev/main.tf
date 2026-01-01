@@ -54,6 +54,7 @@ module "networking" {
 
   # Enable NAT gateway for Cognito API access (Cognito doesn't support VPC endpoints)
   enable_nat_gateway   = true
+  single_nat_gateway   = true  # Use single NAT gateway for cost savings in dev (~$32/month saved)
   enable_vpc_endpoints = true
 }
 

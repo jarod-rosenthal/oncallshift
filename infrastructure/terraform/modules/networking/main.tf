@@ -61,9 +61,14 @@ resource "aws_subnet" "private" {
   }
 }
 
+# Local for NAT gateway count
+locals {
+  nat_gateway_count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.availability_zones)) : 0
+}
+
 # Elastic IPs for NAT Gateways (if enabled)
 resource "aws_eip" "nat" {
-  count = var.enable_nat_gateway ? length(var.availability_zones) : 0
+  count = local.nat_gateway_count
 
   domain = "vpc"
 
@@ -77,7 +82,7 @@ resource "aws_eip" "nat" {
 
 # NAT Gateways (if enabled)
 resource "aws_nat_gateway" "main" {
-  count = var.enable_nat_gateway ? length(var.availability_zones) : 0
+  count = local.nat_gateway_count
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
@@ -123,7 +128,8 @@ resource "aws_route_table" "private" {
     for_each = var.enable_nat_gateway ? [1] : []
     content {
       cidr_block     = "0.0.0.0/0"
-      nat_gateway_id = aws_nat_gateway.main[count.index].id
+      # When single_nat_gateway is true, all private subnets use the first (and only) NAT gateway
+      nat_gateway_id = aws_nat_gateway.main[var.single_nat_gateway ? 0 : count.index].id
     }
   }
 

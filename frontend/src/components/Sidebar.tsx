@@ -102,6 +102,11 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m16.5 0H21m-1.5 0H12m-8.457 3.077l1.41-.513m14.095-5.13l1.41-.513M5.106 17.785l1.15-.964m11.49-9.642l1.149-.964M7.501 19.795l.75-1.3m7.5-12.99l.75-1.3m-6.063 16.658l.26-1.477m2.605-14.772l.26-1.477m0 17.726l-.26-1.477M10.698 4.614l-.26-1.477M16.5 19.794l-.75-1.299M7 4.006l-.75-1.3m9.063 16.658l-.26-1.477m2.605-14.772l-.26-1.477" />
     </svg>
   ),
+  Globe: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
   Tag: () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
@@ -140,6 +145,11 @@ const Icons = {
   Moon: () => (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+    </svg>
+  ),
+  FileText: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
   ),
 };
@@ -213,10 +223,12 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
       items: [
         { path: '/services', label: 'Services', icon: <Icons.Server />, adminOnly: true },
         { path: '/business-services', label: 'Business Services', icon: <Icons.Building />, adminOnly: true },
+        { path: '/status-pages/admin', label: 'Status Pages', icon: <Icons.Globe />, adminOnly: true },
         { path: '/service-dependencies', label: 'Dependencies', icon: <Icons.Network />, adminOnly: true },
         { path: '/tags', label: 'Tags', icon: <Icons.Tag />, adminOnly: true },
         { path: '/runbooks', label: 'Runbooks', icon: <Icons.Book />, adminOnly: true },
         { path: '/routing-rules', label: 'Routing Rules', icon: <Icons.ArrowUp />, adminOnly: true },
+        { path: '/workflows', label: 'Workflows', icon: <Icons.Settings />, adminOnly: true },
       ],
     },
     {
@@ -232,6 +244,8 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
       title: 'Analyze',
       items: [
         { path: '/analytics', label: 'Analytics', icon: <Icons.Chart /> },
+        { path: '/reports', label: 'Reports', icon: <Icons.Book />, adminOnly: true },
+        { path: '/postmortems', label: 'Postmortems', icon: <Icons.FileText /> },
       ],
     },
     {
@@ -397,6 +411,14 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
               >
                 <Icons.Clock />
                 <span>My Availability</span>
+              </Link>
+              <Link
+                to="/notification-preferences"
+                onClick={() => setUserMenuOpen(false)}
+                className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+              >
+                <Icons.Bell />
+                <span>Notification Preferences</span>
               </Link>
               <hr className="my-1 border-border" />
               <button

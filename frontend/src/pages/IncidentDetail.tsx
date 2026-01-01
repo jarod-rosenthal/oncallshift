@@ -15,6 +15,10 @@ import { RunbookPanel } from '../components/RunbookPanel';
 import { RelatedIncidents } from '../components/RelatedIncidents';
 import { SimilarIncidentHint } from '../components/SimilarIncidentHint';
 import { ResolveModal } from '../components/ResolveModal';
+import { RespondersPanel } from '../components/RespondersPanel';
+import { SubscribersPanel } from '../components/SubscribersPanel';
+import { ConferenceBridgePanel } from '../components/ConferenceBridgePanel';
+import { PostmortemPanel } from '../components/PostmortemPanel';
 import { StickyActionBar, StickyActionBarSpacer } from '../components/StickyActionBar';
 import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
@@ -204,6 +208,28 @@ export function IncidentDetail() {
     }
   };
 
+  const handleSnooze = async (duration: number) => {
+    if (!id) return;
+    try {
+      await incidentsAPI.snooze(id, duration);
+      showToast.success('Incident snoozed');
+      await refreshData();
+    } catch {
+      showToast.error('Failed to snooze incident');
+    }
+  };
+
+  const handleUnsnooze = async () => {
+    if (!id) return;
+    try {
+      await incidentsAPI.unsnooze(id);
+      showToast.success('Snooze cancelled');
+      await refreshData();
+    } catch {
+      showToast.error('Failed to cancel snooze');
+    }
+  };
+
   const handleDelete = async () => {
     if (!id) return;
     setIsDeleting(true);
@@ -343,7 +369,7 @@ export function IncidentDetail() {
             {incident.details && Object.keys(incident.details).length > 0 && (
               <div className="mt-6 pt-6 border-t border-neutral-200">
                 <h4 className="text-heading-sm text-neutral-900 mb-3">Alert Details</h4>
-                <pre className="text-body-sm bg-neutral-50 p-4 rounded-lg overflow-x-auto max-h-48 text-neutral-700">
+                <pre className="text-body-sm bg-neutral-900 text-neutral-100 p-4 rounded-lg overflow-x-auto max-h-48 font-mono">
                   {JSON.stringify(incident.details, null, 2)}
                 </pre>
               </div>
@@ -372,9 +398,36 @@ export function IncidentDetail() {
               onEscalate={handleEscalate}
               onReassign={handleReassign}
               onAddNote={handleAddNote}
+              onSnooze={handleSnooze}
+              onUnsnooze={handleUnsnooze}
             />
 
             <RelatedIncidents currentIncident={incident} />
+
+            <ConferenceBridgePanel
+              incidentId={incident.id}
+              incidentState={incident.state}
+              onRefresh={refreshData}
+            />
+
+            <RespondersPanel
+              incidentId={incident.id}
+              incidentState={incident.state}
+              currentUserId={currentUser?.id}
+              onRefresh={refreshData}
+            />
+
+            <SubscribersPanel
+              incidentId={incident.id}
+              incidentState={incident.state}
+              onRefresh={refreshData}
+            />
+
+            <PostmortemPanel
+              incidentId={incident.id}
+              incidentState={incident.state}
+              onRefresh={refreshData}
+            />
 
             <EscalationStatusPanel
               escalation={escalation}

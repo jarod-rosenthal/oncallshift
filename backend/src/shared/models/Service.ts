@@ -8,6 +8,16 @@ import { BusinessService } from './BusinessService';
 import { ServiceDependency } from './ServiceDependency';
 import { v4 as uuidv4 } from 'uuid';
 
+export type ServiceUrgency = 'high' | 'low' | 'dynamic';
+
+export interface SupportHours {
+  enabled: boolean;
+  timezone: string;
+  days: number[];  // 0 = Sunday, 6 = Saturday
+  startTime: string;  // HH:mm format
+  endTime: string;    // HH:mm format
+}
+
 @Entity('services')
 export class Service {
   @PrimaryGeneratedColumn('uuid')
@@ -48,6 +58,19 @@ export class Service {
 
   @Column({ name: 'auto_resolve_timeout', type: 'int', nullable: true })
   autoResolveTimeout: number | null; // Minutes
+
+  // Urgency determines notification behavior
+  // high = always high urgency, low = always low urgency, dynamic = based on support hours
+  @Column({ type: 'varchar', length: 20, default: 'high' })
+  urgency: ServiceUrgency;
+
+  // Support hours for dynamic urgency - incidents during support hours are high urgency
+  @Column({ name: 'support_hours', type: 'jsonb', nullable: true })
+  supportHours: SupportHours | null;
+
+  // Acknowledgement timeout - auto-unack if not resolved within this time (seconds)
+  @Column({ name: 'ack_timeout_seconds', type: 'int', nullable: true })
+  ackTimeoutSeconds: number | null;
 
   @Column({ type: 'jsonb', nullable: true })
   settings: Record<string, any> | null;
@@ -106,5 +129,62 @@ export class Service {
     if (!this.apiKey) {
       this.apiKey = `svc_${uuidv4().replace(/-/g, '')}`;
     }
+  }
+
+  /**
+   * Get the effective urgency for an incident on this service
+   * If urgency is 'dynamic', check support hours to determine urgency
+   */
+  getEffectiveUrgency(atTime: Date = new Date()): 'high' | 'low' {
+    if (this.urgency === 'high') return 'high';
+    if (this.urgency === 'low') return 'low';
+
+    // Dynamic: check if within support hours
+    if (this.supportHours?.enabled) {
+      return this.isWithinSupportHours(atTime) ? 'high' : 'low';
+    }
+
+    // Default to high if no support hours configured
+    return 'high';
+  }
+
+  /**
+   * Check if a given time is within the configured support hours
+   */
+  isWithinSupportHours(atTime: Date = new Date()): boolean {
+    if (!this.supportHours?.enabled) return true;
+
+    const { timezone, days, startTime, endTime } = this.supportHours;
+
+    // Convert to service timezone
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    };
+
+    const formatter = new Intl.DateTimeFormat('en-US', options);
+    const parts = formatter.formatToParts(atTime);
+
+    const weekdayPart = parts.find(p => p.type === 'weekday');
+    const hourPart = parts.find(p => p.type === 'hour');
+    const minutePart = parts.find(p => p.type === 'minute');
+
+    if (!weekdayPart || !hourPart || !minutePart) return true;
+
+    // Map weekday string to number (0 = Sunday)
+    const weekdayMap: Record<string, number> = {
+      'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+    };
+    const dayOfWeek = weekdayMap[weekdayPart.value] ?? 0;
+
+    // Check if this day is a support day
+    if (!days.includes(dayOfWeek)) return false;
+
+    // Check if time is within support hours
+    const currentTime = `${hourPart.value}:${minutePart.value}`;
+    return currentTime >= startTime && currentTime <= endTime;
   }
 }

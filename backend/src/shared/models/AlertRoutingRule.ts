@@ -55,6 +55,14 @@ export class AlertRoutingRule {
   @Column({ name: 'set_severity', type: 'varchar', length: 20, nullable: true })
   setSeverity: 'info' | 'warning' | 'error' | 'critical' | null;
 
+  // Action: suppress alerts matching this rule (no incident created, no notifications)
+  @Column({ type: 'boolean', default: false })
+  suppress: boolean;
+
+  // Optional: suspend alerts (create alert but hold incident creation for manual review)
+  @Column({ type: 'boolean', default: false })
+  suspend: boolean;
+
   @Column({ name: 'created_by', type: 'uuid', nullable: true })
   createdBy: string | null;
 

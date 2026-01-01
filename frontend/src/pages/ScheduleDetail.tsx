@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -9,6 +9,7 @@ import type { Schedule, ScheduleMember, ScheduleOverride, ScheduleLayer, User, R
 
 export function ScheduleDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [members, setMembers] = useState<ScheduleMember[]>([]);
@@ -24,6 +25,9 @@ export function ScheduleDetail() {
   const [editingLayer, setEditingLayer] = useState<ScheduleLayer | null>(null);
   const [isCreatingOverride, setIsCreatingOverride] = useState(false);
   const [isCreatingLayer, setIsCreatingLayer] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [overrideForm, setOverrideForm] = useState({
     userId: '',
     startTime: '',
@@ -44,7 +48,32 @@ export function ScheduleDetail() {
     if (id) {
       loadScheduleData();
     }
+    loadCurrentUser();
   }, [id]);
+
+  const loadCurrentUser = async () => {
+    try {
+      const response = await usersAPI.getMe();
+      setIsAdmin(response.user.role === 'admin');
+    } catch (err) {
+      console.error('Failed to load user role:', err);
+    }
+  };
+
+  const handleDeleteSchedule = async () => {
+    if (!id) return;
+
+    try {
+      setIsDeleting(true);
+      await schedulesAPI.delete(id);
+      navigate('/schedules', { replace: true });
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete schedule');
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const loadScheduleData = async () => {
     if (!id) return;
@@ -906,6 +935,60 @@ export function ScheduleDetail() {
             </p>
           </CardContent>
         </Card>
+
+        {/* Admin Actions */}
+        {isAdmin && (
+          <Card className="mt-6 border-destructive/30">
+            <CardHeader>
+              <CardTitle className="text-destructive">Danger Zone</CardTitle>
+              <CardDescription>
+                Destructive actions that cannot be undone
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                Delete Schedule
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md mx-4">
+              <CardHeader>
+                <CardTitle className="text-destructive">Delete Schedule</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Are you sure you want to delete <strong>{schedule.name}</strong>? This action cannot be undone.
+                  All rotation members, overrides, and layers will be permanently removed.
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isDeleting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteSchedule}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? 'Deleting...' : 'Delete Schedule'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </main>
     </div>
   );

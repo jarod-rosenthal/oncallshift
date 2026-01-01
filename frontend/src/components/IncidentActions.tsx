@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Clock, AlarmClockOff } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from './ui/dialog';
@@ -17,9 +18,22 @@ interface IncidentActionsProps {
   onEscalate: (reason?: string) => Promise<void>;
   onReassign: (userId: string, reason?: string) => Promise<void>;
   onAddNote: (content: string) => Promise<void>;
+  onSnooze?: (duration: number) => Promise<void>;
+  onUnsnooze?: () => Promise<void>;
 }
 
-type DialogType = 'escalate' | 'reassign' | 'note' | null;
+type DialogType = 'escalate' | 'reassign' | 'note' | 'snooze' | null;
+
+const SNOOZE_DURATIONS = [
+  { label: '5 minutes', value: 300 },
+  { label: '15 minutes', value: 900 },
+  { label: '30 minutes', value: 1800 },
+  { label: '1 hour', value: 3600 },
+  { label: '2 hours', value: 7200 },
+  { label: '4 hours', value: 14400 },
+  { label: '8 hours', value: 28800 },
+  { label: '24 hours', value: 86400 },
+];
 
 export function IncidentActions({
   incident,
@@ -31,6 +45,8 @@ export function IncidentActions({
   onEscalate,
   onReassign,
   onAddNote,
+  onSnooze,
+  onUnsnooze,
 }: IncidentActionsProps) {
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,6 +56,11 @@ export function IncidentActions({
   const [reassignUserId, setReassignUserId] = useState('');
   const [reassignReason, setReassignReason] = useState('');
   const [noteContent, setNoteContent] = useState('');
+  const [snoozeDuration, setSnoozeDuration] = useState(3600); // Default 1 hour
+
+  // Check if incident is currently snoozed
+  const isSnoozed = incident.snoozedUntil && new Date(incident.snoozedUntil) > new Date();
+  const snoozedUntilDate = incident.snoozedUntil ? new Date(incident.snoozedUntil) : null;
 
   const closeDialog = () => {
     setActiveDialog(null);
@@ -47,6 +68,28 @@ export function IncidentActions({
     setReassignUserId('');
     setReassignReason('');
     setNoteContent('');
+    setSnoozeDuration(3600);
+  };
+
+  const handleSnooze = async () => {
+    if (!onSnooze) return;
+    setIsSubmitting(true);
+    try {
+      await onSnooze(snoozeDuration);
+      closeDialog();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUnsnooze = async () => {
+    if (!onUnsnooze) return;
+    setIsSubmitting(true);
+    try {
+      await onUnsnooze();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleEscalate = async () => {
@@ -143,6 +186,44 @@ export function IncidentActions({
               disabled={isSubmitting}
             >
               Resolve
+            </Button>
+          )}
+
+          {/* Snooze Status Banner */}
+          {isSnoozed && snoozedUntilDate && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <div className="flex items-center gap-2 text-amber-800">
+                <Clock className="w-4 h-4" />
+                <span className="text-sm font-medium">Snoozed until</span>
+              </div>
+              <p className="text-sm text-amber-700 mt-1">
+                {snoozedUntilDate.toLocaleString()}
+              </p>
+              {onUnsnooze && (
+                <Button
+                  className="w-full mt-2"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUnsnooze}
+                  disabled={isSubmitting}
+                >
+                  <AlarmClockOff className="w-4 h-4 mr-2" />
+                  Cancel Snooze
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Snooze Button - only for acknowledged incidents */}
+          {incident.state === 'acknowledged' && !isSnoozed && onSnooze && (
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => setActiveDialog('snooze')}
+              disabled={isSubmitting}
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              Snooze
             </Button>
           )}
 
@@ -312,6 +393,49 @@ export function IncidentActions({
           </Button>
           <Button onClick={handleAddNote} disabled={isSubmitting || !noteContent.trim()}>
             {isSubmitting ? 'Adding...' : 'Add Note'}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* Snooze Dialog */}
+      <Dialog open={activeDialog === 'snooze'} onClose={closeDialog}>
+        <DialogHeader>
+          <DialogTitle>Snooze Incident</DialogTitle>
+          <DialogDescription>
+            Temporarily pause notifications for this incident. You'll still be responsible, but won't receive alerts until the snooze expires.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="snoozeDuration">Snooze for</Label>
+              <Select
+                id="snoozeDuration"
+                value={snoozeDuration.toString()}
+                onChange={(e) => setSnoozeDuration(parseInt(e.target.value))}
+                className="w-full mt-1"
+              >
+                {SNOOZE_DURATIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <p className="text-sm text-neutral-500">
+              Notifications will resume at{' '}
+              <span className="font-medium">
+                {new Date(Date.now() + snoozeDuration * 1000).toLocaleString()}
+              </span>
+            </p>
+          </div>
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" onClick={closeDialog} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button onClick={handleSnooze} disabled={isSubmitting}>
+            {isSubmitting ? 'Snoozing...' : 'Snooze'}
           </Button>
         </DialogFooter>
       </Dialog>

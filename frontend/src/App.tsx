@@ -11,6 +11,7 @@ import { Schedules } from './pages/Schedules';
 import { ScheduleDetail } from './pages/ScheduleDetail';
 import { EscalationPolicies } from './pages/EscalationPolicies';
 import { Availability } from './pages/Availability';
+import { NotificationPreferences } from './pages/NotificationPreferences';
 import { Profile } from './pages/Profile';
 import { AdminUsers } from './pages/AdminUsers';
 import { AdminServices } from './pages/AdminServices';
@@ -19,7 +20,14 @@ import { RoutingRules } from './pages/RoutingRules';
 import { Integrations } from './pages/Integrations';
 import { Teams } from './pages/Teams';
 import { BusinessServices } from './pages/BusinessServices';
+import { StatusPages } from './pages/StatusPages';
+import { PublicStatusPage } from './pages/PublicStatusPage';
 import { ServiceDependencies } from './pages/ServiceDependencies';
+import { ServiceConfiguration } from './pages/ServiceConfiguration';
+import { StatusPageAdmin } from './pages/StatusPageAdmin';
+import { Workflows } from './pages/Workflows';
+import { Reports } from './pages/Reports';
+import { Postmortems } from './pages/Postmortems';
 import { Tags } from './pages/Tags';
 import { TeamDetail } from './pages/TeamDetail';
 import { Analytics } from './pages/Analytics';
@@ -93,6 +101,9 @@ function App() {
         <Route path="/legal/terms" element={<Terms />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/company/security" element={<Security />} />
+
+        {/* Public status pages */}
+        <Route path="/status/:slug" element={<PublicStatusPage />} />
 
         {/* Setup wizard (admin only, no sidebar) */}
         <Route
@@ -172,6 +183,14 @@ function App() {
           }
         />
         <Route
+          path="/notification-preferences"
+          element={
+            <ProtectedWithLayout>
+              <NotificationPreferences />
+            </ProtectedWithLayout>
+          }
+        />
+        <Route
           path="/profile"
           element={
             <ProtectedWithLayout>
@@ -198,6 +217,14 @@ function App() {
           }
         />
         <Route
+          path="/services/:id/config"
+          element={
+            <AdminWithLayout>
+              <ServiceConfiguration />
+            </AdminWithLayout>
+          }
+        />
+        <Route
           path="/runbooks"
           element={
             <AdminWithLayout>
@@ -211,6 +238,30 @@ function App() {
             <AdminWithLayout>
               <RoutingRules />
             </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/workflows"
+          element={
+            <AdminWithLayout>
+              <Workflows />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <AdminWithLayout>
+              <Reports />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/postmortems"
+          element={
+            <ProtectedWithLayout>
+              <Postmortems />
+            </ProtectedWithLayout>
           }
         />
         <Route
@@ -250,6 +301,22 @@ function App() {
           element={
             <AdminWithLayout>
               <BusinessServices />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/status-pages"
+          element={
+            <AdminWithLayout>
+              <StatusPages />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/status-pages/admin"
+          element={
+            <AdminWithLayout>
+              <StatusPageAdmin />
             </AdminWithLayout>
           }
         />

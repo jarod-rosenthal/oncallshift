@@ -29,7 +29,15 @@ import businessServicesRoutes from './routes/business-services';
 import tagsRoutes from './routes/tags';
 import webhooksRoutes from './routes/webhooks';
 import importRoutes from './routes/import';
+import exportRoutes from './routes/export';
 import heartbeatsRoutes from './routes/heartbeats';
+import statusPagesRoutes from './routes/status-pages';
+import workflowsRoutes from './routes/workflows';
+import webhookSubscriptionsRoutes from './routes/webhook-subscriptions';
+import reportsRoutes from './routes/reports';
+import conferenceBridgesRoutes from './routes/conference-bridges';
+import analyticsRoutes from './routes/analytics';
+import postmortemsRoutes from './routes/postmortems';
 import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
@@ -258,7 +266,15 @@ export function createApp(): Express {
   app.use('/api/v1/tags', tagsRoutes);
   app.use('/api/v1/webhooks', webhooksRoutes);
   app.use('/api/v1/import', importRoutes);
+  app.use('/api/v1/export', exportRoutes);
   app.use('/api/v1/heartbeats', heartbeatsRoutes);
+  app.use('/api/v1/status-pages', statusPagesRoutes);
+  app.use('/api/v1/workflows', workflowsRoutes);
+  app.use('/api/v1/webhook-subscriptions', webhookSubscriptionsRoutes);
+  app.use('/api/v1/reports', reportsRoutes);
+  app.use('/api/v1', conferenceBridgesRoutes);
+  app.use('/api/v1/analytics', analyticsRoutes);
+  app.use('/api/v1/postmortems', postmortemsRoutes);
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

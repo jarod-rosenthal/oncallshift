@@ -25,9 +25,15 @@ variable "availability_zones" {
 }
 
 variable "enable_nat_gateway" {
-  description = "Enable NAT Gateway for private subnets (costs ~$32/month per AZ)"
+  description = "Enable NAT Gateway for private subnets (costs ~$32/month per gateway)"
   type        = bool
   default     = false
+}
+
+variable "single_nat_gateway" {
+  description = "Use a single NAT gateway for all private subnets (saves cost, less HA). Only applies when enable_nat_gateway is true."
+  type        = bool
+  default     = true
 }
 
 variable "enable_vpc_endpoints" {
