@@ -19,8 +19,6 @@ import { RespondersPanel } from '../components/RespondersPanel';
 import { SubscribersPanel } from '../components/SubscribersPanel';
 import { ConferenceBridgePanel } from '../components/ConferenceBridgePanel';
 import { PostmortemPanel } from '../components/PostmortemPanel';
-import { CloudAnalysisPanel } from '../components/CloudAnalysisPanel';
-import { AIAssistantPanel } from '../components/AIAssistantPanel';
 import { StickyActionBar, StickyActionBarSpacer } from '../components/StickyActionBar';
 import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
@@ -265,7 +263,7 @@ export function IncidentDetail() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-12">
+        <div className="max-w-7xl xl:max-w-[1600px] 2xl:max-w-[1920px] mx-auto px-6 lg:px-10 py-12">
           <div className="text-center">
             <p className="text-body-lg text-neutral-600">Loading incident...</p>
           </div>
@@ -282,7 +280,7 @@ export function IncidentDetail() {
           title="Incident Not Found"
           breadcrumb={{ label: 'Back to Incidents', href: '/incidents' }}
         />
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-12">
+        <div className="max-w-7xl xl:max-w-[1600px] 2xl:max-w-[1920px] mx-auto px-6 lg:px-10 py-12">
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-danger text-body-lg">{error || 'Incident not found'}</p>
@@ -319,7 +317,7 @@ export function IncidentDetail() {
       </PageHeader>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 lg:px-10 py-8">
+      <div className="max-w-7xl xl:max-w-[1600px] 2xl:max-w-[1920px] mx-auto px-6 lg:px-10 py-8">
         {/* Incident Summary Card */}
         <Card className="mb-6">
           <CardContent className="p-6">
@@ -431,11 +429,6 @@ export function IncidentDetail() {
               onRefresh={refreshData}
             />
 
-            <CloudAnalysisPanel
-              incidentId={incident.id}
-              incidentState={incident.state}
-            />
-
             <EscalationStatusPanel
               escalation={escalation}
               onEscalateNow={() => handleEscalate('Manual escalation from incident detail')}
@@ -444,14 +437,8 @@ export function IncidentDetail() {
             <NotificationStatusPanel incidentId={incident.id} />
           </div>
 
-          {/* Right Column: AI Assistant, Runbook and Timeline */}
+          {/* Right Column: Runbook and Timeline */}
           <div className="lg:col-span-2 space-y-6">
-            {/* AI Assistant Panel */}
-            <AIAssistantPanel
-              incidentId={incident.id}
-              incidentSummary={`#${incident.incidentNumber}: ${incident.summary}`}
-            />
-
             <RunbookPanel
               incident={incident}
               onAddNote={handleAddNote}

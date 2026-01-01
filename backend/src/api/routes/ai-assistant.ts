@@ -13,10 +13,13 @@ import { logger } from '../../shared/utils/logger';
 
 const router = Router();
 
+type ModelId = 'haiku' | 'sonnet' | 'opus';
+
 interface ChatRequest {
   message: string;
   conversation_id?: string;
   credential_ids?: string[];
+  model?: ModelId;
 }
 
 /**
@@ -28,12 +31,20 @@ router.post('/:id/assistant/chat', authenticateUser, async (req: Request, res: R
   const incidentId = req.params.id;
   const userId = req.user!.id;
   const orgId = req.user!.orgId;
-  const { message, conversation_id, credential_ids }: ChatRequest = req.body;
+  const { message, conversation_id, credential_ids, model = 'sonnet' }: ChatRequest = req.body;
 
   if (!message) {
     res.status(400).json({ error: 'message is required' });
     return;
   }
+
+  // Map model ID to actual model name
+  const modelMap: Record<ModelId, string> = {
+    haiku: 'claude-3-5-haiku-20241022',
+    sonnet: 'claude-sonnet-4-20250514',
+    opus: 'claude-opus-4-20250514',
+  };
+  const modelName = modelMap[model] || modelMap.sonnet;
 
   const dataSource = await getDataSource();
   const incidentRepo = dataSource.getRepository(Incident);
@@ -66,13 +77,16 @@ router.post('/:id/assistant/chat', authenticateUser, async (req: Request, res: R
         .where('cred.orgId = :orgId', { orgId })
         .andWhere('cred.id IN (:...ids)', { ids: credential_ids })
         .andWhere('cred.enabled = :enabled', { enabled: true })
+        .andWhere('cred.provider != :anthropic', { anthropic: 'anthropic' }) // Exclude Anthropic - it's for AI API, not cloud investigation
         .getMany();
 
-      availableCredentials = credentials.map(c => ({
-        id: c.id,
-        name: c.name,
-        provider: c.provider,
-      }));
+      availableCredentials = credentials
+        .filter(c => c.provider !== 'anthropic')
+        .map(c => ({
+          id: c.id,
+          name: c.name,
+          provider: c.provider as 'aws' | 'azure' | 'gcp',
+        }));
     }
 
     // Load or create conversation
@@ -162,7 +176,7 @@ router.post('/:id/assistant/chat', authenticateUser, async (req: Request, res: R
 
     // Stream the response
     try {
-      for await (const event of streamAssistantChat(claudeMessages, context, systemPrompt)) {
+      for await (const event of streamAssistantChat(claudeMessages, context, systemPrompt, modelName)) {
         switch (event.type) {
           case 'text':
             fullAssistantResponse += event.content;

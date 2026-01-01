@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { runbooksAPI } from '../lib/api-client';
-import type { Incident, RunbookStep as APIRunbookStep, RunbookStepAction } from '../types/api';
+import { runbooksAPI, aiAssistantAPI, cloudCredentialsAPI } from '../lib/api-client';
+import type { Incident, RunbookStep as APIRunbookStep, RunbookStepAction, CloudProvider } from '../types/api';
 import axios from 'axios';
 
 // Generate a Claude Code prompt for incident analysis
@@ -49,10 +49,23 @@ interface ActionState {
   message?: string;
 }
 
+interface ToolCall {
+  name: string;
+  status: 'pending' | 'success' | 'error';
+  summary?: string;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  toolCalls?: ToolCall[];
+}
+
+interface CloudCredentialOption {
+  id: string;
+  name: string;
+  provider: CloudProvider;
 }
 
 interface RunbookPanelProps {
@@ -97,38 +110,31 @@ function getMockRunbook(serviceName: string): Runbook {
   };
 }
 
-const SYSTEM_PROMPT = `You are an AI assistant integrated into OnCallShift, an incident management platform similar to PagerDuty. You help on-call engineers quickly diagnose and resolve production incidents.
-
-CONTEXT:
-- You're viewing an incident that was triggered by a monitoring alert
-- The engineer viewing this is likely the on-call responder who needs to investigate and resolve the issue
-- Your analysis will help them understand what might have gone wrong and how to fix it
-- Be practical and actionable - they need to resolve this quickly
-- If you don't have enough information, say what additional data would be helpful
-
-RESPONSE FORMAT:
-- Keep responses concise but thorough
-- Use clear sections with headers if needed
-- Prioritize the most likely causes first
-- Include specific commands or steps when applicable`;
-
 export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: RunbookPanelProps) {
   const [runbook, setRunbook] = useState<Runbook | null>(null);
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatError, setChatError] = useState<string | null>(null);
   const [userInput, setUserInput] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [noteAdded, setNoteAdded] = useState(false);
-  const [refreshPaused, setRefreshPaused] = useState(true); // User can toggle this
+  const [refreshPaused, setRefreshPaused] = useState(true);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [availableCredentials, setAvailableCredentials] = useState<CloudCredentialOption[]>([]);
+  const [selectedCredentials, setSelectedCredentials] = useState<string[]>([]);
+  const [showCredentialSelector, setShowCredentialSelector] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<'haiku' | 'sonnet' | 'opus'>('sonnet');
+
+  const modelOptions = [
+    { id: 'haiku' as const, name: 'Claude Haiku', description: 'Fast, lightweight' },
+    { id: 'sonnet' as const, name: 'Claude Sonnet', description: 'Balanced (Recommended)' },
+    { id: 'opus' as const, name: 'Claude Opus', description: 'Most capable' },
+  ];
 
   // Execute a runbook action
   const executeAction = async (stepId: string, action: RunbookStepAction) => {
@@ -251,12 +257,6 @@ export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: Runb
       setCompletedSteps(JSON.parse(savedSteps));
     }
 
-    // Load API key from localStorage
-    const savedApiKey = localStorage.getItem('anthropic-api-key');
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
-    }
-
     // Load saved conversation from localStorage
     const savedChat = localStorage.getItem(`ai-chat-${incident.id}`);
     if (savedChat) {
@@ -267,6 +267,24 @@ export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: Runb
         localStorage.removeItem(`ai-chat-${incident.id}`);
       }
     }
+
+    // Load cloud credentials
+    const loadCredentials = async () => {
+      try {
+        const response = await cloudCredentialsAPI.list();
+        const creds = response.credentials
+          ?.filter(c => c.enabled)
+          ?.map(c => ({
+            id: c.id,
+            name: c.name,
+            provider: c.provider as CloudProvider,
+          })) || [];
+        setAvailableCredentials(creds);
+      } catch {
+        // Credentials are optional
+      }
+    };
+    loadCredentials();
   }, [incident.id, incident.service.id, incident.service.name, incident.severity]);
 
   // Scroll to bottom when new messages arrive
@@ -283,18 +301,12 @@ export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: Runb
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const saveApiKey = () => {
-    if (apiKeyInput.trim()) {
-      localStorage.setItem('anthropic-api-key', apiKeyInput.trim());
-      setApiKey(apiKeyInput.trim());
-      setShowApiKeyInput(false);
-      setApiKeyInput('');
-    }
-  };
-
-  const removeApiKey = () => {
-    localStorage.removeItem('anthropic-api-key');
-    setApiKey(null);
+  const toggleCredential = (credId: string) => {
+    setSelectedCredentials(prev =>
+      prev.includes(credId)
+        ? prev.filter(id => id !== credId)
+        : [...prev, credId]
+    );
   };
 
   const generateInitialPrompt = (): string => {
@@ -320,7 +332,7 @@ Provide:
   };
 
   const sendMessage = async (messageContent: string) => {
-    if (!apiKey || !messageContent.trim()) return;
+    if (!messageContent.trim() || isLoading) return;
 
     setIsLoading(true);
     setChatError(null);
@@ -336,50 +348,90 @@ Provide:
     setChatMessages(newMessages);
     setUserInput('');
 
-    // Build messages array for API - include conversation history
-    const apiMessages = newMessages.map(msg => ({
-      role: msg.role,
-      content: msg.content,
-    }));
+    // Create placeholder for assistant response
+    const assistantId = Date.now();
+    let assistantMessage: ChatMessage = {
+      role: 'assistant',
+      content: '',
+      timestamp: assistantId,
+      toolCalls: [],
+    };
+    setChatMessages(prev => [...prev, assistantMessage]);
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
+      await aiAssistantAPI.streamChat(
+        incident.id,
+        {
+          message: messageContent.trim(),
+          conversation_id: conversationId || undefined,
+          credential_ids: selectedCredentials,
+          model: selectedModel,
         },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: apiMessages,
-        }),
-      });
+        (event) => {
+          switch (event.type) {
+            case 'conversation_id':
+              setConversationId(event.id);
+              break;
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Failed to get response');
-      }
+            case 'text':
+              setChatMessages(prev => prev.map(m =>
+                m.timestamp === assistantId
+                  ? { ...m, content: m.content + event.content }
+                  : m
+              ));
+              break;
 
-      const data = await response.json();
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: data.content[0].text,
-        timestamp: Date.now(),
-      };
+            case 'tool_call':
+              setChatMessages(prev => prev.map(m =>
+                m.timestamp === assistantId
+                  ? {
+                      ...m,
+                      toolCalls: [
+                        ...(m.toolCalls || []),
+                        { name: event.tool || event.toolName, status: 'pending' as const }
+                      ]
+                    }
+                  : m
+              ));
+              break;
 
-      const updatedMessages = [...newMessages, assistantMessage];
-      setChatMessages(updatedMessages);
+            case 'tool_result':
+              setChatMessages(prev => prev.map(m =>
+                m.timestamp === assistantId
+                  ? {
+                      ...m,
+                      toolCalls: m.toolCalls?.map(tc =>
+                        tc.name === (event.tool || event.toolName)
+                          ? { ...tc, status: event.result?.success ? 'success' as const : 'error' as const }
+                          : tc
+                      )
+                    }
+                  : m
+              ));
+              break;
 
-      // Persist to localStorage
-      localStorage.setItem(`ai-chat-${incident.id}`, JSON.stringify(updatedMessages));
-    } catch (error: any) {
-      setChatError(error.message || 'Failed to send message');
-      // Remove the user message if the request failed
-      setChatMessages(chatMessages);
+            case 'error':
+              setChatError(event.error);
+              break;
+
+            case 'done':
+              if (event.conversation_id) {
+                setConversationId(event.conversation_id);
+              }
+              // Save to localStorage
+              setChatMessages(prev => {
+                localStorage.setItem(`ai-chat-${incident.id}`, JSON.stringify(prev));
+                return prev;
+              });
+              break;
+          }
+        },
+        (err) => {
+          setChatError(err.message);
+        }
+      );
+    } catch (err: any) {
+      setChatError(err.message || 'Failed to send message');
     } finally {
       setIsLoading(false);
     }
@@ -508,6 +560,56 @@ Provide:
           {/* Initial buttons when no chat */}
           {chatMessages.length === 0 && (
             <>
+              {/* Model & Cloud Options */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {/* Model Selector */}
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value as 'haiku' | 'sonnet' | 'opus')}
+                  className="text-sm px-2 py-1 border rounded bg-white dark:bg-gray-800 text-foreground"
+                >
+                  {modelOptions.map(opt => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name} - {opt.description}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Cloud Credentials Toggle */}
+                {availableCredentials.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCredentialSelector(!showCredentialSelector)}
+                    className="bg-white dark:bg-gray-800"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z" />
+                    </svg>
+                    Cloud: {selectedCredentials.length > 0 ? `${selectedCredentials.length} selected` : 'None'}
+                  </Button>
+                )}
+              </div>
+
+              {/* Cloud Credentials Selector */}
+              {showCredentialSelector && availableCredentials.length > 0 && (
+                <div className="mb-3 p-2 bg-white dark:bg-gray-800 rounded border">
+                  <p className="text-xs text-muted-foreground mb-2">Select cloud credentials for Claude to use:</p>
+                  {availableCredentials.map(cred => (
+                    <label key={cred.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedCredentials.includes(cred.id)}
+                        onChange={() => toggleCredential(cred.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm">{cred.name}</span>
+                      <span className="text-xs text-muted-foreground uppercase">{cred.provider}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 {/* Option A: Copy for Claude Code */}
                 <Button
@@ -534,22 +636,21 @@ Provide:
                   )}
                 </Button>
 
-                {/* Option B: Analyze with API Key */}
-                {apiKey ? (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={startAnalysis}
-                    disabled={isLoading}
-                    className="bg-orange-600 hover:bg-orange-700"
-                  >
-                    {isLoading ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Analyzing...
+                {/* Option B: Analyze with Backend */}
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={startAnalysis}
+                  disabled={isLoading}
+                  className="bg-orange-600 hover:bg-orange-700"
+                >
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Analyzing...
                       </>
                     ) : (
                       <>
@@ -560,62 +661,12 @@ Provide:
                       </>
                     )}
                   </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowApiKeyInput(true)}
-                    className="bg-white dark:bg-gray-800"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clipRule="evenodd" />
-                    </svg>
-                    Add API Key for In-App Analysis
-                  </Button>
-                )}
-
-                {apiKey && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={removeApiKey}
-                    className="text-muted-foreground"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </Button>
-                )}
               </div>
 
-              {/* API Key Input */}
-              {showApiKeyInput && (
-                <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Enter your Anthropic API key for in-app analysis. Your key is stored locally in your browser.
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder="sk-ant-..."
-                      className="flex-1 px-3 py-1 text-sm border rounded bg-background"
-                    />
-                    <Button size="sm" onClick={saveApiKey}>Save</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setShowApiKeyInput(false)}>Cancel</Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Get your API key at{' '}
-                    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline">
-                      console.anthropic.com
-                    </a>
-                  </p>
-                </div>
-              )}
-
               <p className="text-xs text-muted-foreground mt-2">
-                {apiKey ? 'Using your API key for analysis' : 'Have Claude Code? Copy the prompt and paste in your terminal'}
+                {selectedCredentials.length > 0
+                  ? `Claude can query ${selectedCredentials.length} cloud credential(s) during analysis`
+                  : 'Have Claude Code? Copy the prompt and paste in your terminal'}
               </p>
             </>
           )}
@@ -626,7 +677,7 @@ Provide:
               {/* Chat Messages */}
               <div
                 ref={chatContainerRef}
-                className="max-h-96 overflow-y-auto space-y-3 mb-3 p-2 bg-white dark:bg-gray-800 rounded border"
+                className="max-h-96 xl:max-h-[32rem] 2xl:max-h-[40rem] overflow-y-auto space-y-3 mb-3 p-2 bg-white dark:bg-gray-800 rounded border"
               >
                 {chatMessages.map((msg, index) => (
                   <div
@@ -634,12 +685,44 @@ Provide:
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                      className={`max-w-[85%] xl:max-w-[90%] rounded-lg px-3 py-2 text-sm ${
                         msg.role === 'user'
                           ? 'bg-orange-600 text-white'
                           : 'bg-gray-100 dark:bg-gray-700 text-foreground'
                       }`}
                     >
+                      {/* Tool Calls */}
+                      {msg.toolCalls && msg.toolCalls.length > 0 && (
+                        <div className="mb-2 space-y-1">
+                          {msg.toolCalls.map((tc, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-2 text-xs bg-white/10 rounded px-2 py-1"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 16h-8z" />
+                              </svg>
+                              <span className="font-medium">{tc.name.replace(/_/g, ' ')}</span>
+                              {tc.status === 'pending' && (
+                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                              )}
+                              {tc.status === 'success' && (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                              {tc.status === 'error' && (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <div className="whitespace-pre-wrap">{msg.content}</div>
                       <div className={`text-xs mt-1 ${msg.role === 'user' ? 'text-orange-200' : 'text-muted-foreground'}`}>
                         {new Date(msg.timestamp).toLocaleTimeString()}

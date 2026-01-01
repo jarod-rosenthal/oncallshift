@@ -102,7 +102,7 @@ function formatAccessLog(log: CloudAccessLog) {
 router.get(
   '/',
   [
-    query('provider').optional().isIn(['aws', 'azure', 'gcp']),
+    query('provider').optional().isIn(['aws', 'azure', 'gcp', 'anthropic']),
     query('enabled').optional().isBoolean().toBoolean(),
   ],
   async (req: Request, res: Response) => {
@@ -265,7 +265,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post(
   '/',
   [
-    body('provider').isIn(['aws', 'azure', 'gcp']).withMessage('Invalid provider'),
+    body('provider').isIn(['aws', 'azure', 'gcp', 'anthropic']).withMessage('Invalid provider'),
     body('name').isString().trim().notEmpty().withMessage('Name is required'),
     body('description').optional().isString(),
     body('credentials').isObject().withMessage('Credentials object is required'),

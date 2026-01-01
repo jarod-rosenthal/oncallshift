@@ -85,6 +85,17 @@ router.post(
       const { email, password, fullName, organizationName, phoneNumber } = req.body;
       logger.info('Registration validation passed', { email, fullName, organizationName });
 
+      // Registration domain whitelist - only allow specific domains
+      const allowedDomains = ['oncallshift.com'];
+      const emailDomain = email.split('@')[1]?.toLowerCase();
+
+      if (!emailDomain || !allowedDomains.includes(emailDomain)) {
+        logger.info('Registration blocked - domain not whitelisted', { email, emailDomain });
+        return res.status(403).json({
+          error: 'Registration is currently restricted. Please contact an administrator.',
+        });
+      }
+
       const dataSource = await getDataSource();
       const orgRepo = dataSource.getRepository(Organization);
       const userRepo = dataSource.getRepository(User);

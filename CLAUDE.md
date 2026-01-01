@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 OnCallShift is a production incident management platform deployed at https://oncallshift.com. It's a full-stack TypeScript application with:
 - Backend API (Express + TypeScript)
 - Web frontend (React + Vite)
-- Mobile app (React Native + Expo) - 20 screens
+- Mobile app (React Native + Expo)
 - AWS infrastructure managed by Terraform
 
 ## Build and Development Commands
@@ -20,6 +20,7 @@ npm run dev          # Development server (localhost:3000)
 npm run build        # TypeScript compilation
 npm run start        # Production server
 npm run migrate      # Run database migrations
+npm run migrate:create  # Create new migration
 npm run seed         # Seed test data
 npm run lint         # ESLint
 npm test             # Run all tests
@@ -32,6 +33,7 @@ cd backend
 npm run start:worker             # Notification worker
 npm run start:escalation-timer   # Escalation timer worker
 npm run start:snooze-expiry      # Snooze expiry worker
+npm run start:report-scheduler   # Report scheduler worker
 ```
 
 ### Frontend
@@ -39,8 +41,9 @@ npm run start:snooze-expiry      # Snooze expiry worker
 cd frontend
 npm install
 npm run dev          # Development server (localhost:5173)
-npm run build        # Production build
+npm run build        # Production build (includes tsc)
 npm run lint         # ESLint
+npm run preview      # Preview production build
 ```
 
 ### Mobile
@@ -68,13 +71,13 @@ terraform apply
 ## Architecture
 
 ### Component Structure
-- **backend/src/api/routes/**: REST API routes (incidents, services, schedules, runbooks, ai-diagnosis, notifications, workflows, status-pages, webhooks, integrations)
-- **backend/src/workers/**: Background processors (alert-processor, notification-worker, escalation-timer, snooze-expiry)
-- **backend/src/shared/models/**: TypeORM database entities (47+ models)
+- **backend/src/api/routes/**: REST API routes (33 route files)
+- **backend/src/workers/**: Background processors (alert-processor, notification-worker, escalation-timer, snooze-expiry, report-scheduler)
+- **backend/src/shared/models/**: TypeORM database entities (60+ models)
 - **backend/src/shared/**: Middleware, utilities, database configuration
 - **frontend/src/pages/**: React page components
 - **frontend/src/components/**: Shared UI components
-- **mobile/src/screens/**: React Native screens (20 implemented)
+- **mobile/src/screens/**: React Native screens
 - **mobile/src/services/**: API client, auth, push notifications, runbooks
 - **mobile/src/components/**: Shared mobile components
 
@@ -93,14 +96,10 @@ terraform apply
 4. **Authentication**: AWS Cognito JWT tokens verified by middleware
 
 ### Database Models (TypeORM)
-Core entities: Organization, User, Team, Service, Schedule, ScheduleMember, Incident, IncidentEvent, EscalationPolicy, EscalationStep, Notification, DeviceToken, Runbook
-
-Advanced features: IncidentWorkflow, WorkflowAction, WorkflowExecution, IncidentResponder, StatusPage, StatusPageService, StatusPageUpdate, AlertRoutingRule, Integration, Heartbeat, PriorityLevel
-
-See `backend/src/shared/models/` for 47+ entity definitions
+See `backend/src/shared/models/` for 60+ entity definitions. Core entities include Organization, User, Team, Service, Schedule, Incident, EscalationPolicy, Notification.
 
 ### Testing
-Tests are in `backend/src/**/__tests__/*.test.ts` using Jest with ts-jest. Test files are colocated near the code they test.
+Backend tests are in `backend/src/**/__tests__/*.test.ts` using Jest with ts-jest. Test files are colocated near the code they test.
 
 ## Key Patterns
 
@@ -116,6 +115,7 @@ Workers in `backend/src/workers/` consume from SQS queues using long polling or 
 - **notification-worker**: Delivers notifications via email/push/SMS
 - **escalation-timer**: Auto-advances escalation steps, handles heartbeats
 - **snooze-expiry**: Processes expired incident snoozes
+- **report-scheduler**: Generates scheduled reports
 
 ### Frontend State
 - Server state: TanStack React Query
@@ -166,34 +166,30 @@ aws logs tail /ecs/pagerduty-lite-dev/notification-worker --follow --region us-e
 ```
 
 ### Database Access
+
+**Note:** The RDS database is in a private subnet and is not reachable from local development machines. Database operations must go through ECS tasks or the AWS console.
+
 ```bash
-# Connect to production database
-PGPASSWORD='[redacted]' psql -h pagerduty-lite-dev.cn9wuodq8uyb.us-east-1.rds.amazonaws.com -U pgadmin -d pagerduty_lite
+# Migrations run automatically during ECS deployment via deploy.sh
+# To run migrations manually, use ECS exec:
+aws ecs execute-command --cluster pagerduty-lite-dev \
+  --task <task-id> --container api --interactive \
+  --command "node dist/shared/db/migrate.js"
 
-# Run migrations
-cd backend && npm run migrate
-
-# Create new migration
+# Create new migration (local)
 cd backend && npm run migrate:create
 ```
 
-## Recent Changes (January 2025)
+## Key API Endpoints
 
-### PagerDuty Compatibility Phase 1 (Jan 2025)
-- Status pages with public/private visibility
-- Incident workflows with automated actions
-- Incident responders (add responders to incidents)
-- Snooze expiry worker for time-based incident snoozing
-- Enhanced routing rules with conditions and filters
-- Additional database models for parity features
-
-### December 2024
-- Full mobile app implementation (20 screens)
-- Runbooks with one-click action execution
-- AI diagnosis and chat features
-- Setup wizard for new organizations
-- Notification status panel with delivery tracking
-- User actions: reassign, manual escalate
-- PagerDuty/Opsgenie compatible webhooks and import wizard
-- Escalation timer auto-advancement
-- Heartbeat monitors for dead man's switch functionality
+Main API routes include:
+- `/api/v1/incidents` - Incident CRUD + actions (acknowledge, resolve, reassign, escalate)
+- `/api/v1/alerts/webhook` - Alert ingestion (PagerDuty/Opsgenie compatible)
+- `/api/v1/services`, `/api/v1/teams`, `/api/v1/users` - Core entities
+- `/api/v1/schedules` - On-call schedules with `/oncall` for current on-call
+- `/api/v1/escalation-policies` - Multi-step escalation definitions
+- `/api/v1/runbooks` - Runbook management and execution
+- `/api/v1/ai-assistant` - AI-powered incident analysis
+- `/api/v1/cloud-credentials` - Cloud provider credentials for investigation
+- `/api/v1/status-pages` - Public/private status pages
+- `/api/v1/import`, `/api/v1/export` - Platform migration tools
