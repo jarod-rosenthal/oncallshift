@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
+import { ProfilePictureEditor } from '../components/ProfilePictureEditor';
 import { usersAPI, aiCredentialsAPI, type AnthropicCredentialStatus } from '../lib/api-client';
 import type { User, NotificationPreferences, UserContactMethod, UserNotificationRule, ContactMethodType, NotificationUrgency } from '../types/api';
 
@@ -48,6 +49,7 @@ export function Profile() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [timezone, setTimezone] = useState('America/New_York');
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFS);
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
 
   // AI Credentials state
   const [aiCredentialStatus, setAiCredentialStatus] = useState<AnthropicCredentialStatus | null>(null);
@@ -94,6 +96,7 @@ export function Profile() {
       setDisplayName(response.user.settings?.profile?.displayName || '');
       setPhoneNumber(response.user.phoneNumber || '');
       setTimezone(response.user.settings?.profileTimezone || 'America/New_York');
+      setProfilePictureUrl(response.user.profilePictureUrl || null);
 
       // Set notification preferences (deep merge to preserve nested defaults)
       if (response.user.settings?.notificationPreferences) {
@@ -328,6 +331,15 @@ export function Profile() {
     });
   };
 
+  const handleProfilePictureUpdate = (newUrl: string | null) => {
+    setProfilePictureUrl(newUrl);
+    if (user) {
+      setUser({ ...user, profilePictureUrl: newUrl });
+    }
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
         <div className="mb-8">
@@ -364,6 +376,19 @@ export function Profile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Profile Picture */}
+                <div className="flex flex-col items-center pb-4 border-b">
+                  <ProfilePictureEditor
+                    currentPictureUrl={profilePictureUrl}
+                    userName={fullName}
+                    userEmail={user?.email || ''}
+                    onUpdate={handleProfilePictureUpdate}
+                  />
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Click to change your profile picture
+                  </p>
+                </div>
+
                 <div>
                   <Label htmlFor="fullName">Full Name</Label>
                   <Input

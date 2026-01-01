@@ -7,6 +7,115 @@ import { LessThanOrEqual, MoreThan } from 'typeorm';
 
 const QUEUE_URL = process.env.ALERTS_QUEUE_URL;
 
+type Severity = 'info' | 'warning' | 'error' | 'critical';
+
+/**
+ * Infer severity from alert summary keywords when not explicitly set
+ * Returns suggested severity based on keyword analysis
+ */
+function inferSeverityFromSummary(summary: string, currentSeverity?: Severity): Severity {
+  // If severity is already set to something specific, respect it
+  if (currentSeverity && currentSeverity !== 'info' && currentSeverity !== 'warning') {
+    return currentSeverity;
+  }
+
+  const lowerSummary = summary.toLowerCase();
+
+  // Critical indicators
+  const criticalPatterns = [
+    'critical', 'fatal', 'emergency', 'outage', 'down', 'unreachable',
+    'database down', 'service down', 'cluster down', 'complete failure',
+    'data loss', 'security breach', 'production down', '500 error rate',
+    'disk full', '100% cpu', 'out of memory', 'oom', 'unresponsive',
+  ];
+
+  // Error indicators
+  const errorPatterns = [
+    'error', 'failed', 'failure', 'exception', 'crash', 'crashed',
+    'timeout', 'connection refused', 'connection lost', '5xx',
+    'unhealthy', 'degraded', 'high latency', 'slow response',
+    'disk space low', 'memory high', 'cpu high', 'rate limit',
+  ];
+
+  // Warning indicators
+  const warningPatterns = [
+    'warning', 'warn', 'alert', 'elevated', 'increasing', 'growing',
+    'approaching', 'threshold', 'spike', 'anomaly', 'unusual',
+    'retry', 'retrying', 'delayed', 'queue backed up',
+  ];
+
+  // Check patterns in order of severity
+  for (const pattern of criticalPatterns) {
+    if (lowerSummary.includes(pattern)) {
+      return 'critical';
+    }
+  }
+
+  for (const pattern of errorPatterns) {
+    if (lowerSummary.includes(pattern)) {
+      return 'error';
+    }
+  }
+
+  for (const pattern of warningPatterns) {
+    if (lowerSummary.includes(pattern)) {
+      return 'warning';
+    }
+  }
+
+  // Default to provided severity or 'warning' if none
+  return currentSeverity || 'warning';
+}
+
+/**
+ * Clean up alert summaries by removing monitoring tool prefixes and noise
+ * Examples:
+ *   "[FIRING:1] High CPU" -> "High CPU"
+ *   "[AlertManager] Memory Alert" -> "Memory Alert"
+ *   "[RESOLVED] Disk Space" -> "Disk Space"
+ *   "ALERT: Database Down" -> "Database Down"
+ */
+function cleanupAlertSummary(summary: string): string {
+  let cleaned = summary;
+
+  // Remove common monitoring tool prefixes
+  const prefixPatterns = [
+    /^\[FIRING:\d+\]\s*/i,           // [FIRING:1], [FIRING:3]
+    /^\[RESOLVED\]\s*/i,              // [RESOLVED]
+    /^\[AlertManager\]\s*/i,          // [AlertManager]
+    /^\[Prometheus\]\s*/i,            // [Prometheus]
+    /^\[Grafana\]\s*/i,               // [Grafana]
+    /^\[DataDog\]\s*/i,               // [DataDog]
+    /^\[NewRelic\]\s*/i,              // [NewRelic]
+    /^\[PagerDuty\]\s*/i,             // [PagerDuty]
+    /^\[OpsGenie\]\s*/i,              // [OpsGenie]
+    /^\[CloudWatch\]\s*/i,            // [CloudWatch]
+    /^ALERT:\s*/i,                    // ALERT:
+    /^WARNING:\s*/i,                  // WARNING:
+    /^CRITICAL:\s*/i,                 // CRITICAL:
+    /^ERROR:\s*/i,                    // ERROR:
+    /^\[WARN\]\s*/i,                  // [WARN]
+    /^\[ERROR\]\s*/i,                 // [ERROR]
+    /^\[CRIT\]\s*/i,                  // [CRIT]
+    /^\[INFO\]\s*/i,                  // [INFO]
+  ];
+
+  for (const pattern of prefixPatterns) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+
+  // Remove trailing status indicators
+  cleaned = cleaned.replace(/\s*\(firing\)$/i, '');
+  cleaned = cleaned.replace(/\s*\(resolved\)$/i, '');
+  cleaned = cleaned.replace(/\s*\(pending\)$/i, '');
+
+  // Remove excessive whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  // If cleanup removed everything, return original
+  return cleaned.length > 0 ? cleaned : summary;
+}
+
 async function handleAlertMessage(message: AlertMessage): Promise<void> {
   logger.info('Processing alert message', {
     serviceId: message.serviceId,
@@ -40,7 +149,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
 
     // If routing rule matched and specified a different target service, fetch it
     let targetService = service;
-    let effectiveSeverity = message.severity;
+    let effectiveSeverity: Severity = message.severity as Severity;
 
     if (routingResult.matchedRule) {
       if (routingResult.targetServiceId && routingResult.targetServiceId !== service.id) {
@@ -61,7 +170,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
       }
 
       if (routingResult.setSeverity) {
-        effectiveSeverity = routingResult.setSeverity;
+        effectiveSeverity = routingResult.setSeverity as Severity;
         logger.info('Alert severity overridden by routing rule', {
           originalSeverity: message.severity,
           newSeverity: effectiveSeverity,
@@ -69,6 +178,17 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
           ruleName: routingResult.matchedRule.name,
         });
       }
+    }
+
+    // Auto-infer severity from summary keywords if not explicitly set to critical/error
+    const inferredSeverity = inferSeverityFromSummary(message.summary, effectiveSeverity);
+    if (inferredSeverity !== effectiveSeverity) {
+      logger.info('Alert severity inferred from summary keywords', {
+        originalSeverity: effectiveSeverity,
+        inferredSeverity,
+        summary: message.summary,
+      });
+      effectiveSeverity = inferredSeverity;
     }
 
     // Check for active maintenance window with alert suppression
@@ -141,11 +261,14 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
       // Create new incident
       const incidentNumber = await getNextIncidentNumber(targetService.orgId);
 
+      // Clean up the summary to remove monitoring tool prefixes
+      const cleanedSummary = cleanupAlertSummary(message.summary);
+
       incident = incidentRepo.create({
         orgId: targetService.orgId,
         serviceId: targetService.id,
         incidentNumber,
-        summary: message.summary,
+        summary: cleanedSummary,
         details: message.details,
         severity: effectiveSeverity,
         state: 'triggered',

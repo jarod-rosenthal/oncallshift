@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification } from '../../shared/models';
+import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification, Runbook } from '../../shared/models';
 import { sendNotificationMessage } from '../../shared/queues/sqs-client';
 import { logger } from '../../shared/utils/logger';
 
@@ -1032,6 +1032,298 @@ async function getEscalationStatus(
     repeatEnabled: policy.repeatEnabled,
     isEscalating: incident.state === 'triggered',
   };
+}
+
+/**
+ * GET /api/v1/incidents/:id/similar
+ * Find similar incidents for context and resolution hints
+ */
+router.get('/:id/similar', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+    const limit = Math.min(parseInt(req.query.limit as string) || 5, 10);
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const eventRepo = dataSource.getRepository(IncidentEvent);
+
+    // Get the current incident
+    const currentIncident = await incidentRepo.findOne({
+      where: { id, orgId },
+      relations: ['service'],
+    });
+
+    if (!currentIncident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    // Find similar incidents from the same service in the last 90 days
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const candidates = await incidentRepo
+      .createQueryBuilder('incident')
+      .leftJoinAndSelect('incident.service', 'service')
+      .leftJoinAndSelect('incident.resolvedByUser', 'resolver')
+      .where('incident.org_id = :orgId', { orgId })
+      .andWhere('incident.service_id = :serviceId', { serviceId: currentIncident.serviceId })
+      .andWhere('incident.id != :currentId', { currentId: id })
+      .andWhere('incident.triggered_at > :since', { since: ninetyDaysAgo })
+      .orderBy('incident.triggered_at', 'DESC')
+      .take(50) // Get more candidates for scoring
+      .getMany();
+
+    // Score and rank candidates
+    const scored = candidates.map(incident => {
+      let score = 0;
+
+      // Same severity = +3 points
+      if (incident.severity === currentIncident.severity) {
+        score += 3;
+      }
+
+      // Word overlap in summary = +2 points per matching word
+      const currentWords = extractKeywords(currentIncident.summary);
+      const candidateWords = extractKeywords(incident.summary);
+      const matchingWords = currentWords.filter(w => candidateWords.includes(w));
+      score += matchingWords.length * 2;
+
+      // Resolved incidents are more valuable = +5 points (they have resolution info)
+      if (incident.state === 'resolved') {
+        score += 5;
+      }
+
+      // Recency bonus (more recent = more relevant)
+      const daysSince = (Date.now() - new Date(incident.triggeredAt).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSince < 7) score += 3;
+      else if (daysSince < 14) score += 2;
+      else if (daysSince < 30) score += 1;
+
+      // Calculate similarity percentage (rough estimate)
+      const maxPossibleScore = 3 + (currentWords.length * 2) + 5 + 3;
+      const similarityPercent = Math.min(100, Math.round((score / maxPossibleScore) * 100));
+
+      return {
+        incident,
+        score,
+        similarityPercent,
+        matchingWords,
+      };
+    });
+
+    // Sort by score and take top results
+    const topMatches = scored
+      .filter(s => s.score >= 3) // Minimum threshold
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    // For the top match, try to get resolution note if resolved
+    const results = await Promise.all(topMatches.map(async (match) => {
+      let resolutionNote: string | null = null;
+
+      if (match.incident.state === 'resolved') {
+        // Find resolution note from events
+        const resolveEvents = await eventRepo.find({
+          where: {
+            incidentId: match.incident.id,
+            type: 'note',
+          },
+          order: { createdAt: 'DESC' },
+          take: 5,
+        });
+
+        // Look for resolution-related notes
+        const resolutionEvent = resolveEvents.find(e =>
+          e.message?.toLowerCase().includes('resolution') ||
+          e.message?.toLowerCase().includes('fixed') ||
+          e.message?.toLowerCase().includes('resolved') ||
+          e.message?.startsWith('[Resolution Note]') ||
+          e.message?.startsWith('[')
+        ) || resolveEvents[0];
+
+        if (resolutionEvent) {
+          resolutionNote = resolutionEvent.message?.replace('[Resolution Note] ', '') || null;
+        }
+      }
+
+      return {
+        id: match.incident.id,
+        incidentNumber: match.incident.incidentNumber,
+        summary: match.incident.summary,
+        severity: match.incident.severity,
+        state: match.incident.state,
+        triggeredAt: match.incident.triggeredAt,
+        resolvedAt: match.incident.resolvedAt,
+        resolvedBy: match.incident.resolvedByUser ? {
+          id: match.incident.resolvedByUser.id,
+          fullName: match.incident.resolvedByUser.fullName,
+        } : null,
+        similarityPercent: match.similarityPercent,
+        matchingKeywords: match.matchingWords,
+        resolutionNote,
+      };
+    }));
+
+    // Get the best match for the "hint" display
+    const bestMatch = results.length > 0 && results[0].similarityPercent >= 40 ? results[0] : null;
+
+    return res.json({
+      currentIncidentId: id,
+      bestMatch,
+      similarIncidents: results,
+      total: results.length,
+    });
+  } catch (error) {
+    logger.error('Error finding similar incidents:', error);
+    return res.status(500).json({ error: 'Failed to find similar incidents' });
+  }
+});
+
+/**
+ * GET /api/v1/incidents/:id/suggested-runbooks
+ * Get runbooks suggested for this incident based on content matching
+ */
+router.get('/:id/suggested-runbooks', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+    const runbookRepo = dataSource.getRepository(Runbook);
+
+    // Get the current incident
+    const incident = await incidentRepo.findOne({
+      where: { id, orgId },
+      relations: ['service'],
+    });
+
+    if (!incident) {
+      return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    // Get all active runbooks for this service
+    const runbooks = await runbookRepo.find({
+      where: { serviceId: incident.serviceId, orgId, isActive: true },
+      relations: ['service', 'createdBy'],
+    });
+
+    if (runbooks.length === 0) {
+      return res.json({
+        incidentId: id,
+        suggestedRunbooks: [],
+        total: 0,
+      });
+    }
+
+    // Extract keywords from incident summary
+    const incidentKeywords = extractKeywords(incident.summary);
+
+    // Score each runbook
+    const scored = runbooks.map(runbook => {
+      let score = 0;
+      const matchReasons: string[] = [];
+
+      // Tag matching: +5 points per matching tag
+      const matchingTags = (runbook.tags || []).filter(tag =>
+        incidentKeywords.some(keyword =>
+          keyword.includes(tag.toLowerCase()) || tag.toLowerCase().includes(keyword)
+        )
+      );
+      if (matchingTags.length > 0) {
+        score += matchingTags.length * 5;
+        matchReasons.push(`Tags: ${matchingTags.join(', ')}`);
+      }
+
+      // Title keyword matching: +3 points per match
+      const titleKeywords = extractKeywords(runbook.title);
+      const titleMatches = titleKeywords.filter(k => incidentKeywords.includes(k));
+      if (titleMatches.length > 0) {
+        score += titleMatches.length * 3;
+        matchReasons.push(`Title keywords: ${titleMatches.join(', ')}`);
+      }
+
+      // Description keyword matching: +1 point per match
+      if (runbook.description) {
+        const descKeywords = extractKeywords(runbook.description);
+        const descMatches = descKeywords.filter(k => incidentKeywords.includes(k));
+        if (descMatches.length > 0) {
+          score += descMatches.length;
+          matchReasons.push(`${descMatches.length} description keyword matches`);
+        }
+      }
+
+      // Severity matching: +3 points if runbook targets this severity
+      if (runbook.severity && runbook.severity.length > 0) {
+        if (runbook.severity.includes(incident.severity)) {
+          score += 3;
+          matchReasons.push(`Severity: ${incident.severity}`);
+        }
+      } else {
+        // No severity filter = applies to all = +1 bonus
+        score += 1;
+      }
+
+      // Calculate relevance percentage
+      const maxScore = (runbook.tags?.length || 0) * 5 + titleKeywords.length * 3 + 10;
+      const relevancePercent = Math.min(100, Math.round((score / Math.max(maxScore, 10)) * 100));
+
+      return {
+        runbook,
+        score,
+        relevancePercent,
+        matchReasons,
+      };
+    });
+
+    // Filter to only runbooks with some relevance and sort by score
+    const suggested = scored
+      .filter(s => s.score >= 3) // Minimum threshold
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5); // Top 5 suggestions
+
+    return res.json({
+      incidentId: id,
+      suggestedRunbooks: suggested.map(s => ({
+        id: s.runbook.id,
+        title: s.runbook.title,
+        description: s.runbook.description,
+        stepCount: s.runbook.steps?.length || 0,
+        tags: s.runbook.tags || [],
+        relevancePercent: s.relevancePercent,
+        matchReasons: s.matchReasons,
+        externalUrl: s.runbook.externalUrl,
+      })),
+      total: suggested.length,
+    });
+  } catch (error) {
+    logger.error('Error getting suggested runbooks:', error);
+    return res.status(500).json({ error: 'Failed to get suggested runbooks' });
+  }
+});
+
+/**
+ * Helper to extract meaningful keywords from incident summary
+ */
+function extractKeywords(text: string): string[] {
+  const stopWords = new Set([
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+    'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by',
+    'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above',
+    'below', 'between', 'under', 'again', 'further', 'then', 'once', 'and',
+    'but', 'or', 'nor', 'so', 'yet', 'both', 'either', 'neither', 'not',
+    'only', 'own', 'same', 'than', 'too', 'very', 'just', 'also', 'now',
+    'alert', 'firing', 'resolved', 'warning', 'error', 'critical', 'info',
+  ]);
+
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !stopWords.has(word));
 }
 
 /**

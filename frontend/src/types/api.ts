@@ -56,6 +56,7 @@ export interface User {
   fullName: string;
   role: 'admin' | 'member';
   phoneNumber: string | null;
+  profilePictureUrl?: string | null;
   status?: 'active' | 'inactive';
   settings?: UserSettings;
   hasAvailability?: boolean;
