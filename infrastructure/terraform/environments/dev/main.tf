@@ -929,28 +929,29 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default behavior - serve from ALB (ECS has bundled frontend)
+  # Default behavior - serve from S3 (SPA with client-side routing)
+  # 404 errors from S3 are handled by custom_error_response below
   default_cache_behavior {
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "ALB-${var.project_name}-${var.environment}"
+    target_origin_id = "S3-${aws_s3_bucket.web.id}"
 
     forwarded_values {
-      query_string = true
-      headers      = ["Host", "Origin", "Authorization", "Accept", "Content-Type"]
+      query_string = false
+      headers      = []  # Don't forward any headers to S3
       cookies {
-        forward = "all"
+        forward = "none"
       }
     }
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 0
+    default_ttl            = 0  # Don't cache index.html so updates propagate immediately
     max_ttl                = 0
     compress               = true
   }
 
-  # Static assets behavior - cache JS, CSS, images from S3
+  # Static assets behavior - cache JS, CSS, images from S3 with long TTL
   ordered_cache_behavior {
     path_pattern     = "/assets/*"
     allowed_methods  = ["GET", "HEAD", "OPTIONS"]
@@ -967,7 +968,7 @@ resource "aws_cloudfront_distribution" "main" {
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
     default_ttl            = 86400  # Cache for 24 hours
-    max_ttl                = 31536000  # Max 1 year
+    max_ttl                = 31536000  # Max 1 year (assets have hashed filenames)
     compress               = true
   }
 

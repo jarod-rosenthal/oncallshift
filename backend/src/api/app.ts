@@ -38,6 +38,8 @@ import reportsRoutes from './routes/reports';
 import conferenceBridgesRoutes from './routes/conference-bridges';
 import analyticsRoutes from './routes/analytics';
 import postmortemsRoutes from './routes/postmortems';
+import cloudCredentialsRoutes from './routes/cloud-credentials';
+import aiAssistantRoutes from './routes/ai-assistant';
 import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
@@ -255,6 +257,7 @@ export function createApp(): Express {
   app.use('/api/v1/notifications', notificationRoutes);
   app.use('/api/v1/demo', demoRoutes);
   app.use('/api/v1/incidents', aiDiagnosisRoutes); // AI diagnosis routes (adds /diagnose endpoint to incidents)
+  app.use('/api/v1/incidents', aiAssistantRoutes); // AI assistant routes with tool_use (adds /assistant endpoints)
   app.use('/api/v1/runbooks', runbookRoutes);
   app.use('/api/v1/actions', actionsRoutes);
   app.use('/api/v1/setup', setupRoutes);
@@ -275,6 +278,7 @@ export function createApp(): Express {
   app.use('/api/v1', conferenceBridgesRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
   app.use('/api/v1/postmortems', postmortemsRoutes);
+  app.use('/api/v1/cloud-credentials', cloudCredentialsRoutes);
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

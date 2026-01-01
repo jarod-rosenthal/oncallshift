@@ -816,3 +816,5 @@ Recently completed:
 | 2026-01-01 | Phase 3: Enhanced Postmortems with in_review status, contributing_factors field, template CRUD |
 | 2026-01-01 | Phase 3: Add PostmortemPanel to incident detail page for resolved incidents |
 | 2026-01-01 | Phase 3: Add incident postmortem endpoints (GET/POST /incidents/:id/postmortem) |
+| 2026-01-01 | ✅ AI ASSISTANT WITH CLOUD INVESTIGATION COMPLETE: Tool-using Claude chat with editable prompts |
+| 2026-01-01 | Infrastructure: Fix CloudFront to serve frontend from S3 (not ALB) for faster deployments |

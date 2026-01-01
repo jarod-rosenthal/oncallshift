@@ -1133,3 +1133,145 @@ export interface CreatePostmortemTemplateRequest {
   sections: PostmortemTemplateSection[];
   isDefault?: boolean;
 }
+
+// Cloud Credentials types
+export type CloudProvider = 'aws' | 'azure' | 'gcp';
+export type CloudPermissionLevel = 'read_only' | 'read_write';
+
+export interface CloudCredential {
+  id: string;
+  org_id: string;
+  provider: CloudProvider;
+  name: string;
+  description: string | null;
+  permission_level: CloudPermissionLevel;
+  allowed_services: string[];
+  max_session_duration_minutes: number;
+  require_approval_for_write: boolean;
+  created_by: {
+    id: string;
+    full_name: string;
+    email: string;
+  } | null;
+  last_used_at: string | null;
+  last_used_by: {
+    id: string;
+    full_name: string;
+    email: string;
+  } | null;
+  usage_count: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCloudCredentialRequest {
+  provider: CloudProvider;
+  name: string;
+  description?: string;
+  credentials: Record<string, any>;
+  permission_level?: CloudPermissionLevel;
+  allowed_services?: string[];
+  max_session_duration_minutes?: number;
+  require_approval_for_write?: boolean;
+}
+
+export interface UpdateCloudCredentialRequest {
+  name?: string;
+  description?: string;
+  credentials?: Record<string, any>;
+  permission_level?: CloudPermissionLevel;
+  allowed_services?: string[];
+  max_session_duration_minutes?: number;
+  require_approval_for_write?: boolean;
+  enabled?: boolean;
+}
+
+export interface CloudAccessLog {
+  id: string;
+  credential_id: string;
+  incident_id: string | null;
+  user_id: string;
+  user: {
+    id: string;
+    full_name: string;
+    email: string;
+  };
+  provider: 'aws' | 'azure' | 'gcp';
+  session_start: string;
+  session_end: string | null;
+  commands_executed: Array<{
+    command: string;
+    service: string;
+    timestamp: string;
+    result: 'success' | 'error' | 'access_denied';
+  }>;
+  findings: string[];
+  recommendations: Array<{
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+    title: string;
+    description: string;
+    suggested_action?: string;
+    command?: string;
+    requires_approval?: boolean;
+  }>;
+  root_cause: string | null;
+  ai_confidence: 'high' | 'medium' | 'low' | null;
+  status: 'pending' | 'analyzing' | 'completed' | 'failed';
+  error_message: string | null;
+  created_at: string;
+}
+
+// AI Assistant Conversation Types
+export interface AIConversation {
+  id: string;
+  status: 'active' | 'completed';
+  created_at: string;
+  updated_at: string;
+  user: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+export interface AIConversationMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'tool_call' | 'tool_result';
+  content: string | null;
+  tool_name: string | null;
+  tool_input: Record<string, any> | null;
+  tool_output: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface AIAssistantPromptResponse {
+  prompt: string;
+  incident: {
+    id: string;
+    number: number;
+    summary: string;
+    severity: string;
+    state: string;
+    service: string | null;
+  };
+  available_credentials: Array<{
+    id: string;
+    name: string;
+    provider: CloudProvider;
+  }>;
+}
+
+export interface AIAssistantChatRequest {
+  message: string;
+  conversation_id?: string;
+  credential_ids?: string[];
+}
+
+// SSE Event types for AI Assistant streaming
+export type AIAssistantStreamEvent =
+  | { type: 'conversation_id'; id: string }
+  | { type: 'text'; content: string }
+  | { type: 'tool_call'; tool: string; input: Record<string, any> }
+  | { type: 'tool_result'; tool: string; success: boolean; summary: string }
+  | { type: 'done'; conversation_id: string }
+  | { type: 'error'; error: string };

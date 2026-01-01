@@ -60,7 +60,7 @@ cd frontend && npm run build && cd ..
 echo "📤 Uploading frontend to S3..."
 aws s3 sync frontend/dist/ s3://$S3_BUCKET/ --delete
 
-# 4. Build Docker image (includes backend + frontend for fallback)
+# 4. Build Docker image (backend only - frontend is served from S3/CloudFront)
 echo "🔨 Building Docker image..."
 docker build -t $ECR_REPO:latest .
 

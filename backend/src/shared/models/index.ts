@@ -55,3 +55,6 @@ export * from './ConferenceBridge';
 export * from './Postmortem';
 export * from './PostmortemTemplate';
 export * from './NotificationBundle';
+export * from './CloudCredential';
+export * from './CloudAccessLog';
+export * from './AIConversation';
