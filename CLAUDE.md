@@ -21,6 +21,16 @@ npm run build        # TypeScript compilation
 npm run start        # Production server
 npm run migrate      # Run database migrations
 npm run seed         # Seed test data
+npm run lint         # ESLint
+npm test             # Run all tests
+npm test -- --testPathPattern=webhooks  # Run single test file
+```
+
+### Backend Workers
+```bash
+cd backend
+npm run start:worker             # Notification worker
+npm run start:escalation-timer   # Escalation timer worker
 ```
 
 ### Frontend
@@ -83,6 +93,9 @@ terraform apply
 ### Database Models
 Key entities: Organization, User, Service, Schedule, ScheduleMember, Incident, IncidentEvent, EscalationPolicy, EscalationStep, Notification, DeviceToken, Runbook, RunbookStep
 
+### Testing
+Tests are in `backend/src/**/__tests__/*.test.ts` using Jest with ts-jest. Test files are colocated near the code they test.
+
 ## Key Patterns
 
 ### API Routes
@@ -127,6 +140,19 @@ GitHub Actions workflows in `.github/workflows/`:
 - **API Docs**: https://oncallshift.com/api-docs
 - **Cognito User Pool**: us-east-1_vMk9CQycK
 
+## Troubleshooting
+
+### View ECS Service Status
+```bash
+aws ecs describe-services --cluster pagerduty-lite-dev \
+  --services pagerduty-lite-dev-api --region us-east-1
+```
+
+### View Logs
+```bash
+aws logs tail /ecs/pagerduty-lite-dev/api --follow --region us-east-1
+```
+
 ## Recent Changes (December 2024)
 
 - Full mobile app implementation (20 screens)
@@ -137,3 +163,4 @@ GitHub Actions workflows in `.github/workflows/`:
 - User actions: reassign, manual escalate
 - PagerDuty/Opsgenie compatible webhooks and import wizard
 - Escalation timer auto-advancement
+- Heartbeat monitors for dead man's switch functionality

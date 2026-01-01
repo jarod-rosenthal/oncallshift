@@ -33,3 +33,5 @@ export * from './ServiceIntegration';
 export * from './EventTransformRule';
 export * from './Tag';
 export * from './EntityTag';
+export * from './ChangeEvent';
+export * from './WebhookRequest';

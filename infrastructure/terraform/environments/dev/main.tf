@@ -332,7 +332,7 @@ resource "aws_route53_record" "protonmail_dmarc" {
   name    = "_dmarc.${var.domain_name}"
   type    = "TXT"
   ttl     = 3600
-  records = ["v=DMARC1; p=quarantine"]
+  records = ["v=DMARC1; p=none; rua=mailto:dmarc@oncallshift.com"]
 }
 
 # SQS Queues

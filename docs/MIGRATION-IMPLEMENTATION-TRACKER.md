@@ -1,8 +1,8 @@
 # Migration Compatibility Implementation Tracker
 
-**Branch**: `feature/migration-compatibility-analysis`
+**Branch**: `feature/webhook-api-parity`
 **Started**: December 31, 2024
-**Status**: Planning Complete
+**Status**: Phase 4 Complete (97% Overall)
 
 ---
 
@@ -209,33 +209,34 @@
 > **Goal**: Complete drop-in replacement for webhook endpoints
 
 ### 4.1 PagerDuty Change Events
-**Effort**: 1-2 days | **Status**: Not Started
+**Effort**: 1-2 days | **Status**: Complete
 
-- [ ] Add `change` event_action support to PagerDuty webhook
-- [ ] Create change event record (informational, no incident)
-- [ ] Link change events to services
-- [ ] Return change event in response
+- [x] Add `change` event_action support to PagerDuty webhook
+- [x] Create `ChangeEvent` model (informational records, no incident created)
+- [x] Create database migration `024_add_change_events.sql`
+- [x] Link change events to services, store custom_details & links
+- [x] Return change event ID in response
 
 ### 4.2 Additional Opsgenie Alert Actions
-**Effort**: 2-3 days | **Status**: Not Started
+**Effort**: 2-3 days | **Status**: Complete
 
-- [ ] `POST /api/v1/webhooks/opsgenie/{id}/notes` - Add note to incident
-- [ ] `POST /api/v1/webhooks/opsgenie/{id}/tags` - Add tags to incident
-- [ ] `POST /api/v1/webhooks/opsgenie/{id}/responders` - Add responder
-- [ ] `POST /api/v1/webhooks/opsgenie/{id}/assign` - Assign incident
-- [ ] `DELETE /api/v1/webhooks/opsgenie/{id}` - Delete/cancel alert
-- [ ] `GET /api/v1/webhooks/opsgenie/{id}` - Get alert details
-- [ ] Write tests for each endpoint
+- [x] `POST /api/v1/webhooks/opsgenie/{id}/notes` - Add note to incident
+- [x] `POST /api/v1/webhooks/opsgenie/{id}/tags` - Add tags to incident
+- [x] `POST /api/v1/webhooks/opsgenie/{id}/responders` - Add responder
+- [x] `POST /api/v1/webhooks/opsgenie/{id}/assign` - Assign incident to user
+- [x] `DELETE /api/v1/webhooks/opsgenie/{id}` - Delete/cancel alert
+- [x] `GET /api/v1/webhooks/opsgenie/{id}` - Get alert details (Opsgenie format)
+- [x] Helper functions for each action with incident lookup
 
 ### 4.3 Opsgenie Request Status API
-**Effort**: 1 day | **Status**: Not Started
+**Effort**: 1 day | **Status**: Complete
 
-- [ ] Create `WebhookRequest` model to track async requests
-- [ ] Store request status (pending, processing, completed, failed)
-- [ ] `GET /api/v1/webhooks/opsgenie/requests/{requestId}` - Get status
-- [ ] Return Opsgenie-compatible response format
-- [ ] Clean up old request records (TTL)
-- [ ] Write tests
+- [x] Create `WebhookRequest` model to track async requests
+- [x] Create database migration `025_add_webhook_requests.sql`
+- [x] Store request status (accepted, processing, completed, failed)
+- [x] `GET /api/v1/webhooks/opsgenie/requests/{requestId}` - Get status
+- [x] Return Opsgenie-compatible response format
+- [x] Implement `cleanupExpiredRequests()` with 24-hour TTL
 
 ---
 
@@ -246,8 +247,8 @@
 | Phase 1: Critical | 40 | 40 | 100% |
 | Phase 2: Important | 28 | 28 | 100% |
 | Phase 3: Tools | 37 | 33 | 89% |
-| Phase 4: API Parity | 13 | 0 | 0% |
-| **Total** | **118** | **101** | **86%** |
+| Phase 4: API Parity | 18 | 18 | 100% |
+| **Total** | **123** | **119** | **97%** |
 
 ---
 
@@ -296,6 +297,13 @@
   - Entity selection with platform-specific options (users, teams, schedules, etc.)
   - Preserve integration keys option for zero-config migration
   - Progress indicators during data fetch operations
+- **Dec 31, 2024**: Phase 4 Webhook API Parity - Complete (18/18 tasks)
+  - 4.1 PagerDuty Change Events: Created `ChangeEvent` model and migration, added `change` event_action support
+  - 4.2 Opsgenie Alert Actions: Added 6 new endpoints (notes, tags, responders, assign, delete, get)
+  - 4.3 Request Status API: Created `WebhookRequest` model, migration, and status lookup endpoint
+  - All endpoints follow Opsgenie API conventions with proper response format
+  - Added TTL cleanup for request records (24-hour expiry)
+  - **Phase 4 Complete!**
 
 ---
 

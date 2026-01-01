@@ -9,6 +9,8 @@ export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp';
 export { ConfettiProvider, useConfetti } from './ConfettiOverlay';
 export { default as UrgencyIndicator } from './UrgencyIndicator';
 export { default as ResolveTemplatesModal, defaultResolveTemplates } from './ResolveTemplatesModal';
+export { default as ResolveIncidentModal, ROOT_CAUSE_OPTIONS } from './ResolveIncidentModal';
+export type { ResolutionData } from './ResolveIncidentModal';
 export { default as RelatedIncidents } from './RelatedIncidents';
 export { AIDiagnosisPanel } from './AIDiagnosisPanel';
 export { IncidentCard } from './IncidentCard';
