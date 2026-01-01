@@ -10,8 +10,12 @@ import {
 import { Organization } from './Organization';
 import { User } from './User';
 
-export type CloudProvider = 'aws' | 'azure' | 'gcp';
+export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'anthropic';
 export type CloudPermissionLevel = 'read_only' | 'read_write';
+
+export interface AnthropicCredentials {
+  api_key: string;
+}
 
 export interface AWSCredentials {
   // Access key based authentication
@@ -37,7 +41,7 @@ export interface GCPCredentials {
   project_id: string;
 }
 
-export type CloudCredentialData = AWSCredentials | AzureCredentials | GCPCredentials;
+export type CloudCredentialData = AWSCredentials | AzureCredentials | GCPCredentials | AnthropicCredentials;
 
 @Entity('cloud_credentials')
 export class CloudCredential {
@@ -119,6 +123,8 @@ export class CloudCredential {
         return 'Microsoft Azure';
       case 'gcp':
         return 'Google Cloud Platform';
+      case 'anthropic':
+        return 'Anthropic (Claude AI)';
       default:
         return this.provider;
     }

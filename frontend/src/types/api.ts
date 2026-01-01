@@ -1135,7 +1135,7 @@ export interface CreatePostmortemTemplateRequest {
 }
 
 // Cloud Credentials types
-export type CloudProvider = 'aws' | 'azure' | 'gcp';
+export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'anthropic';
 export type CloudPermissionLevel = 'read_only' | 'read_write';
 
 export interface CloudCredential {
@@ -1265,6 +1265,7 @@ export interface AIAssistantChatRequest {
   message: string;
   conversation_id?: string;
   credential_ids?: string[];
+  model?: 'haiku' | 'sonnet' | 'opus';
 }
 
 // SSE Event types for AI Assistant streaming

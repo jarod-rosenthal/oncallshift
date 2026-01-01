@@ -11,6 +11,7 @@ const PROVIDER_INFO: Record<CloudProvider, { name: string; color: string; icon: 
   aws: { name: 'Amazon Web Services', color: 'bg-orange-500', icon: 'AWS' },
   azure: { name: 'Microsoft Azure', color: 'bg-blue-500', icon: 'Azure' },
   gcp: { name: 'Google Cloud Platform', color: 'bg-red-500', icon: 'GCP' },
+  anthropic: { name: 'Anthropic (Claude AI)', color: 'bg-amber-600', icon: 'AI' },
 };
 
 const AWS_SERVICES = ['ec2', 'ecs', 'lambda', 'rds', 's3', 'cloudwatch', 'cloudtrail', 'dynamodb', 'elasticache', 'sns', 'sqs'];
@@ -55,6 +56,9 @@ export function CloudCredentials() {
 
   const [gcpServiceAccountJson, setGcpServiceAccountJson] = useState('');
   const [gcpProjectId, setGcpProjectId] = useState('');
+
+  // Anthropic
+  const [anthropicApiKey, setAnthropicApiKey] = useState('');
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -142,6 +146,7 @@ export function CloudCredentials() {
     setAzureSubscriptionId('');
     setGcpServiceAccountJson('');
     setGcpProjectId('');
+    setAnthropicApiKey('');
     setShowSecrets(false);
   };
 
@@ -176,6 +181,10 @@ export function CloudCredentials() {
           service_account_json: gcpServiceAccountJson,
           project_id: gcpProjectId,
         };
+      } else if (formProvider === 'anthropic') {
+        credentials = {
+          api_key: anthropicApiKey,
+        };
       }
 
       await cloudCredentialsAPI.create({
@@ -206,6 +215,7 @@ export function CloudCredentials() {
       case 'aws': return AWS_SERVICES;
       case 'azure': return AZURE_SERVICES;
       case 'gcp': return GCP_SERVICES;
+      case 'anthropic': return []; // AI provider, no services
     }
   };
 
@@ -420,9 +430,9 @@ export function CloudCredentials() {
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
               {/* Provider Selection */}
               <div className="space-y-2">
-                <Label>Cloud Provider</Label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['aws', 'azure', 'gcp'] as CloudProvider[]).map((provider) => (
+                <Label>Provider</Label>
+                <div className="grid grid-cols-4 gap-3">
+                  {(['aws', 'azure', 'gcp', 'anthropic'] as CloudProvider[]).map((provider) => (
                     <button
                       key={provider}
                       type="button"
@@ -649,7 +659,39 @@ export function CloudCredentials() {
                 </div>
               )}
 
-              {/* Access Control */}
+              {formProvider === 'anthropic' && (
+                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium">Anthropic API Key</h4>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowSecrets(!showSecrets)}
+                    >
+                      {showSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Enter your Anthropic API key to enable AI-powered incident analysis.
+                    Get your key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">console.anthropic.com</a>
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="anthropicApiKey">API Key</Label>
+                    <Input
+                      id="anthropicApiKey"
+                      value={anthropicApiKey}
+                      onChange={(e) => setAnthropicApiKey(e.target.value)}
+                      type={showSecrets ? 'text' : 'password'}
+                      placeholder="sk-ant-api03-..."
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Access Control - hide for Anthropic */}
+              {formProvider !== 'anthropic' && (
               <div className="space-y-4">
                 <h4 className="font-medium">Access Control</h4>
 
@@ -720,9 +762,10 @@ export function CloudCredentials() {
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Warning */}
-              {formPermissionLevel === 'read_write' && (
+              {formPermissionLevel === 'read_write' && formProvider !== 'anthropic' && (
                 <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
                   <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-yellow-700">

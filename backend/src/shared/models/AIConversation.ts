@@ -66,7 +66,7 @@ export class AIConversationMessage {
   @Column({ type: 'text', nullable: true })
   content?: string | null;
 
-  @Column({ name: 'tool_name', nullable: true })
+  @Column({ name: 'tool_name', type: 'varchar', length: 100, nullable: true })
   toolName?: string | null;
 
   @Column({ name: 'tool_input', type: 'jsonb', nullable: true })
