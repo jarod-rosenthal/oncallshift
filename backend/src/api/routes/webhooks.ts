@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { sendAlertMessage, AlertMessage } from '../../shared/queues/sqs-client';
 import { getDataSource } from '../../shared/db/data-source';
-import { Service } from '../../shared/models';
+import { Service, ChangeEvent, Incident, IncidentEvent, User, WebhookRequest } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
@@ -161,14 +161,14 @@ async function findServiceByKey(
 
 interface PagerDutyEvent {
   routing_key: string;
-  event_action: 'trigger' | 'acknowledge' | 'resolve';
+  event_action: 'trigger' | 'acknowledge' | 'resolve' | 'change';
   dedup_key?: string;
   client?: string;
   client_url?: string;
   payload?: {
     summary: string;
     source: string;
-    severity: 'critical' | 'error' | 'warning' | 'info';
+    severity?: 'critical' | 'error' | 'warning' | 'info';
     timestamp?: string;
     component?: string;
     group?: string;
@@ -202,12 +202,12 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
     if (!event.event_action) {
       return res.status(400).json({
         status: 'invalid event',
-        message: 'event_action is required (trigger, acknowledge, or resolve)',
+        message: 'event_action is required (trigger, acknowledge, resolve, or change)',
         dedup_key: event.dedup_key,
       });
     }
 
-    // For trigger events, payload is required
+    // For trigger events, payload with severity is required
     if (event.event_action === 'trigger') {
       if (!event.payload) {
         return res.status(400).json({
@@ -221,6 +221,25 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
         return res.status(400).json({
           status: 'invalid event',
           message: 'payload.summary, payload.source, and payload.severity are required',
+          dedup_key: event.dedup_key,
+        });
+      }
+    }
+
+    // For change events, payload is required but severity is optional
+    if (event.event_action === 'change') {
+      if (!event.payload) {
+        return res.status(400).json({
+          status: 'invalid event',
+          message: 'payload is required for change events',
+          dedup_key: event.dedup_key,
+        });
+      }
+
+      if (!event.payload.summary) {
+        return res.status(400).json({
+          status: 'invalid event',
+          message: 'payload.summary is required for change events',
           dedup_key: event.dedup_key,
         });
       }
@@ -253,7 +272,7 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
       const alertMessage: AlertMessage = {
         serviceId: service.id,
         summary: event.payload!.summary.substring(0, 1024), // PagerDuty limit
-        severity: mapPagerDutySeverity(event.payload!.severity),
+        severity: mapPagerDutySeverity(event.payload!.severity!),
         dedupKey,
         source: event.payload!.source,
         details: {
@@ -314,6 +333,42 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
         status: updated ? 'success' : 'no matching incident',
         message: updated ? 'Incident resolved' : 'No open incident found with dedup_key',
         dedup_key: dedupKey,
+      });
+    } else if (event.event_action === 'change') {
+      // Handle change event - informational only, no incident created
+      const dataSource = await getDataSource();
+      const changeEventRepo = dataSource.getRepository(ChangeEvent);
+
+      const changeEvent = changeEventRepo.create({
+        serviceId: service.id,
+        summary: event.payload!.summary.substring(0, 1024),
+        source: event.payload!.source || null,
+        timestamp: event.payload!.timestamp ? new Date(event.payload!.timestamp) : null,
+        customDetails: {
+          ...event.payload!.custom_details,
+          component: event.payload!.component,
+          group: event.payload!.group,
+          class: event.payload!.class,
+          client: event.client,
+          client_url: event.client_url,
+          images: event.images,
+        },
+        links: event.links || null,
+        routingKey: event.routing_key,
+      });
+
+      await changeEventRepo.save(changeEvent);
+
+      logger.info('PagerDuty webhook processed - change', {
+        serviceId: service.id,
+        changeEventId: changeEvent.id,
+        summary: changeEvent.summary.substring(0, 100),
+      });
+
+      return res.status(202).json({
+        status: 'success',
+        message: 'Change event recorded',
+        change_event_id: changeEvent.id,
       });
     }
 
@@ -680,6 +735,322 @@ router.post('/opsgenie/:identifier/close', async (req: Request, res: Response) =
   }
 });
 
+/**
+ * Opsgenie Add Note to Alert
+ * POST /api/v1/webhooks/opsgenie/:identifier/notes
+ */
+router.post('/opsgenie/:identifier/notes', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { note, user, source } = req.body;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    if (!note) {
+      return res.status(400).json({
+        result: 'note field is required',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const added = await addNoteToIncident(service.id, identifier, note, user, source);
+
+    return res.status(202).json({
+      result: added ? 'Request will be processed' : 'Alert not found',
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error processing Opsgenie add note:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
+/**
+ * Opsgenie Add Tags to Alert
+ * POST /api/v1/webhooks/opsgenie/:identifier/tags
+ */
+router.post('/opsgenie/:identifier/tags', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { tags, user, source, note } = req.body;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    if (!tags || !Array.isArray(tags) || tags.length === 0) {
+      return res.status(400).json({
+        result: 'tags field is required and must be a non-empty array',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const added = await addTagsToIncident(service.id, identifier, tags, user, source, note);
+
+    return res.status(202).json({
+      result: added ? 'Request will be processed' : 'Alert not found',
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error processing Opsgenie add tags:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
+/**
+ * Opsgenie Add Responder to Alert
+ * POST /api/v1/webhooks/opsgenie/:identifier/responders
+ */
+router.post('/opsgenie/:identifier/responders', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { responder, user, source, note } = req.body;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    if (!responder || !responder.type) {
+      return res.status(400).json({
+        result: 'responder field with type is required',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const added = await addResponderToIncident(service.id, identifier, responder, user, source, note);
+
+    return res.status(202).json({
+      result: added ? 'Request will be processed' : 'Alert not found',
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error processing Opsgenie add responder:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
+/**
+ * Opsgenie Assign Alert
+ * POST /api/v1/webhooks/opsgenie/:identifier/assign
+ */
+router.post('/opsgenie/:identifier/assign', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { owner, user, source, note } = req.body;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    if (!owner || !owner.username) {
+      return res.status(400).json({
+        result: 'owner field with username is required',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const assigned = await assignIncident(service.id, identifier, owner.username, user, source, note);
+
+    return res.status(202).json({
+      result: assigned ? 'Request will be processed' : 'Alert not found',
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error processing Opsgenie assign:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
+/**
+ * Opsgenie Delete/Cancel Alert
+ * DELETE /api/v1/webhooks/opsgenie/:identifier
+ */
+router.delete('/opsgenie/:identifier', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { user, source } = req.query;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const deleted = await deleteIncident(service.id, identifier, user as string, source as string);
+
+    return res.status(202).json({
+      result: deleted ? 'Request will be processed' : 'Alert not found',
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error processing Opsgenie delete:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
+/**
+ * Opsgenie Get Alert Details
+ * GET /api/v1/webhooks/opsgenie/:identifier
+ */
+router.get('/opsgenie/:identifier', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.params;
+    const { identifierType } = req.query;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const alert = await getIncidentAsOpsgenieAlert(service.id, identifier, identifierType as string);
+
+    if (!alert) {
+      return res.status(404).json({
+        result: 'Alert not found',
+        took: 0.01,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    return res.status(200).json({
+      data: alert,
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error processing Opsgenie get alert:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
 // ============================================================================
 // Generic Webhook Endpoint
 // Accepts a simplified format for easy integration
@@ -874,7 +1245,6 @@ async function updateIncidentState(
   newState: 'acknowledged' | 'resolved'
 ): Promise<boolean> {
   const dataSource = await getDataSource();
-  const { Incident, IncidentEvent } = await import('../../shared/models');
   const incidentRepo = dataSource.getRepository(Incident);
   const eventRepo = dataSource.getRepository(IncidentEvent);
 
@@ -910,5 +1280,516 @@ async function updateIncidentState(
 
   return true;
 }
+
+/**
+ * Add a note to an incident
+ */
+async function addNoteToIncident(
+  serviceId: string,
+  dedupKey: string,
+  note: string,
+  user?: string,
+  source?: string
+): Promise<boolean> {
+  const dataSource = await getDataSource();
+  const incidentRepo = dataSource.getRepository(Incident);
+  const eventRepo = dataSource.getRepository(IncidentEvent);
+
+  const incident = await incidentRepo.findOne({
+    where: [
+      { serviceId, dedupKey, state: 'triggered' },
+      { serviceId, dedupKey, state: 'acknowledged' },
+    ],
+  });
+
+  if (!incident) {
+    return false;
+  }
+
+  const event = eventRepo.create({
+    incidentId: incident.id,
+    type: 'note',
+    message: note,
+    payload: { user, source, via: 'opsgenie_api' },
+  });
+  await eventRepo.save(event);
+
+  return true;
+}
+
+/**
+ * Add tags to an incident
+ */
+async function addTagsToIncident(
+  serviceId: string,
+  dedupKey: string,
+  tags: string[],
+  user?: string,
+  source?: string,
+  note?: string
+): Promise<boolean> {
+  const dataSource = await getDataSource();
+  const incidentRepo = dataSource.getRepository(Incident);
+  const eventRepo = dataSource.getRepository(IncidentEvent);
+
+  const incident = await incidentRepo.findOne({
+    where: [
+      { serviceId, dedupKey, state: 'triggered' },
+      { serviceId, dedupKey, state: 'acknowledged' },
+    ],
+  });
+
+  if (!incident) {
+    return false;
+  }
+
+  // Update incident details with tags
+  const existingTags = (incident.details as any)?.tags || [];
+  const newTags = [...new Set([...existingTags, ...tags])];
+  incident.details = { ...(incident.details || {}), tags: newTags };
+  await incidentRepo.save(incident);
+
+  const event = eventRepo.create({
+    incidentId: incident.id,
+    type: 'note',
+    message: note || `Tags added: ${tags.join(', ')}`,
+    payload: { tags, user, source, via: 'opsgenie_api', action: 'tags_added' },
+  });
+  await eventRepo.save(event);
+
+  return true;
+}
+
+/**
+ * Add responder to an incident
+ */
+async function addResponderToIncident(
+  serviceId: string,
+  dedupKey: string,
+  responder: { type: string; id?: string; name?: string; username?: string },
+  user?: string,
+  source?: string,
+  note?: string
+): Promise<boolean> {
+  const dataSource = await getDataSource();
+  const incidentRepo = dataSource.getRepository(Incident);
+  const eventRepo = dataSource.getRepository(IncidentEvent);
+
+  const incident = await incidentRepo.findOne({
+    where: [
+      { serviceId, dedupKey, state: 'triggered' },
+      { serviceId, dedupKey, state: 'acknowledged' },
+    ],
+  });
+
+  if (!incident) {
+    return false;
+  }
+
+  // Add responder to incident details
+  const existingResponders = (incident.details as any)?.responders || [];
+  existingResponders.push(responder);
+  incident.details = { ...(incident.details || {}), responders: existingResponders };
+  await incidentRepo.save(incident);
+
+  const event = eventRepo.create({
+    incidentId: incident.id,
+    type: 'note',
+    message: note || `Responder added: ${responder.name || responder.username || responder.id}`,
+    payload: { responder, user, source, via: 'opsgenie_api', action: 'responder_added' },
+  });
+  await eventRepo.save(event);
+
+  return true;
+}
+
+/**
+ * Assign incident to a user
+ */
+async function assignIncident(
+  serviceId: string,
+  dedupKey: string,
+  ownerUsername: string,
+  user?: string,
+  source?: string,
+  note?: string
+): Promise<boolean> {
+  const dataSource = await getDataSource();
+  const incidentRepo = dataSource.getRepository(Incident);
+  const eventRepo = dataSource.getRepository(IncidentEvent);
+  const userRepo = dataSource.getRepository(User);
+
+  const incident = await incidentRepo.findOne({
+    where: [
+      { serviceId, dedupKey, state: 'triggered' },
+      { serviceId, dedupKey, state: 'acknowledged' },
+    ],
+    relations: ['service'],
+  });
+
+  if (!incident) {
+    return false;
+  }
+
+  // Find user by email/username
+  const assignee = await userRepo.findOne({
+    where: [
+      { email: ownerUsername, orgId: incident.service.orgId },
+    ],
+  });
+
+  if (assignee) {
+    incident.assignedToUserId = assignee.id;
+    incident.assignedAt = new Date();
+  }
+
+  // Update details with owner info
+  incident.details = { ...(incident.details || {}), owner: { username: ownerUsername } };
+  await incidentRepo.save(incident);
+
+  const event = eventRepo.create({
+    incidentId: incident.id,
+    type: 'reassign',
+    message: note || `Assigned to ${ownerUsername}`,
+    payload: { owner: ownerUsername, user, source, via: 'opsgenie_api' },
+  });
+  await eventRepo.save(event);
+
+  return true;
+}
+
+/**
+ * Delete/cancel an incident
+ */
+async function deleteIncident(
+  serviceId: string,
+  dedupKey: string,
+  user?: string,
+  source?: string
+): Promise<boolean> {
+  const dataSource = await getDataSource();
+  const incidentRepo = dataSource.getRepository(Incident);
+  const eventRepo = dataSource.getRepository(IncidentEvent);
+
+  const incident = await incidentRepo.findOne({
+    where: [
+      { serviceId, dedupKey, state: 'triggered' },
+      { serviceId, dedupKey, state: 'acknowledged' },
+    ],
+  });
+
+  if (!incident) {
+    return false;
+  }
+
+  // Mark as resolved with cancelled flag
+  incident.state = 'resolved';
+  incident.resolvedAt = new Date();
+  incident.details = { ...(incident.details || {}), cancelled: true };
+  await incidentRepo.save(incident);
+
+  const event = eventRepo.create({
+    incidentId: incident.id,
+    type: 'resolve',
+    message: 'Alert cancelled/deleted via API',
+    payload: { cancelled: true, user, source, via: 'opsgenie_api' },
+  });
+  await eventRepo.save(event);
+
+  return true;
+}
+
+/**
+ * Get incident as Opsgenie-compatible alert format
+ */
+async function getIncidentAsOpsgenieAlert(
+  serviceId: string,
+  identifier: string,
+  identifierType?: string
+): Promise<Record<string, any> | null> {
+  const dataSource = await getDataSource();
+  const incidentRepo = dataSource.getRepository(Incident);
+
+  // Try to find by dedupKey (alias) or by ID
+  let incident: Incident | null = null;
+
+  if (identifierType === 'id') {
+    incident = await incidentRepo.findOne({
+      where: { id: identifier, serviceId },
+      relations: ['service', 'assignedToUser'],
+    });
+  } else {
+    // Default to alias (dedupKey)
+    incident = await incidentRepo.findOne({
+      where: { dedupKey: identifier, serviceId },
+      relations: ['service', 'assignedToUser'],
+    });
+  }
+
+  if (!incident) {
+    return null;
+  }
+
+  // Map to Opsgenie alert format
+  const incidentDetails = (incident.details || {}) as Record<string, any>;
+
+  return {
+    id: incident.id,
+    alias: incident.dedupKey,
+    message: incident.summary,
+    status: mapStateToOpsgenieStatus(incident.state),
+    acknowledged: incident.state === 'acknowledged',
+    isSeen: incident.acknowledgedAt !== null,
+    tags: incidentDetails.tags || [],
+    snoozed: false,
+    count: incident.eventCount || 1,
+    createdAt: incident.createdAt.toISOString(),
+    updatedAt: incident.updatedAt.toISOString(),
+    source: incidentDetails.source_format || incident.service.name,
+    owner: incident.assignedToUser?.email || incidentDetails.owner?.username || '',
+    priority: mapSeverityToOpsgeniePriority(incident.severity),
+    responders: incidentDetails.responders || [],
+    integration: {
+      id: incident.service.id,
+      name: incident.service.name,
+      type: 'OnCallShift',
+    },
+    details: incidentDetails,
+    description: incidentDetails.description || '',
+  };
+}
+
+/**
+ * Map incident state to Opsgenie status
+ */
+function mapStateToOpsgenieStatus(state: string): string {
+  switch (state) {
+    case 'triggered':
+      return 'open';
+    case 'acknowledged':
+      return 'acked';
+    case 'resolved':
+      return 'closed';
+    default:
+      return 'open';
+  }
+}
+
+/**
+ * Map severity to Opsgenie priority
+ */
+function mapSeverityToOpsgeniePriority(severity: string): string {
+  switch (severity) {
+    case 'critical':
+      return 'P1';
+    case 'error':
+      return 'P2';
+    case 'warning':
+      return 'P3';
+    case 'info':
+      return 'P5';
+    default:
+      return 'P3';
+  }
+}
+
+// ============================================================================
+// Request Tracking for Async Operations
+// ============================================================================
+
+/**
+ * Track a webhook request for async status lookups
+ * TTL is 24 hours by default
+ */
+async function trackRequest(
+  requestId: string,
+  serviceId: string,
+  action: string,
+  alertId?: string
+): Promise<void> {
+  const dataSource = await getDataSource();
+  const requestRepo = dataSource.getRepository(WebhookRequest);
+
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + 24);
+
+  const request = requestRepo.create({
+    id: requestId,
+    serviceId,
+    action,
+    status: 'completed',
+    processed: true,
+    success: true,
+    alertId,
+    expiresAt,
+    processedAt: new Date(),
+  });
+
+  await requestRepo.save(request);
+}
+
+/**
+ * Track a failed webhook request
+ */
+async function trackFailedRequest(
+  requestId: string,
+  serviceId: string,
+  action: string,
+  message: string
+): Promise<void> {
+  const dataSource = await getDataSource();
+  const requestRepo = dataSource.getRepository(WebhookRequest);
+
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + 24);
+
+  const request = requestRepo.create({
+    id: requestId,
+    serviceId,
+    action,
+    status: 'failed',
+    processed: true,
+    success: false,
+    message,
+    expiresAt,
+    processedAt: new Date(),
+  });
+
+  await requestRepo.save(request);
+}
+
+/**
+ * @swagger
+ * /api/v1/webhooks/opsgenie/requests/{requestId}:
+ *   get:
+ *     summary: Get Request Status
+ *     description: |
+ *       Check the status of an async Opsgenie API request.
+ *       Compatible with Opsgenie's request status API.
+ *
+ *       Requests are tracked for 24 hours before being automatically cleaned up.
+ *     tags: [Webhooks]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Request ID returned from async operations
+ *     responses:
+ *       200:
+ *         description: Request status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: boolean
+ *                     action:
+ *                       type: string
+ *                     processedAt:
+ *                       type: string
+ *                       format: date-time
+ *                     integrationId:
+ *                       type: string
+ *                     isSuccess:
+ *                       type: boolean
+ *                     status:
+ *                       type: string
+ *                     alertId:
+ *                       type: string
+ *       404:
+ *         description: Request not found
+ */
+router.get('/opsgenie/requests/:requestId', async (req: Request, res: Response) => {
+  try {
+    const { requestId } = req.params;
+    const apiKey = req.headers['x-api-key'] as string ||
+      (req.headers.authorization?.replace('GenieKey ', '') as string);
+
+    if (!apiKey) {
+      return res.status(401).json({
+        result: 'API key is missing',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const service = await findServiceByKey(apiKey, 'opsgenie');
+
+    if (!service) {
+      return res.status(401).json({
+        result: 'Invalid API key',
+        took: 0,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    const dataSource = await getDataSource();
+    const requestRepo = dataSource.getRepository(WebhookRequest);
+
+    const webhookRequest = await requestRepo.findOne({
+      where: { id: requestId, serviceId: service.id },
+    });
+
+    if (!webhookRequest) {
+      return res.status(404).json({
+        result: 'Request not found',
+        took: 0.01,
+        requestId: crypto.randomUUID(),
+      });
+    }
+
+    // Return Opsgenie-compatible response
+    return res.status(200).json({
+      data: {
+        success: webhookRequest.success,
+        action: webhookRequest.action,
+        processedAt: webhookRequest.processedAt?.toISOString(),
+        integrationId: service.id,
+        isSuccess: webhookRequest.success,
+        status: webhookRequest.status,
+        alertId: webhookRequest.alertId,
+        message: webhookRequest.message,
+      },
+      took: 0.01,
+      requestId: crypto.randomUUID(),
+    });
+  } catch (error) {
+    logger.error('Error getting request status:', error);
+    return res.status(500).json({
+      result: 'Internal server error',
+      took: 0,
+      requestId: crypto.randomUUID(),
+    });
+  }
+});
+
+/**
+ * Cleanup expired webhook requests
+ * Called periodically or via cron
+ */
+async function cleanupExpiredRequests(): Promise<number> {
+  const dataSource = await getDataSource();
+  const requestRepo = dataSource.getRepository(WebhookRequest);
+
+  const result = await requestRepo
+    .createQueryBuilder()
+    .delete()
+    .from(WebhookRequest)
+    .where('expires_at < :now', { now: new Date() })
+    .execute();
+
+  return result.affected || 0;
+}
+
+// Export for use in scheduled cleanup
+export { cleanupExpiredRequests, trackRequest, trackFailedRequest };
 
 export default router;

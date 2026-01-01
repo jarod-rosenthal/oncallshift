@@ -228,11 +228,40 @@ export const acknowledgeIncident = async (incidentId: string): Promise<{ inciden
 };
 
 /**
- * Resolve an incident
+ * Resolution data for resolving incidents with required context
  */
-export const resolveIncident = async (incidentId: string, note?: string): Promise<{ incident: Incident; message: string }> => {
+export interface ResolutionData {
+  rootCause?: string;
+  resolutionSummary?: string;
+  followUpRequired?: boolean;
+  followUpUrl?: string;
+  note?: string; // Legacy support
+}
+
+/**
+ * Resolve an incident with optional resolution data
+ */
+export const resolveIncident = async (
+  incidentId: string,
+  data?: string | ResolutionData
+): Promise<{ incident: Incident; message: string }> => {
   try {
-    const response = await apiClient.put(`/v1/incidents/${incidentId}/resolve`, note ? { note } : undefined);
+    let payload: ResolutionData | undefined;
+
+    if (typeof data === 'string') {
+      // Legacy support: string is treated as note
+      payload = { note: data };
+    } else if (data) {
+      payload = {
+        ...data,
+        // Combine root cause and summary into note for backend compatibility
+        note: data.resolutionSummary
+          ? `[${data.rootCause?.replace(/_/g, ' ').toUpperCase()}] ${data.resolutionSummary}${data.followUpRequired ? ' (Follow-up required' + (data.followUpUrl ? `: ${data.followUpUrl}` : '') + ')' : ''}`
+          : data.note,
+      };
+    }
+
+    const response = await apiClient.put(`/v1/incidents/${incidentId}/resolve`, payload);
     return response.data;
   } catch (error) {
     console.error('Error resolving incident:', error);

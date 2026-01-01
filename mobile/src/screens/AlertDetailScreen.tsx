@@ -40,7 +40,8 @@ import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '
 import { severityColors, statusColors } from '../theme';
 import { useAppTheme } from '../context/ThemeContext';
 import * as hapticService from '../services/hapticService';
-import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel } from '../components';
+import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel } from '../components';
+import type { ResolutionData } from '../components';
 
 // Skeleton placeholder component for loading states
 const SkeletonBox = ({ width, height, style, bgColor }: { width: number | string; height: number; style?: any; bgColor: string }) => (
@@ -78,6 +79,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [showRunbook, setShowRunbook] = useState(true);
   const [showEscalateModal, setShowEscalateModal] = useState(false);
   const [showResolveTemplates, setShowResolveTemplates] = useState(false);
+  const [showResolveModal, setShowResolveModal] = useState(false);
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -455,6 +457,44 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const handleResolveWithTemplate = (note: string) => {
     setShowResolveTemplates(false);
     handleResolve(note);
+  };
+
+  const handleResolveWithData = async (data: ResolutionData) => {
+    setShowResolveModal(false);
+    setActionLoading(true);
+    try {
+      const result = await apiService.resolveIncident(incident.id, data);
+      setIncident(result.incident);
+      await hapticService.success();
+      showConfetti();
+      showSuccess(toastMessages.resolve);
+      fetchIncidentDetails();
+    } catch (error: any) {
+      await hapticService.error();
+      showError(error.message || 'Failed to resolve incident');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleFalseAlarm = async () => {
+    setActionLoading(true);
+    try {
+      const result = await apiService.resolveIncident(incident.id, {
+        rootCause: 'false_alarm',
+        resolutionSummary: 'Alert triggered incorrectly. No actual issue detected.',
+        followUpRequired: false,
+      });
+      setIncident(result.incident);
+      await hapticService.success();
+      showSuccess('Dismissed as false alarm');
+      fetchIncidentDetails();
+    } catch (error: any) {
+      await hapticService.error();
+      showError(error.message || 'Failed to dismiss incident');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleAddNote = async () => {
@@ -1493,9 +1533,17 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               loading: actionLoading,
             },
             {
+              label: 'False Alarm',
+              icon: 'shield-check',
+              onPress: handleFalseAlarm,
+              mode: 'outlined',
+              color: colors.textSecondary,
+              loading: actionLoading,
+            },
+            {
               label: 'Resolve',
               icon: 'check-all',
-              onPress: () => setShowResolveTemplates(true),
+              onPress: () => setShowResolveModal(true),
               color: colors.success,
               loading: actionLoading,
             },
@@ -1524,7 +1572,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             {
               label: 'Resolve',
               icon: 'check-all',
-              onPress: () => setShowResolveTemplates(true),
+              onPress: () => setShowResolveModal(true),
               color: colors.success,
               loading: actionLoading,
             },
@@ -1678,11 +1726,20 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         </Modal>
       </Portal>
 
-      {/* Resolve Templates Modal */}
+      {/* Resolve Templates Modal (Legacy) */}
       <ResolveTemplatesModal
         visible={showResolveTemplates}
         onDismiss={() => setShowResolveTemplates(false)}
         onSelectTemplate={handleResolveWithTemplate}
+      />
+
+      {/* Enhanced Resolve Modal with Required Fields */}
+      <ResolveIncidentModal
+        visible={showResolveModal}
+        onDismiss={() => setShowResolveModal(false)}
+        onResolve={handleResolveWithData}
+        loading={actionLoading}
+        incidentTitle={incident.summary}
       />
 
       {/* Delete Confirmation Modal */}
