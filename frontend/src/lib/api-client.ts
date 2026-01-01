@@ -70,6 +70,10 @@ import type {
   CreatePostmortemRequest,
   UpdatePostmortemRequest,
   CreatePostmortemTemplateRequest,
+  CloudCredential,
+  CreateCloudCredentialRequest,
+  UpdateCloudCredentialRequest,
+  CloudAccessLog,
 } from '../types/api';
 
 // API base URL - will be same origin when served from Express
@@ -2025,6 +2029,162 @@ export const postmortemsAPI = {
   createTemplate: async (data: CreatePostmortemTemplateRequest): Promise<{ template: PostmortemTemplate }> => {
     const response = await apiClient.post<{ template: PostmortemTemplate }>('/postmortems/templates', data);
     return response.data;
+  },
+};
+
+// Cloud Credentials API
+export const cloudCredentialsAPI = {
+  list: async (): Promise<{ credentials: CloudCredential[] }> => {
+    const response = await apiClient.get<{ credentials: CloudCredential[] }>('/cloud-credentials');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ credential: CloudCredential }> => {
+    const response = await apiClient.get<{ credential: CloudCredential }>(`/cloud-credentials/${id}`);
+    return response.data;
+  },
+
+  create: async (data: CreateCloudCredentialRequest): Promise<{ credential: CloudCredential }> => {
+    const response = await apiClient.post<{ credential: CloudCredential }>('/cloud-credentials', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: UpdateCloudCredentialRequest): Promise<{ credential: CloudCredential }> => {
+    const response = await apiClient.put<{ credential: CloudCredential }>(`/cloud-credentials/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/cloud-credentials/${id}`);
+  },
+
+  test: async (id: string): Promise<{ success: boolean; message: string; details?: Record<string, any> }> => {
+    const response = await apiClient.post<{ success: boolean; message: string; details?: Record<string, any> }>(`/cloud-credentials/${id}/test`);
+    return response.data;
+  },
+
+  investigate: async (id: string, incidentId: string): Promise<{
+    success: boolean;
+    findings: string[];
+    recommendations: Array<{
+      severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+      title: string;
+      description: string;
+      suggested_action?: string;
+    }>;
+    commands_executed: Array<{
+      command: string;
+      service: string;
+      timestamp: string;
+      result: 'success' | 'error' | 'access_denied';
+    }>;
+    error_message?: string;
+  }> => {
+    const response = await apiClient.post(`/cloud-credentials/${id}/investigate`, { incident_id: incidentId });
+    return response.data;
+  },
+
+  getAccessLogs: async (params?: { credential_id?: string; incident_id?: string; status?: string; limit?: number; offset?: number }): Promise<{ logs: CloudAccessLog[]; pagination: { total: number; limit: number; offset: number } }> => {
+    const response = await apiClient.get<{ logs: CloudAccessLog[]; pagination: { total: number; limit: number; offset: number } }>('/cloud-credentials/access-logs', { params });
+    return response.data;
+  },
+};
+
+// AI Assistant API
+import type {
+  AIConversation,
+  AIConversationMessage,
+  AIAssistantPromptResponse,
+  AIAssistantChatRequest,
+} from '../types/api';
+
+export const aiAssistantAPI = {
+  // Get the default prompt for an incident
+  getPrompt: async (incidentId: string): Promise<AIAssistantPromptResponse> => {
+    const response = await apiClient.get<AIAssistantPromptResponse>(`/incidents/${incidentId}/assistant/prompt`);
+    return response.data;
+  },
+
+  // List conversations for an incident
+  listConversations: async (incidentId: string): Promise<{ conversations: AIConversation[] }> => {
+    const response = await apiClient.get<{ conversations: AIConversation[] }>(`/incidents/${incidentId}/assistant/conversations`);
+    return response.data;
+  },
+
+  // Get a specific conversation with messages
+  getConversation: async (incidentId: string, conversationId: string): Promise<{
+    conversation: AIConversation;
+    messages: AIConversationMessage[];
+  }> => {
+    const response = await apiClient.get<{
+      conversation: AIConversation;
+      messages: AIConversationMessage[];
+    }>(`/incidents/${incidentId}/assistant/conversations/${conversationId}`);
+    return response.data;
+  },
+
+  // Start or continue a chat session (returns SSE stream URL info)
+  getChatStreamUrl: (incidentId: string): string => {
+    return `${API_BASE_URL}/incidents/${incidentId}/assistant/chat`;
+  },
+
+  // Helper to create a streaming chat request
+  streamChat: async (
+    incidentId: string,
+    request: AIAssistantChatRequest,
+    onEvent: (event: { type: string; [key: string]: any }) => void,
+    onError?: (error: Error) => void
+  ): Promise<void> => {
+    const token = localStorage.getItem('accessToken');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/incidents/${incidentId}/assistant/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              onEvent(data);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (onError) {
+        onError(error as Error);
+      } else {
+        throw error;
+      }
+    }
   },
 };
 

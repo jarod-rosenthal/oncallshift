@@ -29,6 +29,7 @@ import { Workflows } from './pages/Workflows';
 import { Reports } from './pages/Reports';
 import { Postmortems } from './pages/Postmortems';
 import { Tags } from './pages/Tags';
+import { CloudCredentials } from './pages/CloudCredentials';
 import { TeamDetail } from './pages/TeamDetail';
 import { Analytics } from './pages/Analytics';
 import { Account } from './pages/Account';
@@ -293,6 +294,14 @@ function App() {
           element={
             <AdminWithLayout>
               <Integrations />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/settings/cloud-credentials"
+          element={
+            <AdminWithLayout>
+              <CloudCredentials />
             </AdminWithLayout>
           }
         />

@@ -19,6 +19,8 @@ import { RespondersPanel } from '../components/RespondersPanel';
 import { SubscribersPanel } from '../components/SubscribersPanel';
 import { ConferenceBridgePanel } from '../components/ConferenceBridgePanel';
 import { PostmortemPanel } from '../components/PostmortemPanel';
+import { CloudAnalysisPanel } from '../components/CloudAnalysisPanel';
+import { AIAssistantPanel } from '../components/AIAssistantPanel';
 import { StickyActionBar, StickyActionBarSpacer } from '../components/StickyActionBar';
 import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
@@ -429,6 +431,11 @@ export function IncidentDetail() {
               onRefresh={refreshData}
             />
 
+            <CloudAnalysisPanel
+              incidentId={incident.id}
+              incidentState={incident.state}
+            />
+
             <EscalationStatusPanel
               escalation={escalation}
               onEscalateNow={() => handleEscalate('Manual escalation from incident detail')}
@@ -437,8 +444,14 @@ export function IncidentDetail() {
             <NotificationStatusPanel incidentId={incident.id} />
           </div>
 
-          {/* Right Column: Runbook and Timeline */}
+          {/* Right Column: AI Assistant, Runbook and Timeline */}
           <div className="lg:col-span-2 space-y-6">
+            {/* AI Assistant Panel */}
+            <AIAssistantPanel
+              incidentId={incident.id}
+              incidentSummary={`#${incident.incidentNumber}: ${incident.summary}`}
+            />
+
             <RunbookPanel
               incident={incident}
               onAddNote={handleAddNote}
