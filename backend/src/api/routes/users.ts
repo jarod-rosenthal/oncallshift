@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminDisableUserCommand, AdminEnableUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { User, UserContactMethod, UserNotificationRule } from '../../shared/models';
@@ -16,6 +18,12 @@ import {
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-1',
 });
+
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+});
+
+const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET || 'pagerduty-lite-dev-uploads';
 
 const router = Router();
 
@@ -37,6 +45,7 @@ router.get('/me', async (req: Request, res: Response) => {
         fullName: user.fullName,
         role: user.role,
         phoneNumber: user.phoneNumber,
+        profilePictureUrl: user.profilePictureUrl,
         settings: user.settings,
         organization: {
           id: user.organization.id,
@@ -1237,6 +1246,151 @@ router.delete('/me/notification-rules/:id', async (req: Request, res: Response) 
   } catch (error) {
     logger.error('Error deleting notification rule:', error);
     return res.status(500).json({ error: 'Failed to delete notification rule' });
+  }
+});
+
+// ============================================================================
+// PROFILE PICTURE
+// ============================================================================
+
+/**
+ * POST /api/v1/users/me/profile-picture/upload-url
+ * Get a presigned URL for uploading a profile picture
+ */
+router.post('/me/profile-picture/upload-url', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const { contentType = 'image/jpeg' } = req.body;
+
+    // Validate content type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(contentType)) {
+      return res.status(400).json({ error: 'Invalid content type. Allowed: jpeg, png, gif, webp' });
+    }
+
+    // Generate unique key for the image
+    const extension = contentType.split('/')[1];
+    const key = `profile-pictures/${user.orgId}/${user.id}/${Date.now()}.${extension}`;
+
+    // Create presigned URL for PUT
+    const command = new PutObjectCommand({
+      Bucket: UPLOADS_BUCKET,
+      Key: key,
+      ContentType: contentType,
+    });
+
+    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 }); // 5 minutes
+
+    // Construct the public URL
+    const publicUrl = `https://${UPLOADS_BUCKET}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+
+    logger.info('Generated profile picture upload URL', { userId: user.id, key });
+
+    return res.json({
+      uploadUrl,
+      publicUrl,
+      key,
+      expiresIn: 300,
+    });
+  } catch (error) {
+    logger.error('Error generating upload URL:', error);
+    return res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
+});
+
+/**
+ * PUT /api/v1/users/me/profile-picture
+ * Update user's profile picture URL after successful upload
+ */
+router.put(
+  '/me/profile-picture',
+  [
+    body('profilePictureUrl').isString().isURL().withMessage('Valid URL is required'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const user = req.user!;
+      const { profilePictureUrl } = req.body;
+
+      // Validate the URL is from our uploads bucket
+      if (!profilePictureUrl.includes(UPLOADS_BUCKET)) {
+        return res.status(400).json({ error: 'Invalid profile picture URL' });
+      }
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+
+      // Delete old profile picture from S3 if exists
+      if (user.profilePictureUrl && user.profilePictureUrl.includes(UPLOADS_BUCKET)) {
+        try {
+          const oldKey = user.profilePictureUrl.split('.amazonaws.com/')[1];
+          if (oldKey) {
+            await s3Client.send(new DeleteObjectCommand({
+              Bucket: UPLOADS_BUCKET,
+              Key: oldKey,
+            }));
+            logger.info('Deleted old profile picture', { userId: user.id, key: oldKey });
+          }
+        } catch (deleteError) {
+          logger.warn('Failed to delete old profile picture:', deleteError);
+        }
+      }
+
+      await userRepo.update(user.id, { profilePictureUrl });
+
+      logger.info('Profile picture updated', { userId: user.id, url: profilePictureUrl });
+
+      return res.json({
+        message: 'Profile picture updated successfully',
+        profilePictureUrl,
+      });
+    } catch (error) {
+      logger.error('Error updating profile picture:', error);
+      return res.status(500).json({ error: 'Failed to update profile picture' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/users/me/profile-picture
+ * Remove user's profile picture
+ */
+router.delete('/me/profile-picture', async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    // Delete from S3 if exists
+    if (user.profilePictureUrl && user.profilePictureUrl.includes(UPLOADS_BUCKET)) {
+      try {
+        const key = user.profilePictureUrl.split('.amazonaws.com/')[1];
+        if (key) {
+          await s3Client.send(new DeleteObjectCommand({
+            Bucket: UPLOADS_BUCKET,
+            Key: key,
+          }));
+          logger.info('Deleted profile picture from S3', { userId: user.id, key });
+        }
+      } catch (deleteError) {
+        logger.warn('Failed to delete profile picture from S3:', deleteError);
+      }
+    }
+
+    const dataSource = await getDataSource();
+    const userRepo = dataSource.getRepository(User);
+
+    await userRepo.update(user.id, { profilePictureUrl: null });
+
+    logger.info('Profile picture removed', { userId: user.id });
+
+    return res.json({ message: 'Profile picture removed successfully' });
+  } catch (error) {
+    logger.error('Error removing profile picture:', error);
+    return res.status(500).json({ error: 'Failed to remove profile picture' });
   }
 });
 

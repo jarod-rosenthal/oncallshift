@@ -431,7 +431,35 @@ export const incidentsAPI = {
     );
     return response.data;
   },
+
+  getSimilar: async (id: string): Promise<{
+    currentIncidentId: string;
+    bestMatch: SimilarIncident | null;
+    similarIncidents: SimilarIncident[];
+    total: number;
+  }> => {
+    const response = await apiClient.get(`/incidents/${id}/similar`);
+    return response.data;
+  },
 };
+
+// Similar Incident type for the similar incidents endpoint
+export interface SimilarIncident {
+  id: string;
+  incidentNumber: number;
+  summary: string;
+  severity: string;
+  state: string;
+  triggeredAt: string;
+  resolvedAt?: string;
+  resolvedBy?: {
+    id: string;
+    fullName: string;
+  };
+  similarityPercent: number;
+  matchingKeywords: string[];
+  resolutionNote?: string;
+}
 
 // Users API
 export const usersAPI = {
@@ -539,6 +567,36 @@ export const usersAPI = {
 
   deleteNotificationRule: async (id: string): Promise<{ message: string }> => {
     const response = await apiClient.delete<{ message: string }>(`/users/me/notification-rules/${id}`);
+    return response.data;
+  },
+
+  // Profile Picture
+  getProfilePictureUploadUrl: async (contentType: string): Promise<{ uploadUrl: string; publicUrl: string }> => {
+    const response = await apiClient.post<{ uploadUrl: string; publicUrl: string }>(
+      '/users/me/profile-picture/upload-url',
+      { contentType }
+    );
+    return response.data;
+  },
+
+  uploadToPresignedUrl: async (uploadUrl: string, file: Blob, contentType: string): Promise<void> => {
+    await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: file,
+    });
+  },
+
+  updateProfilePicture: async (profilePictureUrl: string): Promise<{ user: User; message: string }> => {
+    const response = await apiClient.put<{ user: User; message: string }>(
+      '/users/me/profile-picture',
+      { profilePictureUrl }
+    );
+    return response.data;
+  },
+
+  removeProfilePicture: async (): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>('/users/me/profile-picture');
     return response.data;
   },
 };

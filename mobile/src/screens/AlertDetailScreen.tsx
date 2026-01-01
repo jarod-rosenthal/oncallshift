@@ -35,12 +35,12 @@ import * as apiService from '../services/apiService';
 import * as runbookService from '../services/runbookService';
 import { getAccessToken } from '../services/authService';
 import { config } from '../config';
-import type { Incident, IncidentEvent, User, LegacyAIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary } from '../services/apiService';
+import type { Incident, IncidentEvent, User, LegacyAIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary, SimilarIncident } from '../services/apiService';
 import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '../services/runbookService';
 import { severityColors, statusColors } from '../theme';
 import { useAppTheme } from '../context/ThemeContext';
 import * as hapticService from '../services/hapticService';
-import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel } from '../components';
+import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel, ServiceHealthBadge, SimilarIncidentHint } from '../components';
 import type { ResolutionData } from '../components';
 
 // Skeleton placeholder component for loading states
@@ -765,6 +765,51 @@ export default function AlertDetailScreen({ route, navigation }: any) {
     }
   };
 
+  // Format duration from a timestamp to now (e.g., "2h 15m", "3d 4h")
+  const formatDuration = (startDate: string) => {
+    const start = new Date(startDate).getTime();
+    const now = Date.now();
+    const diffMs = now - start;
+
+    const minutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return `${days}d ${hours % 24}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  };
+
+  // Get the relevant timestamp for duration based on state
+  const getStateDuration = () => {
+    switch (incident.state) {
+      case 'resolved':
+        return incident.resolvedAt ? formatDuration(incident.triggeredAt) : null;
+      case 'acknowledged':
+        return incident.acknowledgedAt ? formatDuration(incident.acknowledgedAt) : null;
+      default:
+        return formatDuration(incident.triggeredAt);
+    }
+  };
+
+  // Get status display config
+  const getStatusConfig = (state: string) => {
+    switch (state) {
+      case 'triggered':
+        return { label: 'Active', color: colors.error, bgColor: colors.error + '15', icon: 'alert-circle' as const };
+      case 'acknowledged':
+        return { label: 'Acknowledged', color: colors.warning, bgColor: colors.warning + '15', icon: 'clock-outline' as const };
+      case 'resolved':
+        return { label: 'Resolved', color: colors.success, bgColor: colors.success + '15', icon: 'check-circle' as const };
+      default:
+        return { label: state, color: colors.textSecondary, bgColor: colors.surfaceSecondary, icon: 'help-circle' as const };
+    }
+  };
+
   const getEventLabel = (type: string) => {
     switch (type) {
       case 'trigger':
@@ -792,7 +837,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
         {/* Header Card */}
         <Card style={dynamicStyles.card} mode="elevated">
           <Card.Content>
-            {/* Severity and Status */}
+            {/* Severity and Status with Duration */}
             <View style={themedStyles.headerBadges}>
               <Chip
                 style={[themedStyles.severityChip, { backgroundColor: getSeverityColor(incident.severity) }]}
@@ -803,13 +848,24 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               >
                 {incident.severity.toUpperCase()}
               </Chip>
-              <Chip
-                mode="outlined"
-                style={[themedStyles.statusChip, { borderColor: getStatusColor(incident.state) }]}
-                textStyle={[themedStyles.statusChipText, { color: getStatusColor(incident.state) }]}
-              >
-                {incident.state}
-              </Chip>
+              {/* Enhanced status badge with duration */}
+              {(() => {
+                const statusConfig = getStatusConfig(incident.state);
+                const duration = getStateDuration();
+                return (
+                  <View style={[themedStyles.statusBadgeEnhanced, { backgroundColor: statusConfig.bgColor, borderColor: statusConfig.color }]}>
+                    <MaterialCommunityIcons name={statusConfig.icon} size={14} color={statusConfig.color} />
+                    <Text style={[themedStyles.statusBadgeLabel, { color: statusConfig.color }]}>
+                      {statusConfig.label}
+                    </Text>
+                    {duration && (
+                      <Text style={[themedStyles.statusBadgeDuration, { color: statusConfig.color }]}>
+                        ({duration})
+                      </Text>
+                    )}
+                  </View>
+                );
+              })()}
             </View>
 
             {/* Incident Number and Title */}
@@ -820,6 +876,36 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               {incident.summary}
             </Text>
 
+            {/* Owner Section - shows who is handling the incident */}
+            <View style={themedStyles.ownerSection}>
+              {incident.acknowledgedBy ? (
+                <View style={themedStyles.ownerContainer}>
+                  <View style={[themedStyles.ownerAvatarRing, { borderColor: colors.warning }]}>
+                    <OwnerAvatar
+                      name={incident.acknowledgedBy.fullName || ''}
+                      email={incident.acknowledgedBy.email || ''}
+                      size={36}
+                    />
+                  </View>
+                  <View style={themedStyles.ownerInfo}>
+                    <Text variant="bodyMedium" style={themedStyles.ownerName}>
+                      {incident.acknowledgedBy.fullName}
+                    </Text>
+                    <Text variant="bodySmall" style={themedStyles.ownerLabel}>
+                      Owner
+                    </Text>
+                  </View>
+                </View>
+              ) : incident.state === 'triggered' ? (
+                <View style={themedStyles.unassignedContainer}>
+                  <MaterialCommunityIcons name="account-alert" size={20} color={colors.error} />
+                  <Text style={[themedStyles.unassignedText, { color: colors.error }]}>
+                    Unassigned - Needs attention
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
             <Divider style={themedStyles.divider} />
 
             {/* Meta Information */}
@@ -828,6 +914,12 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               <Text variant="bodyMedium" style={themedStyles.metaLabel}>Service</Text>
               <Text variant="bodyMedium" style={themedStyles.metaValue}>{incident.service.name}</Text>
             </View>
+
+            {/* Service Health Context */}
+            <ServiceHealthBadge
+              serviceId={incident.service.id}
+              serviceName={incident.service.name}
+            />
 
             <View style={themedStyles.metaRow}>
               <MaterialCommunityIcons name="clock-outline" size={18} color={colors.textSecondary} />
@@ -852,6 +944,27 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             )}
           </Card.Content>
         </Card>
+
+        {/* Similar Incident Hint - Prominent, above the fold */}
+        {!loadingDetails && incident.state !== 'resolved' && (
+          <SimilarIncidentHint
+            currentIncident={incident}
+            onViewIncident={(similar) => {
+              // Navigate to the similar incident
+              navigation.push('AlertDetail', {
+                alert: {
+                  id: similar.id,
+                  incidentNumber: similar.incidentNumber,
+                  summary: similar.summary,
+                  severity: similar.severity,
+                  state: similar.state,
+                  triggeredAt: similar.triggeredAt,
+                  service: incident.service, // Same service
+                } as any,
+              });
+            }}
+          />
+        )}
 
         {/* Loading Skeletons */}
         {loadingDetails && (
@@ -1886,6 +1999,61 @@ const styles = (colors: any) => StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'capitalize',
+  },
+  statusBadgeEnhanced: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 4,
+  },
+  statusBadgeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statusBadgeDuration: {
+    fontSize: 11,
+    opacity: 0.8,
+  },
+  ownerSection: {
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  ownerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  ownerAvatarRing: {
+    borderWidth: 2,
+    borderRadius: 22,
+    padding: 2,
+  },
+  ownerInfo: {
+    flex: 1,
+  },
+  ownerName: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  ownerLabel: {
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  unassignedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: colors.error + '10',
+    borderRadius: 8,
+  },
+  unassignedText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   incidentNumber: {
     color: colors.textSecondary,

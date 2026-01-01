@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Image } from 'react-native';
 import { Avatar, Text } from 'react-native-paper';
 import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
@@ -7,6 +7,7 @@ import { colors } from '../theme';
 interface OwnerAvatarProps {
   name?: string;
   email?: string;
+  profilePictureUrl?: string | null;
   size?: number;
   showName?: boolean;
 }
@@ -48,6 +49,7 @@ const getAvatarColor = (name?: string, email?: string): string => {
 export const OwnerAvatar: React.FC<OwnerAvatarProps> = ({
   name,
   email,
+  profilePictureUrl,
   size = 28,
   showName = false,
 }) => {
@@ -57,12 +59,22 @@ export const OwnerAvatar: React.FC<OwnerAvatarProps> = ({
 
   return (
     <View style={styles.container}>
-      <Avatar.Text
-        size={size}
-        label={initials}
-        style={[styles.avatar, { backgroundColor: bgColor }]}
-        labelStyle={[styles.label, { fontSize: size * 0.4 }]}
-      />
+      {profilePictureUrl ? (
+        <Image
+          source={{ uri: profilePictureUrl }}
+          style={[
+            styles.avatarImage,
+            { width: size, height: size, borderRadius: size / 2 },
+          ]}
+        />
+      ) : (
+        <Avatar.Text
+          size={size}
+          label={initials}
+          style={[styles.avatar, { backgroundColor: bgColor }]}
+          labelStyle={[styles.label, { fontSize: size * 0.4 }]}
+        />
+      )}
       {showName && name && (
         <Text variant="labelSmall" style={[styles.name, { color: colors.textSecondary }]} numberOfLines={1}>
           {name.split(' ')[0]}
@@ -80,6 +92,9 @@ const styles = StyleSheet.create({
   },
   avatar: {
     // backgroundColor set dynamically
+  },
+  avatarImage: {
+    backgroundColor: '#e5e7eb',
   },
   label: {
     color: '#FFFFFF',

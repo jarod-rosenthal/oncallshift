@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Plus, Filter } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '../components/ui/dialog';
 import { Select } from '../components/ui/select';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { PageHeader } from '../components/layout/PageHeader';
+import { Section } from '../components/layout/Section';
+import { IncidentCard } from '../components/incidents/IncidentCard';
+import { MetricsCard } from '../components/incidents/MetricsCard';
+import { EmptyState } from '../components/EmptyState';
+import { showToast } from '../components/Toast';
+import { triggerConfetti } from '../components/Confetti';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
 import type { Incident, User } from '../types/api';
 
@@ -16,7 +22,6 @@ export function Incidents() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Dialog state
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
@@ -38,8 +43,9 @@ export function Incidents() {
       setIsLoading(true);
       const response = await incidentsAPI.list();
       setIncidents(response.incidents);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load incidents');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to load incidents');
     } finally {
       setIsLoading(false);
     }
@@ -49,33 +55,31 @@ export function Incidents() {
     try {
       const response = await usersAPI.listUsers();
       setUsers(response.users);
-    } catch (err) {
+    } catch {
       // Silently fail - users list is optional
     }
-  };
-
-  const showSuccess = (message: string) => {
-    setSuccessMessage(message);
-    setTimeout(() => setSuccessMessage(null), 3000);
   };
 
   const handleAcknowledge = async (id: string) => {
     try {
       await incidentsAPI.acknowledge(id);
-      showSuccess('Incident acknowledged');
+      showToast.acknowledge();
       await loadIncidents();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to acknowledge incident');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      showToast.error(error.response?.data?.error || 'Failed to acknowledge incident');
     }
   };
 
   const handleResolve = async (id: string) => {
     try {
       await incidentsAPI.resolve(id);
-      showSuccess('Incident resolved');
+      showToast.resolve();
+      triggerConfetti();
       await loadIncidents();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to resolve incident');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      showToast.error(error.response?.data?.error || 'Failed to resolve incident');
     }
   };
 
@@ -98,15 +102,16 @@ export function Incidents() {
     if (!selectedIncident) return;
     setIsSubmitting(true);
     try {
-      const result = await incidentsAPI.escalate(
+      await incidentsAPI.escalate(
         selectedIncident.id,
         escalateReason || undefined
       );
-      showSuccess(result.message);
+      showToast.escalate();
       closeDialog();
       await loadIncidents();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to escalate incident');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      showToast.error(error.response?.data?.error || 'Failed to escalate incident');
     } finally {
       setIsSubmitting(false);
     }
@@ -121,175 +126,118 @@ export function Incidents() {
         reassignUserId,
         reassignReason || undefined
       );
-      showSuccess(result.message);
+      showToast.success(result.message);
       closeDialog();
       await loadIncidents();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to reassign incident');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      showToast.error(error.response?.data?.error || 'Failed to reassign incident');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'error':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'warning':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      default:
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-    }
-  };
-
-  const getStateColor = (state: string) => {
-    switch (state) {
-      case 'triggered':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'acknowledged':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'resolved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-    }
-  };
+  // Separate active and resolved incidents
+  const activeIncidents = incidents.filter(i => i.state !== 'resolved');
+  const resolvedIncidents = incidents.filter(i => i.state === 'resolved');
 
   return (
-    <div>
-      <main className="container mx-auto">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Incidents</h2>
-          <p className="text-muted-foreground">
-            Manage and respond to active incidents
-          </p>
-        </div>
+    <div className="min-h-screen bg-background">
+      {/* Page Header */}
+      <PageHeader
+        title="Incidents"
+        subtitle="Monitor and manage all incidents across your services"
+        primaryAction={{
+          label: 'Create Incident',
+          onClick: () => {/* TODO: Open create modal */},
+          icon: <Plus className="w-4 h-4" />,
+        }}
+        secondaryActions={[
+          {
+            label: 'Filters',
+            onClick: () => {/* TODO: Open filters */},
+            icon: <Filter className="w-4 h-4" />,
+            variant: 'outline',
+          },
+        ]}
+      />
 
-        {error && (
-          <div className="mb-4 p-4 text-sm text-destructive bg-destructive/10 rounded-md">
+      {/* Error Banner */}
+      {error && (
+        <div className="max-w-7xl mx-auto px-6 lg:px-10 mt-6">
+          <div className="p-4 text-sm text-danger bg-danger/10 border border-danger/20 rounded-lg">
             {error}
             <button
-              className="ml-2 underline"
+              className="ml-2 underline hover:no-underline"
               onClick={() => setError(null)}
             >
               Dismiss
             </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {successMessage && (
-          <div className="mb-4 p-4 text-sm text-green-800 bg-green-50 dark:bg-green-900/20 dark:text-green-200 rounded-md">
-            {successMessage}
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-12">
+          <div className="text-center">
+            <p className="text-body-lg text-neutral-600">Loading incidents...</p>
           </div>
-        )}
+        </div>
+      ) : (
+        <>
+          {/* Active Incidents Section */}
+          <Section title="Active Incidents" className="pt-8">
+            {activeIncidents.length === 0 ? (
+              <div className="bg-card border border-neutral-300 rounded-lg">
+                <EmptyState preset="no-incidents" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activeIncidents.map((incident) => (
+                  <IncidentCard
+                    key={incident.id}
+                    incident={incident}
+                    onAcknowledge={() => handleAcknowledge(incident.id)}
+                    onResolve={() => handleResolve(incident.id)}
+                    onEscalate={() => openDialog('escalate', incident)}
+                  />
+                ))}
+              </div>
+            )}
+          </Section>
 
-        {isLoading ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading incidents...</p>
-          </div>
-        ) : incidents.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">No incidents found</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {incidents.map((incident) => (
-              <Card key={incident.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${getSeverityColor(incident.severity)}`}>
-                          {incident.severity.toUpperCase()}
-                        </span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
-                          {incident.state.toUpperCase()}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          #{incident.incidentNumber}
-                        </span>
-                        {incident.currentEscalationStep > 0 && (
-                          <span className="text-xs text-muted-foreground">
-                            Step {incident.currentEscalationStep}
-                          </span>
-                        )}
-                      </div>
-                      <CardTitle>
-                        <Link
-                          to={`/incidents/${incident.id}`}
-                          className="hover:underline hover:text-primary"
-                        >
-                          {incident.summary}
-                        </Link>
-                      </CardTitle>
-                      <CardDescription>
-                        Service: {incident.service.name} | Triggered: {new Date(incident.triggeredAt).toLocaleString()}
-                        {incident.assignedTo && (
-                          <> | Assigned to: {incident.assignedTo.fullName}</>
-                        )}
-                      </CardDescription>
-                    </div>
-                    <div className="flex gap-2 flex-wrap justify-end">
-                      {incident.state === 'triggered' && (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAcknowledge(incident.id)}
-                          >
-                            Acknowledge
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openDialog('escalate', incident)}
-                          >
-                            Escalate
-                          </Button>
-                        </>
-                      )}
-                      {incident.state !== 'resolved' && (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openDialog('reassign', incident)}
-                          >
-                            Reassign
-                          </Button>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => handleResolve(incident.id)}
-                          >
-                            Resolve
-                          </Button>
-                        </>
-                      )}
-                      <Link to={`/incidents/${incident.id}`}>
-                        <Button variant="ghost" size="sm">
-                          View &rarr;
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                </CardHeader>
-                {incident.details && (
-                  <CardContent>
-                    <pre className="text-sm bg-muted p-3 rounded overflow-x-auto">
-                      {JSON.stringify(incident.details, null, 2)}
-                    </pre>
-                  </CardContent>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-      </main>
+          {/* Metrics Section */}
+          {incidents.length > 0 && (
+            <Section variant="accent" className="mt-0">
+              <MetricsCard incidents={incidents} />
+            </Section>
+          )}
+
+          {/* Resolved Incidents Section */}
+          {resolvedIncidents.length > 0 && (
+            <Section title="Recently Resolved" className="pb-12">
+              <details className="group">
+                <summary className="cursor-pointer text-body-md text-neutral-600 hover:text-neutral-900 transition-colors list-none">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="group-open:rotate-90 transition-transform">▶</span>
+                    Show {resolvedIncidents.length} resolved incident{resolvedIncidents.length !== 1 ? 's' : ''}
+                  </span>
+                </summary>
+                <div className="mt-4 space-y-4">
+                  {resolvedIncidents.map((incident) => (
+                    <IncidentCard
+                      key={incident.id}
+                      incident={incident}
+                      readOnly
+                    />
+                  ))}
+                </div>
+              </details>
+            </Section>
+          )}
+        </>
+      )}
 
       {/* Escalate Dialog */}
       <Dialog open={activeDialog === 'escalate'} onClose={closeDialog}>

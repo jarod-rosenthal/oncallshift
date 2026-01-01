@@ -20,3 +20,8 @@ export type { FilterState, FilterPreset, FilterPanelProps } from './FilterPanel'
 export { DNDControls, useDNDStatus, shouldShowNotification, defaultDNDSettings } from './DNDControls';
 export type { DNDSettings } from './DNDControls';
 export { GlobalSearch, SearchButton } from './GlobalSearch';
+export { ServiceHealthBadge } from './ServiceHealthBadge';
+export { SimilarIncidentHint } from './SimilarIncidentHint';
+export { OnCallBanner } from './OnCallBanner';
+export { ShiftHandoffNotes } from './ShiftHandoffNotes';
+export { ProfilePictureEditor } from './ProfilePictureEditor';

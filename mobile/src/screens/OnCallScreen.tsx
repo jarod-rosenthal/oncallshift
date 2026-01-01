@@ -27,7 +27,7 @@ import * as apiService from '../services/apiService';
 import type { OnCallData, UserProfile, UpcomingShift } from '../services/apiService';
 import { useAppTheme } from '../context/ThemeContext';
 import { colors } from '../theme';
-import { OwnerAvatar, useToast } from '../components';
+import { OwnerAvatar, useToast, ShiftHandoffNotes } from '../components';
 import * as hapticService from '../services/hapticService';
 import * as calendarService from '../services/calendarService';
 
@@ -582,6 +582,16 @@ export default function OnCallScreen({ navigation }: any) {
         {/* Current On-Call Cards */}
         {renderCurrentOnCallCards()}
 
+        {/* Shift Handoff Notes - show when user is on-call */}
+        {isCurrentlyOnCall && myOnCallAssignments.length > 0 && (
+          <View style={themedStyles.handoffNotesSection}>
+            <ShiftHandoffNotes
+              scheduleId={myOnCallAssignments[0].schedule.id}
+              scheduleName={myOnCallAssignments[0].schedule.name}
+            />
+          </View>
+        )}
+
         {/* Upcoming Shifts */}
         {renderUpcomingShifts()}
 
@@ -869,6 +879,11 @@ const styles = (colors: any) => StyleSheet.create({
     flex: 1,
     fontSize: 12,
     color: colors.warning,
+  },
+  // Handoff Notes Section
+  handoffNotesSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
   },
   // Upcoming Shifts Section
   upcomingSection: {

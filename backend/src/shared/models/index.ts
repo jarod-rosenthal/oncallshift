@@ -35,3 +35,4 @@ export * from './Tag';
 export * from './EntityTag';
 export * from './ChangeEvent';
 export * from './WebhookRequest';
+export * from './ShiftHandoffNote';

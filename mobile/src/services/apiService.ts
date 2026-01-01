@@ -100,6 +100,7 @@ export interface UserProfile {
   fullName: string;
   role: 'admin' | 'member';
   phoneNumber?: string;
+  profilePictureUrl?: string | null;
   settings?: {
     profile?: {
       displayName?: string;
@@ -322,6 +323,45 @@ export const getIncidentNotifications = async (incidentId: string): Promise<Inci
     return response.data;
   } catch (error) {
     console.error('Error fetching incident notifications:', error);
+    throw error;
+  }
+};
+
+// ============ SIMILAR INCIDENTS ============
+
+export interface SimilarIncident {
+  id: string;
+  incidentNumber: number;
+  summary: string;
+  severity: string;
+  state: string;
+  triggeredAt: string;
+  resolvedAt?: string;
+  resolvedBy?: {
+    id: string;
+    fullName: string;
+  };
+  similarityPercent: number;
+  matchingKeywords: string[];
+  resolutionNote?: string;
+}
+
+export interface SimilarIncidentsResponse {
+  currentIncidentId: string;
+  bestMatch: SimilarIncident | null;
+  similarIncidents: SimilarIncident[];
+  total: number;
+}
+
+/**
+ * Get similar incidents for context and resolution hints
+ */
+export const getSimilarIncidents = async (incidentId: string): Promise<SimilarIncidentsResponse> => {
+  try {
+    const response = await apiClient.get<SimilarIncidentsResponse>(`/v1/incidents/${incidentId}/similar`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching similar incidents:', error);
     throw error;
   }
 };
@@ -2425,3 +2465,191 @@ export const deleteAlertGroupingRule = async (serviceId: string): Promise<void> 
     throw error;
   }
 };
+
+
+// ============ SHIFT HANDOFF NOTES ============
+
+export interface HandoffNote {
+  id: string;
+  content: string;
+  shiftEndTime: string;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+  fromUser: {
+    id: string;
+    fullName: string | null;
+    email: string;
+  } | null;
+  toUser: {
+    id: string;
+    fullName: string | null;
+    email: string;
+  } | null;
+  isForMe: boolean;
+}
+
+export interface HandoffNotesResponse {
+  schedule: { id: string; name: string };
+  notes: HandoffNote[];
+  unreadCount: number;
+}
+
+/**
+ * Get handoff notes for a schedule
+ */
+export const getHandoffNotes = async (scheduleId: string): Promise<HandoffNotesResponse> => {
+  try {
+    const response = await apiClient.get(`/v1/schedules/${scheduleId}/handoff-notes`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching handoff notes:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create a handoff note
+ */
+export const createHandoffNote = async (
+  scheduleId: string,
+  content: string,
+  toUserId?: string
+): Promise<{ note: HandoffNote; message: string }> => {
+  try {
+    const response = await apiClient.post(`/v1/schedules/${scheduleId}/handoff-notes`, {
+      content,
+      toUserId,
+      shiftEndTime: new Date().toISOString(),
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating handoff note:', error);
+    throw error;
+  }
+};
+
+/**
+ * Mark a handoff note as read
+ */
+export const markHandoffNoteRead = async (
+  scheduleId: string,
+  noteId: string
+): Promise<void> => {
+  try {
+    await apiClient.put(`/v1/schedules/${scheduleId}/handoff-notes/${noteId}/read`);
+  } catch (error) {
+    console.error('Error marking handoff note as read:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a handoff note
+ */
+export const deleteHandoffNote = async (
+  scheduleId: string,
+  noteId: string
+): Promise<void> => {
+  try {
+    await apiClient.delete(`/v1/schedules/${scheduleId}/handoff-notes/${noteId}`);
+  } catch (error) {
+    console.error('Error deleting handoff note:', error);
+    throw error;
+  }
+};
+
+// ============ PROFILE PICTURE ============
+
+// Default avatar options (abstract/icons for users who don't want to upload photos)
+export const DEFAULT_AVATARS = [
+  { id: 'shapes-blue', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=blue' },
+  { id: 'shapes-purple', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=purple' },
+  { id: 'shapes-green', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=green' },
+  { id: 'shapes-orange', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=orange' },
+  { id: 'shapes-pink', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=pink' },
+  { id: 'shapes-teal', url: 'https://api.dicebear.com/9.x/shapes/svg?seed=teal' },
+  { id: 'bottts-1', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=robot1' },
+  { id: 'bottts-2', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=robot2' },
+  { id: 'thumbs-1', url: 'https://api.dicebear.com/9.x/thumbs/svg?seed=happy1' },
+  { id: 'thumbs-2', url: 'https://api.dicebear.com/9.x/thumbs/svg?seed=happy2' },
+  { id: 'identicon-1', url: 'https://api.dicebear.com/9.x/identicon/svg?seed=user1' },
+  { id: 'identicon-2', url: 'https://api.dicebear.com/9.x/identicon/svg?seed=user2' },
+];
+
+export interface UploadUrlResponse {
+  uploadUrl: string;
+  publicUrl: string;
+  key: string;
+  expiresIn: number;
+}
+
+/**
+ * Get a presigned URL for uploading a profile picture
+ */
+export const getProfilePictureUploadUrl = async (
+  contentType: string = 'image/jpeg'
+): Promise<UploadUrlResponse> => {
+  try {
+    const response = await apiClient.post('/v1/users/me/profile-picture/upload-url', {
+      contentType,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error getting upload URL:', error);
+    throw error;
+  }
+};
+
+/**
+ * Upload file to the presigned URL
+ */
+export const uploadToPresignedUrl = async (
+  uploadUrl: string,
+  file: Blob,
+  contentType: string
+): Promise<void> => {
+  try {
+    await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': contentType,
+      },
+    });
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update user's profile picture URL after successful upload
+ */
+export const updateProfilePicture = async (
+  profilePictureUrl: string
+): Promise<{ message: string; profilePictureUrl: string }> => {
+  try {
+    const response = await apiClient.put('/v1/users/me/profile-picture', {
+      profilePictureUrl,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating profile picture:', error);
+    throw error;
+  }
+};
+
+/**
+ * Remove user's profile picture
+ */
+export const removeProfilePicture = async (): Promise<{ message: string }> => {
+  try {
+    const response = await apiClient.delete('/v1/users/me/profile-picture');
+    return response.data;
+  } catch (error) {
+    console.error('Error removing profile picture:', error);
+    throw error;
+  }
+};
+

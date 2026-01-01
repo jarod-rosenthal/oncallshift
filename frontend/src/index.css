@@ -4,48 +4,121 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* Atlassian-inspired color palette */
+
+    /* Primary (Atlassian Blue) */
+    --primary: 213 94% 48%;           /* #0052CC */
+    --primary-hover: 216 79% 49%;     /* #1868DB */
+    --primary-foreground: 0 0% 100%;
+
+    /* Neutral Palette */
+    --neutral-50: 240 20% 99%;        /* #FAFBFC - lightest */
+    --neutral-100: 240 14% 97%;       /* #F8F8F8 - page background */
+    --neutral-200: 240 11% 94%;       /* #EEEFF1 - card background alt */
+    --neutral-300: 240 8% 87%;        /* #DDDEE1 - borders */
+    --neutral-400: 240 5% 65%;        /* #9FA1A6 - disabled */
+    --neutral-500: 240 6% 47%;        /* #747579 - muted text */
+    --neutral-600: 240 7% 33%;        /* #505258 - secondary text */
+    --neutral-700: 240 9% 19%;        /* #2C2D30 - headings */
+    --neutral-900: 240 11% 7%;        /* #101214 - primary text */
+
+    /* Accent Blues */
+    --blue-50: 214 100% 97%;          /* #EDF5FF */
+    --blue-100: 214 95% 92%;          /* #CFE1FD */
+    --blue-600: 213 94% 48%;          /* #0052CC */
+
+    /* Accent Purple */
+    --purple-50: 270 100% 98%;        /* #FAF8FF */
+    --purple-100: 270 80% 93%;        /* #EED7FC */
+
+    /* Status Colors */
+    --success: 145 65% 45%;           /* #2A9D5F - green */
+    --warning: 36 100% 50%;           /* #FF9500 - orange */
+    --danger: 0 84% 60%;              /* #E63946 - red */
+
+    /* Semantic mappings (shadcn/ui compatibility) */
+    --background: 240 14% 97%;        /* neutral-100 - off-white */
+    --foreground: 240 11% 7%;         /* neutral-900 */
+
+    --card: 0 0% 100%;                /* Pure white for cards */
+    --card-foreground: 240 11% 7%;    /* neutral-900 */
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 240 11% 7%;
+
+    --secondary: 240 11% 94%;         /* neutral-200 */
+    --secondary-foreground: 240 9% 19%; /* neutral-700 */
+
+    --muted: 240 11% 94%;             /* neutral-200 */
+    --muted-foreground: 240 7% 33%;   /* neutral-600 */
+
+    --accent: 214 95% 92%;            /* blue-100 */
+    --accent-foreground: 213 94% 48%; /* primary */
+
+    --destructive: 0 84% 60%;         /* danger */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 8% 87%;             /* neutral-300 */
+    --input: 240 8% 87%;              /* neutral-300 */
+    --ring: 213 94% 48%;              /* primary */
+
     --radius: 0.5rem;
+
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(214, 95%, 92%), hsl(270, 80%, 93%));
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    /* Dark mode palette */
+    --primary: 217 91% 60%;
+    --primary-hover: 217 91% 65%;
+    --primary-foreground: 222 47% 11%;
+
+    --neutral-50: 222 47% 11%;
+    --neutral-100: 222 47% 11%;
+    --neutral-200: 217 33% 17%;
+    --neutral-300: 217 33% 17%;
+    --neutral-400: 215 20% 65%;
+    --neutral-500: 215 20% 65%;
+    --neutral-600: 210 40% 80%;
+    --neutral-700: 210 40% 90%;
+    --neutral-900: 210 40% 98%;
+
+    --blue-50: 222 47% 11%;
+    --blue-100: 217 33% 17%;
+    --blue-600: 217 91% 60%;
+
+    --purple-50: 222 47% 11%;
+    --purple-100: 270 33% 20%;
+
+    --success: 145 65% 50%;
+    --warning: 36 100% 55%;
+    --danger: 0 63% 31%;
+
+    --background: 222 84% 5%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+
+    --card: 222 84% 5%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+
+    --popover: 222 84% 5%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
+
+    --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 17%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+
+    --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 224 76% 48%;
   }
 }
 
@@ -53,7 +126,60 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+                 "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+                 sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Typography defaults */
+  h1 {
+    @apply text-heading-xl text-neutral-900 font-semibold;
+  }
+
+  h2 {
+    @apply text-heading-lg text-neutral-900 font-semibold;
+  }
+
+  h3 {
+    @apply text-heading-md text-neutral-900 font-semibold;
+  }
+
+  h4 {
+    @apply text-heading-sm text-neutral-900 font-semibold;
+  }
+
+  p {
+    @apply text-body-md text-neutral-600;
+  }
+
+  a {
+    @apply text-primary hover:text-primary-hover transition-colors duration-200;
+  }
+}
+
+@layer utilities {
+  /* Gradient utilities */
+  .gradient-hero {
+    background: linear-gradient(135deg, hsl(214, 95%, 92%), hsl(270, 80%, 93%));
+  }
+
+  /* Section spacing */
+  .section-spacing {
+    @apply py-12 lg:py-20;
+  }
+
+  /* Container padding */
+  .container-padding {
+    @apply px-6 lg:px-10;
+  }
+
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-md;
   }
 }

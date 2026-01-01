@@ -31,6 +31,9 @@ export class User {
   @Column({ name: 'phone_number', type: 'varchar', length: 50, nullable: true })
   phoneNumber: string | null;
 
+  @Column({ name: 'profile_picture_url', type: 'varchar', length: 500, nullable: true })
+  profilePictureUrl: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   settings: Record<string, any> | null;
 

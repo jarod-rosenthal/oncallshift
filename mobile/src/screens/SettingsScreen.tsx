@@ -31,8 +31,16 @@ import * as notificationService from '../services/notificationService';
 import * as soundService from '../services/soundService';
 import type { AlertSoundType, AlertSoundOption } from '../services/soundService';
 import { ALERT_SOUND_OPTIONS, getAlertSound, setAlertSound, previewAlertSound } from '../services/soundService';
-import { useToast, DNDControls, useDNDStatus } from '../components';
+import { useToast, DNDControls, useDNDStatus, ProfilePictureEditor } from '../components';
 import type { DNDSettings } from '../components';
+
+// User profile interface
+interface UserProfile {
+  id: string;
+  fullName: string | null;
+  email: string;
+  profilePictureUrl: string | null;
+}
 
 // Settings interface
 interface AppSettings {
@@ -92,6 +100,9 @@ export default function SettingsScreen() {
   const [selectedAlertSound, setSelectedAlertSound] = useState<AlertSoundType>('urgent');
   const [previewingSound, setPreviewingSound] = useState<AlertSoundType | null>(null);
 
+  // User profile state
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
   // Dynamic styles based on current theme
   const dynamicStyles = {
     container: {
@@ -136,9 +147,28 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadSettings();
     loadCredentialStatus();
+    loadUserProfile();
     // Load saved alert sound preference
     setSelectedAlertSound(getAlertSound());
   }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const profile = await apiService.getUserProfile();
+      setUserProfile({
+        id: profile.id,
+        fullName: profile.fullName,
+        email: profile.email,
+        profilePictureUrl: profile.profilePictureUrl || null,
+      });
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
+    }
+  };
+
+  const handleProfilePictureUpdate = (newUrl: string | null) => {
+    setUserProfile(prev => prev ? { ...prev, profilePictureUrl: newUrl } : null);
+  };
 
   const loadCredentialStatus = async () => {
     try {
@@ -359,6 +389,35 @@ export default function SettingsScreen() {
           Customize your OnCallShift experience
         </Text>
       </View>
+
+      {/* Profile Section */}
+      {userProfile && (
+        <View style={themedStyles.section}>
+          <View style={themedStyles.sectionHeader}>
+            <MaterialCommunityIcons name="account-circle-outline" size={20} color={colors.primary} />
+            <Text variant="titleMedium" style={dynamicStyles.sectionTitle}>
+              Profile
+            </Text>
+          </View>
+
+          <View style={[dynamicStyles.settingCard, themedStyles.profileCard]}>
+            <ProfilePictureEditor
+              currentPictureUrl={userProfile.profilePictureUrl}
+              userName={userProfile.fullName}
+              userEmail={userProfile.email}
+              onUpdate={handleProfilePictureUpdate}
+            />
+            <View style={themedStyles.profileInfo}>
+              <Text variant="titleMedium" style={{ color: colors.textPrimary, fontWeight: '600' }}>
+                {userProfile.fullName || 'No name set'}
+              </Text>
+              <Text variant="bodyMedium" style={{ color: colors.textSecondary }}>
+                {userProfile.email}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Notifications Section */}
       <View style={themedStyles.section}>
@@ -1230,5 +1289,14 @@ const styles = (colors: any) => StyleSheet.create({
   },
   soundPickerCloseButton: {
     marginTop: 8,
+  },
+  // Profile section styles
+  profileCard: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  profileInfo: {
+    alignItems: 'center',
+    marginTop: 12,
   },
 });

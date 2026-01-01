@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { LessThanOrEqual, MoreThan } from 'typeorm';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Schedule, ScheduleMember, ScheduleOverride, ScheduleLayer, ScheduleLayerMember, Service, User } from '../../shared/models';
+import { Schedule, ScheduleMember, ScheduleOverride, ScheduleLayer, ScheduleLayerMember, Service, User, ShiftHandoffNote } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
@@ -2035,6 +2035,265 @@ router.get('/:id/rendered', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error rendering schedule:', error);
     return res.status(500).json({ error: 'Failed to render schedule' });
+  }
+});
+
+// ============================================================================
+// SHIFT HANDOFF NOTES
+// ============================================================================
+
+/**
+ * GET /api/v1/schedules/:id/handoff-notes
+ * Get handoff notes for a schedule (recent and unread)
+ */
+router.get('/:id/handoff-notes', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.orgId!;
+    const userId = req.user!.id;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const noteRepo = dataSource.getRepository(ShiftHandoffNote);
+
+    const schedule = await scheduleRepo.findOne({ where: { id, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    // Get notes from the last 7 days or unread notes for the current user
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const notes = await noteRepo.find({
+      where: [
+        // Recent notes (last 7 days)
+        { scheduleId: id, createdAt: MoreThan(sevenDaysAgo) },
+        // Unread notes addressed to current user
+        { scheduleId: id, toUserId: userId, isRead: false },
+        // Unread notes addressed to anyone
+        { scheduleId: id, toUserId: null as unknown as string, isRead: false },
+      ],
+      relations: ['fromUser', 'toUser'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const formattedNotes = notes.map(note => ({
+      id: note.id,
+      content: note.content,
+      shiftEndTime: note.shiftEndTime,
+      isRead: note.isRead,
+      readAt: note.readAt,
+      createdAt: note.createdAt,
+      fromUser: note.fromUser ? {
+        id: note.fromUser.id,
+        fullName: note.fromUser.fullName,
+        email: note.fromUser.email,
+      } : null,
+      toUser: note.toUser ? {
+        id: note.toUser.id,
+        fullName: note.toUser.fullName,
+        email: note.toUser.email,
+      } : null,
+      isForMe: note.toUserId === userId || note.toUserId === null,
+    }));
+
+    // Count unread notes for the current user
+    const unreadCount = formattedNotes.filter(
+      n => !n.isRead && n.isForMe
+    ).length;
+
+    return res.json({
+      schedule: { id: schedule.id, name: schedule.name },
+      notes: formattedNotes,
+      unreadCount,
+    });
+  } catch (error) {
+    logger.error('Error fetching handoff notes:', error);
+    return res.status(500).json({ error: 'Failed to fetch handoff notes' });
+  }
+});
+
+/**
+ * POST /api/v1/schedules/:id/handoff-notes
+ * Create a new handoff note
+ */
+router.post(
+  '/:id/handoff-notes',
+  [
+    body('content').isString().notEmpty().isLength({ max: 2000 }).withMessage('Content is required and must be under 2000 characters'),
+    body('toUserId').optional({ nullable: true }).isUUID().withMessage('To user ID must be a valid UUID'),
+    body('shiftEndTime').optional().isISO8601().withMessage('Shift end time must be a valid date'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const fromUserId = req.user!.id;
+      const { content, toUserId, shiftEndTime } = req.body;
+
+      const dataSource = await getDataSource();
+      const scheduleRepo = dataSource.getRepository(Schedule);
+      const userRepo = dataSource.getRepository(User);
+      const noteRepo = dataSource.getRepository(ShiftHandoffNote);
+
+      const schedule = await scheduleRepo.findOne({ where: { id, orgId } });
+      if (!schedule) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
+
+      // Verify recipient exists if specified
+      if (toUserId) {
+        const recipient = await userRepo.findOne({ where: { id: toUserId, orgId } });
+        if (!recipient) {
+          return res.status(404).json({ error: 'Recipient user not found' });
+        }
+      }
+
+      // Create the handoff note
+      const note = noteRepo.create({
+        orgId,
+        scheduleId: id,
+        fromUserId,
+        toUserId: toUserId || null,
+        content,
+        shiftEndTime: shiftEndTime ? new Date(shiftEndTime) : new Date(),
+        isRead: false,
+      });
+
+      await noteRepo.save(note);
+
+      // Reload with relations
+      const savedNote = await noteRepo.findOne({
+        where: { id: note.id },
+        relations: ['fromUser', 'toUser'],
+      });
+
+      logger.info('Handoff note created', {
+        noteId: note.id,
+        scheduleId: id,
+        fromUserId,
+        toUserId: toUserId || 'anyone',
+      });
+
+      return res.status(201).json({
+        message: 'Handoff note created successfully',
+        note: {
+          id: savedNote!.id,
+          content: savedNote!.content,
+          shiftEndTime: savedNote!.shiftEndTime,
+          isRead: savedNote!.isRead,
+          createdAt: savedNote!.createdAt,
+          fromUser: savedNote!.fromUser ? {
+            id: savedNote!.fromUser.id,
+            fullName: savedNote!.fromUser.fullName,
+            email: savedNote!.fromUser.email,
+          } : null,
+          toUser: savedNote!.toUser ? {
+            id: savedNote!.toUser.id,
+            fullName: savedNote!.toUser.fullName,
+            email: savedNote!.toUser.email,
+          } : null,
+        },
+      });
+    } catch (error) {
+      logger.error('Error creating handoff note:', error);
+      return res.status(500).json({ error: 'Failed to create handoff note' });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/schedules/:scheduleId/handoff-notes/:noteId/read
+ * Mark a handoff note as read
+ */
+router.put('/:scheduleId/handoff-notes/:noteId/read', async (req: Request, res: Response) => {
+  try {
+    const { scheduleId, noteId } = req.params;
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const noteRepo = dataSource.getRepository(ShiftHandoffNote);
+
+    const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const note = await noteRepo.findOne({
+      where: { id: noteId, scheduleId },
+    });
+
+    if (!note) {
+      return res.status(404).json({ error: 'Handoff note not found' });
+    }
+
+    note.isRead = true;
+    note.readAt = new Date();
+    await noteRepo.save(note);
+
+    logger.info('Handoff note marked as read', { noteId, scheduleId });
+
+    return res.json({
+      message: 'Note marked as read',
+      note: {
+        id: note.id,
+        isRead: note.isRead,
+        readAt: note.readAt,
+      },
+    });
+  } catch (error) {
+    logger.error('Error marking handoff note as read:', error);
+    return res.status(500).json({ error: 'Failed to mark note as read' });
+  }
+});
+
+/**
+ * DELETE /api/v1/schedules/:scheduleId/handoff-notes/:noteId
+ * Delete a handoff note (only by author)
+ */
+router.delete('/:scheduleId/handoff-notes/:noteId', async (req: Request, res: Response) => {
+  try {
+    const { scheduleId, noteId } = req.params;
+    const orgId = req.orgId!;
+    const userId = req.user!.id;
+
+    const dataSource = await getDataSource();
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const noteRepo = dataSource.getRepository(ShiftHandoffNote);
+
+    const schedule = await scheduleRepo.findOne({ where: { id: scheduleId, orgId } });
+    if (!schedule) {
+      return res.status(404).json({ error: 'Schedule not found' });
+    }
+
+    const note = await noteRepo.findOne({
+      where: { id: noteId, scheduleId },
+    });
+
+    if (!note) {
+      return res.status(404).json({ error: 'Handoff note not found' });
+    }
+
+    // Only author can delete their own notes
+    if (note.fromUserId !== userId) {
+      return res.status(403).json({ error: 'You can only delete your own notes' });
+    }
+
+    await noteRepo.remove(note);
+
+    logger.info('Handoff note deleted', { noteId, scheduleId });
+
+    return res.json({ message: 'Note deleted successfully' });
+  } catch (error) {
+    logger.error('Error deleting handoff note:', error);
+    return res.status(500).json({ error: 'Failed to delete note' });
   }
 });
 

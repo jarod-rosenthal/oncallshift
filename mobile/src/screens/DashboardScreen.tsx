@@ -23,7 +23,7 @@ import * as apiService from '../services/apiService';
 import type { Incident, OnCallData, UserProfile } from '../services/apiService';
 import { severityColors } from '../theme';
 import { useAppTheme } from '../context/ThemeContext';
-import { OwnerAvatar, useToast, GlobalSearch, SearchButton } from '../components';
+import { OwnerAvatar, useToast, GlobalSearch, SearchButton, OnCallBanner } from '../components';
 import * as hapticService from '../services/hapticService';
 
 interface IncidentSummary {
@@ -193,6 +193,9 @@ export default function DashboardScreen() {
         visible={searchVisible}
         onDismiss={() => setSearchVisible(false)}
       />
+
+      {/* On-Call Awareness Banner */}
+      <OnCallBanner />
 
       {/* Incident Summary Card */}
       <Card style={themedStyles.summaryCard} mode="elevated">

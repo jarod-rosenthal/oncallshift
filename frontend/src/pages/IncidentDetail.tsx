@@ -1,14 +1,23 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Clock, User as UserIcon, Server, Calendar } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { PageHeader } from '../components/layout/PageHeader';
+import { Section } from '../components/layout/Section';
+import { SeverityBadge } from '../components/incidents/SeverityBadge';
+import { StateBadge } from '../components/incidents/StateBadge';
 import { IncidentActions } from '../components/IncidentActions';
 import { IncidentTimeline } from '../components/IncidentTimeline';
 import { EscalationStatusPanel } from '../components/EscalationStatusPanel';
 import { NotificationStatusPanel } from '../components/NotificationStatusPanel';
 import { RunbookPanel } from '../components/RunbookPanel';
 import { RelatedIncidents } from '../components/RelatedIncidents';
+import { SimilarIncidentHint } from '../components/SimilarIncidentHint';
 import { ResolveModal } from '../components/ResolveModal';
+import { StickyActionBar, StickyActionBarSpacer } from '../components/StickyActionBar';
+import { showToast } from '../components/Toast';
+import { triggerConfetti } from '../components/Confetti';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
 import type { Incident, User, EscalationStatus, IncidentEvent } from '../types/api';
 
@@ -24,7 +33,6 @@ export function IncidentDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [isTimelineLoading, setIsTimelineLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAIChatActive, setIsAIChatActive] = useState(false);
@@ -35,19 +43,18 @@ export function IncidentDetail() {
     if (!id) return;
 
     try {
-      // Only show loading spinner on initial load, not during auto-refresh
-      // This prevents unmounting components (like RunbookPanel) and losing their state
       if (isInitialLoad) {
         setIsLoading(true);
       }
       const response = await incidentsAPI.get(id);
       setIncident(response.incident);
       setEscalation(response.escalation);
-    } catch (err: any) {
-      if (err.response?.status === 404) {
+    } catch (err: unknown) {
+      const error = err as { response?: { status?: number; data?: { error?: string } } };
+      if (error.response?.status === 404) {
         setError('Incident not found');
       } else {
-        setError(err.response?.data?.error || 'Failed to load incident');
+        setError(error.response?.data?.error || 'Failed to load incident');
       }
     } finally {
       if (isInitialLoad) {
@@ -63,9 +70,8 @@ export function IncidentDetail() {
       setIsTimelineLoading(true);
       const response = await incidentsAPI.getTimeline(id);
       setEvents(response.events);
-    } catch (err: any) {
-      // Timeline is non-critical, don't show error
-      console.error('Failed to load timeline:', err);
+    } catch {
+      console.error('Failed to load timeline');
     } finally {
       setIsTimelineLoading(false);
     }
@@ -75,7 +81,7 @@ export function IncidentDetail() {
     try {
       const response = await usersAPI.listUsers();
       setUsers(response.users);
-    } catch (err) {
+    } catch {
       // Users list is optional
     }
   }, []);
@@ -84,25 +90,23 @@ export function IncidentDetail() {
     try {
       const response = await usersAPI.getMe();
       setCurrentUser(response.user);
-    } catch (err) {
-      // Current user is optional for delete button display
+    } catch {
+      // Current user is optional
     }
   }, []);
 
   useEffect(() => {
-    loadIncidentData(true); // Initial load - show loading spinner
+    loadIncidentData(true);
     loadTimeline();
     loadUsers();
     loadCurrentUser();
   }, [loadIncidentData, loadTimeline, loadUsers, loadCurrentUser]);
 
-  // Auto-refresh data every 30 seconds for active incidents
-  // Pause refresh when AI chat is active to avoid disrupting the conversation
+  // Auto-refresh for active incidents
   const incidentId = incident?.id;
   const incidentState = incident?.state;
 
   useEffect(() => {
-    // Don't auto-refresh if incident is resolved or AI chat is active
     if (!incidentId || incidentState === 'resolved' || isAIChatActive) return;
 
     const interval = setInterval(() => {
@@ -113,11 +117,6 @@ export function IncidentDetail() {
     return () => clearInterval(interval);
   }, [incidentId, incidentState, isAIChatActive, loadIncidentData, loadTimeline]);
 
-  const showSuccess = (message: string) => {
-    setSuccessMessage(message);
-    setTimeout(() => setSuccessMessage(null), 3000);
-  };
-
   const refreshData = async () => {
     await Promise.all([loadIncidentData(), loadTimeline()]);
   };
@@ -125,9 +124,13 @@ export function IncidentDetail() {
   // Action handlers
   const handleAcknowledge = async () => {
     if (!id) return;
-    await incidentsAPI.acknowledge(id);
-    showSuccess('Incident acknowledged');
-    await refreshData();
+    try {
+      await incidentsAPI.acknowledge(id);
+      showToast.acknowledge();
+      await refreshData();
+    } catch {
+      showToast.error('Failed to acknowledge incident');
+    }
   };
 
   const handleResolve = async (note?: string) => {
@@ -136,8 +139,11 @@ export function IncidentDetail() {
     try {
       await incidentsAPI.resolve(id, note);
       setShowResolveModal(false);
-      showSuccess('Incident resolved');
+      showToast.resolve();
+      triggerConfetti();
       await refreshData();
+    } catch {
+      showToast.error('Failed to resolve incident');
     } finally {
       setIsResolving(false);
     }
@@ -145,37 +151,57 @@ export function IncidentDetail() {
 
   const handleUnacknowledge = async () => {
     if (!id) return;
-    await incidentsAPI.unacknowledge(id);
-    showSuccess('Incident unacknowledged');
-    await refreshData();
+    try {
+      await incidentsAPI.unacknowledge(id);
+      showToast.success('Incident unacknowledged');
+      await refreshData();
+    } catch {
+      showToast.error('Failed to unacknowledge incident');
+    }
   };
 
   const handleUnresolve = async () => {
     if (!id) return;
-    await incidentsAPI.unresolve(id);
-    showSuccess('Incident reopened');
-    await refreshData();
+    try {
+      await incidentsAPI.unresolve(id);
+      showToast.success('Incident reopened');
+      await refreshData();
+    } catch {
+      showToast.error('Failed to reopen incident');
+    }
   };
 
   const handleEscalate = async (reason?: string) => {
     if (!id) return;
-    const result = await incidentsAPI.escalate(id, reason);
-    showSuccess(result.message);
-    await refreshData();
+    try {
+      await incidentsAPI.escalate(id, reason);
+      showToast.escalate();
+      await refreshData();
+    } catch {
+      showToast.error('Failed to escalate incident');
+    }
   };
 
   const handleReassign = async (userId: string, reason?: string) => {
     if (!id) return;
-    const result = await incidentsAPI.reassign(id, userId, reason);
-    showSuccess(result.message);
-    await refreshData();
+    try {
+      const result = await incidentsAPI.reassign(id, userId, reason);
+      showToast.success(result.message);
+      await refreshData();
+    } catch {
+      showToast.error('Failed to reassign incident');
+    }
   };
 
   const handleAddNote = async (content: string) => {
     if (!id) return;
-    await incidentsAPI.addNote(id, content);
-    showSuccess('Note added');
-    await loadTimeline();
+    try {
+      await incidentsAPI.addNote(id, content);
+      showToast.noteAdded();
+      await loadTimeline();
+    } catch {
+      showToast.error('Failed to add note');
+    }
   };
 
   const handleDelete = async () => {
@@ -183,38 +209,14 @@ export function IncidentDetail() {
     setIsDeleting(true);
     try {
       await incidentsAPI.delete(id);
+      showToast.success('Incident deleted');
       navigate('/incidents', { replace: true });
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete incident');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      showToast.error(error.response?.data?.error || 'Failed to delete incident');
       setShowDeleteConfirm(false);
     } finally {
       setIsDeleting(false);
-    }
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'error':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'warning':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      default:
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-    }
-  };
-
-  const getStateColor = (state: string) => {
-    switch (state) {
-      case 'triggered':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'acknowledged':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'resolved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
     }
   };
 
@@ -231,30 +233,31 @@ export function IncidentDetail() {
     return `${diffMins}m`;
   };
 
+  // Loading state
   if (isLoading) {
     return (
-      <div>
-        <main className="container mx-auto">
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading incident...</p>
+      <div className="min-h-screen bg-background">
+        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-12">
+          <div className="text-center">
+            <p className="text-body-lg text-neutral-600">Loading incident...</p>
           </div>
-        </main>
+        </div>
       </div>
     );
   }
 
+  // Error state
   if (error || !incident) {
     return (
-      <div>
-        <main className="container mx-auto">
-          <Link to="/incidents">
-            <Button variant="ghost" size="sm" className="mb-4">
-              &larr; Back to Incidents
-            </Button>
-          </Link>
+      <div className="min-h-screen bg-background">
+        <PageHeader
+          title="Incident Not Found"
+          breadcrumb={{ label: 'Back to Incidents', href: '/incidents' }}
+        />
+        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-12">
           <Card>
             <CardContent className="py-12 text-center">
-              <p className="text-destructive">{error || 'Incident not found'}</p>
+              <p className="text-danger text-body-lg">{error || 'Incident not found'}</p>
               <Button
                 variant="outline"
                 className="mt-4"
@@ -264,94 +267,101 @@ export function IncidentDetail() {
               </Button>
             </CardContent>
           </Card>
-        </main>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <main className="container mx-auto">
-        {/* Back button */}
-        <Link to="/incidents">
-          <Button variant="ghost" size="sm" className="mb-4">
-            &larr; Back to Incidents
-          </Button>
-        </Link>
+    <div className="min-h-screen bg-background">
+      {/* Page Header */}
+      <PageHeader
+        title={`#${incident.incidentNumber}: ${incident.summary}`}
+        breadcrumb={{ label: 'Back to Incidents', href: '/incidents' }}
+      >
+        {/* Badges and metadata in header */}
+        <div className="flex flex-wrap items-center gap-3 mt-4">
+          <SeverityBadge severity={incident.severity} />
+          <StateBadge state={incident.state} />
+          <span className="text-body-sm text-neutral-500">
+            <Clock className="w-4 h-4 inline mr-1" />
+            {formatDuration(incident.triggeredAt, incident.resolvedAt)} {incident.state === 'resolved' ? 'total' : 'open'}
+          </span>
+        </div>
+      </PageHeader>
 
-        {/* Success message */}
-        {successMessage && (
-          <div className="mb-4 p-4 text-sm text-green-800 bg-green-50 dark:bg-green-900/20 dark:text-green-200 rounded-md">
-            {successMessage}
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 lg:px-10 py-8">
+        {/* Incident Summary Card */}
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="flex items-start gap-3">
+                <Server className="w-5 h-5 text-neutral-400 mt-0.5" />
+                <div>
+                  <p className="text-body-sm text-neutral-500">Service</p>
+                  <p className="text-body-md text-neutral-900 font-medium">{incident.service.name}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Calendar className="w-5 h-5 text-neutral-400 mt-0.5" />
+                <div>
+                  <p className="text-body-sm text-neutral-500">Triggered</p>
+                  <p className="text-body-md text-neutral-900 font-medium">
+                    {new Date(incident.triggeredAt).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              {incident.assignedTo && (
+                <div className="flex items-start gap-3">
+                  <UserIcon className="w-5 h-5 text-neutral-400 mt-0.5" />
+                  <div>
+                    <p className="text-body-sm text-neutral-500">Assigned To</p>
+                    <p className="text-body-md text-neutral-900 font-medium">
+                      {incident.assignedTo.fullName || incident.assignedTo.email}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {incident.acknowledgedAt && incident.acknowledgedBy && (
+                <div className="flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-neutral-400 mt-0.5" />
+                  <div>
+                    <p className="text-body-sm text-neutral-500">Acknowledged</p>
+                    <p className="text-body-md text-neutral-900 font-medium">
+                      {new Date(incident.acknowledgedAt).toLocaleString()}
+                    </p>
+                    <p className="text-body-xs text-neutral-500">
+                      by {incident.acknowledgedBy.fullName || incident.acknowledgedBy.email}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Alert Details */}
+            {incident.details && Object.keys(incident.details).length > 0 && (
+              <div className="mt-6 pt-6 border-t border-neutral-200">
+                <h4 className="text-heading-sm text-neutral-900 mb-3">Alert Details</h4>
+                <pre className="text-body-sm bg-neutral-50 p-4 rounded-lg overflow-x-auto max-h-48 text-neutral-700">
+                  {JSON.stringify(incident.details, null, 2)}
+                </pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Similar Incident Hint */}
+        {incident.state !== 'resolved' && (
+          <div className="mb-6">
+            <SimilarIncidentHint currentIncident={incident} />
           </div>
         )}
 
-        {/* Incident Header */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${getSeverityColor(incident.severity)}`}>
-                    {incident.severity.toUpperCase()}
-                  </span>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
-                    {incident.state.toUpperCase()}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    #{incident.incidentNumber}
-                  </span>
-                </div>
-                <CardTitle className="text-2xl mb-2">{incident.summary}</CardTitle>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>
-                    <span className="font-medium">Service:</span> {incident.service.name}
-                  </p>
-                  <p>
-                    <span className="font-medium">Triggered:</span> {new Date(incident.triggeredAt).toLocaleString()}
-                    {' '}
-                    <span className="text-xs">
-                      ({formatDuration(incident.triggeredAt, incident.resolvedAt)} {incident.state === 'resolved' ? 'total' : 'open'})
-                    </span>
-                  </p>
-                  {incident.acknowledgedAt && incident.acknowledgedBy && (
-                    <p>
-                      <span className="font-medium">Acknowledged:</span> {new Date(incident.acknowledgedAt).toLocaleString()}
-                      {' by '}{incident.acknowledgedBy.fullName || incident.acknowledgedBy.email}
-                    </p>
-                  )}
-                  {incident.resolvedAt && incident.resolvedBy && (
-                    <p>
-                      <span className="font-medium">Resolved:</span> {new Date(incident.resolvedAt).toLocaleString()}
-                      {' by '}{incident.resolvedBy.fullName || incident.resolvedBy.email}
-                    </p>
-                  )}
-                  {incident.assignedTo && (
-                    <p>
-                      <span className="font-medium">Assigned to:</span> {incident.assignedTo.fullName || incident.assignedTo.email}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardHeader>
-
-          {/* Incident Details */}
-          {incident.details && Object.keys(incident.details).length > 0 && (
-            <CardContent className="border-t">
-              <h4 className="text-sm font-medium mb-2">Details</h4>
-              <pre className="text-sm bg-muted p-3 rounded overflow-x-auto max-h-64">
-                {JSON.stringify(incident.details, null, 2)}
-              </pre>
-            </CardContent>
-          )}
-        </Card>
-
-        {/* Main Content Grid */}
+        {/* Two-Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Actions and Escalation Status */}
+          {/* Left Column: Actions and Context */}
           <div className="space-y-6">
-            {/* Actions */}
             <IncidentActions
               incident={incident}
               users={users}
@@ -364,62 +374,53 @@ export function IncidentDetail() {
               onAddNote={handleAddNote}
             />
 
-            {/* Related Incidents */}
             <RelatedIncidents currentIncident={incident} />
 
-            {/* Escalation Status */}
             <EscalationStatusPanel
               escalation={escalation}
               onEscalateNow={() => handleEscalate('Manual escalation from incident detail')}
             />
 
-            {/* Notification Status */}
             <NotificationStatusPanel incidentId={incident.id} />
           </div>
 
-          {/* Right Column: Runbook and Timeline (spans 2 columns on large screens) */}
+          {/* Right Column: Runbook and Timeline */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Runbook */}
             <RunbookPanel
               incident={incident}
               onAddNote={handleAddNote}
               onAIChatActiveChange={setIsAIChatActive}
             />
 
-            {/* Timeline */}
             <IncidentTimeline events={events} isLoading={isTimelineLoading} />
           </div>
         </div>
 
-        {/* Admin Actions - Delete Incident */}
+        {/* Admin Actions */}
         {currentUser?.role === 'admin' && (
-          <Card className="mt-8 border-destructive/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-destructive">Admin Actions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                Delete Incident
-              </Button>
-            </CardContent>
-          </Card>
+          <Section variant="card" className="mt-8 border-danger/30">
+            <h3 className="text-heading-sm text-danger mb-4">Admin Actions</h3>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              Delete Incident
+            </Button>
+          </Section>
         )}
-      </main>
+      </div>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md mx-4">
             <CardHeader>
-              <CardTitle className="text-destructive">Delete Incident</CardTitle>
+              <CardTitle className="text-danger">Delete Incident</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Are you sure you want to delete incident #{incident.incidentNumber}? This action cannot be undone and will remove all associated timeline events and notes.
+              <p className="text-body-md text-neutral-600">
+                Are you sure you want to delete incident #{incident.incidentNumber}? This action cannot be undone.
               </p>
               <div className="flex gap-3 justify-end">
                 <Button
@@ -449,6 +450,20 @@ export function IncidentDetail() {
         onResolve={handleResolve}
         isLoading={isResolving}
       />
+
+      {/* Sticky Action Bar */}
+      <StickyActionBar
+        state={incident.state as 'triggered' | 'acknowledged' | 'resolved'}
+        onAcknowledge={handleAcknowledge}
+        onResolve={() => setShowResolveModal(true)}
+        onEscalate={() => handleEscalate('Quick escalation from action bar')}
+        onAddNote={() => {
+          const actionsCard = document.querySelector('[data-actions-card]');
+          actionsCard?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        isLoading={isResolving}
+      />
+      <StickyActionBarSpacer />
     </div>
   );
 }
