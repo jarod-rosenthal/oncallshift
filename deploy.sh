@@ -44,7 +44,7 @@ ECR_REPO="593971626975.dkr.ecr.us-east-1.amazonaws.com/pagerduty-lite-dev-api"
 ECS_CLUSTER="pagerduty-lite-dev"
 ECS_SERVICE="pagerduty-lite-dev-api"
 CLOUDFRONT_DIST_ID="E7BQGD7BWAB8B"
-S3_BUCKET="pagerduty-lite-dev-web"
+S3_BUCKET="oncallshift-dev-web"
 
 echo "🚀 Starting deployment..."
 

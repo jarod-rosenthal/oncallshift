@@ -827,10 +827,10 @@ module "escalation_timer" {
 
 # S3 bucket for user uploads (profile pictures, etc.)
 resource "aws_s3_bucket" "uploads" {
-  bucket = "${var.project_name}-${var.environment}-uploads"
+  bucket = "oncallshift-${var.environment}-uploads"
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-uploads"
+    Name = "oncallshift-${var.environment}-uploads"
   }
 }
 
@@ -876,10 +876,10 @@ resource "aws_s3_bucket_policy" "uploads" {
 
 # S3 bucket for static files (CloudFront only access)
 resource "aws_s3_bucket" "web" {
-  bucket = "${var.project_name}-${var.environment}-web"
+  bucket = "oncallshift-${var.environment}-web"
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-web"
+    Name = "oncallshift-${var.environment}-web"
   }
 }
 
