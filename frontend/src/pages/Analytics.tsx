@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select';
 import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam } from '../lib/api-client';
+import { getSeveritySolidColor } from '../utils/colors';
 
 type TimeRange = '24h' | '7d' | '30d';
 type Tab = 'overview' | 'responders' | 'sla';
@@ -88,19 +89,6 @@ export function Analytics() {
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical': return 'bg-red-500';
-      case 'high':
-      case 'error': return 'bg-orange-500';
-      case 'medium':
-      case 'warning': return 'bg-yellow-500';
-      case 'low':
-      case 'info': return 'bg-blue-500';
-      default: return 'bg-gray-500';
-    }
   };
 
   const getComplianceColor = (rate: number) => {
@@ -323,7 +311,7 @@ export function Analytics() {
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${getSeverityColor(severity)} transition-all duration-300`}
+                        className={`h-full ${getSeveritySolidColor(severity)} transition-all duration-300`}
                         style={{
                           width: `${Math.min((count / (overviewData?.totalIncidents || 1)) * 100, 100)}%`,
                         }}

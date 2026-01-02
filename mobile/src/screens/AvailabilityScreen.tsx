@@ -95,8 +95,7 @@ export default function AvailabilityScreen() {
       setLoading(true);
       const data = await apiService.getUserAvailability();
       setAvailability(data);
-    } catch (err: any) {
-      console.error('Failed to fetch availability:', err);
+    } catch (_err) {
       // Use defaults if not set
       setAvailability(DEFAULT_AVAILABILITY);
     } finally {

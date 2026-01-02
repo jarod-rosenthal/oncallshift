@@ -92,7 +92,6 @@ export default function IntegrationsScreen() {
       setIntegrations(integrationsData);
       setCurrentUser(profile);
     } catch (error: any) {
-      console.error('Failed to fetch integrations:', error);
       showToast({ message: 'Failed to load integrations', type: 'error' });
     } finally {
       setLoading(false);
@@ -147,7 +146,6 @@ export default function IntegrationsScreen() {
         navigation.navigate('IntegrationDetail', { integrationId: integration.id });
       }
     } catch (error: any) {
-      console.error('Failed to create integration:', error);
       showToast({ message: error.response?.data?.error || 'Failed to create integration', type: 'error' });
     } finally {
       setSaving(false);

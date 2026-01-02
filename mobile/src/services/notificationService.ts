@@ -73,7 +73,6 @@ async function setupAndroidNotificationChannels() {
     enableVibrate: true,
   });
 
-  console.log('[Notifications] Android notification channels configured');
 }
 
 // Set up notification categories with actions
@@ -129,9 +128,7 @@ async function initializeNotificationConfig() {
   try {
     await setupAndroidNotificationChannels();
     await setupNotificationCategories();
-    console.log('[Notifications] Configuration complete');
   } catch (error) {
-    console.error('[Notifications] Configuration failed:', error);
   }
 }
 
@@ -144,13 +141,11 @@ initializeNotificationConfig();
 export async function registerForPushNotifications(): Promise<string | null> {
   // Check if running on a physical device
   if (!Device.isDevice) {
-    console.log('[Notifications] Push notifications require a physical device - skipping registration');
     return null;
   }
 
   // Check if project ID is configured
   if (!config.expoProjectId || config.expoProjectId === 'your-project-id-here') {
-    console.log('[Notifications] Expo project ID not configured - push notifications disabled');
     return null;
   }
 
@@ -165,26 +160,16 @@ export async function registerForPushNotifications(): Promise<string | null> {
   }
 
   if (finalStatus !== 'granted') {
-    console.log('[Notifications] Push notification permission not granted');
     return null;
   }
 
   // Get the push token
   try {
-    console.log('[Notifications] Requesting push token with projectId:', config.expoProjectId);
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: config.expoProjectId,
     });
-    console.log('[Notifications] Push token obtained successfully:', tokenData.data.substring(0, 30));
     return tokenData.data;
   } catch (error: any) {
-    // Log the full error for debugging
-    console.error('[Notifications] Push token error:', {
-      message: error?.message,
-      code: error?.code,
-      projectId: config.expoProjectId,
-      fullError: JSON.stringify(error, null, 2),
-    });
     // Re-throw with more context so the UI can show it
     throw new Error(`Push token failed: ${error?.message || 'Unknown error'}`);
   }
@@ -197,7 +182,6 @@ export async function registerDeviceWithBackend(pushToken: string): Promise<bool
   try {
     const accessToken = await getAccessToken();
     if (!accessToken) {
-      console.error('No access token available');
       return false;
     }
 
@@ -217,10 +201,8 @@ export async function registerDeviceWithBackend(pushToken: string): Promise<bool
       }
     );
 
-    console.log('Device registered:', response.data);
     return true;
   } catch (error) {
-    console.error('Failed to register device with backend:', error);
     return false;
   }
 }
@@ -233,7 +215,6 @@ export async function initializePushNotifications(): Promise<void> {
   const pushToken = await registerForPushNotifications();
 
   if (pushToken) {
-    console.log('Push token:', pushToken);
     await registerDeviceWithBackend(pushToken);
   }
 }
@@ -248,7 +229,6 @@ export function setupNotificationListeners(
   // Listener for notifications received while app is foregrounded
   const notificationListener = Notifications.addNotificationReceivedListener(
     (notification) => {
-      console.log('Notification received:', notification);
       onNotificationReceived?.(notification);
     }
   );
@@ -256,7 +236,6 @@ export function setupNotificationListeners(
   // Listener for when user interacts with notification
   const responseListener = Notifications.addNotificationResponseReceivedListener(
     (response) => {
-      console.log('Notification response:', response);
       onNotificationResponse?.(response);
     }
   );
@@ -282,7 +261,6 @@ export async function setBadgeCount(count: number): Promise<void> {
   try {
     await Notifications.setBadgeCountAsync(count);
   } catch (error) {
-    console.error('Failed to set badge count:', error);
   }
 }
 
@@ -293,7 +271,6 @@ export async function getBadgeCount(): Promise<number> {
   try {
     return await Notifications.getBadgeCountAsync();
   } catch (error) {
-    console.error('Failed to get badge count:', error);
     return 0;
   }
 }
@@ -417,7 +394,6 @@ export async function requestCriticalAlertsPermission(): Promise<boolean> {
 
     return status === 'granted';
   } catch (error) {
-    console.error('[Notifications] Failed to request critical alerts permission:', error);
     return false;
   }
 }

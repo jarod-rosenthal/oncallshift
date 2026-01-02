@@ -6,7 +6,7 @@ export const config = {
   apiUrl: 'https://oncallshift.com/api',
   cognito: {
     userPoolId: 'REDACTED_COGNITO_POOL_ID',
-    clientId: 'REDACTED_COGNITO_CLIENT_ID_3',
+    clientId: 'REDACTED_COGNITO_CLIENT_ID_2',
     region: 'us-east-1',
   },
   // Expo project ID for push notifications
@@ -15,15 +15,19 @@ export const config = {
 
 // Validate required config
 if (!config.cognito.userPoolId || !config.cognito.clientId) {
-  console.warn('Cognito configuration is incomplete.');
+  if (__DEV__) {
+    console.warn('Cognito configuration is incomplete.');
+  }
 }
 
-// Log config on startup (remove in production)
-console.log('App Config:', {
-  apiUrl: config.apiUrl,
-  cognito: {
-    userPoolId: config.cognito.userPoolId,
-    clientId: config.cognito.clientId,
-    region: config.cognito.region,
-  },
-});
+// Log config on startup (development only)
+if (__DEV__) {
+  console.log('App Config:', {
+    apiUrl: config.apiUrl,
+    cognito: {
+      userPoolId: config.cognito.userPoolId,
+      clientId: config.cognito.clientId,
+      region: config.cognito.region,
+    },
+  });
+}

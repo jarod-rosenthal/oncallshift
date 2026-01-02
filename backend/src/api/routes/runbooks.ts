@@ -5,6 +5,7 @@ import { getDataSource } from '../../shared/db/data-source';
 import { Runbook, Service, StepType, AutomationMode, ScriptLanguage } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 import { In } from 'typeorm';
+import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
@@ -172,6 +173,7 @@ router.post(
 
       logger.info('Runbook created', { runbookId: runbook.id, serviceId, orgId, createdBy: userId });
 
+      setLocationHeader(res, req, '/api/v1/runbooks', runbook.id);
       return res.status(201).json({
         runbook: formatRunbook(createdRunbook!),
         message: 'Runbook created successfully',

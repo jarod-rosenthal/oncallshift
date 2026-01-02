@@ -5,8 +5,11 @@ import { getDataSource } from '../../shared/db/data-source';
 import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification, Runbook, IncidentResponder, IncidentSubscriber, IncidentStatusUpdate, Postmortem } from '../../shared/models';
 import { sendNotificationMessage } from '../../shared/queues/sqs-client';
 import { logger } from '../../shared/utils/logger';
+import { generateEntityETag } from '../../shared/utils/etag';
+import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { workflowEngine } from '../../shared/services/workflow-engine';
 import { deliverToMatchingWebhooks } from '../../shared/services/webhook-delivery';
+import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
@@ -78,6 +81,7 @@ router.get(
 /**
  * GET /api/v1/incidents/:id
  * Get incident details with escalation status
+ * Supports ETag for conditional requests (If-None-Match)
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -97,6 +101,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     if (!incident) {
       return res.status(404).json({ error: 'Incident not found' });
+    }
+
+    // Generate ETag from incident ID and updatedAt timestamp
+    const etag = generateEntityETag(incident.id, incident.updatedAt);
+
+    // Check If-None-Match - return 304 if client's cached version is current
+    if (checkETagAndRespond(req, res, etag)) {
+      return; // 304 was sent
     }
 
     // Get escalation status
@@ -638,6 +650,7 @@ router.post(
         userId: user.id,
       });
 
+      setLocationHeader(res, req, `/api/v1/incidents/${incident.id}/timeline`, event.id);
       return res.status(201).json({
         event: {
           id: event.id,
@@ -2112,6 +2125,7 @@ router.post(
         createdBy: userId,
       });
 
+      setLocationHeader(res, req, `/api/v1/incidents/${id}/postmortem`, createdPostmortem!.id);
       return res.status(201).json({
         postmortem: {
           id: createdPostmortem!.id,
@@ -2299,6 +2313,7 @@ router.post(
         addedBy: user.id,
       });
 
+      setLocationHeader(res, req, `/api/v1/incidents/${id}/subscribers`, subscriber.id);
       return res.status(201).json({
         subscriber: {
           id: subscriber.id,
@@ -2531,6 +2546,7 @@ router.post(
         subscribersNotified: statusUpdate.subscriberCount,
       });
 
+      setLocationHeader(res, req, `/api/v1/incidents/${id}/status-updates`, statusUpdate.id);
       return res.status(201).json({
         statusUpdate: {
           id: statusUpdate.id,

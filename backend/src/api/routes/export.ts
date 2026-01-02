@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { DataSource } from 'typeorm';
 import { getDataSource } from '../../shared/db/data-source';
 import {
   User,
@@ -27,6 +28,11 @@ import {
 } from '../../shared/models';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { logger } from '../../shared/utils/logger';
+import { LayerRestrictions } from '../../shared/models/ScheduleLayer';
+import { SupportHours } from '../../shared/models/Service';
+import { RoutingCondition } from '../../shared/models/AlertRoutingRule';
+import { WorkflowCondition } from '../../shared/models/IncidentWorkflow';
+import { ActionConfig } from '../../shared/models/WorkflowAction';
 
 const router = Router();
 
@@ -61,7 +67,7 @@ interface ExportedConfig {
 interface ExportedUser {
   id: string;
   email: string;
-  fullName: string;
+  fullName: string | null;
   role: string;
   contactMethods: Array<{
     type: string;
@@ -105,7 +111,7 @@ interface ExportedSchedule {
       userEmail: string;
       position: number;
     }>;
-    restrictions: any | null;
+    restrictions: LayerRestrictions | null;
   }>;
 }
 
@@ -132,7 +138,7 @@ interface ExportedService {
   description: string | null;
   status: string;
   urgency: string;
-  supportHours: any | null;
+  supportHours: SupportHours | null;
   ackTimeoutSeconds: number | null;
   autoResolveTimeout: number | null;
   escalationPolicyName: string | null;
@@ -150,7 +156,7 @@ interface ExportedRoutingRule {
   ruleOrder: number;
   enabled: boolean;
   matchType: string;
-  conditions: any;
+  conditions: RoutingCondition[];
   setSeverity: string | null;
   suppress: boolean;
   suspend: boolean;
@@ -191,12 +197,12 @@ interface ExportedWorkflow {
   description: string | null;
   triggerType: string;
   triggerEvents: string[];
-  conditions: any;
+  conditions: WorkflowCondition[];
   enabled: boolean;
   actions: Array<{
     actionType: string;
     actionOrder: number;
-    config: any;
+    config: ActionConfig;
   }>;
 }
 
@@ -349,7 +355,7 @@ router.get('/config/:type', async (req: Request, res: Response) => {
 // Export Functions
 // ============================================================================
 
-async function exportUsers(dataSource: any, orgId: string): Promise<ExportedUser[]> {
+async function exportUsers(dataSource: DataSource, orgId: string): Promise<ExportedUser[]> {
   const userRepo = dataSource.getRepository(User);
   const contactRepo = dataSource.getRepository(UserContactMethod);
   const ruleRepo = dataSource.getRepository(UserNotificationRule);
@@ -383,7 +389,7 @@ async function exportUsers(dataSource: any, orgId: string): Promise<ExportedUser
   }));
 }
 
-async function exportTeams(dataSource: any, orgId: string): Promise<ExportedTeam[]> {
+async function exportTeams(dataSource: DataSource, orgId: string): Promise<ExportedTeam[]> {
   const teamRepo = dataSource.getRepository(Team);
   const membershipRepo = dataSource.getRepository(TeamMembership);
   const entityTagRepo = dataSource.getRepository(EntityTag);
@@ -419,7 +425,7 @@ async function exportTeams(dataSource: any, orgId: string): Promise<ExportedTeam
   }));
 }
 
-async function exportSchedules(dataSource: any, orgId: string): Promise<ExportedSchedule[]> {
+async function exportSchedules(dataSource: DataSource, orgId: string): Promise<ExportedSchedule[]> {
   const scheduleRepo = dataSource.getRepository(Schedule);
   const layerRepo = dataSource.getRepository(ScheduleLayer);
   const layerMemberRepo = dataSource.getRepository(ScheduleLayerMember);
@@ -442,7 +448,7 @@ async function exportSchedules(dataSource: any, orgId: string): Promise<Exported
       return {
         name: layer.name,
         rotationType: layer.rotationType,
-        startDate: layer.startDate,
+        startDate: layer.startDate instanceof Date ? layer.startDate.toISOString() : String(layer.startDate),
         handoffTime: layer.handoffTime,
         handoffDay: layer.handoffDay,
         rotationLength: layer.rotationLength,
@@ -465,7 +471,7 @@ async function exportSchedules(dataSource: any, orgId: string): Promise<Exported
   }));
 }
 
-async function exportEscalationPolicies(dataSource: any, orgId: string): Promise<ExportedEscalationPolicy[]> {
+async function exportEscalationPolicies(dataSource: DataSource, orgId: string): Promise<ExportedEscalationPolicy[]> {
   const policyRepo = dataSource.getRepository(EscalationPolicy);
   const stepRepo = dataSource.getRepository(EscalationStep);
   const targetRepo = dataSource.getRepository(EscalationTarget);
@@ -508,7 +514,7 @@ async function exportEscalationPolicies(dataSource: any, orgId: string): Promise
   }));
 }
 
-async function exportServices(dataSource: any, orgId: string): Promise<ExportedService[]> {
+async function exportServices(dataSource: DataSource, orgId: string): Promise<ExportedService[]> {
   const serviceRepo = dataSource.getRepository(Service);
   const entityTagRepo = dataSource.getRepository(EntityTag);
   const tagRepo = dataSource.getRepository(Tag);
@@ -545,7 +551,7 @@ async function exportServices(dataSource: any, orgId: string): Promise<ExportedS
   }));
 }
 
-async function exportRoutingRules(dataSource: any, orgId: string): Promise<ExportedRoutingRule[]> {
+async function exportRoutingRules(dataSource: DataSource, orgId: string): Promise<ExportedRoutingRule[]> {
   const ruleRepo = dataSource.getRepository(AlertRoutingRule);
   const serviceRepo = dataSource.getRepository(Service);
 
@@ -577,7 +583,7 @@ async function exportRoutingRules(dataSource: any, orgId: string): Promise<Expor
   }));
 }
 
-async function exportMaintenanceWindows(dataSource: any, orgId: string): Promise<ExportedMaintenanceWindow[]> {
+async function exportMaintenanceWindows(dataSource: DataSource, orgId: string): Promise<ExportedMaintenanceWindow[]> {
   const windowRepo = dataSource.getRepository(MaintenanceWindow);
 
   const windows = await windowRepo.find({
@@ -594,7 +600,7 @@ async function exportMaintenanceWindows(dataSource: any, orgId: string): Promise
   }));
 }
 
-async function exportServiceDependencies(dataSource: any, orgId: string): Promise<ExportedServiceDependency[]> {
+async function exportServiceDependencies(dataSource: DataSource, orgId: string): Promise<ExportedServiceDependency[]> {
   const depRepo = dataSource.getRepository(ServiceDependency);
 
   const deps = await depRepo.find({
@@ -608,7 +614,7 @@ async function exportServiceDependencies(dataSource: any, orgId: string): Promis
   }));
 }
 
-async function exportHeartbeats(dataSource: any, orgId: string): Promise<ExportedHeartbeat[]> {
+async function exportHeartbeats(dataSource: DataSource, orgId: string): Promise<ExportedHeartbeat[]> {
   const hbRepo = dataSource.getRepository(Heartbeat);
 
   const heartbeats = await hbRepo.find({
@@ -627,7 +633,7 @@ async function exportHeartbeats(dataSource: any, orgId: string): Promise<Exporte
   }));
 }
 
-async function exportTags(dataSource: any, orgId: string): Promise<ExportedTag[]> {
+async function exportTags(dataSource: DataSource, orgId: string): Promise<ExportedTag[]> {
   const tagRepo = dataSource.getRepository(Tag);
 
   const tags = await tagRepo.find({ where: { orgId } });
@@ -639,7 +645,7 @@ async function exportTags(dataSource: any, orgId: string): Promise<ExportedTag[]
   }));
 }
 
-async function exportWorkflows(dataSource: any, orgId: string): Promise<ExportedWorkflow[]> {
+async function exportWorkflows(dataSource: DataSource, orgId: string): Promise<ExportedWorkflow[]> {
   const workflowRepo = dataSource.getRepository(IncidentWorkflow);
   const actionRepo = dataSource.getRepository(WorkflowAction);
 
@@ -668,7 +674,7 @@ async function exportWorkflows(dataSource: any, orgId: string): Promise<Exported
   }));
 }
 
-async function exportStatusPages(dataSource: any, orgId: string): Promise<ExportedStatusPage[]> {
+async function exportStatusPages(dataSource: DataSource, orgId: string): Promise<ExportedStatusPage[]> {
   const pageRepo = dataSource.getRepository(StatusPage);
   const serviceRepo = dataSource.getRepository(StatusPageService);
 
@@ -691,7 +697,7 @@ async function exportStatusPages(dataSource: any, orgId: string): Promise<Export
   }));
 }
 
-async function exportWebhookSubscriptions(dataSource: any, orgId: string): Promise<ExportedWebhookSubscription[]> {
+async function exportWebhookSubscriptions(dataSource: DataSource, orgId: string): Promise<ExportedWebhookSubscription[]> {
   const subRepo = dataSource.getRepository(WebhookSubscription);
 
   const subs = await subRepo.find({ where: { orgId } });

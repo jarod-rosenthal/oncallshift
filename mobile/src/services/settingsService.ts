@@ -128,7 +128,6 @@ export const cacheIncidents = async (incidents: any[]): Promise<void> => {
     await AsyncStorage.setItem(KEYS.CACHED_INCIDENTS, JSON.stringify(incidents));
     await AsyncStorage.setItem(KEYS.LAST_SYNC, new Date().toISOString());
   } catch (error) {
-    console.error('Failed to cache incidents:', error);
   }
 };
 
@@ -145,7 +144,6 @@ export const cacheOnCallData = async (data: any[]): Promise<void> => {
   try {
     await AsyncStorage.setItem(KEYS.CACHED_ONCALL, JSON.stringify(data));
   } catch (error) {
-    console.error('Failed to cache on-call data:', error);
   }
 };
 
@@ -162,7 +160,6 @@ export const cacheProfile = async (profile: any): Promise<void> => {
   try {
     await AsyncStorage.setItem(KEYS.CACHED_PROFILE, JSON.stringify(profile));
   } catch (error) {
-    console.error('Failed to cache profile:', error);
   }
 };
 
@@ -212,6 +209,5 @@ export const clearAllSettings = async (): Promise<void> => {
       KEYS.LAST_SYNC,
     ]);
   } catch (error) {
-    console.error('Failed to clear settings:', error);
   }
 };

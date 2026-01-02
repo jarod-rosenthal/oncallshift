@@ -72,7 +72,6 @@ async function checkNetworkState(): Promise<void> {
     if (wasConnected !== isConnected) {
       notifyConnectionListeners();
       if (!wasConnected && isConnected) {
-        console.log('[Offline] Network restored, processing sync queue');
         processSyncQueue();
       }
     }
@@ -166,7 +165,6 @@ export async function getCached<T>(key: CacheKey, subKey?: string): Promise<T | 
 
     return JSON.parse(dataStr);
   } catch (error) {
-    console.error('[Offline] Failed to get cached data:', error);
     return null;
   }
 }
@@ -193,7 +191,6 @@ export async function setCache<T>(key: CacheKey, data: T, subKey?: string): Prom
       AsyncStorage.setItem(CACHE_METADATA_KEY, JSON.stringify(metadata)),
     ]);
   } catch (error) {
-    console.error('[Offline] Failed to set cache:', error);
   }
 }
 
@@ -206,7 +203,6 @@ export async function clearCache(): Promise<void> {
     const cacheKeys = keys.filter(key => key.startsWith(CACHE_PREFIX));
     await AsyncStorage.multiRemove([...cacheKeys, CACHE_METADATA_KEY]);
   } catch (error) {
-    console.error('[Offline] Failed to clear cache:', error);
   }
 }
 
@@ -225,7 +221,6 @@ export async function getWithCache<T>(
       await setCache(key, data, subKey);
       return data;
     } catch (error) {
-      console.log('[Offline] Fetch failed, falling back to cache');
     }
   }
 
@@ -249,7 +244,6 @@ export async function getSyncQueue(): Promise<SyncQueueItem[]> {
     const queueStr = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
     return queueStr ? JSON.parse(queueStr) : [];
   } catch (error) {
-    console.error('[Offline] Failed to get sync queue:', error);
     return [];
   }
 }
@@ -285,7 +279,6 @@ export async function addToSyncQueue(
       processSyncQueue();
     }
   } catch (error) {
-    console.error('[Offline] Failed to add to sync queue:', error);
     throw error;
   }
 }
@@ -300,7 +293,6 @@ async function removeFromSyncQueue(id: string): Promise<void> {
     await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(newQueue));
     notifySyncQueueListeners(newQueue);
   } catch (error) {
-    console.error('[Offline] Failed to remove from sync queue:', error);
   }
 }
 
@@ -316,7 +308,6 @@ async function updateRetryCount(id: string): Promise<void> {
       await AsyncStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
     }
   } catch (error) {
-    console.error('[Offline] Failed to update retry count:', error);
   }
 }
 
@@ -335,7 +326,6 @@ export async function processSyncQueue(): Promise<{ processed: number; failed: n
   for (const item of queue) {
     // Skip items that have failed too many times
     if (item.retryCount >= 3) {
-      console.log(`[Offline] Skipping item ${item.id} after 3 retries`);
       failed++;
       continue;
     }
@@ -344,9 +334,7 @@ export async function processSyncQueue(): Promise<{ processed: number; failed: n
       await processQueueItem(item);
       await removeFromSyncQueue(item.id);
       processed++;
-      console.log(`[Offline] Processed queue item: ${item.action} for ${item.incidentId}`);
     } catch (error) {
-      console.error(`[Offline] Failed to process queue item ${item.id}:`, error);
       await updateRetryCount(item.id);
       failed++;
     }
@@ -399,7 +387,6 @@ export async function acknowledgeIncidentOffline(incidentId: string): Promise<vo
       await apiService.acknowledgeIncident(incidentId);
       return;
     } catch (error) {
-      console.log('[Offline] Online acknowledge failed, queueing');
     }
   }
 
@@ -415,7 +402,6 @@ export async function resolveIncidentOffline(incidentId: string, resolution?: st
       await apiService.resolveIncident(incidentId, resolution);
       return;
     } catch (error) {
-      console.log('[Offline] Online resolve failed, queueing');
     }
   }
 
@@ -431,7 +417,6 @@ export async function addNoteOffline(incidentId: string, content: string): Promi
       await apiService.addIncidentNote(incidentId, content);
       return;
     } catch (error) {
-      console.log('[Offline] Online add note failed, queueing');
     }
   }
 

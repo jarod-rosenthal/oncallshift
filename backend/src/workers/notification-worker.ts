@@ -12,7 +12,7 @@ import { NotificationBundle } from '../shared/models/NotificationBundle';
 import { logger } from '../shared/utils/logger';
 
 const QUEUE_URL = process.env.NOTIFICATIONS_QUEUE_URL;
-const BUNDLE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const BUNDLE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes (reduced from 30 for faster low-urgency delivery)
 
 /**
  * Check if user is currently in Do Not Disturb mode
@@ -306,10 +306,17 @@ async function handleNotificationMessage(message: NotificationMessage): Promise<
       return;
     }
 
-    // Determine if should bundle (low-urgency incidents only)
-    const isLowUrgency = incident.urgency === 'low' ||
-                         (service?.urgency === 'low' && !incident.urgency) ||
-                         (incident.severity === 'info' || incident.severity === 'warning');
+    // Determine if should bundle - ONLY bundle explicitly low-urgency incidents
+    // High urgency incidents should ALWAYS send immediately regardless of severity
+    const isHighUrgency = incident.urgency === 'high' ||
+                          (!incident.urgency && service?.urgency === 'high') ||
+                          incident.severity === 'critical' ||
+                          incident.severity === 'error';
+
+    const isLowUrgency = !isHighUrgency && (
+                          incident.urgency === 'low' ||
+                          (service?.urgency === 'low' && !incident.urgency)
+                        );
 
     if (isLowUrgency && !isCritical) {
       // Add to notification bundle instead of sending immediately

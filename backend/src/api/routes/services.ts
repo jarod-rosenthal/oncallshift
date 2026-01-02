@@ -5,7 +5,10 @@ import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Service, Schedule, MaintenanceWindow, AlertGroupingRule, EventTransformRule } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { generateEntityETag } from '../../shared/utils/etag';
+import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { LessThanOrEqual, MoreThan } from 'typeorm';
+import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
@@ -13,8 +16,35 @@ const router = Router();
 router.use(authenticateUser);
 
 /**
- * GET /api/v1/services
- * Get all services for the authenticated user's organization
+ * @swagger
+ * /api/v1/services:
+ *   get:
+ *     summary: List all services
+ *     description: Retrieves all services in the authenticated user's organization.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of services retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 services:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Service'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -38,8 +68,47 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/services/:id
- * Get a single service by ID
+ * @swagger
+ * /api/v1/services/{id}:
+ *   get:
+ *     summary: Get a service by ID
+ *     description: Retrieves a specific service with its associated schedule and escalation policy.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     responses:
+ *       200:
+ *         description: Service retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 service:
+ *                   $ref: '#/components/schemas/Service'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -58,6 +127,14 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Service not found' });
     }
 
+    // Generate ETag from service ID and updatedAt timestamp
+    const etag = generateEntityETag(service.id, service.updatedAt);
+
+    // Check If-None-Match - return 304 if client's cached version is current
+    if (checkETagAndRespond(req, res, etag)) {
+      return; // 304 was sent
+    }
+
     return res.json({ service: formatService(service) });
   } catch (error) {
     logger.error('Error fetching service:', error);
@@ -66,8 +143,62 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * PUT /api/v1/services/:id
- * Update a service (including schedule assignment)
+ * @swagger
+ * /api/v1/services/{id}:
+ *   put:
+ *     summary: Update a service
+ *     description: Updates an existing service including schedule and escalation policy assignments.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ServiceUpdate'
+ *     responses:
+ *       200:
+ *         description: Service updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 service:
+ *                   $ref: '#/components/schemas/Service'
+ *                 message:
+ *                   type: string
+ *                   example: Service updated successfully
+ *       400:
+ *         description: Validation error or invalid schedule/escalation policy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id',
@@ -158,8 +289,48 @@ router.put(
 );
 
 /**
- * POST /api/v1/services
- * Create a new service
+ * @swagger
+ * /api/v1/services:
+ *   post:
+ *     summary: Create a new service
+ *     description: Creates a new service in the organization.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ServiceCreate'
+ *     responses:
+ *       201:
+ *         description: Service created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 service:
+ *                   $ref: '#/components/schemas/Service'
+ *                 message:
+ *                   type: string
+ *                   example: Service created successfully
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/',
@@ -201,6 +372,7 @@ router.post(
 
       logger.info('Service created', { serviceId: service.id, orgId });
 
+      setLocationHeader(res, req, '/api/v1/services', service.id);
       return res.status(201).json({
         service: formatService(createdService!),
         message: 'Service created successfully',
@@ -213,8 +385,56 @@ router.post(
 );
 
 /**
- * POST /api/v1/services/:id/regenerate-key
- * Regenerate API key for a service (admin-only)
+ * @swagger
+ * /api/v1/services/{id}/regenerate-key:
+ *   post:
+ *     summary: Regenerate service API key
+ *     description: Regenerates the API key for a service. Requires admin privileges. The old API key will no longer work after regeneration.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     responses:
+ *       200:
+ *         description: API key regenerated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: API key regenerated successfully
+ *                 service:
+ *                   $ref: '#/components/schemas/Service'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/:id/regenerate-key', async (req: Request, res: Response) => {
   try {
@@ -257,8 +477,54 @@ router.post('/:id/regenerate-key', async (req: Request, res: Response) => {
 });
 
 /**
- * DELETE /api/v1/services/:id
- * Delete a service (soft delete - sets status to inactive) (admin-only)
+ * @swagger
+ * /api/v1/services/{id}:
+ *   delete:
+ *     summary: Delete a service
+ *     description: Soft-deletes a service by setting its status to inactive. Requires admin privileges.
+ *     tags: [Services]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     responses:
+ *       200:
+ *         description: Service deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Service deleted successfully
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -325,6 +591,26 @@ function formatService(service: Service) {
 // ==========================================
 
 /**
+ * @swagger
+ * components:
+ *   schemas:
+ *     MaintenanceWindowResponse:
+ *       allOf:
+ *         - $ref: '#/components/schemas/MaintenanceWindow'
+ *         - type: object
+ *           properties:
+ *             service:
+ *               type: object
+ *               nullable: true
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   format: uuid
+ *                 name:
+ *                   type: string
+ */
+
+/**
  * Format maintenance window for API response
  */
 function formatMaintenanceWindow(mw: MaintenanceWindow) {
@@ -347,9 +633,47 @@ function formatMaintenanceWindow(mw: MaintenanceWindow) {
 }
 
 /**
- * GET /api/v1/services/maintenance-windows/active
- * Get all active maintenance windows across all services in the org
- * NOTE: This route must be defined before /:id routes to avoid matching
+ * @swagger
+ * /api/v1/services/maintenance-windows/active:
+ *   get:
+ *     summary: Get all active maintenance windows
+ *     description: Retrieves all currently active maintenance windows across all services in the organization.
+ *     tags: [Services - Maintenance Windows]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Active maintenance windows retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 maintenanceWindows:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/MaintenanceWindow'
+ *                       - type: object
+ *                         properties:
+ *                           service:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 format: uuid
+ *                               name:
+ *                                 type: string
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/maintenance-windows/active', async (req: Request, res: Response) => {
   try {
@@ -385,8 +709,55 @@ router.get('/maintenance-windows/active', async (req: Request, res: Response) =>
 });
 
 /**
- * GET /api/v1/services/:id/maintenance-windows
- * Get all maintenance windows for a service
+ * @swagger
+ * /api/v1/services/{id}/maintenance-windows:
+ *   get:
+ *     summary: List maintenance windows for a service
+ *     description: Retrieves all maintenance windows for a specific service, optionally filtered by status.
+ *     tags: [Services - Maintenance Windows]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, upcoming, past]
+ *         description: Filter by maintenance window status
+ *     responses:
+ *       200:
+ *         description: Maintenance windows retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 maintenanceWindows:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/MaintenanceWindow'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/maintenance-windows', async (req: Request, res: Response) => {
   try {
@@ -443,8 +814,60 @@ router.get('/:id/maintenance-windows', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/services/:serviceId/maintenance-windows/:windowId
- * Get a single maintenance window
+ * @swagger
+ * /api/v1/services/{serviceId}/maintenance-windows/{windowId}:
+ *   get:
+ *     summary: Get a maintenance window by ID
+ *     description: Retrieves a specific maintenance window for a service.
+ *     tags: [Services - Maintenance Windows]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: windowId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Maintenance window ID
+ *     responses:
+ *       200:
+ *         description: Maintenance window retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 maintenanceWindow:
+ *                   $ref: '#/components/schemas/MaintenanceWindow'
+ *       400:
+ *         description: Invalid UUID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or maintenance window not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get(
   '/:serviceId/maintenance-windows/:windowId',
@@ -494,8 +917,74 @@ router.get(
 );
 
 /**
- * POST /api/v1/services/:id/maintenance-windows
- * Create a maintenance window for a service
+ * @swagger
+ * /api/v1/services/{id}/maintenance-windows:
+ *   post:
+ *     summary: Create a maintenance window
+ *     description: Creates a new maintenance window for a service. The window cannot overlap with existing windows.
+ *     tags: [Services - Maintenance Windows]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/MaintenanceWindowCreate'
+ *     responses:
+ *       201:
+ *         description: Maintenance window created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 maintenanceWindow:
+ *                   $ref: '#/components/schemas/MaintenanceWindow'
+ *                 message:
+ *                   type: string
+ *                   example: Maintenance window created successfully
+ *       400:
+ *         description: Validation error or end time before start time
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       409:
+ *         description: Maintenance window overlaps with existing window
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Maintenance window overlaps with existing window
+ *                 overlappingWindow:
+ *                   $ref: '#/components/schemas/MaintenanceWindow'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/maintenance-windows',
@@ -572,6 +1061,7 @@ router.post(
         createdBy: userId,
       });
 
+      setLocationHeader(res, req, `/api/v1/services/${id}/maintenance-windows`, maintenanceWindow.id);
       return res.status(201).json({
         maintenanceWindow: formatMaintenanceWindow(maintenanceWindow),
         message: 'Maintenance window created successfully',
@@ -584,8 +1074,94 @@ router.post(
 );
 
 /**
- * PUT /api/v1/services/:serviceId/maintenance-windows/:windowId
- * Update a maintenance window
+ * @swagger
+ * /api/v1/services/{serviceId}/maintenance-windows/{windowId}:
+ *   put:
+ *     summary: Update a maintenance window
+ *     description: Updates an existing maintenance window. The updated window cannot overlap with other windows.
+ *     tags: [Services - Maintenance Windows]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: windowId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Maintenance window ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               startTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: New start time (ISO 8601)
+ *               endTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: New end time (ISO 8601)
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *               suppressAlerts:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Maintenance window updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 maintenanceWindow:
+ *                   $ref: '#/components/schemas/MaintenanceWindow'
+ *                 message:
+ *                   type: string
+ *                   example: Maintenance window updated successfully
+ *       400:
+ *         description: Validation error or end time before start time
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or maintenance window not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       409:
+ *         description: Updated maintenance window would overlap with existing window
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 overlappingWindow:
+ *                   $ref: '#/components/schemas/MaintenanceWindow'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:serviceId/maintenance-windows/:windowId',
@@ -680,8 +1256,61 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/services/:serviceId/maintenance-windows/:windowId
- * Delete a maintenance window
+ * @swagger
+ * /api/v1/services/{serviceId}/maintenance-windows/{windowId}:
+ *   delete:
+ *     summary: Delete a maintenance window
+ *     description: Deletes a maintenance window for a service.
+ *     tags: [Services - Maintenance Windows]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: windowId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Maintenance window ID
+ *     responses:
+ *       200:
+ *         description: Maintenance window deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Maintenance window deleted successfully
+ *       400:
+ *         description: Invalid UUID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or maintenance window not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete(
   '/:serviceId/maintenance-windows/:windowId',
@@ -761,8 +1390,66 @@ function formatGroupingRule(rule: AlertGroupingRule) {
 }
 
 /**
- * GET /api/v1/services/:id/grouping-rule
- * Get alert grouping rule for a service
+ * @swagger
+ * /api/v1/services/{id}/grouping-rule:
+ *   get:
+ *     summary: Get alert grouping rule for a service
+ *     description: Retrieves the alert grouping configuration for a service. Returns default configuration if no custom rule is set.
+ *     tags: [Services - Alert Grouping]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     responses:
+ *       200:
+ *         description: Grouping rule retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 groupingRule:
+ *                   oneOf:
+ *                     - $ref: '#/components/schemas/AlertGroupingRule'
+ *                     - type: 'null'
+ *                 defaults:
+ *                   type: object
+ *                   description: Default values if no rule is configured
+ *                   properties:
+ *                     groupingType:
+ *                       type: string
+ *                       example: intelligent
+ *                     timeWindowMinutes:
+ *                       type: integer
+ *                       example: 5
+ *                     contentFields:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     maxAlertsPerIncident:
+ *                       type: integer
+ *                       example: 1000
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/grouping-rule', async (req: Request, res: Response) => {
   try {
@@ -809,8 +1496,86 @@ router.get('/:id/grouping-rule', async (req: Request, res: Response) => {
 });
 
 /**
- * PUT /api/v1/services/:id/grouping-rule
- * Create or update alert grouping rule for a service
+ * @swagger
+ * /api/v1/services/{id}/grouping-rule:
+ *   put:
+ *     summary: Create or update alert grouping rule
+ *     description: Creates or updates the alert grouping configuration for a service.
+ *     tags: [Services - Alert Grouping]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               groupingType:
+ *                 type: string
+ *                 enum: [intelligent, time, content, disabled]
+ *                 description: Type of alert grouping
+ *               timeWindowMinutes:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 1440
+ *                 description: Time window in minutes for grouping alerts
+ *               contentFields:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Fields to use for content-based grouping
+ *               dedupKeyTemplate:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Template for generating deduplication keys
+ *               maxAlertsPerIncident:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 10000
+ *                 description: Maximum alerts per incident
+ *     responses:
+ *       200:
+ *         description: Grouping rule updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 groupingRule:
+ *                   $ref: '#/components/schemas/AlertGroupingRule'
+ *                 message:
+ *                   type: string
+ *                   example: Grouping rule updated successfully
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id/grouping-rule',
@@ -890,8 +1655,48 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/services/:id/grouping-rule
- * Delete alert grouping rule for a service (reverts to defaults)
+ * @swagger
+ * /api/v1/services/{id}/grouping-rule:
+ *   delete:
+ *     summary: Delete alert grouping rule
+ *     description: Deletes the alert grouping rule for a service, reverting to default behavior.
+ *     tags: [Services - Alert Grouping]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     responses:
+ *       200:
+ *         description: Grouping rule deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Grouping rule deleted successfully. Service will use default grouping.
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found or no grouping rule configured
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id/grouping-rule', async (req: Request, res: Response) => {
   try {
@@ -940,6 +1745,13 @@ router.delete('/:id/grouping-rule', async (req: Request, res: Response) => {
 // ==========================================
 
 /**
+ * @swagger
+ * tags:
+ *   - name: Services - Event Rules
+ *     description: Event transform rules for services
+ */
+
+/**
  * Format event transform rule for API response
  */
 function formatTransformRule(rule: EventTransformRule) {
@@ -968,8 +1780,49 @@ function formatTransformRule(rule: EventTransformRule) {
 }
 
 /**
- * GET /api/v1/services/:id/event-rules
- * Get all event transform rules for a service
+ * @swagger
+ * /api/v1/services/{id}/event-rules:
+ *   get:
+ *     summary: List event transform rules for a service
+ *     description: Retrieves all event transform rules for a service, ordered by rule priority.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     responses:
+ *       200:
+ *         description: Event rules retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 rules:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/EventTransformRule'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/event-rules', async (req: Request, res: Response) => {
   try {
@@ -1005,8 +1858,60 @@ router.get('/:id/event-rules', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/services/:serviceId/event-rules/:ruleId
- * Get a single event transform rule
+ * @swagger
+ * /api/v1/services/{serviceId}/event-rules/{ruleId}:
+ *   get:
+ *     summary: Get an event transform rule by ID
+ *     description: Retrieves a specific event transform rule for a service.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: ruleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Event rule ID
+ *     responses:
+ *       200:
+ *         description: Event rule retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 rule:
+ *                   $ref: '#/components/schemas/EventTransformRule'
+ *       400:
+ *         description: Invalid UUID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or event rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get(
   '/:serviceId/event-rules/:ruleId',
@@ -1057,8 +1962,120 @@ router.get(
 );
 
 /**
- * POST /api/v1/services/:id/event-rules
- * Create an event transform rule for a service
+ * @swagger
+ * /api/v1/services/{id}/event-rules:
+ *   post:
+ *     summary: Create an event transform rule
+ *     description: Creates a new event transform rule for a service. Rules are evaluated in order based on ruleOrder.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 maxLength: 255
+ *                 description: Rule name
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Rule description
+ *               enabled:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Whether the rule is enabled
+ *               conditions:
+ *                 type: array
+ *                 description: Conditions for matching events
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     field:
+ *                       type: string
+ *                     operator:
+ *                       type: string
+ *                       enum: [equals, contains, matches, exists, not_exists]
+ *                     value:
+ *                       type: string
+ *               matchType:
+ *                 type: string
+ *                 enum: [all, any]
+ *                 default: all
+ *                 description: Whether all or any conditions must match
+ *               transformations:
+ *                 type: array
+ *                 description: Transformations to apply
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     action:
+ *                       type: string
+ *                       enum: [set, copy, delete, regex_extract]
+ *                     field:
+ *                       type: string
+ *                     value:
+ *                       type: string
+ *                     sourceField:
+ *                       type: string
+ *               action:
+ *                 type: string
+ *                 enum: [continue, suppress, route]
+ *                 default: continue
+ *                 description: Action to take after transformations
+ *               routeToServiceId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Service ID to route events to (if action is route)
+ *     responses:
+ *       201:
+ *         description: Event rule created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 rule:
+ *                   $ref: '#/components/schemas/EventTransformRule'
+ *                 message:
+ *                   type: string
+ *                   example: Event transform rule created successfully
+ *       400:
+ *         description: Validation error or invalid route-to service
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/event-rules',
@@ -1155,6 +2172,7 @@ router.post(
         createdBy: userId,
       });
 
+      setLocationHeader(res, req, `/api/v1/services/${id}/event-rules`, rule.id);
       return res.status(201).json({
         rule: formatTransformRule(createdRule!),
         message: 'Event transform rule created successfully',
@@ -1167,8 +2185,100 @@ router.post(
 );
 
 /**
- * PUT /api/v1/services/:serviceId/event-rules/:ruleId
- * Update an event transform rule
+ * @swagger
+ * /api/v1/services/{serviceId}/event-rules/{ruleId}:
+ *   put:
+ *     summary: Update an event transform rule
+ *     description: Updates an existing event transform rule for a service.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: ruleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Event rule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 maxLength: 255
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *               enabled:
+ *                 type: boolean
+ *               conditions:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *               matchType:
+ *                 type: string
+ *                 enum: [all, any]
+ *               transformations:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *               action:
+ *                 type: string
+ *                 enum: [continue, suppress, route]
+ *               routeToServiceId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *               ruleOrder:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Order in which rules are evaluated
+ *     responses:
+ *       200:
+ *         description: Event rule updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 rule:
+ *                   $ref: '#/components/schemas/EventTransformRule'
+ *                 message:
+ *                   type: string
+ *                   example: Event transform rule updated successfully
+ *       400:
+ *         description: Validation error or invalid route-to service
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or event rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:serviceId/event-rules/:ruleId',
@@ -1278,8 +2388,61 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/services/:serviceId/event-rules/:ruleId
- * Delete an event transform rule
+ * @swagger
+ * /api/v1/services/{serviceId}/event-rules/{ruleId}:
+ *   delete:
+ *     summary: Delete an event transform rule
+ *     description: Deletes an event transform rule for a service.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: ruleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Event rule ID
+ *     responses:
+ *       200:
+ *         description: Event rule deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Event transform rule deleted successfully
+ *       400:
+ *         description: Invalid UUID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or event rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete(
   '/:serviceId/event-rules/:ruleId',
@@ -1337,8 +2500,69 @@ router.delete(
 );
 
 /**
- * PUT /api/v1/services/:serviceId/event-rules/reorder
- * Reorder event transform rules
+ * @swagger
+ * /api/v1/services/{serviceId}/event-rules/reorder:
+ *   put:
+ *     summary: Reorder event transform rules
+ *     description: Updates the order in which event transform rules are evaluated.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ruleIds
+ *             properties:
+ *               ruleIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: Ordered array of rule IDs
+ *     responses:
+ *       200:
+ *         description: Event rules reordered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Event transform rules reordered successfully
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:serviceId/event-rules/reorder',
@@ -1394,8 +2618,95 @@ router.put(
 );
 
 /**
- * POST /api/v1/services/:serviceId/event-rules/:ruleId/test
- * Test an event transform rule against a sample payload
+ * @swagger
+ * /api/v1/services/{serviceId}/event-rules/{ruleId}/test:
+ *   post:
+ *     summary: Test an event transform rule
+ *     description: Tests an event transform rule against a sample payload to see if it matches and what transformations would be applied.
+ *     tags: [Services - Event Rules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: serviceId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Service ID
+ *       - in: path
+ *         name: ruleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Event rule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - payload
+ *             properties:
+ *               payload:
+ *                 type: object
+ *                 description: Sample event payload to test against the rule
+ *                 additionalProperties: true
+ *     responses:
+ *       200:
+ *         description: Test results
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 matches:
+ *                   type: boolean
+ *                   description: Whether the rule conditions matched
+ *                 action:
+ *                   type: string
+ *                   nullable: true
+ *                   enum: [continue, suppress, route]
+ *                   description: Action that would be taken if matched
+ *                 routeToService:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     name:
+ *                       type: string
+ *                 originalPayload:
+ *                   type: object
+ *                   description: The original payload submitted
+ *                 transformedPayload:
+ *                   type: object
+ *                   nullable: true
+ *                   description: The payload after transformations (null if not matched)
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service or event rule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:serviceId/event-rules/:ruleId/test',

@@ -2,6 +2,7 @@ import { Logging } from '@google-cloud/logging';
 import { InstancesClient } from '@google-cloud/compute';
 import { ServicesClient as CloudRunClient } from '@google-cloud/run';
 import { ClusterManagerClient } from '@google-cloud/container';
+import type { ClientOptions } from 'google-gax';
 import { getDataSource } from '../db/data-source';
 import { CloudCredential, CloudAccessLog, Incident } from '../models';
 import { decryptCredentials } from './credential-encryption';
@@ -10,6 +11,101 @@ import { logger } from '../utils/logger';
 interface GCPCredentials {
   service_account_json: string;
   project_id: string;
+}
+
+/**
+ * GCP Service Account JSON structure
+ */
+interface GCPServiceAccountCredentials {
+  type: string;
+  project_id: string;
+  private_key_id: string;
+  private_key: string;
+  client_email: string;
+  client_id: string;
+  auth_uri: string;
+  token_uri: string;
+  auth_provider_x509_cert_url: string;
+  client_x509_cert_url: string;
+  universe_domain?: string;
+}
+
+/**
+ * Auth options for GCP clients
+ * Extends ClientOptions from google-gax for compatibility with all GCP SDK clients
+ */
+interface GCPAuthOptions extends ClientOptions {
+  projectId: string;
+  credentials: GCPServiceAccountCredentials;
+}
+
+/**
+ * GCP API error with gRPC status code
+ */
+interface GCPError extends Error {
+  code?: number;
+}
+
+/**
+ * Raw log entry data structure
+ * Compatible with RawCloudData.logs from cloud-investigation.ts
+ */
+interface RawLogEntry {
+  timestamp?: string | Date | null;
+  severity?: string | null;
+  resource?: string;
+  message?: string;
+}
+
+/**
+ * Cloud Run service data structure
+ */
+interface CloudRunServiceData {
+  name: string | null | undefined;
+  uri: string | null | undefined;
+  latestReadyRevision: string | null | undefined;
+  latestCreatedRevision: string | null | undefined;
+  conditions: Array<{ type: string | null | undefined; state: string | null | undefined }> | undefined;
+}
+
+/**
+ * Cloud Run service condition
+ */
+interface CloudRunCondition {
+  type?: string | null;
+  state?: string | null;
+  message?: string | null;
+}
+
+/**
+ * Compute Engine instance data structure
+ */
+interface ComputeInstanceData {
+  name: string | null | undefined;
+  zone: string;
+  status: string | null | undefined;
+  machineType: string | undefined;
+}
+
+/**
+ * GKE cluster data structure
+ */
+interface GKEClusterData {
+  name: string | null | undefined;
+  location: string | null | undefined;
+  status: string | number | null | undefined;
+  currentMasterVersion: string | null | undefined;
+  currentNodeCount: number | null | undefined;
+}
+
+/**
+ * Raw data collected from GCP services
+ */
+interface GCPRawData {
+  logs?: RawLogEntry[];
+  cloudRun?: CloudRunServiceData[];
+  compute?: ComputeInstanceData[];
+  gke?: GKEClusterData[];
 }
 
 export interface GCPInvestigationResult {
@@ -31,19 +127,14 @@ export interface GCPInvestigationResult {
     output?: string;
   }>;
   error_message?: string;
-  raw_data?: {
-    logs?: any[];
-    cloudRun?: any[];
-    compute?: any[];
-    gke?: any[];
-  };
+  raw_data?: GCPRawData;
 }
 
 /**
  * Parse GCP service account JSON and create auth options
  */
-function getGCPAuthOptions(creds: GCPCredentials): { projectId: string; credentials: any } {
-  const serviceAccount = JSON.parse(creds.service_account_json);
+function getGCPAuthOptions(creds: GCPCredentials): GCPAuthOptions {
+  const serviceAccount = JSON.parse(creds.service_account_json) as GCPServiceAccountCredentials;
   return {
     projectId: creds.project_id,
     credentials: serviceAccount,
@@ -54,12 +145,12 @@ function getGCPAuthOptions(creds: GCPCredentials): { projectId: string; credenti
  * Query GCP Cloud Logging for errors
  */
 async function queryCloudLogging(
-  authOptions: { projectId: string; credentials: any },
+  authOptions: GCPAuthOptions,
   incidentTime: Date,
   commandsExecuted: GCPInvestigationResult['commands_executed']
-): Promise<{ errors: string[]; rawLogs: any[] }> {
+): Promise<{ errors: string[]; rawLogs: RawLogEntry[] }> {
   const errors: string[] = [];
-  const rawLogs: any[] = [];
+  const rawLogs: RawLogEntry[] = [];
 
   try {
     const logging = new Logging(authOptions);
@@ -88,27 +179,29 @@ async function queryCloudLogging(
     });
 
     for (const entry of entries) {
-      const data = entry.data as any;
+      const data = entry.data;
       const message = typeof data === 'string' ? data : JSON.stringify(data);
       const resource = entry.metadata?.resource?.type || 'unknown';
       errors.push(`[${resource}] ${message.substring(0, 200)}`);
       rawLogs.push({
-        timestamp: entry.metadata?.timestamp,
-        severity: entry.metadata?.severity,
+        timestamp: entry.metadata?.timestamp as string | Date | null | undefined,
+        severity: entry.metadata?.severity as string | null | undefined,
         resource,
         message: message.substring(0, 500),
       });
     }
-  } catch (error: any) {
-    const isAuthError = error.code === 7 || error.code === 16; // PERMISSION_DENIED or UNAUTHENTICATED
+  } catch (error: unknown) {
+    const gcpError = error as GCPError;
+    const isAuthError = gcpError.code === 7 || gcpError.code === 16; // PERMISSION_DENIED or UNAUTHENTICATED
+    const errorMessage = error instanceof Error ? error.message : String(error);
     commandsExecuted.push({
       command: 'Logging.getEntries',
       service: 'Cloud Logging',
       timestamp: new Date().toISOString(),
       result: isAuthError ? 'access_denied' : 'error',
-      output: error.message,
+      output: errorMessage,
     });
-    logger.warn('Failed to query GCP Cloud Logging:', error.message);
+    logger.warn('Failed to query GCP Cloud Logging:', errorMessage);
   }
 
   return { errors, rawLogs };
@@ -118,11 +211,11 @@ async function queryCloudLogging(
  * Check Cloud Run service health
  */
 async function checkCloudRun(
-  authOptions: { projectId: string; credentials: any },
+  authOptions: GCPAuthOptions,
   commandsExecuted: GCPInvestigationResult['commands_executed']
-): Promise<{ unhealthy: string[]; rawData: any[] }> {
+): Promise<{ unhealthy: string[]; rawData: CloudRunServiceData[] }> {
   const unhealthy: string[] = [];
-  const rawData: any[] = [];
+  const rawData: CloudRunServiceData[] = [];
 
   try {
     const client = new CloudRunClient(authOptions);
@@ -139,17 +232,18 @@ async function checkCloudRun(
     const [services] = await client.listServices({ parent });
 
     for (const service of services) {
-      const serviceData: any = {
+      const conditions = service.conditions as CloudRunCondition[] | undefined;
+      const serviceData: CloudRunServiceData = {
         name: service.name,
         uri: service.uri,
         latestReadyRevision: service.latestReadyRevision,
         latestCreatedRevision: service.latestCreatedRevision,
-        conditions: service.conditions?.map((c: any) => ({ type: c.type, state: c.state })),
+        conditions: conditions?.map((c) => ({ type: c.type, state: c.state })),
       };
       rawData.push(serviceData);
 
       // Check conditions
-      for (const condition of service.conditions || []) {
+      for (const condition of conditions || []) {
         if (condition.state !== 'CONDITION_SUCCEEDED' && condition.type === 'Ready') {
           unhealthy.push(`Cloud Run ${service.name?.split('/').pop()} not ready: ${condition.message}`);
         }
@@ -160,30 +254,43 @@ async function checkCloudRun(
         unhealthy.push(`Cloud Run ${service.name?.split('/').pop()} has pending revision`);
       }
     }
-  } catch (error: any) {
-    const isAuthError = error.code === 7 || error.code === 16;
+  } catch (error: unknown) {
+    const gcpError = error as GCPError;
+    const isAuthError = gcpError.code === 7 || gcpError.code === 16;
+    const errorMessage = error instanceof Error ? error.message : String(error);
     commandsExecuted.push({
       command: 'CloudRunClient.listServices',
       service: 'Cloud Run',
       timestamp: new Date().toISOString(),
       result: isAuthError ? 'access_denied' : 'error',
-      output: error.message,
+      output: errorMessage,
     });
-    logger.warn('Failed to check GCP Cloud Run:', error.message);
+    logger.warn('Failed to check GCP Cloud Run:', errorMessage);
   }
 
   return { unhealthy, rawData };
 }
 
 /**
+ * Scoped list of instances from aggregated list response
+ */
+interface ComputeInstancesScopedList {
+  instances?: Array<{
+    name?: string | null;
+    status?: string | null;
+    machineType?: string | null;
+  }>;
+}
+
+/**
  * Check Compute Engine instance health
  */
 async function checkComputeEngine(
-  authOptions: { projectId: string; credentials: any },
+  authOptions: GCPAuthOptions,
   commandsExecuted: GCPInvestigationResult['commands_executed']
-): Promise<{ unhealthy: string[]; rawData: any[] }> {
+): Promise<{ unhealthy: string[]; rawData: ComputeInstanceData[] }> {
   const unhealthy: string[] = [];
-  const rawData: any[] = [];
+  const rawData: ComputeInstanceData[] = [];
 
   try {
     const client = new InstancesClient(authOptions);
@@ -202,11 +309,12 @@ async function checkComputeEngine(
     });
 
     for await (const [zone, scopedList] of aggListIterator) {
-      const instanceList = (scopedList as any)?.instances;
+      const typedScopedList = scopedList as ComputeInstancesScopedList;
+      const instanceList = typedScopedList?.instances;
       if (!instanceList) continue;
 
       for (const instance of instanceList) {
-        const instanceData: any = {
+        const instanceData: ComputeInstanceData = {
           name: instance.name,
           zone: zone.replace('zones/', ''),
           status: instance.status,
@@ -219,16 +327,18 @@ async function checkComputeEngine(
         }
       }
     }
-  } catch (error: any) {
-    const isAuthError = error.code === 7 || error.code === 16;
+  } catch (error: unknown) {
+    const gcpError = error as GCPError;
+    const isAuthError = gcpError.code === 7 || gcpError.code === 16;
+    const errorMessage = error instanceof Error ? error.message : String(error);
     commandsExecuted.push({
       command: 'InstancesClient.aggregatedList',
       service: 'Compute Engine',
       timestamp: new Date().toISOString(),
       result: isAuthError ? 'access_denied' : 'error',
-      output: error.message,
+      output: errorMessage,
     });
-    logger.warn('Failed to check GCP Compute Engine:', error.message);
+    logger.warn('Failed to check GCP Compute Engine:', errorMessage);
   }
 
   return { unhealthy, rawData };
@@ -238,11 +348,11 @@ async function checkComputeEngine(
  * Check GKE cluster health
  */
 async function checkGKE(
-  authOptions: { projectId: string; credentials: any },
+  authOptions: GCPAuthOptions,
   commandsExecuted: GCPInvestigationResult['commands_executed']
-): Promise<{ unhealthy: string[]; rawData: any[] }> {
+): Promise<{ unhealthy: string[]; rawData: GKEClusterData[] }> {
   const unhealthy: string[] = [];
-  const rawData: any[] = [];
+  const rawData: GKEClusterData[] = [];
 
   try {
     const client = new ClusterManagerClient(authOptions);
@@ -258,7 +368,7 @@ async function checkGKE(
     const [response] = await client.listClusters({ parent });
 
     for (const cluster of response.clusters || []) {
-      const clusterData: any = {
+      const clusterData: GKEClusterData = {
         name: cluster.name,
         location: cluster.location,
         status: cluster.status,
@@ -279,16 +389,18 @@ async function checkGKE(
         }
       }
     }
-  } catch (error: any) {
-    const isAuthError = error.code === 7 || error.code === 16;
+  } catch (error: unknown) {
+    const gcpError = error as GCPError;
+    const isAuthError = gcpError.code === 7 || gcpError.code === 16;
+    const errorMessage = error instanceof Error ? error.message : String(error);
     commandsExecuted.push({
       command: 'ClusterManagerClient.listClusters',
       service: 'GKE',
       timestamp: new Date().toISOString(),
       result: isAuthError ? 'access_denied' : 'error',
-      output: error.message,
+      output: errorMessage,
     });
-    logger.warn('Failed to check GKE:', error.message);
+    logger.warn('Failed to check GKE:', errorMessage);
   }
 
   return { unhealthy, rawData };
@@ -355,7 +467,7 @@ export async function runGCPInvestigation(
 
   const commandsExecuted: GCPInvestigationResult['commands_executed'] = [];
   const findings: string[] = [];
-  const rawData: any = {};
+  const rawData: GCPRawData = {};
 
   try {
     // Decrypt credentials
@@ -441,7 +553,9 @@ export async function runGCPInvestigation(
     }
 
     // Update access log
-    accessLog.commandsExecuted = commandsExecuted as any;
+    // Note: commandsExecuted uses a different structure than CloudAccessLog.CommandExecuted interface
+    // This is intentional as GCP investigation captures service-specific metadata
+    accessLog.commandsExecuted = commandsExecuted as unknown as typeof accessLog.commandsExecuted;
     accessLog.evidence = findings;
     accessLog.recommendations = recommendations.map(r => ({
       title: r.title,
@@ -467,8 +581,9 @@ export async function runGCPInvestigation(
       commands_executed: commandsExecuted,
       raw_data: rawData,
     };
-  } catch (error: any) {
-    accessLog.complete(false, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    accessLog.complete(false, errorMessage);
     await accessLogRepo.save(accessLog);
 
     logger.error('GCP investigation failed:', error);
@@ -478,7 +593,7 @@ export async function runGCPInvestigation(
       findings,
       recommendations: [],
       commands_executed: commandsExecuted,
-      error_message: error.message,
+      error_message: errorMessage,
     };
   }
 }

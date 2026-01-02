@@ -123,7 +123,7 @@ export function SimilarIncidentHint({ currentIncident, onViewIncident }: Similar
 const styles = StyleSheet.create({
   container: {
     margin: 16,
-    marginBottom: 12,
+    marginBottom: 0,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,

@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { getEventIcon, getEventColor } from '../utils/colors';
 import type { IncidentEvent } from '../types/api';
 
 interface IncidentTimelineProps {
@@ -36,44 +37,6 @@ function renderNoteContent(content: string) {
 }
 
 export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
-  const getEventIcon = (type: string) => {
-    switch (type) {
-      case 'alert':
-        return '🔔';
-      case 'acknowledge':
-        return '✓';
-      case 'resolve':
-        return '✓✓';
-      case 'escalate':
-        return '↑';
-      case 'reassign':
-        return '→';
-      case 'note':
-        return '📝';
-      default:
-        return '•';
-    }
-  };
-
-  const getEventColor = (type: string) => {
-    switch (type) {
-      case 'alert':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 border-red-300 dark:border-red-700';
-      case 'acknowledge':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-300 dark:border-yellow-700';
-      case 'resolve':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-300 dark:border-green-700';
-      case 'escalate':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 border-orange-300 dark:border-orange-700';
-      case 'reassign':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-700';
-      case 'note':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600';
-    }
-  };
-
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString();

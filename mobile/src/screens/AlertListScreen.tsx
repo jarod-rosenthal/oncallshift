@@ -93,8 +93,6 @@ export default function AlertListScreen({ navigation }: any) {
 
       setIsOffline(false);
     } catch (err: any) {
-      console.error('Failed to fetch incidents:', err);
-
       // Try to load from cache
       const cachedIncidents = await settingsService.getCachedIncidents();
       const cachedOnCall = await settingsService.getCachedOnCallData();
@@ -131,16 +129,16 @@ export default function AlertListScreen({ navigation }: any) {
       if (savedFilter && ['all', 'mine', 'triggered', 'acknowledged', 'resolved'].includes(savedFilter)) {
         setFilter(savedFilter as FilterType);
       }
-    } catch (err) {
-      console.error('Failed to load filter preference:', err);
+    } catch (_err) {
+      // Use default filter on error
     }
   };
 
   const saveFilter = async (newFilter: FilterType) => {
     try {
       await AsyncStorage.setItem(FILTER_STORAGE_KEY, newFilter);
-    } catch (err) {
-      console.error('Failed to save filter preference:', err);
+    } catch (_err) {
+      // Ignore save errors - filter will reset next session
     }
   };
 

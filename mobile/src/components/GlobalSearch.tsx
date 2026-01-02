@@ -87,8 +87,8 @@ export function GlobalSearch({
       if (stored) {
         setRecentSearches(JSON.parse(stored));
       }
-    } catch (error) {
-      console.error('Failed to load recent searches:', error);
+    } catch (_error) {
+      // Use empty list on error
     }
   };
 
@@ -100,8 +100,8 @@ export function GlobalSearch({
       ].slice(0, MAX_RECENT_SEARCHES);
       setRecentSearches(updated);
       await AsyncStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
-    } catch (error) {
-      console.error('Failed to save recent search:', error);
+    } catch (_error) {
+      // Ignore save errors
     }
   };
 
@@ -109,8 +109,8 @@ export function GlobalSearch({
     try {
       setRecentSearches([]);
       await AsyncStorage.removeItem(RECENT_SEARCHES_KEY);
-    } catch (error) {
-      console.error('Failed to clear recent searches:', error);
+    } catch (_error) {
+      // Ignore clear errors
     }
   };
 
@@ -183,8 +183,8 @@ export function GlobalSearch({
       }
 
       setResults(searchResults);
-    } catch (error) {
-      console.error('Search failed:', error);
+    } catch (_error) {
+      // Search error handled by empty results
     } finally {
       setLoading(false);
     }

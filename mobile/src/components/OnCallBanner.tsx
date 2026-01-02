@@ -41,8 +41,7 @@ export function OnCallBanner({ compact = false }: OnCallBannerProps) {
       });
 
       setCurrentShift(active || null);
-    } catch (error) {
-      console.error('Error fetching on-call status:', error);
+    } catch (_error) {
       setCurrentShift(null);
     } finally {
       setLoading(false);

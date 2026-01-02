@@ -102,7 +102,6 @@ export default function ServiceSettingsScreen() {
         setDedupKeyTemplate(data.groupingRule.dedupKeyTemplate);
       }
     } catch (error: any) {
-      console.error('Failed to fetch alert grouping rule:', error);
       showToast({ message: 'Failed to load settings', type: 'error' });
     } finally {
       setLoading(false);
@@ -130,7 +129,6 @@ export default function ServiceSettingsScreen() {
       setHasChanges(false);
       fetchData();
     } catch (error: any) {
-      console.error('Failed to save settings:', error);
       showToast({ message: error.response?.data?.error || 'Failed to save', type: 'error' });
     } finally {
       setSaving(false);

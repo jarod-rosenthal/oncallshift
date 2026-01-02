@@ -1,12 +1,13 @@
 import swaggerJsdoc from 'swagger-jsdoc';
+import { modelSchemas } from './schemas/models';
 
 const options: swaggerJsdoc.Options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'PagerDuty-Lite API',
+      title: 'OnCallShift API',
       version: '1.0.0',
-      description: 'A lightweight incident management and on-call alerting system',
+      description: 'A production incident management and on-call alerting platform',
       contact: {
         name: 'API Support',
       },
@@ -32,59 +33,57 @@ const options: swaggerJsdoc.Options = {
           description: 'Service API key for webhook endpoints',
         },
       },
-      schemas: {
-        User: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            email: { type: 'string', format: 'email' },
-            fullName: { type: 'string' },
-            role: { type: 'string', enum: ['admin', 'user'] },
-            phoneNumber: { type: 'string', nullable: true },
-            status: { type: 'string', enum: ['active', 'inactive'] },
-            createdAt: { type: 'string', format: 'date-time' },
+      schemas: modelSchemas,
+      responses: {
+        UnauthorizedError: {
+          description: 'Authentication required',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UnauthorizedError' },
+            },
           },
         },
-        Schedule: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            name: { type: 'string' },
-            description: { type: 'string', nullable: true },
-            type: { type: 'string', enum: ['manual', 'daily', 'weekly'] },
-            timezone: { type: 'string' },
-            currentOncallUserId: { type: 'string', format: 'uuid', nullable: true },
-            isOverride: { type: 'boolean' },
-            overrideUntil: { type: 'string', format: 'date-time', nullable: true },
-            rotationConfig: { type: 'object', nullable: true },
-            createdAt: { type: 'string', format: 'date-time' },
-            updatedAt: { type: 'string', format: 'date-time' },
+        ForbiddenError: {
+          description: 'Permission denied',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ForbiddenError' },
+            },
           },
         },
-        Incident: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            incidentNumber: { type: 'integer' },
-            summary: { type: 'string' },
-            severity: { type: 'string', enum: ['info', 'warning', 'error', 'critical'] },
-            state: { type: 'string', enum: ['triggered', 'acknowledged', 'resolved'] },
-            triggeredAt: { type: 'string', format: 'date-time' },
-            acknowledgedAt: { type: 'string', format: 'date-time', nullable: true },
-            resolvedAt: { type: 'string', format: 'date-time', nullable: true },
-            details: { type: 'object', nullable: true },
+        NotFoundError: {
+          description: 'Resource not found',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/NotFoundError' },
+            },
           },
         },
-        Error: {
-          type: 'object',
-          properties: {
-            error: { type: 'string' },
-            message: { type: 'string' },
-            details: { type: 'string' },
+        ValidationError: {
+          description: 'Validation failed',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ValidationError' },
+            },
           },
         },
       },
     },
+    tags: [
+      { name: 'Authentication', description: 'User authentication and session management' },
+      { name: 'Users', description: 'User management operations' },
+      { name: 'Teams', description: 'Team management operations' },
+      { name: 'Services', description: 'Service management operations' },
+      { name: 'Escalation Policies', description: 'Escalation policy management' },
+      { name: 'Schedules', description: 'On-call schedule management' },
+      { name: 'Incidents', description: 'Incident management operations' },
+      { name: 'Alerts', description: 'Alert ingestion and management' },
+      { name: 'Runbooks', description: 'Runbook management and execution' },
+      { name: 'Integrations', description: 'Third-party integrations' },
+      { name: 'Tags', description: 'Tag management' },
+      { name: 'Notifications', description: 'Notification delivery and tracking' },
+      { name: 'AI', description: 'AI-powered features (diagnosis, assistant)' },
+    ],
   },
   apis: ['./src/api/routes/*.ts'], // Path to the API routes
 };

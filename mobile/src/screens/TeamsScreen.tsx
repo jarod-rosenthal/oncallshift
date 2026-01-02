@@ -61,7 +61,6 @@ export default function TeamsScreen() {
       setTeams(teamsData);
       setCurrentUser(profile);
     } catch (error: any) {
-      console.error('Failed to fetch teams:', error);
       showToast({ message: 'Failed to load teams', type: 'error' });
     } finally {
       setLoading(false);
@@ -92,7 +91,6 @@ export default function TeamsScreen() {
       resetForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to create team:', error);
       showToast({ message: error.response?.data?.error || 'Failed to create team', type: 'error' });
     } finally {
       setSaving(false);

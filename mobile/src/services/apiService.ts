@@ -33,7 +33,6 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !isSigningOut) {
       // Token expired or invalid - clear auth state
       isSigningOut = true;
-      console.log('Session expired, signing out...');
       await signOut();
       isSigningOut = false;
       // The app will detect the logout and redirect to login
@@ -58,6 +57,12 @@ export interface Incident {
   triggeredAt: string;
   acknowledgedAt?: string;
   resolvedAt?: string;
+  assignedTo?: {
+    id: string;
+    fullName: string;
+    email: string;
+    profilePictureUrl?: string | null;
+  } | null;
   acknowledgedBy?: {
     id: string;
     fullName: string;
@@ -86,6 +91,26 @@ export interface IncidentEvent {
     email: string;
   };
   createdAt: string;
+}
+
+// Escalation status for incident detail
+export interface EscalationTargetInfo {
+  userId: string;
+  name: string;
+  email: string;
+}
+
+export interface EscalationStatus {
+  policyName: string | null;
+  policyId: string | null;
+  currentStep: number;
+  totalSteps: number;
+  stepStartedAt: string | null;
+  timeoutAt: string | null;
+  currentStepTimeoutSeconds: number | null;
+  currentTargets: EscalationTargetInfo[];
+  nextTargets: EscalationTargetInfo[] | null;
+  isEscalating: boolean;
 }
 
 export interface IncidentListResponse {
@@ -183,15 +208,14 @@ export const getIncidents = async (state?: 'triggered' | 'acknowledged' | 'resol
     const response = await apiClient.get<IncidentListResponse>('/v1/incidents', { params });
     return response.data.incidents;
   } catch (error) {
-    console.error('Error fetching incidents:', error);
     throw error;
   }
 };
 
 /**
- * Get incident details with timeline
+ * Get incident details with timeline and escalation status
  */
-export const getIncidentDetails = async (incidentId: string): Promise<{ incident: Incident; events: IncidentEvent[] }> => {
+export const getIncidentDetails = async (incidentId: string): Promise<{ incident: Incident; events: IncidentEvent[]; escalation: EscalationStatus | null }> => {
   try {
     // Fetch incident details and timeline in parallel
     const [incidentResponse, timelineResponse] = await Promise.all([
@@ -201,6 +225,7 @@ export const getIncidentDetails = async (incidentId: string): Promise<{ incident
 
     return {
       incident: incidentResponse.data.incident,
+      escalation: incidentResponse.data.escalation || null,
       events: timelineResponse.data.events.map((event: any) => ({
         id: event.id,
         type: event.type,
@@ -214,7 +239,6 @@ export const getIncidentDetails = async (incidentId: string): Promise<{ incident
       })),
     };
   } catch (error) {
-    console.error('Error fetching incident details:', error);
     throw error;
   }
 };
@@ -227,7 +251,6 @@ export const acknowledgeIncident = async (incidentId: string): Promise<{ inciden
     const response = await apiClient.put(`/v1/incidents/${incidentId}/acknowledge`);
     return response.data;
   } catch (error) {
-    console.error('Error acknowledging incident:', error);
     throw error;
   }
 };
@@ -269,7 +292,6 @@ export const resolveIncident = async (
     const response = await apiClient.put(`/v1/incidents/${incidentId}/resolve`, payload);
     return response.data;
   } catch (error) {
-    console.error('Error resolving incident:', error);
     throw error;
   }
 };
@@ -282,7 +304,6 @@ export const addIncidentNote = async (incidentId: string, content: string): Prom
     const response = await apiClient.post(`/v1/incidents/${incidentId}/notes`, { content });
     return response.data;
   } catch (error) {
-    console.error('Error adding note:', error);
     throw error;
   }
 };
@@ -326,7 +347,6 @@ export const getIncidentNotifications = async (incidentId: string): Promise<Inci
     const response = await apiClient.get<IncidentNotificationsResponse>(`/v1/incidents/${incidentId}/notifications`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching incident notifications:', error);
     throw error;
   }
 };
@@ -365,7 +385,6 @@ export const getSimilarIncidents = async (incidentId: string): Promise<SimilarIn
     const response = await apiClient.get<SimilarIncidentsResponse>(`/v1/incidents/${incidentId}/similar`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching similar incidents:', error);
     throw error;
   }
 };
@@ -380,7 +399,6 @@ export const getUserProfile = async (): Promise<UserProfile> => {
     const response = await apiClient.get('/v1/users/me');
     return response.data.user;
   } catch (error) {
-    console.error('Error fetching user profile:', error);
     throw error;
   }
 };
@@ -405,7 +423,6 @@ export const updateUserProfile = async (data: {
     const response = await apiClient.put('/v1/users/me', data);
     return response.data.user;
   } catch (error) {
-    console.error('Error updating user profile:', error);
     throw error;
   }
 };
@@ -420,7 +437,6 @@ export const getOnCallData = async (): Promise<OnCallData[]> => {
     const response = await apiClient.get('/v1/schedules/oncall');
     return response.data.oncall;
   } catch (error) {
-    console.error('Error fetching on-call data:', error);
     throw error;
   }
 };
@@ -433,7 +449,6 @@ export const getSchedules = async (): Promise<Schedule[]> => {
     const response = await apiClient.get('/v1/schedules');
     return response.data.schedules;
   } catch (error) {
-    console.error('Error fetching schedules:', error);
     throw error;
   }
 };
@@ -446,7 +461,6 @@ export const getScheduleDetails = async (scheduleId: string): Promise<{ schedule
     const response = await apiClient.get(`/v1/schedules/${scheduleId}`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching schedule details:', error);
     throw error;
   }
 };
@@ -466,7 +480,6 @@ export const registerDevice = async (data: {
     const response = await apiClient.post('/v1/devices/register', data);
     return response.data.device;
   } catch (error) {
-    console.error('Error registering device:', error);
     throw error;
   }
 };
@@ -479,7 +492,6 @@ export const getDevices = async (): Promise<Device[]> => {
     const response = await apiClient.get('/v1/devices');
     return response.data.devices;
   } catch (error) {
-    console.error('Error fetching devices:', error);
     throw error;
   }
 };
@@ -491,7 +503,6 @@ export const unregisterDevice = async (deviceId: string): Promise<void> => {
   try {
     await apiClient.delete(`/v1/devices/${deviceId}`);
   } catch (error) {
-    console.error('Error unregistering device:', error);
     throw error;
   }
 };
@@ -504,7 +515,6 @@ export const getPushDebugInfo = async (): Promise<any> => {
     const response = await apiClient.get('/v1/devices/debug');
     return response.data;
   } catch (error) {
-    console.error('Error fetching push debug info:', error);
     throw error;
   }
 };
@@ -517,7 +527,6 @@ export const cleanupDevices = async (): Promise<{ message: string; removedCount:
     const response = await apiClient.delete('/v1/devices/cleanup');
     return response.data;
   } catch (error) {
-    console.error('Error cleaning up devices:', error);
     throw error;
   }
 };
@@ -590,7 +599,6 @@ export const escalateIncident = async (
     const response = await apiClient.post(`/v1/incidents/${incidentId}/escalate`, { reason });
     return response.data;
   } catch (error) {
-    console.error('Error escalating incident:', error);
     throw error;
   }
 };
@@ -612,7 +620,6 @@ export const reassignIncident = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error reassigning incident:', error);
     throw error;
   }
 };
@@ -625,7 +632,6 @@ export const unacknowledgeIncident = async (incidentId: string): Promise<{ incid
     const response = await apiClient.put(`/v1/incidents/${incidentId}/unacknowledge`);
     return response.data;
   } catch (error) {
-    console.error('Error unacknowledging incident:', error);
     throw error;
   }
 };
@@ -638,7 +644,6 @@ export const unresolveIncident = async (incidentId: string): Promise<{ incident:
     const response = await apiClient.put(`/v1/incidents/${incidentId}/unresolve`);
     return response.data;
   } catch (error) {
-    console.error('Error unresolving incident:', error);
     throw error;
   }
 };
@@ -651,7 +656,6 @@ export const deleteIncident = async (incidentId: string): Promise<{ message: str
     const response = await apiClient.delete(`/v1/incidents/${incidentId}`);
     return response.data;
   } catch (error) {
-    console.error('Error deleting incident:', error);
     throw error;
   }
 };
@@ -673,7 +677,6 @@ export const createScheduleOverride = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error creating schedule override:', error);
     throw error;
   }
 };
@@ -686,7 +689,6 @@ export const removeScheduleOverride = async (scheduleId: string): Promise<{ sche
     const response = await apiClient.delete(`/v1/schedules/${scheduleId}/override`);
     return response.data;
   } catch (error) {
-    console.error('Error removing schedule override:', error);
     throw error;
   }
 };
@@ -710,7 +712,6 @@ export const getScheduleMembers = async (scheduleId: string): Promise<ScheduleMe
     const response = await apiClient.get(`/v1/schedules/${scheduleId}/members`);
     return response.data.members;
   } catch (error) {
-    console.error('Error fetching schedule members:', error);
     throw error;
   }
 };
@@ -726,7 +727,6 @@ export const setScheduleOncall = async (
     const response = await apiClient.put(`/v1/schedules/${scheduleId}/oncall`, { userId });
     return response.data;
   } catch (error) {
-    console.error('Error setting schedule on-call:', error);
     throw error;
   }
 };
@@ -756,7 +756,6 @@ export const getUsers = async (options?: {
     const response = await apiClient.get('/v1/users', { params: options });
     return response.data.users;
   } catch (error) {
-    console.error('Error fetching users:', error);
     throw error;
   }
 };
@@ -778,7 +777,6 @@ export const getUserAvailability = async (): Promise<UserAvailability> => {
     const response = await apiClient.get('/v1/users/me/availability');
     return response.data.availability;
   } catch (error) {
-    console.error('Error fetching user availability:', error);
     throw error;
   }
 };
@@ -791,7 +789,6 @@ export const updateUserAvailability = async (data: UserAvailability): Promise<Us
     const response = await apiClient.put('/v1/users/me/availability', data);
     return response.data.availability;
   } catch (error) {
-    console.error('Error updating user availability:', error);
     throw error;
   }
 };
@@ -822,7 +819,6 @@ export const getServices = async (): Promise<Service[]> => {
     const response = await apiClient.get('/v1/services');
     return response.data.services;
   } catch (error) {
-    console.error('Error fetching services:', error);
     throw error;
   }
 };
@@ -835,7 +831,6 @@ export const getServiceDetails = async (serviceId: string): Promise<Service> => 
     const response = await apiClient.get(`/v1/services/${serviceId}`);
     return response.data.service;
   } catch (error) {
-    console.error('Error fetching service details:', error);
     throw error;
   }
 };
@@ -903,7 +898,6 @@ export const diagnoseIncident = async (
       relevantLogs: [`${logsAnalyzed} log entries analyzed`],
     };
   } catch (error) {
-    console.error('Error getting AI diagnosis:', error);
     throw error;
   }
 };
@@ -954,7 +948,6 @@ export const getEscalationPolicies = async (): Promise<EscalationPolicy[]> => {
     const response = await apiClient.get('/v1/escalation-policies');
     return response.data.policies;
   } catch (error) {
-    console.error('Error fetching escalation policies:', error);
     throw error;
   }
 };
@@ -964,7 +957,6 @@ export const getEscalationPolicy = async (policyId: string): Promise<EscalationP
     const response = await apiClient.get(`/v1/escalation-policies/${policyId}`);
     return response.data.policy;
   } catch (error) {
-    console.error('Error fetching escalation policy:', error);
     throw error;
   }
 };
@@ -978,7 +970,6 @@ export const createEscalationPolicy = async (data: {
     const response = await apiClient.post('/v1/escalation-policies', data);
     return response.data.policy;
   } catch (error) {
-    console.error('Error creating escalation policy:', error);
     throw error;
   }
 };
@@ -991,7 +982,6 @@ export const updateEscalationPolicy = async (
     const response = await apiClient.put(`/v1/escalation-policies/${policyId}`, data);
     return response.data.policy;
   } catch (error) {
-    console.error('Error updating escalation policy:', error);
     throw error;
   }
 };
@@ -1000,7 +990,6 @@ export const deleteEscalationPolicy = async (policyId: string): Promise<void> =>
   try {
     await apiClient.delete(`/v1/escalation-policies/${policyId}`);
   } catch (error) {
-    console.error('Error deleting escalation policy:', error);
     throw error;
   }
 };
@@ -1013,7 +1002,6 @@ export const addEscalationStep = async (
     const response = await apiClient.post(`/v1/escalation-policies/${policyId}/steps`, step);
     return response.data.policy;
   } catch (error) {
-    console.error('Error adding escalation step:', error);
     throw error;
   }
 };
@@ -1027,7 +1015,6 @@ export const updateEscalationStep = async (
     const response = await apiClient.put(`/v1/escalation-policies/${policyId}/steps/${stepId}`, data);
     return response.data.policy;
   } catch (error) {
-    console.error('Error updating escalation step:', error);
     throw error;
   }
 };
@@ -1036,7 +1023,6 @@ export const deleteEscalationStep = async (policyId: string, stepId: string): Pr
   try {
     await apiClient.delete(`/v1/escalation-policies/${policyId}/steps/${stepId}`);
   } catch (error) {
-    console.error('Error deleting escalation step:', error);
     throw error;
   }
 };
@@ -1053,7 +1039,6 @@ export const createSchedule = async (data: {
     const response = await apiClient.post('/v1/schedules', data);
     return response.data.schedule;
   } catch (error) {
-    console.error('Error creating schedule:', error);
     throw error;
   }
 };
@@ -1066,7 +1051,6 @@ export const updateSchedule = async (
     const response = await apiClient.put(`/v1/schedules/${scheduleId}`, data);
     return response.data.schedule;
   } catch (error) {
-    console.error('Error updating schedule:', error);
     throw error;
   }
 };
@@ -1075,7 +1059,6 @@ export const deleteSchedule = async (scheduleId: string): Promise<void> => {
   try {
     await apiClient.delete(`/v1/schedules/${scheduleId}`);
   } catch (error) {
-    console.error('Error deleting schedule:', error);
     throw error;
   }
 };
@@ -1088,7 +1071,6 @@ export const addScheduleMember = async (
     const response = await apiClient.post(`/v1/schedules/${scheduleId}/members`, { userId });
     return response.data.member;
   } catch (error) {
-    console.error('Error adding schedule member:', error);
     throw error;
   }
 };
@@ -1097,7 +1079,6 @@ export const removeScheduleMember = async (scheduleId: string, memberId: string)
   try {
     await apiClient.delete(`/v1/schedules/${scheduleId}/members/${memberId}`);
   } catch (error) {
-    console.error('Error removing schedule member:', error);
     throw error;
   }
 };
@@ -1110,7 +1091,6 @@ export const updateMemberPosition = async (
   try {
     await apiClient.put(`/v1/schedules/${scheduleId}/members/${memberId}/position`, { position });
   } catch (error) {
-    console.error('Error updating member position:', error);
     throw error;
   }
 };
@@ -1123,7 +1103,6 @@ export const updateScheduleRotation = async (
     const response = await apiClient.put(`/v1/schedules/${scheduleId}/rotation`, config);
     return response.data.schedule;
   } catch (error) {
-    console.error('Error updating schedule rotation:', error);
     throw error;
   }
 };
@@ -1140,7 +1119,6 @@ export const createService = async (data: {
     const response = await apiClient.post('/v1/services', data);
     return response.data.service;
   } catch (error) {
-    console.error('Error creating service:', error);
     throw error;
   }
 };
@@ -1159,7 +1137,6 @@ export const updateService = async (
     const response = await apiClient.put(`/v1/services/${serviceId}`, data);
     return response.data.service;
   } catch (error) {
-    console.error('Error updating service:', error);
     throw error;
   }
 };
@@ -1168,7 +1145,6 @@ export const deleteService = async (serviceId: string): Promise<void> => {
   try {
     await apiClient.delete(`/v1/services/${serviceId}`);
   } catch (error) {
-    console.error('Error deleting service:', error);
     throw error;
   }
 };
@@ -1178,7 +1154,6 @@ export const regenerateServiceApiKey = async (serviceId: string): Promise<{ apiK
     const response = await apiClient.post(`/v1/services/${serviceId}/regenerate-key`);
     return response.data;
   } catch (error) {
-    console.error('Error regenerating service API key:', error);
     throw error;
   }
 };
@@ -1193,7 +1168,6 @@ export const inviteUser = async (
     const response = await apiClient.post('/v1/users/invite', { email, role });
     return response.data.user;
   } catch (error) {
-    console.error('Error inviting user:', error);
     throw error;
   }
 };
@@ -1206,7 +1180,6 @@ export const updateUserRole = async (
     const response = await apiClient.put(`/v1/users/${userId}/role`, { role });
     return response.data.user;
   } catch (error) {
-    console.error('Error updating user role:', error);
     throw error;
   }
 };
@@ -1219,7 +1192,6 @@ export const updateUserStatus = async (
     const response = await apiClient.put(`/v1/users/${userId}/status`, { isActive });
     return response.data.user;
   } catch (error) {
-    console.error('Error updating user status:', error);
     throw error;
   }
 };
@@ -1243,7 +1215,6 @@ export const getAnthropicCredentialStatus = async (): Promise<AnthropicCredentia
     const response = await apiClient.get<AnthropicCredentialStatus>('/v1/users/me/anthropic-credentials');
     return response.data;
   } catch (error) {
-    console.error('Error fetching credential status:', error);
     throw error;
   }
 };
@@ -1272,7 +1243,6 @@ export const saveAnthropicCredential = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error saving credentials:', error);
     throw error;
   }
 };
@@ -1285,7 +1255,6 @@ export const removeAnthropicCredential = async (): Promise<{ message: string }> 
     const response = await apiClient.delete('/v1/users/me/anthropic-credentials');
     return response.data;
   } catch (error) {
-    console.error('Error removing credentials:', error);
     throw error;
   }
 };
@@ -1348,7 +1317,6 @@ export const getSetupStatus = async (): Promise<SetupStatus> => {
     const response = await apiClient.get<SetupStatus>('/v1/setup/status');
     return response.data;
   } catch (error) {
-    console.error('Error fetching setup status:', error);
     throw error;
   }
 };
@@ -1361,7 +1329,6 @@ export const completeSetup = async (data: SetupCompleteInput): Promise<SetupComp
     const response = await apiClient.post<SetupCompleteResult>('/v1/setup/complete', data);
     return response.data;
   } catch (error) {
-    console.error('Error completing setup:', error);
     throw error;
   }
 };
@@ -1404,7 +1371,6 @@ export const getTeams = async (): Promise<Team[]> => {
     const response = await apiClient.get('/v1/teams');
     return response.data.teams;
   } catch (error) {
-    console.error('Error fetching teams:', error);
     throw error;
   }
 };
@@ -1417,7 +1383,6 @@ export const getTeam = async (teamId: string): Promise<Team> => {
     const response = await apiClient.get(`/v1/teams/${teamId}`);
     return response.data.team;
   } catch (error) {
-    console.error('Error fetching team:', error);
     throw error;
   }
 };
@@ -1433,7 +1398,6 @@ export const createTeam = async (data: {
     const response = await apiClient.post('/v1/teams', data);
     return response.data.team;
   } catch (error) {
-    console.error('Error creating team:', error);
     throw error;
   }
 };
@@ -1449,7 +1413,6 @@ export const updateTeam = async (
     const response = await apiClient.put(`/v1/teams/${teamId}`, data);
     return response.data.team;
   } catch (error) {
-    console.error('Error updating team:', error);
     throw error;
   }
 };
@@ -1461,7 +1424,6 @@ export const deleteTeam = async (teamId: string): Promise<void> => {
   try {
     await apiClient.delete(`/v1/teams/${teamId}`);
   } catch (error) {
-    console.error('Error deleting team:', error);
     throw error;
   }
 };
@@ -1478,7 +1440,6 @@ export const addTeamMember = async (
     const response = await apiClient.post(`/v1/teams/${teamId}/members`, { userId, role });
     return response.data.member;
   } catch (error) {
-    console.error('Error adding team member:', error);
     throw error;
   }
 };
@@ -1495,7 +1456,6 @@ export const updateTeamMemberRole = async (
     const response = await apiClient.put(`/v1/teams/${teamId}/members/${userId}`, { role });
     return response.data.member;
   } catch (error) {
-    console.error('Error updating team member role:', error);
     throw error;
   }
 };
@@ -1507,7 +1467,6 @@ export const removeTeamMember = async (teamId: string, userId: string): Promise<
   try {
     await apiClient.delete(`/v1/teams/${teamId}/members/${userId}`);
   } catch (error) {
-    console.error('Error removing team member:', error);
     throw error;
   }
 };
@@ -1550,7 +1509,6 @@ export const getRoutingRules = async (): Promise<RoutingRule[]> => {
     const response = await apiClient.get('/v1/routing-rules');
     return response.data.rules;
   } catch (error) {
-    console.error('Error fetching routing rules:', error);
     throw error;
   }
 };
@@ -1563,7 +1521,6 @@ export const getRoutingRule = async (ruleId: string): Promise<RoutingRule> => {
     const response = await apiClient.get(`/v1/routing-rules/${ruleId}`);
     return response.data.rule;
   } catch (error) {
-    console.error('Error fetching routing rule:', error);
     throw error;
   }
 };
@@ -1584,7 +1541,6 @@ export const createRoutingRule = async (data: {
     const response = await apiClient.post('/v1/routing-rules', data);
     return response.data.rule;
   } catch (error) {
-    console.error('Error creating routing rule:', error);
     throw error;
   }
 };
@@ -1609,7 +1565,6 @@ export const updateRoutingRule = async (
     const response = await apiClient.put(`/v1/routing-rules/${ruleId}`, data);
     return response.data.rule;
   } catch (error) {
-    console.error('Error updating routing rule:', error);
     throw error;
   }
 };
@@ -1621,7 +1576,6 @@ export const deleteRoutingRule = async (ruleId: string): Promise<void> => {
   try {
     await apiClient.delete(`/v1/routing-rules/${ruleId}`);
   } catch (error) {
-    console.error('Error deleting routing rule:', error);
     throw error;
   }
 };
@@ -1637,7 +1591,6 @@ export const testRoutingRule = async (
     const response = await apiClient.post(`/v1/routing-rules/${ruleId}/test`, { payload });
     return response.data;
   } catch (error) {
-    console.error('Error testing routing rule:', error);
     throw error;
   }
 };
@@ -1701,7 +1654,6 @@ export const getIntegrations = async (type?: IntegrationType): Promise<Integrati
     const response = await apiClient.get('/v1/integrations', { params });
     return response.data.integrations;
   } catch (error) {
-    console.error('Error fetching integrations:', error);
     throw error;
   }
 };
@@ -1714,7 +1666,6 @@ export const getIntegration = async (integrationId: string): Promise<Integration
     const response = await apiClient.get(`/v1/integrations/${integrationId}`);
     return response.data.integration;
   } catch (error) {
-    console.error('Error fetching integration:', error);
     throw error;
   }
 };
@@ -1732,7 +1683,6 @@ export const createIntegration = async (data: {
     const response = await apiClient.post('/v1/integrations', data);
     return response.data.integration;
   } catch (error) {
-    console.error('Error creating integration:', error);
     throw error;
   }
 };
@@ -1753,7 +1703,6 @@ export const updateIntegration = async (
     const response = await apiClient.put(`/v1/integrations/${integrationId}`, data);
     return response.data.integration;
   } catch (error) {
-    console.error('Error updating integration:', error);
     throw error;
   }
 };
@@ -1765,7 +1714,6 @@ export const deleteIntegration = async (integrationId: string): Promise<void> =>
   try {
     await apiClient.delete(`/v1/integrations/${integrationId}`);
   } catch (error) {
-    console.error('Error deleting integration:', error);
     throw error;
   }
 };
@@ -1783,7 +1731,6 @@ export const getIntegrationEvents = async (
     });
     return response.data.events;
   } catch (error) {
-    console.error('Error fetching integration events:', error);
     throw error;
   }
 };
@@ -1798,7 +1745,6 @@ export const getIntegrationServices = async (
     const response = await apiClient.get(`/v1/integrations/${integrationId}/services`);
     return response.data.services;
   } catch (error) {
-    console.error('Error fetching integration services:', error);
     throw error;
   }
 };
@@ -1816,7 +1762,6 @@ export const linkServiceToIntegration = async (
       config_overrides: configOverrides,
     });
   } catch (error) {
-    console.error('Error linking service to integration:', error);
     throw error;
   }
 };
@@ -1831,7 +1776,6 @@ export const unlinkServiceFromIntegration = async (
   try {
     await apiClient.delete(`/v1/integrations/${integrationId}/services/${serviceId}`);
   } catch (error) {
-    console.error('Error unlinking service from integration:', error);
     throw error;
   }
 };
@@ -1849,7 +1793,6 @@ export const testSlackIntegration = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error testing Slack integration:', error);
     throw error;
   }
 };
@@ -1864,7 +1807,6 @@ export const getSlackChannels = async (
     const response = await apiClient.get(`/v1/integrations/${integrationId}/slack/channels`);
     return response.data.channels;
   } catch (error) {
-    console.error('Error fetching Slack channels:', error);
     throw error;
   }
 };
@@ -1934,7 +1876,6 @@ export const getScheduleLayers = async (scheduleId: string): Promise<ScheduleLay
     const response = await apiClient.get(`/v1/schedules/${scheduleId}/layers`);
     return response.data.layers;
   } catch (error) {
-    console.error('Error fetching schedule layers:', error);
     throw error;
   }
 };
@@ -1961,7 +1902,6 @@ export const createScheduleLayer = async (
     const response = await apiClient.post(`/v1/schedules/${scheduleId}/layers`, data);
     return response.data.layer;
   } catch (error) {
-    console.error('Error creating schedule layer:', error);
     throw error;
   }
 };
@@ -1988,7 +1928,6 @@ export const updateScheduleLayer = async (
     const response = await apiClient.put(`/v1/schedules/${scheduleId}/layers/${layerId}`, data);
     return response.data.layer;
   } catch (error) {
-    console.error('Error updating schedule layer:', error);
     throw error;
   }
 };
@@ -2000,7 +1939,6 @@ export const deleteScheduleLayer = async (scheduleId: string, layerId: string): 
   try {
     await apiClient.delete(`/v1/schedules/${scheduleId}/layers/${layerId}`);
   } catch (error) {
-    console.error('Error deleting schedule layer:', error);
     throw error;
   }
 };
@@ -2019,7 +1957,6 @@ export const setScheduleLayerMembers = async (
     });
     return response.data.members;
   } catch (error) {
-    console.error('Error setting layer members:', error);
     throw error;
   }
 };
@@ -2036,7 +1973,6 @@ export const getScheduleOverrides = async (scheduleId: string): Promise<{
     const response = await apiClient.get(`/v1/schedules/${scheduleId}/overrides`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching schedule overrides:', error);
     throw error;
   }
 };
@@ -2057,7 +1993,6 @@ export const createLayerOverride = async (
     const response = await apiClient.post(`/v1/schedules/${scheduleId}/overrides`, data);
     return response.data.override;
   } catch (error) {
-    console.error('Error creating schedule override:', error);
     throw error;
   }
 };
@@ -2079,7 +2014,6 @@ export const updateLayerOverride = async (
     const response = await apiClient.put(`/v1/schedules/${scheduleId}/overrides/${overrideId}`, data);
     return response.data.override;
   } catch (error) {
-    console.error('Error updating schedule override:', error);
     throw error;
   }
 };
@@ -2091,7 +2025,6 @@ export const deleteLayerOverride = async (scheduleId: string, overrideId: string
   try {
     await apiClient.delete(`/v1/schedules/${scheduleId}/overrides/${overrideId}`);
   } catch (error) {
-    console.error('Error deleting schedule override:', error);
     throw error;
   }
 };
@@ -2120,10 +2053,8 @@ export const getUpcomingShifts = async (): Promise<UpcomingShift[]> => {
   } catch (error: any) {
     // If endpoint doesn't exist yet, compute from schedules
     if (error.response?.status === 404) {
-      console.log('Upcoming shifts endpoint not available, computing locally');
       return computeUpcomingShiftsLocally();
     }
-    console.error('Error fetching upcoming shifts:', error);
     throw error;
   }
 };
@@ -2219,8 +2150,8 @@ const computeUpcomingShiftsLocally = async (): Promise<UpcomingShift[]> => {
             checkTime += cycleLength;
           }
         }
-      } catch (err) {
-        console.warn(`Failed to compute shifts for schedule ${schedule.id}:`, err);
+      } catch (_err) {
+        // Skip this schedule if computation fails
       }
     }
 
@@ -2229,8 +2160,7 @@ const computeUpcomingShiftsLocally = async (): Promise<UpcomingShift[]> => {
 
     // Return first 10 shifts
     return shifts.slice(0, 10);
-  } catch (error) {
-    console.error('Error computing upcoming shifts locally:', error);
+  } catch (_error) {
     return [];
   }
 };
@@ -2257,7 +2187,6 @@ export const getContactMethods = async (): Promise<UserContactMethod[]> => {
     const response = await apiClient.get('/v1/users/me/contact-methods');
     return response.data.contactMethods;
   } catch (error) {
-    console.error('Error fetching contact methods:', error);
     throw error;
   }
 };
@@ -2274,7 +2203,6 @@ export const addContactMethod = async (data: {
     const response = await apiClient.post('/v1/users/me/contact-methods', data);
     return response.data.contactMethod;
   } catch (error) {
-    console.error('Error adding contact method:', error);
     throw error;
   }
 };
@@ -2293,7 +2221,6 @@ export const updateContactMethod = async (
     const response = await apiClient.put(`/v1/users/me/contact-methods/${contactMethodId}`, data);
     return response.data.contactMethod;
   } catch (error) {
-    console.error('Error updating contact method:', error);
     throw error;
   }
 };
@@ -2305,7 +2232,6 @@ export const deleteContactMethod = async (contactMethodId: string): Promise<void
   try {
     await apiClient.delete(`/v1/users/me/contact-methods/${contactMethodId}`);
   } catch (error) {
-    console.error('Error deleting contact method:', error);
     throw error;
   }
 };
@@ -2318,7 +2244,6 @@ export const sendVerificationCode = async (contactMethodId: string): Promise<{ s
     const response = await apiClient.post(`/v1/users/me/contact-methods/${contactMethodId}/verify`);
     return response.data;
   } catch (error) {
-    console.error('Error sending verification code:', error);
     throw error;
   }
 };
@@ -2336,7 +2261,6 @@ export const verifyContactMethod = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error verifying contact method:', error);
     throw error;
   }
 };
@@ -2369,7 +2293,6 @@ export const getNotificationRules = async (): Promise<UserNotificationRule[]> =>
     const response = await apiClient.get('/v1/users/me/notification-rules');
     return response.data.notificationRules;
   } catch (error) {
-    console.error('Error fetching notification rules:', error);
     throw error;
   }
 };
@@ -2386,7 +2309,6 @@ export const createNotificationRule = async (data: {
     const response = await apiClient.post('/v1/users/me/notification-rules', data);
     return response.data.notificationRule;
   } catch (error) {
-    console.error('Error creating notification rule:', error);
     throw error;
   }
 };
@@ -2406,7 +2328,6 @@ export const updateNotificationRule = async (
     const response = await apiClient.put(`/v1/users/me/notification-rules/${ruleId}`, data);
     return response.data.notificationRule;
   } catch (error) {
-    console.error('Error updating notification rule:', error);
     throw error;
   }
 };
@@ -2418,7 +2339,6 @@ export const deleteNotificationRule = async (ruleId: string): Promise<void> => {
   try {
     await apiClient.delete(`/v1/users/me/notification-rules/${ruleId}`);
   } catch (error) {
-    console.error('Error deleting notification rule:', error);
     throw error;
   }
 };
@@ -2458,7 +2378,6 @@ export const getAlertGroupingRule = async (serviceId: string): Promise<{
     const response = await apiClient.get(`/v1/services/${serviceId}/grouping-rule`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching alert grouping rule:', error);
     throw error;
   }
 };
@@ -2480,7 +2399,6 @@ export const updateAlertGroupingRule = async (
     const response = await apiClient.put(`/v1/services/${serviceId}/grouping-rule`, data);
     return response.data.groupingRule;
   } catch (error) {
-    console.error('Error updating alert grouping rule:', error);
     throw error;
   }
 };
@@ -2492,7 +2410,6 @@ export const deleteAlertGroupingRule = async (serviceId: string): Promise<void> 
   try {
     await apiClient.delete(`/v1/services/${serviceId}/grouping-rule`);
   } catch (error) {
-    console.error('Error deleting alert grouping rule:', error);
     throw error;
   }
 };
@@ -2534,7 +2451,6 @@ export const getHandoffNotes = async (scheduleId: string): Promise<HandoffNotesR
     const response = await apiClient.get(`/v1/schedules/${scheduleId}/handoff-notes`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching handoff notes:', error);
     throw error;
   }
 };
@@ -2555,7 +2471,6 @@ export const createHandoffNote = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error creating handoff note:', error);
     throw error;
   }
 };
@@ -2570,7 +2485,6 @@ export const markHandoffNoteRead = async (
   try {
     await apiClient.put(`/v1/schedules/${scheduleId}/handoff-notes/${noteId}/read`);
   } catch (error) {
-    console.error('Error marking handoff note as read:', error);
     throw error;
   }
 };
@@ -2585,7 +2499,6 @@ export const deleteHandoffNote = async (
   try {
     await apiClient.delete(`/v1/schedules/${scheduleId}/handoff-notes/${noteId}`);
   } catch (error) {
-    console.error('Error deleting handoff note:', error);
     throw error;
   }
 };
@@ -2627,7 +2540,6 @@ export const getProfilePictureUploadUrl = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error getting upload URL:', error);
     throw error;
   }
 };
@@ -2649,7 +2561,6 @@ export const uploadToPresignedUrl = async (
       },
     });
   } catch (error) {
-    console.error('Error uploading file:', error);
     throw error;
   }
 };
@@ -2666,7 +2577,6 @@ export const updateProfilePicture = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error updating profile picture:', error);
     throw error;
   }
 };
@@ -2679,7 +2589,6 @@ export const removeProfilePicture = async (): Promise<{ message: string }> => {
     const response = await apiClient.delete('/v1/users/me/profile-picture');
     return response.data;
   } catch (error) {
-    console.error('Error removing profile picture:', error);
     throw error;
   }
 };
@@ -2748,7 +2657,6 @@ export const getAIAssistantPrompt = async (incidentId: string): Promise<AIAssist
     const response = await apiClient.get(`/v1/incidents/${incidentId}/assistant/prompt`);
     return response.data;
   } catch (error) {
-    console.error('Error fetching AI assistant prompt:', error);
     throw error;
   }
 };
@@ -2767,7 +2675,6 @@ export const getCloudCredentials = async (): Promise<CloudCredential[]> => {
         provider: c.provider,
       }));
   } catch (error) {
-    console.error('Error fetching cloud credentials:', error);
     // Return empty array if endpoint doesn't exist
     return [];
   }
@@ -2781,7 +2688,6 @@ export const getAIConversations = async (incidentId: string): Promise<AIConversa
     const response = await apiClient.get(`/v1/incidents/${incidentId}/assistant/conversations`);
     return response.data.conversations;
   } catch (error) {
-    console.error('Error fetching AI conversations:', error);
     throw error;
   }
 };
@@ -2799,7 +2705,6 @@ export const getAIConversation = async (
     );
     return response.data;
   } catch (error) {
-    console.error('Error fetching AI conversation:', error);
     throw error;
   }
 };
@@ -2851,14 +2756,13 @@ export const streamAIAssistantChat = async (
           es.close();
           onComplete();
         }
-      } catch (parseError) {
-        console.warn('Failed to parse SSE data:', event.data);
+      } catch (_parseError) {
+        // Ignore malformed SSE data
       }
     }
   });
 
   es.addEventListener('error', (event: any) => {
-    console.error('SSE error:', event);
     es.close();
     onError(new Error(event.message || 'Connection error'));
   });

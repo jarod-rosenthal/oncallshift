@@ -17,8 +17,8 @@ import * as apiService from '../services/apiService';
 let ImagePicker: typeof import('expo-image-picker') | null = null;
 try {
   ImagePicker = require('expo-image-picker');
-} catch (e) {
-  console.log('expo-image-picker not available');
+} catch (_e) {
+  // expo-image-picker not available in this build
 }
 
 // Convert SVG URLs to PNG for React Native compatibility
@@ -78,8 +78,7 @@ export function ProfilePictureEditor({
       if (!result.canceled && result.assets[0]) {
         await uploadImage(result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Error picking image:', error);
+    } catch (_error) {
       Alert.alert('Error', 'Failed to pick image');
     }
   };
@@ -105,8 +104,7 @@ export function ProfilePictureEditor({
       if (!result.canceled && result.assets[0]) {
         await uploadImage(result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Error taking photo:', error);
+    } catch (_error) {
       Alert.alert('Error', 'Failed to take photo');
     }
   };
@@ -134,8 +132,7 @@ export function ProfilePictureEditor({
       onUpdate(publicUrl);
       setShowModal(false);
       Alert.alert('Success', 'Profile picture updated!');
-    } catch (error) {
-      console.error('Error uploading image:', error);
+    } catch (_error) {
       Alert.alert('Error', 'Failed to upload profile picture');
     } finally {
       setUploading(false);
@@ -150,8 +147,7 @@ export function ProfilePictureEditor({
       onUpdate(url);
       setShowModal(false);
       setSelectedDefault(null);
-    } catch (error) {
-      console.error('Error setting default avatar:', error);
+    } catch (_error) {
       Alert.alert('Error', 'Failed to update profile picture');
     } finally {
       setUploading(false);
@@ -173,8 +169,7 @@ export function ProfilePictureEditor({
               await apiService.removeProfilePicture();
               onUpdate(null);
               setShowModal(false);
-            } catch (error) {
-              console.error('Error removing profile picture:', error);
+            } catch (_error) {
               Alert.alert('Error', 'Failed to remove profile picture');
             } finally {
               setUploading(false);

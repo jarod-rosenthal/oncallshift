@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { getSeverityBadgeColor, getStateBadgeColor } from '../utils/colors';
 
 interface DemoStats {
   total: number;
@@ -55,32 +56,6 @@ export function Demo() {
 
     fetchDemoData();
   }, [API_BASE]);
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'error':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'warning':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      default:
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-    }
-  };
-
-  const getStateColor = (state: string) => {
-    switch (state) {
-      case 'triggered':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'acknowledged':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'resolved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-    }
-  };
 
   if (loading) {
     return (
@@ -176,10 +151,10 @@ export function Demo() {
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(incident.severity)}`}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityBadgeColor(incident.severity)}`}>
                             {incident.severity.toUpperCase()}
                           </span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStateColor(incident.state)}`}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStateBadgeColor(incident.state)}`}>
                             {incident.state.toUpperCase()}
                           </span>
                           <span className="text-sm text-muted-foreground">

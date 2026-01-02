@@ -96,7 +96,6 @@ export default function ContactMethodsScreen() {
       setContactMethods(methodsData);
       setNotificationRules(rulesData);
     } catch (error: any) {
-      console.error('Failed to fetch contact methods:', error);
       showToast({ message: 'Failed to load contact methods', type: 'error' });
     } finally {
       setLoading(false);
@@ -128,7 +127,6 @@ export default function ContactMethodsScreen() {
       resetAddForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to add contact method:', error);
       showToast({ message: error.response?.data?.error || 'Failed to add contact method', type: 'error' });
     } finally {
       setSaving(false);
@@ -145,7 +143,6 @@ export default function ContactMethodsScreen() {
       showToast({ message: 'Verification code sent', type: 'success' });
       setCodeSent(true);
     } catch (error: any) {
-      console.error('Failed to send verification:', error);
       showToast({ message: error.response?.data?.error || 'Failed to send code', type: 'error' });
     } finally {
       setSaving(false);
@@ -168,7 +165,6 @@ export default function ContactMethodsScreen() {
         showToast({ message: 'Invalid verification code', type: 'error' });
       }
     } catch (error: any) {
-      console.error('Failed to verify:', error);
       showToast({ message: error.response?.data?.error || 'Failed to verify', type: 'error' });
     } finally {
       setSaving(false);
@@ -230,7 +226,6 @@ export default function ContactMethodsScreen() {
       resetRuleForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to create rule:', error);
       showToast({ message: error.response?.data?.error || 'Failed to create rule', type: 'error' });
     } finally {
       setSaving(false);

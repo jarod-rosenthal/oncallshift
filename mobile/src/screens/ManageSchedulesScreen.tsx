@@ -64,7 +64,6 @@ export default function ManageSchedulesScreen({ navigation }: { navigation: any 
       const data = await apiService.getSchedules();
       setSchedules(data);
     } catch (error: any) {
-      console.error('Failed to fetch schedules:', error);
       showToast({ message: 'Failed to load schedules', type: 'error' });
     } finally {
       setLoading(false);
@@ -97,7 +96,6 @@ export default function ManageSchedulesScreen({ navigation }: { navigation: any 
       resetForm();
       fetchSchedules();
     } catch (error: any) {
-      console.error('Failed to create schedule:', error);
       showToast({ message: error.message || 'Failed to create schedule', type: 'error' });
     } finally {
       setSaving(false);
@@ -120,7 +118,6 @@ export default function ManageSchedulesScreen({ navigation }: { navigation: any 
       resetForm();
       fetchSchedules();
     } catch (error: any) {
-      console.error('Failed to update schedule:', error);
       showToast({ message: error.message || 'Failed to update schedule', type: 'error' });
     } finally {
       setSaving(false);
@@ -166,7 +163,6 @@ export default function ManageSchedulesScreen({ navigation }: { navigation: any 
       setShowRotationModal(false);
       fetchSchedules();
     } catch (error: any) {
-      console.error('Failed to update rotation:', error);
       showToast({ message: error.message || 'Failed to update rotation', type: 'error' });
     } finally {
       setSaving(false);

@@ -35,7 +35,7 @@ import * as apiService from '../services/apiService';
 import * as runbookService from '../services/runbookService';
 import { getAccessToken } from '../services/authService';
 import { config } from '../config';
-import type { Incident, IncidentEvent, User, LegacyAIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary, SimilarIncident } from '../services/apiService';
+import type { Incident, IncidentEvent, User, LegacyAIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary, SimilarIncident, EscalationStatus } from '../services/apiService';
 import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction, StepResult, ExecuteStepResult, RunbookExecutionApproval } from '../services/runbookService';
 import { severityColors, statusColors } from '../theme';
 import { useAppTheme } from '../context/ThemeContext';
@@ -108,6 +108,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [showNotifications, setShowNotifications] = useState(true);
   const [loadingNotifications, setLoadingNotifications] = useState(true);
   const [aiPanelCollapsed, setAiPanelCollapsed] = useState(true);
+  const [escalation, setEscalation] = useState<EscalationStatus | null>(null);
   const isInitialMount = useRef(true);
 
   // Dynamic styles based on current theme
@@ -200,6 +201,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
       const data = await apiService.getIncidentDetails(incident.id);
       setIncident(data.incident);
       setEvents(data.events || []);
+      setEscalation(data.escalation);
 
       // Fetch runbook for this service
       fetchRunbook(data.incident.service.id, data.incident.service.name, data.incident.severity);
@@ -1074,36 +1076,76 @@ export default function AlertDetailScreen({ route, navigation }: any) {
               {incident.summary}
             </Text>
 
-            {/* Owner Section - shows who is handling the incident */}
-            <View style={themedStyles.ownerSection}>
-              {incident.acknowledgedBy ? (
-                <View style={themedStyles.ownerContainer}>
-                  <View style={[themedStyles.ownerAvatarRing, { borderColor: colors.warning }]}>
-                    <OwnerAvatar
-                      name={incident.acknowledgedBy.fullName || ''}
-                      email={incident.acknowledgedBy.email || ''}
-                      profilePictureUrl={incident.acknowledgedBy.profilePictureUrl}
-                      size={36}
-                    />
+            {/* Owner/Assignment Section */}
+            {(incident.acknowledgedBy || incident.assignedTo) && (
+              <View style={themedStyles.ownerSection}>
+                {incident.acknowledgedBy ? (
+                  <View style={themedStyles.ownerContainer}>
+                    <View style={[themedStyles.ownerAvatarRing, { borderColor: colors.warning }]}>
+                      <OwnerAvatar
+                        name={incident.acknowledgedBy.fullName || ''}
+                        email={incident.acknowledgedBy.email || ''}
+                        profilePictureUrl={incident.acknowledgedBy.profilePictureUrl}
+                        size={36}
+                      />
+                    </View>
+                    <View style={themedStyles.ownerInfo}>
+                      <Text variant="bodyMedium" style={themedStyles.ownerName}>
+                        {incident.acknowledgedBy.fullName}
+                      </Text>
+                      <Text variant="bodySmall" style={themedStyles.ownerLabel}>
+                        Owner
+                      </Text>
+                    </View>
                   </View>
-                  <View style={themedStyles.ownerInfo}>
-                    <Text variant="bodyMedium" style={themedStyles.ownerName}>
-                      {incident.acknowledgedBy.fullName}
-                    </Text>
-                    <Text variant="bodySmall" style={themedStyles.ownerLabel}>
-                      Owner
-                    </Text>
+                ) : incident.assignedTo ? (
+                  <View style={themedStyles.ownerContainer}>
+                    <View style={[themedStyles.ownerAvatarRing, { borderColor: colors.info }]}>
+                      <OwnerAvatar
+                        name={incident.assignedTo.fullName || ''}
+                        email={incident.assignedTo.email || ''}
+                        profilePictureUrl={incident.assignedTo.profilePictureUrl}
+                        size={36}
+                      />
+                    </View>
+                    <View style={themedStyles.ownerInfo}>
+                      <Text variant="bodyMedium" style={themedStyles.ownerName}>
+                        {incident.assignedTo.fullName}
+                      </Text>
+                      <Text variant="bodySmall" style={themedStyles.ownerLabel}>
+                        Assigned
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ) : incident.state === 'triggered' ? (
-                <View style={themedStyles.unassignedContainer}>
-                  <MaterialCommunityIcons name="account-alert" size={20} color={colors.error} />
-                  <Text style={[themedStyles.unassignedText, { color: colors.error }]}>
-                    Unassigned - Needs attention
+                ) : null}
+              </View>
+            )}
+
+            {/* Currently Notifying Section - shows escalation targets */}
+            {escalation && escalation.currentTargets && escalation.currentTargets.length > 0 && incident.state !== 'resolved' && (
+              <View style={themedStyles.currentlyNotifyingSection}>
+                <View style={themedStyles.currentlyNotifyingHeader}>
+                  <MaterialCommunityIcons name="bell-ring" size={16} color={colors.warning} />
+                  <Text variant="labelSmall" style={[themedStyles.currentlyNotifyingLabel, { color: colors.warning }]}>
+                    Currently Notifying
                   </Text>
                 </View>
-              ) : null}
-            </View>
+                <View style={themedStyles.currentlyNotifyingTargets}>
+                  {escalation.currentTargets.map((target) => (
+                    <View key={target.userId} style={themedStyles.notifyingTarget}>
+                      <View style={[themedStyles.notifyingTargetAvatar, { backgroundColor: colors.warning + '20' }]}>
+                        <Text style={[themedStyles.notifyingTargetInitial, { color: colors.warning }]}>
+                          {target.name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text variant="bodySmall" style={themedStyles.notifyingTargetName}>
+                        {target.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
 
             <Divider style={themedStyles.divider} />
 
@@ -2475,7 +2517,58 @@ const styles = (colors: any) => StyleSheet.create({
   },
   ownerSection: {
     marginTop: 12,
-    marginBottom: 4,
+    marginBottom: 8,
+  },
+  currentlyNotifyingSection: {
+    marginTop: 8,
+    marginBottom: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.warning + '10',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+  },
+  currentlyNotifyingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  currentlyNotifyingLabel: {
+    fontWeight: '600',
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  currentlyNotifyingTargets: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  notifyingTarget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+  },
+  notifyingTargetAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifyingTargetInitial: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  notifyingTargetName: {
+    color: colors.textPrimary,
+    fontWeight: '500',
   },
   ownerContainer: {
     flexDirection: 'row',
@@ -2502,10 +2595,12 @@ const styles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     backgroundColor: colors.error + '10',
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.error + '30',
   },
   unassignedText: {
     fontSize: 14,
@@ -2522,7 +2617,7 @@ const styles = (colors: any) => StyleSheet.create({
     lineHeight: 28,
   },
   divider: {
-    marginVertical: 16,
+    marginVertical: 12,
   },
   metaRow: {
     flexDirection: 'row',

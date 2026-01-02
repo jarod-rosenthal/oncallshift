@@ -59,8 +59,7 @@ export function ServiceHealthBadge({ serviceId, serviceName }: ServiceHealthBadg
         trend,
         lastIncidentAt: thisWeek[0]?.triggeredAt,
       });
-    } catch (error) {
-      console.error('Failed to fetch service health:', error);
+    } catch (_error) {
       setHealthData(null);
     } finally {
       setLoading(false);
@@ -124,15 +123,16 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-    gap: 6,
-    marginTop: 8,
+    gap: 8,
+    marginBottom: 12,
   },
   text: {
-    flex: 1,
+    flexShrink: 1,
   },
   count: {
     fontWeight: '600',
@@ -140,6 +140,7 @@ const styles = StyleSheet.create({
   trendContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: 'auto',
   },
 });
 

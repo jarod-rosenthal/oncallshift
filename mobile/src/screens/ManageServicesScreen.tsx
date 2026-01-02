@@ -68,7 +68,6 @@ export default function ManageServicesScreen() {
       setServices(servicesData);
       setPolicies(policiesData);
     } catch (error: any) {
-      console.error('Failed to fetch data:', error);
       showToast({ message: 'Failed to load services', type: 'error' });
     } finally {
       setLoading(false);
@@ -100,7 +99,6 @@ export default function ManageServicesScreen() {
       resetForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to create service:', error);
       showToast({ message: error.message || 'Failed to create service', type: 'error' });
     } finally {
       setSaving(false);
@@ -124,7 +122,6 @@ export default function ManageServicesScreen() {
       resetForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update service:', error);
       showToast({ message: error.message || 'Failed to update service', type: 'error' });
     } finally {
       setSaving(false);
@@ -166,7 +163,6 @@ export default function ManageServicesScreen() {
       hapticService.success();
       showToast({ message: 'API key regenerated', type: 'success' });
     } catch (error: any) {
-      console.error('Failed to regenerate API key:', error);
       showToast({ message: error.message || 'Failed to regenerate API key', type: 'error' });
     } finally {
       setSaving(false);

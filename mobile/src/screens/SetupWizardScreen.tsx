@@ -120,7 +120,6 @@ export default function SetupWizardScreen({ navigation, onComplete }: SetupWizar
         setState(savedState);
       }
     } catch (error) {
-      console.log('Failed to load wizard progress:', error);
     } finally {
       setIsLoading(false);
     }
@@ -130,7 +129,6 @@ export default function SetupWizardScreen({ navigation, onComplete }: SetupWizar
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ step, state }));
     } catch (error) {
-      console.log('Failed to save wizard progress:', error);
     }
   };
 
@@ -138,7 +136,6 @@ export default function SetupWizardScreen({ navigation, onComplete }: SetupWizar
     try {
       await AsyncStorage.removeItem(STORAGE_KEY);
     } catch (error) {
-      console.log('Failed to clear wizard progress:', error);
     }
   };
 

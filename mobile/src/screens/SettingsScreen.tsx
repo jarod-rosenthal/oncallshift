@@ -170,7 +170,6 @@ export default function SettingsScreen() {
         profilePictureUrl: profile.profilePictureUrl || null,
       });
     } catch (error) {
-      console.error('Failed to load user profile:', error);
     }
   };
 
@@ -183,7 +182,6 @@ export default function SettingsScreen() {
       const status = await apiService.getAnthropicCredentialStatus();
       setAiCredentialStatus(status);
     } catch (error) {
-      console.error('Failed to load credential status:', error);
     }
   };
 
@@ -260,7 +258,6 @@ export default function SettingsScreen() {
         setSettings({ ...DEFAULT_SETTINGS, ...parsed });
       }
     } catch (error) {
-      console.error('Failed to load settings:', error);
     } finally {
       setLoading(false);
     }
@@ -365,7 +362,6 @@ export default function SettingsScreen() {
         await hapticService.lightTap();
       }
     } catch (error) {
-      console.error('Failed to save settings:', error);
       Alert.alert('Error', 'Failed to save settings');
     } finally {
       setSaving(false);
@@ -435,7 +431,6 @@ export default function SettingsScreen() {
       await notificationService.sendCriticalTestNotification();
       showSuccess('Critical alert sound played!');
     } catch (error: any) {
-      console.error('Failed to test critical alert:', error);
       showError(error.message || 'Failed to play test sound');
     }
   };

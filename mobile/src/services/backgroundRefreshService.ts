@@ -27,12 +27,10 @@ const defineBackgroundTask = () => {
   try {
     TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
   try {
-    console.log('[BackgroundFetch] Running background fetch task');
 
     // Check if user is authenticated
     const accessToken = await getAccessToken();
     if (!accessToken) {
-      console.log('[BackgroundFetch] No access token, skipping');
       return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
@@ -45,7 +43,6 @@ const defineBackgroundTask = () => {
     });
 
     if (!response.ok) {
-      console.log('[BackgroundFetch] API request failed');
       return BackgroundFetch.BackgroundFetchResult.Failed;
     }
 
@@ -65,7 +62,6 @@ const defineBackgroundTask = () => {
     // Check for new incidents
     if (currentCount > lastCount) {
       const newIncidentCount = currentCount - lastCount;
-      console.log(`[BackgroundFetch] ${newIncidentCount} new incidents detected`);
 
       // Show local notification for new incidents
       const criticalIncidents = incidents.filter(i => i.severity === 'critical');
@@ -85,16 +81,13 @@ const defineBackgroundTask = () => {
       return BackgroundFetch.BackgroundFetchResult.NewData;
     }
 
-    console.log('[BackgroundFetch] No new incidents');
     return BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (error) {
-    console.error('[BackgroundFetch] Error:', error);
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
     });
     taskDefined = true;
   } catch (error) {
-    console.error('[BackgroundFetch] Failed to define task:', error);
   }
 };
 
@@ -124,19 +117,16 @@ export const registerBackgroundFetch = async (): Promise<boolean> => {
     const status = await BackgroundFetch.getStatusAsync();
 
     if (status === BackgroundFetch.BackgroundFetchStatus.Restricted) {
-      console.log('[BackgroundFetch] Background fetch is restricted');
       return false;
     }
 
     if (status === BackgroundFetch.BackgroundFetchStatus.Denied) {
-      console.log('[BackgroundFetch] Background fetch is denied');
       return false;
     }
 
     // Check if already registered
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
     if (isRegistered) {
-      console.log('[BackgroundFetch] Task already registered');
       return true;
     }
 
@@ -147,11 +137,9 @@ export const registerBackgroundFetch = async (): Promise<boolean> => {
       startOnBoot: true, // Start on device boot (Android)
     });
 
-    console.log('[BackgroundFetch] Task registered successfully');
     await AsyncStorage.setItem(BACKGROUND_REFRESH_ENABLED_KEY, 'true');
     return true;
   } catch (error) {
-    console.error('[BackgroundFetch] Failed to register:', error);
     return false;
   }
 };
@@ -162,11 +150,9 @@ export const unregisterBackgroundFetch = async (): Promise<void> => {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_FETCH_TASK);
     if (isRegistered) {
       await BackgroundFetch.unregisterTaskAsync(BACKGROUND_FETCH_TASK);
-      console.log('[BackgroundFetch] Task unregistered');
     }
     await AsyncStorage.setItem(BACKGROUND_REFRESH_ENABLED_KEY, 'false');
   } catch (error) {
-    console.error('[BackgroundFetch] Failed to unregister:', error);
   }
 };
 
@@ -188,12 +174,10 @@ export const getBackgroundFetchStatus = async (): Promise<{
 
 // Force a refresh (for testing)
 export const forceRefresh = async (): Promise<void> => {
-  console.log('[BackgroundFetch] Forcing refresh...');
 
   try {
     const accessToken = await getAccessToken();
     if (!accessToken) {
-      console.log('[BackgroundFetch] No access token');
       return;
     }
 
@@ -208,9 +192,7 @@ export const forceRefresh = async (): Promise<void> => {
       const incidents: Incident[] = await response.json();
       await Notifications.setBadgeCountAsync(incidents.length);
       await AsyncStorage.setItem(LAST_INCIDENT_COUNT_KEY, incidents.length.toString());
-      console.log(`[BackgroundFetch] Refreshed: ${incidents.length} incidents`);
     }
   } catch (error) {
-    console.error('[BackgroundFetch] Force refresh failed:', error);
   }
 };
