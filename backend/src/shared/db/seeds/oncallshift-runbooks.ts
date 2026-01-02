@@ -25,22 +25,28 @@ export async function seedOnCallShiftRunbooks(): Promise<void> {
     }
 
     // Get ALL existing services to attach runbooks to
-    const existingServices = await serviceRepo.find({ where: { orgId: org.id } });
+    const existingServices = await serviceRepo.find({
+      where: { orgId: org.id },
+      order: { createdAt: 'ASC' }  // Consistent ordering
+    });
 
     if (existingServices.length === 0) {
       logger.warn('No services found - skipping OnCallShift runbooks');
       return;
     }
 
-    // Attach runbooks to ALL services so they appear on any incident
-    // For each service, we create a copy of the relevant runbooks
-    logger.info(`Found ${existingServices.length} services - will attach runbooks to all of them`);
+    // Try to find the Production API service specifically (created by seed data)
+    const productionAPI = existingServices.find(s =>
+      s.name === 'Production API' || s.id === '44444444-4444-4444-4444-444444444444'
+    );
 
-    // Use first available service for categorization, but we'll duplicate for all
-    const apiService = existingServices[0];
-    const dbService = existingServices[1] || apiService;
-    const workerService = existingServices[2] || apiService;
-    const frontendService = existingServices[3] || apiService;
+    logger.info(`Found ${existingServices.length} services - attaching runbooks to Production API or first service`);
+
+    // Use Production API if found, otherwise fall back to first service
+    const apiService = productionAPI || existingServices[0];
+    const dbService = existingServices.find(s => s.name?.toLowerCase().includes('database')) || existingServices[1] || apiService;
+    const workerService = existingServices.find(s => s.name?.toLowerCase().includes('worker')) || existingServices[2] || apiService;
+    const frontendService = existingServices.find(s => s.name?.toLowerCase().includes('frontend') || s.name?.toLowerCase().includes('web')) || existingServices[3] || apiService;
 
     // Delete ALL existing OnCallShift runbooks to recreate fresh for ALL services
     await runbookRepo.delete({
