@@ -3,7 +3,7 @@ import { body, query, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Postmortem, PostmortemTemplate, Incident } from '../../shared/models';
+import { Postmortem, PostmortemTemplate, Incident, IncidentEvent } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
@@ -35,22 +35,21 @@ router.get(
       const dataSource = await getDataSource();
       const postmortemRepo = dataSource.getRepository(Postmortem);
 
-      const queryBuilder = postmortemRepo
-        .createQueryBuilder('postmortem')
-        .leftJoinAndSelect('postmortem.incident', 'incident')
-        .leftJoinAndSelect('incident.service', 'service')
-        .leftJoinAndSelect('postmortem.createdBy', 'createdBy')
-        .leftJoinAndSelect('postmortem.publishedBy', 'publishedBy')
-        .where('postmortem.org_id = :orgId', { orgId })
-        .orderBy('postmortem.created_at', 'DESC')
-        .take(limit as number)
-        .skip(offset as number);
-
+      // Use find() instead of queryBuilder to avoid TypeORM join bugs
+      const whereClause: any = { orgId };
       if (status) {
-        queryBuilder.andWhere('postmortem.status = :status', { status });
+        whereClause.status = status;
       }
 
-      const [postmortems, total] = await queryBuilder.getManyAndCount();
+      const [postmortems, total] = await postmortemRepo.findAndCount({
+        where: whereClause,
+        relations: ['incident', 'incident.service', 'createdBy', 'publishedBy'],
+        order: { createdAt: 'DESC' },
+        take: limit as number,
+        skip: offset as number,
+      });
+
+      logger.info('Postmortems fetched', { orgId, total, count: postmortems.length });
 
       return res.json({
         postmortems: postmortems.map(formatPostmortem),
@@ -338,7 +337,7 @@ router.post('/:id/publish', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/v1/postmortems/:id
- * Delete a postmortem (only if draft)
+ * Delete a postmortem
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -356,14 +355,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Postmortem not found' });
     }
 
-    // Only allow deleting draft postmortems
-    if (postmortem.status !== 'draft') {
-      return res.status(400).json({ error: 'Cannot delete published postmortems' });
-    }
-
+    const wasPublished = postmortem.status === 'published';
     await postmortemRepo.remove(postmortem);
 
-    logger.info('Postmortem deleted', { postmortemId: id, orgId });
+    logger.info('Postmortem deleted', { postmortemId: id, orgId, wasPublished });
 
     return res.status(204).send();
   } catch (error) {
@@ -658,5 +653,138 @@ function formatTemplate(template: PostmortemTemplate) {
     updated_at: template.updatedAt,
   };
 }
+
+/**
+ * POST /api/v1/postmortems/seed-examples
+ * Seed sample postmortems from resolved incidents (for demo/testing)
+ */
+router.post('/seed-examples', async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+    const userId = req.user!.id;
+
+    const dataSource = await getDataSource();
+    const postmortemRepo = dataSource.getRepository(Postmortem);
+    const incidentRepo = dataSource.getRepository(Incident);
+    const eventRepo = dataSource.getRepository(IncidentEvent);
+
+    // Find resolved incidents without postmortems
+    const resolvedIncidents = await incidentRepo.find({
+      where: { orgId, state: 'resolved' },
+      relations: ['service'],
+      order: { resolvedAt: 'DESC' },
+      take: 5,
+    });
+
+    if (resolvedIncidents.length === 0) {
+      return res.status(400).json({ error: 'No resolved incidents found to create postmortems from' });
+    }
+
+    const createdPostmortems = [];
+
+    for (const incident of resolvedIncidents) {
+      // Check if postmortem already exists
+      const existing = await postmortemRepo.findOne({
+        where: { incidentId: incident.id, orgId },
+      });
+
+      if (existing) continue;
+
+      // Get incident events for timeline
+      const events = await eventRepo.find({
+        where: { incidentId: incident.id },
+        order: { createdAt: 'ASC' },
+      });
+
+      const timeline = events
+        .filter(e => ['triggered', 'acknowledged', 'resolved', 'escalated'].includes(e.type))
+        .map(e => ({
+          timestamp: e.createdAt.toISOString(),
+          event: e.type.charAt(0).toUpperCase() + e.type.slice(1),
+          description: e.message || undefined,
+        }));
+
+      // Sample root causes and learnings
+      const rootCauses = [
+        'Memory leak in the connection pool caused gradual resource exhaustion',
+        'Database query timeout due to missing index on high-traffic table',
+        'Misconfigured rate limiter allowed traffic spike to overwhelm the service',
+        'Certificate expiration was not properly monitored',
+        'Deployment introduced regression in error handling logic',
+      ];
+
+      const whatWentWell = [
+        'Incident was detected quickly by our monitoring systems',
+        'On-call engineer responded within SLA',
+        'Communication was clear and stakeholders were kept informed',
+        'Rollback procedure worked as expected',
+        'Team collaboration was excellent during the incident',
+      ];
+
+      const improvements = [
+        'Add more comprehensive integration tests',
+        'Implement better monitoring for this failure mode',
+        'Create runbook for faster diagnosis',
+        'Add circuit breaker to prevent cascade failures',
+        'Improve alerting thresholds to catch issues earlier',
+      ];
+
+      const randomIndex = Math.floor(Math.random() * rootCauses.length);
+
+      // Get resolution note from events (stored as note event with [Resolution Note] prefix)
+      const resolutionNoteEvent = events.find(
+        e => e.type === 'note' && e.message?.startsWith('[Resolution Note]')
+      );
+      const resolutionNote = resolutionNoteEvent?.message?.replace('[Resolution Note] ', '') || null;
+
+      const postmortem = postmortemRepo.create({
+        orgId,
+        incidentId: incident.id,
+        title: `Postmortem: ${incident.summary}`,
+        summary: resolutionNote || `Investigation and resolution of incident #${incident.incidentNumber}`,
+        timeline,
+        rootCause: rootCauses[randomIndex],
+        contributingFactors: ['System complexity', 'Insufficient monitoring'],
+        impact: `Severity: ${incident.severity || 'Medium'}. Service ${incident.service?.name || 'Unknown'} was affected.`,
+        whatWentWell: whatWentWell[randomIndex],
+        whatCouldBeImproved: improvements[randomIndex],
+        actionItems: [
+          {
+            id: `action-${uuidv4().slice(0, 8)}`,
+            description: 'Add monitoring for this failure mode',
+            completed: false,
+          },
+          {
+            id: `action-${uuidv4().slice(0, 8)}`,
+            description: 'Update runbook with lessons learned',
+            completed: true,
+            completedAt: new Date().toISOString(),
+          },
+        ],
+        createdById: userId,
+        status: Math.random() > 0.5 ? 'published' : 'draft',
+        publishedAt: Math.random() > 0.5 ? new Date() : null,
+        publishedById: Math.random() > 0.5 ? userId : null,
+      });
+
+      await postmortemRepo.save(postmortem);
+      createdPostmortems.push(postmortem);
+    }
+
+    logger.info('Sample postmortems seeded', { orgId, count: createdPostmortems.length });
+
+    return res.json({
+      message: `Created ${createdPostmortems.length} sample postmortems from resolved incidents`,
+      postmortems: createdPostmortems.map(p => ({
+        id: p.id,
+        title: p.title,
+        status: p.status,
+      })),
+    });
+  } catch (error) {
+    logger.error('Error seeding sample postmortems:', error);
+    return res.status(500).json({ error: 'Failed to seed sample postmortems' });
+  }
+});
 
 export default router;

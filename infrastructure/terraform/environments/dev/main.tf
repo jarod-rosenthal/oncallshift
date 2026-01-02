@@ -617,6 +617,38 @@ module "api_service" {
         "logs:DescribeLogStreams"
       ]
       Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-${var.environment}/*"
+    },
+    # ECS permissions for runbook automation scripts
+    {
+      Effect = "Allow"
+      Action = [
+        "ecs:DescribeServices",
+        "ecs:DescribeTasks",
+        "ecs:ListTasks",
+        "ecs:UpdateService",
+        "ecs:DescribeClusters",
+        "ecs:ListServices"
+      ]
+      Resource = "*"
+    },
+    # CloudFront permissions for cache invalidation runbooks
+    {
+      Effect = "Allow"
+      Action = [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation",
+        "cloudfront:ListDistributions"
+      ]
+      Resource = "*"
+    },
+    # Application Auto Scaling permissions for scaling runbooks
+    {
+      Effect = "Allow"
+      Action = [
+        "application-autoscaling:DescribeScalableTargets",
+        "application-autoscaling:DescribeScalingActivities"
+      ]
+      Resource = "*"
     }
   ]
 
@@ -657,13 +689,16 @@ module "notification_worker" {
     FCM_PLATFORM_APP_ARN = var.fcm_server_key != null ? aws_sns_platform_application.fcm[0].arn : ""
     APNS_PLATFORM_APP_ARN = var.apns_certificate != null ? aws_sns_platform_application.apns[0].arn : ""
     SES_FROM_EMAIL = "noreply@oncallshift.com"
+    COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
+    COGNITO_CLIENT_ID = aws_cognito_user_pool_client.mobile.id
   }
 
   secrets = {
     DATABASE_URL = module.database.secret_arn
+    ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
   }
 
-  secrets_arns = [module.database.secret_arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.notifications.arn

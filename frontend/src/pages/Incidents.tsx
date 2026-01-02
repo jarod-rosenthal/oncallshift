@@ -12,6 +12,7 @@ import { MetricsCard } from '../components/incidents/MetricsCard';
 import { EmptyState } from '../components/EmptyState';
 import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
+import { ResolveModal } from '../components/ResolveModal';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
 import type { Incident, User } from '../types/api';
 
@@ -27,6 +28,11 @@ export function Incidents() {
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Resolve modal state
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [resolveIncidentId, setResolveIncidentId] = useState<string | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
 
   // Form state
   const [escalateReason, setEscalateReason] = useState('');
@@ -71,15 +77,26 @@ export function Incidents() {
     }
   };
 
-  const handleResolve = async (id: string) => {
+  const openResolveModal = (id: string) => {
+    setResolveIncidentId(id);
+    setShowResolveModal(true);
+  };
+
+  const handleResolve = async (note?: string) => {
+    if (!resolveIncidentId) return;
+    setIsResolving(true);
     try {
-      await incidentsAPI.resolve(id);
+      await incidentsAPI.resolve(resolveIncidentId, note);
+      setShowResolveModal(false);
+      setResolveIncidentId(null);
       showToast.resolve();
       triggerConfetti();
       await loadIncidents();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
       showToast.error(error.response?.data?.error || 'Failed to resolve incident');
+    } finally {
+      setIsResolving(false);
     }
   };
 
@@ -199,7 +216,7 @@ export function Incidents() {
                     key={incident.id}
                     incident={incident}
                     onAcknowledge={() => handleAcknowledge(incident.id)}
-                    onResolve={() => handleResolve(incident.id)}
+                    onResolve={() => openResolveModal(incident.id)}
                     onEscalate={() => openDialog('escalate', incident)}
                   />
                 ))}
@@ -318,6 +335,17 @@ export function Incidents() {
           </Button>
         </DialogFooter>
       </Dialog>
+
+      {/* Resolve Modal */}
+      <ResolveModal
+        open={showResolveModal}
+        onClose={() => {
+          setShowResolveModal(false);
+          setResolveIncidentId(null);
+        }}
+        onResolve={handleResolve}
+        isLoading={isResolving}
+      />
     </div>
   );
 }

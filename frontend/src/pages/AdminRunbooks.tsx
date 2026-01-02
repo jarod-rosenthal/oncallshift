@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -14,11 +15,14 @@ function generateId(): string {
 const SEVERITY_OPTIONS = ['critical', 'error', 'warning', 'info'];
 
 export function AdminRunbooks() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [runbooks, setRunbooks] = useState<Runbook[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const editParamProcessed = useRef(false);
+  const highlightedStepId = useRef<string | null>(null);
 
   // Create/Edit form state
   const [showForm, setShowForm] = useState(false);
@@ -38,10 +42,34 @@ export function AdminRunbooks() {
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<Runbook | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Handle ?edit=<runbookId>&step=<stepId> query params from incident detail links
+  useEffect(() => {
+    if (isLoading || editParamProcessed.current) return;
+
+    const editId = searchParams.get('edit');
+    const stepId = searchParams.get('step');
+
+    if (editId && runbooks.length > 0) {
+      const runbookToEdit = runbooks.find(r => r.id === editId);
+      if (runbookToEdit) {
+        // Store step ID for highlighting
+        if (stepId) {
+          highlightedStepId.current = stepId;
+        }
+        // Open the edit form
+        handleStartEdit(runbookToEdit);
+        // Clear the query params so refreshing doesn't reopen
+        setSearchParams({}, { replace: true });
+        editParamProcessed.current = true;
+      }
+    }
+  }, [isLoading, runbooks, searchParams, setSearchParams]);
 
   const loadData = async () => {
     try {
@@ -91,6 +119,22 @@ export function AdminRunbooks() {
   const handleStartCreate = () => {
     resetForm();
     setShowForm(true);
+  };
+
+  const handleSeedExamples = async () => {
+    if (!confirm('This will create example runbooks with automated scripts. Continue?')) return;
+
+    setIsSeeding(true);
+    setError(null);
+    try {
+      const response = await runbooksAPI.seedExamples();
+      setSuccess(`Created ${response.runbooks?.length || 0} example runbooks with automated steps`);
+      await loadData();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to seed example runbooks');
+    } finally {
+      setIsSeeding(false);
+    }
   };
 
   const handleAddStep = () => {
@@ -251,9 +295,16 @@ export function AdminRunbooks() {
               Create and manage incident response runbooks for your services
             </p>
           </div>
-          <Button onClick={showForm ? resetForm : handleStartCreate}>
-            {showForm ? 'Cancel' : 'Create Runbook'}
-          </Button>
+          <div className="flex gap-2">
+            {runbooks.length === 0 && !showForm && (
+              <Button variant="outline" onClick={handleSeedExamples} disabled={isSeeding}>
+                {isSeeding ? 'Creating...' : 'Add Example Runbooks'}
+              </Button>
+            )}
+            <Button onClick={showForm ? resetForm : handleStartCreate}>
+              {showForm ? 'Cancel' : 'Create Runbook'}
+            </Button>
+          </div>
         </div>
 
         {error && (
@@ -417,10 +468,27 @@ export function AdminRunbooks() {
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {formData.steps.map((step, index) => (
+                      {formData.steps.map((step, index) => {
+                        const isHighlighted = highlightedStepId.current === step.id;
+                        return (
                         <div
                           key={step.id}
-                          className="border rounded-lg p-4 space-y-3 bg-muted/20"
+                          ref={isHighlighted ? (el) => {
+                            if (el) {
+                              setTimeout(() => {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                // Clear highlight after animation
+                                setTimeout(() => {
+                                  highlightedStepId.current = null;
+                                }, 2000);
+                              }, 100);
+                            }
+                          } : undefined}
+                          className={`border rounded-lg p-4 space-y-3 transition-all duration-300 ${
+                            isHighlighted
+                              ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-400 ring-2 ring-blue-400 ring-offset-2'
+                              : 'bg-muted/20'
+                          }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-medium text-sm">Step {index + 1}</span>
@@ -506,8 +574,172 @@ export function AdminRunbooks() {
                               className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px]"
                             />
                           </div>
+
+                          {/* Step Type - Simplified 3-option selector */}
+                          <div className="border-t pt-3 mt-3">
+                            <Label className="text-xs mb-2 block">Step Type</Label>
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleUpdateStep(index, 'type', 'manual');
+                                  handleUpdateStep(index, 'automation', undefined);
+                                }}
+                                className={`px-3 py-1.5 rounded text-sm ${
+                                  step.type !== 'automated'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                }`}
+                              >
+                                📋 Checklist
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleUpdateStep(index, 'type', 'automated');
+                                  handleUpdateStep(index, 'automation', {
+                                    mode: 'server_sandbox',
+                                    timeout: 60,
+                                    requiresApproval: false,
+                                    script: { language: 'bash', code: '', version: 1 },
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded text-sm ${
+                                  step.type === 'automated' && (step as any).automation?.mode === 'server_sandbox'
+                                    ? 'bg-purple-600 text-white'
+                                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                }`}
+                              >
+                                🖥️ Script
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleUpdateStep(index, 'type', 'automated');
+                                  handleUpdateStep(index, 'automation', {
+                                    mode: 'claude_code_api',
+                                    timeout: 120,
+                                    requiresApproval: true,
+                                    script: { language: 'natural_language', code: '', version: 1 },
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded text-sm ${
+                                  step.type === 'automated' && (step as any).automation?.mode === 'claude_code_api'
+                                    ? 'bg-orange-600 text-white'
+                                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                                }`}
+                              >
+                                🤖 AI Action
+                              </button>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {step.type !== 'automated' && 'Human follows written instructions'}
+                              {step.type === 'automated' && (step as any).automation?.mode === 'server_sandbox' && 'Runs bash/python/javascript code directly'}
+                              {step.type === 'automated' && (step as any).automation?.mode === 'claude_code_api' && 'AI interprets your instructions and executes'}
+                            </p>
+                          </div>
+
+                          {/* Script Settings (for Script type) */}
+                          {step.type === 'automated' && (step as any).automation?.mode === 'server_sandbox' && (
+                            <div className="border-t pt-3 mt-3 space-y-3 bg-purple-50 dark:bg-purple-950/20 p-3 rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-medium text-purple-700 dark:text-purple-300">🖥️ Script Configuration</span>
+                                </div>
+                                <select
+                                  value={(step as any).automation?.script?.language || 'bash'}
+                                  onChange={(e) => handleUpdateStep(index, 'automation', {
+                                    ...(step as any).automation,
+                                    script: {
+                                      ...((step as any).automation?.script || {}),
+                                      language: e.target.value,
+                                      version: 1,
+                                    },
+                                  })}
+                                  className="h-8 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                                >
+                                  <option value="bash">Bash</option>
+                                  <option value="python">Python</option>
+                                  <option value="javascript">JavaScript</option>
+                                </select>
+                              </div>
+
+                              <textarea
+                                value={(step as any).automation?.script?.code || ''}
+                                onChange={(e) => handleUpdateStep(index, 'automation', {
+                                  ...(step as any).automation,
+                                  script: {
+                                    ...((step as any).automation?.script || {}),
+                                    code: e.target.value,
+                                    version: 1,
+                                  },
+                                })}
+                                placeholder="#!/bin/bash&#10;echo &quot;Hello from automated runbook!&quot;"
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[120px]"
+                              />
+
+                              <div className="flex items-center justify-between text-sm">
+                                <label className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={(step as any).automation?.requiresApproval || false}
+                                    onChange={(e) => handleUpdateStep(index, 'automation', {
+                                      ...(step as any).automation,
+                                      requiresApproval: e.target.checked,
+                                    })}
+                                    className="rounded"
+                                  />
+                                  Require approval before running
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">Timeout:</span>
+                                  <Input
+                                    type="number"
+                                    min="5"
+                                    max="600"
+                                    value={(step as any).automation?.timeout || 30}
+                                    onChange={(e) => handleUpdateStep(index, 'automation', {
+                                      ...(step as any).automation,
+                                      timeout: parseInt(e.target.value) || 30,
+                                    })}
+                                    className="w-20 h-8"
+                                  />
+                                  <span className="text-muted-foreground">sec</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* AI Action Settings (for AI Action type) */}
+                          {step.type === 'automated' && (step as any).automation?.mode === 'claude_code_api' && (
+                            <div className="border-t pt-3 mt-3 space-y-3 bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-orange-700 dark:text-orange-300">🤖 AI Action - Describe what you want</span>
+                              </div>
+
+                              <textarea
+                                value={(step as any).automation?.script?.code || ''}
+                                onChange={(e) => handleUpdateStep(index, 'automation', {
+                                  ...(step as any).automation,
+                                  script: {
+                                    ...((step as any).automation?.script || {}),
+                                    code: e.target.value,
+                                    version: 1,
+                                  },
+                                })}
+                                placeholder="e.g., Check the API health endpoint and report the status. If unhealthy, list the last 5 error logs from CloudWatch."
+                                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[100px]"
+                              />
+
+                              <p className="text-xs text-muted-foreground">
+                                Claude AI will interpret your instructions and execute the appropriate commands.
+                                Approval is always required for AI actions.
+                              </p>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   )}
                 </div>

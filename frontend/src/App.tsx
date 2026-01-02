@@ -48,6 +48,8 @@ import { ProductMobileApp } from './pages/ProductMobileApp';
 import { ProductEscalationPolicies } from './pages/ProductEscalationPolicies';
 import { Contact } from './pages/Contact';
 import { About } from './pages/About';
+import { WhyOnCallShift } from './pages/WhyOnCallShift';
+import { ForSmallTeams } from './pages/ForSmallTeams';
 import { Privacy } from './pages/Privacy';
 import { Terms } from './pages/Terms';
 import { Blog } from './pages/Blog';
@@ -98,6 +100,8 @@ function App() {
         <Route path="/product/escalation-policies" element={<ProductEscalationPolicies />} />
         <Route path="/company/contact" element={<Contact />} />
         <Route path="/company/about" element={<About />} />
+        <Route path="/why-oncallshift" element={<WhyOnCallShift />} />
+        <Route path="/for-small-teams" element={<ForSmallTeams />} />
         <Route path="/legal/privacy" element={<Privacy />} />
         <Route path="/legal/terms" element={<Terms />} />
         <Route path="/blog" element={<Blog />} />

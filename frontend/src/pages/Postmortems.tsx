@@ -674,15 +674,13 @@ export function Postmortems() {
                           </Button>
                         </>
                       )}
-                      {(postmortem.status === 'draft' || postmortem.status === 'in_review') && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteConfirm(postmortem)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setDeleteConfirm(postmortem)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>

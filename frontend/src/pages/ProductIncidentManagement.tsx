@@ -5,34 +5,34 @@ import { Card, CardContent } from '../components/ui/card';
 export function ProductIncidentManagement() {
   const features = [
     {
-      title: 'Real-Time Alerts',
-      description: 'Receive alerts via push notification, email, SMS, or voice call. Never miss a critical incident.',
+      title: 'AI Auto-Diagnosis',
+      description: 'Every incident analyzed automatically. Root cause, suggested fixes, relevant runbooks—before you even look.',
+      icon: '🤖',
+    },
+    {
+      title: 'One-Tap Remediation',
+      description: 'Execute runbooks from your phone. Restart services, scale deployments, trigger webhooks. No laptop required.',
+      icon: '⚡',
+    },
+    {
+      title: 'Smart Escalations',
+      description: 'Multi-channel notifications (Push, SMS, Voice). Repeat until acknowledged. Auto-escalate to the next level.',
       icon: '🔔',
     },
     {
-      title: 'Acknowledge & Resolve',
-      description: 'One-click actions from mobile or web. Update incident status without logging into dashboards.',
-      icon: '✅',
+      title: 'Mobile-First',
+      description: 'Full featured native iOS & Android apps. Designed for one-handed use at 3am.',
+      icon: '📱',
     },
     {
-      title: 'Incident Timeline',
-      description: 'Full audit trail of every action: who acknowledged, when it escalated, how it was resolved.',
+      title: 'Timeline & Audit',
+      description: 'Complete incident history. Who did what, when. AI tracks actions taken for learning loop.',
       icon: '📜',
     },
     {
-      title: 'Runbook Integration',
-      description: 'Attach runbooks to services. Execute common fixes directly from the incident page.',
-      icon: '📋',
-    },
-    {
-      title: 'Escalate & Reassign',
-      description: 'Not the right person? Reassign to a teammate. Need backup? Escalate to the next level immediately.',
-      icon: '⬆️',
-    },
-    {
-      title: 'AI-Powered Diagnosis',
-      description: 'Let Claude analyze your incident context and suggest root causes and remediation steps.',
-      icon: '🤖',
+      title: 'Collaboration',
+      description: 'Add responders, chat in real-time, share context. The whole team can see what\'s happening.',
+      icon: '👥',
     },
   ];
 
@@ -99,12 +99,14 @@ export function ProductIncidentManagement() {
         <h1 className="text-4xl md:text-5xl font-bold mb-6">
           Incident Management<br />
           <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            That Actually Works
+            From Your Phone
           </span>
         </h1>
-        <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
-          From alert to resolution, manage the entire incident lifecycle.
-          Get the right person on it fast, give them the tools to fix it.
+        <p className="text-xl text-slate-600 mb-6 max-w-2xl mx-auto">
+          AI-enhanced incident response. From alert to resolution without opening your laptop.
+        </p>
+        <p className="text-lg text-slate-500 italic mb-8 max-w-2xl mx-auto">
+          Built for 3am wake-ups. By people who've had way too many of them.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register">
@@ -169,31 +171,52 @@ export function ProductIncidentManagement() {
         </div>
       </section>
 
-      {/* Response Time Stats */}
-      <section className="bg-blue-600 py-16 text-white">
+      {/* The Difference Section */}
+      <section className="bg-gradient-to-br from-blue-600 to-indigo-600 py-16 text-white">
         <div className="container mx-auto px-4">
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto text-center">
-            <div>
-              <p className="text-4xl font-bold mb-2">&lt; 30s</p>
-              <p className="text-blue-200">Average alert delivery time</p>
+          <h2 className="text-3xl font-bold text-center mb-12">The Traditional Flow vs. OnCallShift</h2>
+          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6">
+              <p className="text-xl font-semibold mb-4">❌ Traditional Tools</p>
+              <ul className="space-y-2 text-blue-100">
+                <li>• Alert wakes you up</li>
+                <li>• No context in notification</li>
+                <li>• Open laptop, VPN, dashboards</li>
+                <li>• Dig through logs manually</li>
+                <li>• Google the error</li>
+                <li>• SSH to production</li>
+                <li>• Try fixes until something works</li>
+                <li><strong className="text-white">⏱️ Average: 45 minutes</strong></li>
+              </ul>
             </div>
-            <div>
-              <p className="text-4xl font-bold mb-2">4</p>
-              <p className="text-blue-200">Notification channels</p>
+            <div className="bg-white/10 backdrop-blur rounded-lg p-6 border-2 border-white/30">
+              <p className="text-xl font-semibold mb-4">✅ OnCallShift</p>
+              <ul className="space-y-2 text-blue-100">
+                <li>• Alert wakes you up</li>
+                <li>• AI diagnosis in notification</li>
+                <li>• Open phone app</li>
+                <li>• See root cause + fix suggestions</li>
+                <li>• Tap "Restart Pods"</li>
+                <li>• AI executes and confirms</li>
+                <li>• Back to sleep</li>
+                <li><strong className="text-white">⏱️ Average: 90 seconds</strong></li>
+              </ul>
             </div>
-            <div>
-              <p className="text-4xl font-bold mb-2">99.9%</p>
-              <p className="text-blue-200">Platform uptime SLA</p>
-            </div>
+          </div>
+          <div className="mt-8 text-center">
+            <p className="text-2xl font-bold">67x Faster Resolution</p>
           </div>
         </div>
       </section>
 
       {/* CTA */}
       <section className="container mx-auto px-4 py-16 text-center">
-        <h2 className="text-2xl font-bold mb-4">Ready to Improve Your Incident Response?</h2>
-        <p className="text-slate-600 mb-6">
-          Start free. No credit card required. Be up and running in minutes.
+        <h2 className="text-2xl font-bold mb-4">Stop Waking Up to Scramble. Start Resolving From Your Phone.</h2>
+        <p className="text-slate-600 mb-2">
+          Free tier includes AI diagnosis. Upgrade for execution capabilities.
+        </p>
+        <p className="text-sm text-slate-500 italic mb-6">
+          We use this every night. If it doesn't work at 3am, we don't ship it.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register">
@@ -203,7 +226,7 @@ export function ProductIncidentManagement() {
           </Link>
           <Link to="/product/ai-diagnosis">
             <Button size="lg" variant="outline">
-              Learn About AI Diagnosis
+              Learn About AI
             </Button>
           </Link>
         </div>
@@ -211,12 +234,22 @@ export function ProductIncidentManagement() {
 
       {/* Footer */}
       <footer className="border-t py-8 bg-slate-50">
-        <div className="container mx-auto px-4 text-center text-sm text-slate-500">
-          <p>&copy; 2025 OnCallShift. All rights reserved.</p>
-          <div className="mt-2 space-x-4">
-            <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
-            <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
-            <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-4">
+            <p className="text-slate-500 text-sm italic">
+              Built by DevOps engineers who get paged. Questions?{' '}
+              <a href="mailto:jarod@oncallshift.com" className="text-blue-600 hover:text-blue-700">
+                Email the founder
+              </a>
+            </p>
+          </div>
+          <div className="text-center text-sm text-slate-500">
+            <p>&copy; 2025 OnCallShift. All rights reserved.</p>
+            <div className="mt-2 space-x-4">
+              <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
+              <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
+              <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
+            </div>
           </div>
         </div>
       </footer>

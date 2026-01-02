@@ -511,7 +511,7 @@ Advanced Features:
 | **ECS Fargate (4 services)** | API + 3 Workers on Fargate Spot | ~$25 | 70% savings with Spot |
 | **RDS PostgreSQL** | db.t4g.micro (Graviton2) | ~$13 | Single-AZ dev, Multi-AZ prod |
 | **Application Load Balancer** | 1 ALB, 2 AZs | ~$20 | Fixed cost |
-| **NAT Gateways** | 2 NAT Gateways (HA) | ~$65 | Biggest cost driver |
+| **NAT Gateways** | 1 NAT Gateway | ~$33 | Biggest cost driver |
 | **CloudFront CDN** | Global distribution | ~$5 | Low traffic assumptions |
 | **S3 Storage** | Web static + uploads | ~$5 | Minimal storage |
 | **Cognito + SQS + SNS** | Standard usage | ~$5 | Pay-per-use |
@@ -531,7 +531,6 @@ Advanced Features:
 | Replace NAT Gateways with more VPC Endpoints | ~$50/month | Planned |
 | Use S3 Gateway Endpoint (free) | ~$7/month | Implemented ✅ |
 | Fargate Spot instances | ~$40/month | Implemented ✅ |
-| Single NAT Gateway (dev only) | ~$32/month | Risky for HA |
 | Reserved RDS instance | ~$3/month | Not worth it yet |
 
 **Optimized Target**: ~$100-120/month for dev environment

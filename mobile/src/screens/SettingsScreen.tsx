@@ -103,6 +103,14 @@ export default function SettingsScreen() {
   // User profile state
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
+  // Push notification debug state
+  const [pushDebugInfo, setPushDebugInfo] = useState<{
+    token: string | null;
+    tokenError: string | null;
+    deviceRegistered: boolean;
+    checking: boolean;
+  }>({ token: null, tokenError: null, deviceRegistered: false, checking: false });
+
   // Dynamic styles based on current theme
   const dynamicStyles = {
     container: {
@@ -255,6 +263,96 @@ export default function SettingsScreen() {
       console.error('Failed to load settings:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkPushNotificationStatus = async () => {
+    setPushDebugInfo(prev => ({ ...prev, checking: true }));
+    try {
+      // Try to get push token
+      const token = await notificationService.registerForPushNotifications();
+
+      if (token) {
+        // Try to register with backend
+        try {
+          await apiService.registerDevice({
+            token,
+            platform: Platform.OS as 'ios' | 'android',
+            appVersion: '1.0.0',
+          });
+
+          // Now fetch the debug info from the server
+          try {
+            const debugInfo = await apiService.getPushDebugInfo();
+            const details = JSON.stringify(debugInfo, null, 2);
+            Alert.alert(
+              'Push Status (Server)',
+              `Token: ${token.substring(0, 25)}...\n\n` +
+              `Devices: ${debugInfo.devices?.length || 0}\n` +
+              `Push Enabled: ${debugInfo.notificationPreferences?.push?.enabled}\n` +
+              `Types: ${JSON.stringify(debugInfo.notificationPreferences?.push?.types)}\n\n` +
+              `Will Work: ${JSON.stringify(debugInfo.pushWillWork)}`,
+              [{ text: 'OK' }]
+            );
+            setPushDebugInfo({
+              token: token.substring(0, 30) + '...',
+              tokenError: null,
+              deviceRegistered: true,
+              checking: false,
+            });
+          } catch (debugErr) {
+            // Debug endpoint might not be deployed yet
+            setPushDebugInfo({
+              token: token.substring(0, 30) + '...',
+              tokenError: null,
+              deviceRegistered: true,
+              checking: false,
+            });
+            showSuccess('Push token registered!');
+          }
+        } catch (regError: any) {
+          setPushDebugInfo({
+            token: token.substring(0, 30) + '...',
+            tokenError: `Backend registration failed: ${regError.message}`,
+            deviceRegistered: false,
+            checking: false,
+          });
+          showError(`Registration failed: ${regError.message}`);
+        }
+      } else {
+        setPushDebugInfo({
+          token: null,
+          tokenError: 'No token returned. Permissions may be denied.',
+          deviceRegistered: false,
+          checking: false,
+        });
+        showError('Could not get push token');
+      }
+    } catch (error: any) {
+      const errorMsg = error.message || 'Unknown error getting push token';
+      setPushDebugInfo({
+        token: null,
+        tokenError: errorMsg,
+        deviceRegistered: false,
+        checking: false,
+      });
+      // Show persistent alert so user can read the full error
+      Alert.alert('Push Token Error', errorMsg, [{ text: 'OK' }]);
+    }
+  };
+
+  const handleCleanupDevices = async () => {
+    try {
+      const result = await apiService.cleanupDevices();
+      if (result.removedCount > 0) {
+        showSuccess(`Removed ${result.removedCount} old device(s)`);
+        // Re-check push status after cleanup
+        checkPushNotificationStatus();
+      } else {
+        Alert.alert('No Cleanup Needed', 'All registered devices are using valid Expo push tokens.');
+      }
+    } catch (error: any) {
+      showError(`Cleanup failed: ${error.message}`);
     }
   };
 
@@ -538,6 +636,48 @@ export default function SettingsScreen() {
             description="Configure system notification permissions"
             left={props => <List.Icon {...props} icon="cog" color={colors.textSecondary} />}
             onPress={handleOpenNotificationSettings}
+            right={props => <List.Icon {...props} icon="chevron-right" />}
+          />
+          <Divider />
+
+          {/* Push Debug */}
+          <List.Item
+            title="Push Notification Status"
+            description={
+              pushDebugInfo.checking
+                ? 'Checking...'
+                : pushDebugInfo.deviceRegistered
+                ? `Registered: ${pushDebugInfo.token}`
+                : pushDebugInfo.tokenError || 'Tap to check status'
+            }
+            descriptionNumberOfLines={2}
+            left={props => (
+              <List.Icon
+                {...props}
+                icon={pushDebugInfo.deviceRegistered ? 'check-circle' : 'help-circle'}
+                color={pushDebugInfo.deviceRegistered ? colors.success : colors.warning}
+              />
+            )}
+            onPress={checkPushNotificationStatus}
+            right={() =>
+              pushDebugInfo.checking ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Button mode="text" compact onPress={checkPushNotificationStatus}>
+                  Check
+                </Button>
+              )
+            }
+          />
+          <Divider />
+          <List.Item
+            title="Clean Up Old Devices"
+            description="Remove non-Expo device tokens that won't receive notifications"
+            descriptionNumberOfLines={2}
+            left={props => (
+              <List.Icon {...props} icon="broom" color={colors.textSecondary} />
+            )}
+            onPress={handleCleanupDevices}
             right={props => <List.Icon {...props} icon="chevron-right" />}
           />
         </View>

@@ -1248,6 +1248,11 @@ export const runbooksAPI = {
     const response = await apiClient.delete<{ message: string }>(`/runbooks/${id}`);
     return response.data;
   },
+
+  seedExamples: async (): Promise<{ message: string; runbooks: Runbook[] }> => {
+    const response = await apiClient.post<{ message: string; runbooks: Runbook[] }>('/runbooks/seed-examples');
+    return response.data;
+  },
 };
 
 // Routing Rules API

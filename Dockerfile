@@ -46,8 +46,8 @@ FROM node:20.18-alpine
 
 WORKDIR /app
 
-# Install psql for database operations (migrations, debugging)
-RUN apk add --no-cache postgresql-client
+# Install psql for database operations, bash and aws-cli for runbook script execution
+RUN apk add --no-cache postgresql-client bash aws-cli
 
 # Copy backend package files and install production dependencies only
 COPY backend/package*.json ./

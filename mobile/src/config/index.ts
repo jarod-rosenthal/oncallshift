@@ -10,7 +10,7 @@ export const config = {
     region: 'us-east-1',
   },
   // Expo project ID for push notifications
-  expoProjectId: Constants.expoConfig?.extra?.eas?.projectId || 'your-project-id-here',
+  expoProjectId: Constants.expoConfig?.extra?.eas?.projectId || '7311a48c-3b87-4bb8-8bba-549de8a578e7',
 };
 
 // Validate required config

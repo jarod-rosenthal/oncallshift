@@ -55,10 +55,58 @@ npm run android      # Run on Android
 npm run ios          # Run on iOS
 ```
 
-### Deployment
+### Mobile Development with Physical Device
+
+The mobile app connects to the **production API** at `https://oncallshift.com/api`. No local backend is needed for mobile development.
+
+**Starting the Metro Bundler:**
 ```bash
-./deploy.sh          # Full deployment (ECR + ECS + CloudFront invalidation)
+cd mobile
+npx expo start --host lan    # Binds to LAN IP (192.168.50.192:8081)
 ```
+
+**Connecting from your phone:**
+1. Ensure phone is on the same WiFi network (192.168.50.x subnet)
+2. Open Expo Go app on phone
+3. Enter URL: `exp://192.168.50.192:8081`
+4. Or scan QR code from terminal
+
+**TypeScript Validation:**
+```bash
+cd mobile
+npx tsc --noEmit    # Check for TypeScript errors before testing
+```
+
+**Troubleshooting:**
+- If phone can't connect, check Windows Firewall allows Node.js on port 8081
+- Verify Metro is running: `netstat -an | findstr "8081"` should show LISTENING
+- Test from phone browser: `http://192.168.50.192:8081` should return packager status
+
+**Config file:** `mobile/src/config/index.ts` - Points to production API, no changes needed for development.
+
+**Key files:**
+- `mobile/src/screens/` - All screen components
+- `mobile/src/components/` - Reusable components (export via `index.ts`)
+- `mobile/src/services/apiService.ts` - API client methods
+- `mobile/src/config/index.ts` - API URL and Cognito config
+
+**Avoiding require cycles:** When adding new components to `mobile/src/components/`, import dependencies directly (e.g., `import { useToast } from './ActionToast'`) rather than from `./index` to avoid circular dependencies.
+
+### Deployment
+
+**ALWAYS use the `deploy.sh` script for ALL deployments.** Never manually build/push Docker images or upload frontend files.
+
+```bash
+./deploy.sh          # Full deployment (required for all changes)
+```
+
+The deploy script handles:
+1. Frontend build (Vite) → S3 upload → CloudFront invalidation
+2. Backend Docker build → ECR push → ECS force deployment
+3. Database migrations via ECS exec
+4. Automatic rollback on failure
+
+**Never skip this step** - both frontend and backend must be deployed together to maintain consistency.
 
 ### Infrastructure
 ```bash
@@ -71,7 +119,7 @@ terraform apply
 ## Architecture
 
 ### Component Structure
-- **backend/src/api/routes/**: REST API routes (33 route files)
+- **backend/src/api/routes/**: REST API routes (34 route files)
 - **backend/src/workers/**: Background processors (alert-processor, notification-worker, escalation-timer, snooze-expiry, report-scheduler)
 - **backend/src/shared/models/**: TypeORM database entities (60+ models)
 - **backend/src/shared/**: Middleware, utilities, database configuration
@@ -84,6 +132,7 @@ terraform apply
 ### Key Features Implemented
 - **Escalation Timer**: `backend/src/workers/escalation-timer.ts` - Auto-advances escalation steps
 - **Runbooks**: `backend/src/api/routes/runbooks.ts` - CRUD + execution
+- **Runbook Automation**: `backend/src/api/routes/runbook-automation.ts` - Claude AI-powered no-code runbook execution with sandbox
 - **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered analysis
 - **User Actions**: Reassign, escalate in `backend/src/api/routes/incidents.ts`
 - **Setup Wizard**: `frontend/src/pages/SetupWizard.tsx` and `mobile/src/screens/SetupWizardScreen.tsx`
@@ -127,12 +176,33 @@ React Navigation with bottom tabs + stack navigation. Deep linking for push noti
 
 ## Infrastructure Rules
 
-**Terraform is the source of truth.** Never make manual AWS Console changes.
+**CRITICAL: Terraform is the ONLY source of truth for all AWS infrastructure.**
 
-1. Update Terraform files in `infrastructure/terraform/environments/dev/`
-2. `terraform plan` to review
-3. `terraform apply` to deploy
-4. Commit changes to git
+### Mandatory Practices
+
+1. **NEVER make manual AWS Console changes** - All infrastructure changes MUST go through Terraform
+2. **ALWAYS keep Terraform state synchronized** - If resources exist but aren't in state, import them immediately
+3. **ALWAYS run `terraform plan` before any infrastructure discussion** - Check for drift early
+4. **COMMIT Terraform changes immediately** - After `terraform apply`, commit to git right away
+
+### Workflow
+```bash
+cd infrastructure/terraform/environments/dev
+terraform init          # Initialize if needed
+terraform plan          # ALWAYS check for drift first
+terraform apply         # Apply changes
+git add . && git commit # Commit immediately after apply
+```
+
+### Preventing Drift
+- If you discover resources exist outside Terraform: `terraform import` them immediately
+- Never "temporarily" create resources manually - they will be forgotten
+- Run `terraform plan` at the start of each session to detect drift
+
+### Consequences of Drift
+- CloudFront routing breaks when state doesn't match reality
+- Services may use outdated configurations
+- Debugging becomes difficult when actual state differs from expected
 
 ## CI/CD
 
@@ -189,6 +259,7 @@ Main API routes include:
 - `/api/v1/schedules` - On-call schedules with `/oncall` for current on-call
 - `/api/v1/escalation-policies` - Multi-step escalation definitions
 - `/api/v1/runbooks` - Runbook management and execution
+- `/api/v1/runbook-automation` - AI-powered runbook step execution with sandbox
 - `/api/v1/ai-assistant` - AI-powered incident analysis
 - `/api/v1/cloud-credentials` - Cloud provider credentials for investigation
 - `/api/v1/status-pages` - Public/private status pages

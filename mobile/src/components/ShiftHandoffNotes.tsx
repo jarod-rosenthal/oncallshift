@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../services/api';
+import { useAppTheme } from '../context/ThemeContext';
 
 const formatDistanceToNow = (date: Date): string => {
   const now = new Date();
@@ -59,9 +60,111 @@ export function ShiftHandoffNotes({
   compact = false,
   showCreateButton = true,
 }: ShiftHandoffNotesProps) {
+  const { colors } = useAppTheme();
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
+
+  // Dynamic styles based on theme
+  const themedStyles = {
+    container: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 16,
+    },
+    headerTitle: {
+      fontSize: 16,
+      fontWeight: '600' as const,
+      color: colors.textPrimary,
+    },
+    noteCard: {
+      backgroundColor: colors.background,
+      borderRadius: 8,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    noteCardUnread: {
+      backgroundColor: colors.warning + '20',
+      borderColor: colors.warning,
+    },
+    authorName: {
+      fontSize: 14,
+      fontWeight: '500' as const,
+      color: colors.textPrimary,
+    },
+    noteTime: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    noteContent: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+    },
+    emptyText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginTop: 8,
+    },
+    emptySubtext: {
+      fontSize: 12,
+      color: colors.textMuted,
+      marginTop: 4,
+      textAlign: 'center' as const,
+    },
+    modalContainer: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    modalHeader: {
+      flexDirection: 'row' as const,
+      justifyContent: 'space-between' as const,
+      alignItems: 'center' as const,
+      padding: 16,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    modalTitle: {
+      fontSize: 17,
+      fontWeight: '600' as const,
+      color: colors.textPrimary,
+    },
+    modalCancel: {
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      color: colors.textSecondary,
+      marginBottom: 12,
+      textTransform: 'uppercase' as const,
+    },
+    createSection: {
+      padding: 16,
+      backgroundColor: colors.surface,
+      margin: 16,
+      borderRadius: 12,
+    },
+    noteInput: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 15,
+      color: colors.textPrimary,
+      minHeight: 120,
+    },
+    charCount: {
+      fontSize: 12,
+      color: colors.textMuted,
+      textAlign: 'right' as const,
+      marginTop: 4,
+    },
+  };
 
   // Fetch handoff notes
   const { data, isLoading, error } = useQuery({
@@ -142,8 +245,8 @@ export function ShiftHandoffNotes({
 
   if (isLoading) {
     return (
-      <View style={[styles.container, compact && styles.containerCompact]}>
-        <ActivityIndicator size="small" color="#6366f1" />
+      <View style={[themedStyles.container, compact && styles.containerCompact]}>
+        <ActivityIndicator size="small" color={colors.primary} />
       </View>
     );
   }
@@ -158,14 +261,14 @@ export function ShiftHandoffNotes({
 
     return (
       <TouchableOpacity
-        style={styles.compactContainer}
+        style={[styles.compactContainer, { backgroundColor: colors.warning + '20' }]}
         onPress={() => setShowModal(true)}
       >
-        <Ionicons name="document-text" size={18} color="#f59e0b" />
-        <Text style={styles.compactText}>
+        <Ionicons name="document-text" size={18} color={colors.warning} />
+        <Text style={[styles.compactText, { color: colors.warning }]}>
           {unreadCount} handoff note{unreadCount !== 1 ? 's' : ''} from previous shift
         </Text>
-        <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
       </TouchableOpacity>
     );
   }
@@ -176,27 +279,27 @@ export function ShiftHandoffNotes({
     const timeAgo = formatDistanceToNow(new Date(item.createdAt));
 
     return (
-      <View style={[styles.noteCard, !item.isRead && styles.noteCardUnread]}>
+      <View style={[themedStyles.noteCard, !item.isRead && themedStyles.noteCardUnread]}>
         <View style={styles.noteHeader}>
           <View style={styles.noteAuthor}>
-            <View style={styles.avatar}>
+            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
               <Text style={styles.avatarText}>
                 {fromName.charAt(0).toUpperCase()}
               </Text>
             </View>
             <View>
-              <Text style={styles.authorName}>{fromName}</Text>
-              <Text style={styles.noteTime}>{timeAgo}</Text>
+              <Text style={themedStyles.authorName}>{fromName}</Text>
+              <Text style={themedStyles.noteTime}>{timeAgo}</Text>
             </View>
           </View>
           {!item.isRead && item.isForMe && (
-            <View style={styles.unreadBadge}>
+            <View style={[styles.unreadBadge, { backgroundColor: colors.warning }]}>
               <Text style={styles.unreadBadgeText}>New</Text>
             </View>
           )}
         </View>
 
-        <Text style={styles.noteContent}>{item.content}</Text>
+        <Text style={themedStyles.noteContent}>{item.content}</Text>
 
         <View style={styles.noteActions}>
           {!item.isRead && item.isForMe && (
@@ -204,8 +307,8 @@ export function ShiftHandoffNotes({
               style={styles.actionButton}
               onPress={() => handleMarkAsRead(item.id)}
             >
-              <Ionicons name="checkmark-circle-outline" size={18} color="#6366f1" />
-              <Text style={styles.actionButtonText}>Mark as read</Text>
+              <Ionicons name="checkmark-circle-outline" size={18} color={colors.primary} />
+              <Text style={[styles.actionButtonText, { color: colors.primary }]}>Mark as read</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -214,20 +317,20 @@ export function ShiftHandoffNotes({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={themedStyles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Ionicons name="document-text" size={20} color="#6366f1" />
-          <Text style={styles.headerTitle}>Shift Handoff Notes</Text>
+          <Ionicons name="document-text" size={20} color={colors.primary} />
+          <Text style={themedStyles.headerTitle}>Shift Handoff Notes</Text>
           {unreadCount > 0 && (
-            <View style={styles.badge}>
+            <View style={[styles.badge, { backgroundColor: colors.error }]}>
               <Text style={styles.badgeText}>{unreadCount}</Text>
             </View>
           )}
         </View>
         {showCreateButton && (
           <TouchableOpacity
-            style={styles.addButton}
+            style={[styles.addButton, { backgroundColor: colors.primary }]}
             onPress={() => setShowModal(true)}
           >
             <Ionicons name="add" size={20} color="#fff" />
@@ -237,9 +340,9 @@ export function ShiftHandoffNotes({
 
       {notes.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={32} color="#9ca3af" />
-          <Text style={styles.emptyText}>No handoff notes</Text>
-          <Text style={styles.emptySubtext}>
+          <Ionicons name="document-text-outline" size={32} color={colors.textMuted} />
+          <Text style={themedStyles.emptyText}>No handoff notes</Text>
+          <Text style={themedStyles.emptySubtext}>
             Leave notes for the next person on-call
           </Text>
         </View>
@@ -260,12 +363,12 @@ export function ShiftHandoffNotes({
         presentationStyle="pageSheet"
         onRequestClose={() => setShowModal(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
+        <View style={themedStyles.modalContainer}>
+          <View style={themedStyles.modalHeader}>
             <TouchableOpacity onPress={() => setShowModal(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
+              <Text style={themedStyles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>
+            <Text style={themedStyles.modalTitle}>
               {unreadNotes.length > 0 ? 'Handoff Notes' : 'New Handoff Note'}
             </Text>
             <TouchableOpacity
@@ -275,7 +378,8 @@ export function ShiftHandoffNotes({
               <Text
                 style={[
                   styles.modalSave,
-                  (!newNoteContent.trim() || createNoteMutation.isPending) && styles.modalSaveDisabled,
+                  { color: colors.primary },
+                  (!newNoteContent.trim() || createNoteMutation.isPending) && { color: colors.textMuted },
                 ]}
               >
                 {createNoteMutation.isPending ? 'Saving...' : 'Save'}
@@ -286,7 +390,7 @@ export function ShiftHandoffNotes({
           {/* Show unread notes first */}
           {unreadNotes.length > 0 && (
             <View style={styles.unreadSection}>
-              <Text style={styles.sectionTitle}>From Previous Shift</Text>
+              <Text style={themedStyles.sectionTitle}>From Previous Shift</Text>
               <FlatList
                 data={unreadNotes}
                 renderItem={renderNote}
@@ -298,12 +402,12 @@ export function ShiftHandoffNotes({
           )}
 
           {/* Create new note */}
-          <View style={styles.createSection}>
-            <Text style={styles.sectionTitle}>Leave a Note for Next Shift</Text>
+          <View style={themedStyles.createSection}>
+            <Text style={themedStyles.sectionTitle}>Leave a Note for Next Shift</Text>
             <TextInput
-              style={styles.noteInput}
+              style={themedStyles.noteInput}
               placeholder="What should the next person know? (ongoing issues, context, tips...)"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               value={newNoteContent}
               onChangeText={setNewNoteContent}
               multiline
@@ -311,7 +415,7 @@ export function ShiftHandoffNotes({
               textAlignVertical="top"
               maxLength={2000}
             />
-            <Text style={styles.charCount}>
+            <Text style={themedStyles.charCount}>
               {newNoteContent.length}/2000
             </Text>
           </View>

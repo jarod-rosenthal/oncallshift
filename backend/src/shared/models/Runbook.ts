@@ -3,6 +3,28 @@ import { Organization } from './Organization';
 import { Service } from './Service';
 import { User } from './User';
 
+export type StepType = 'manual' | 'automated';
+export type AutomationMode = 'server_sandbox' | 'claude_code_api' | 'hybrid';
+export type ScriptLanguage = 'bash' | 'python' | 'javascript' | 'natural_language';
+
+export interface ScriptDefinition {
+  language: ScriptLanguage;
+  code: string;
+  naturalLanguageDescription?: string;
+  generatedAt?: string;
+  validatedAt?: string;
+  version: number;
+}
+
+export interface StepAutomation {
+  mode: AutomationMode;
+  script?: ScriptDefinition;
+  timeout: number; // in seconds
+  requiresApproval: boolean;
+  idempotencyKey?: string;
+  credentialIds?: string[]; // Cloud credentials to inject
+}
+
 export interface RunbookStep {
   id: string;
   order: number;
@@ -10,6 +32,8 @@ export interface RunbookStep {
   description: string;
   isOptional: boolean;
   estimatedMinutes?: number;
+  type: StepType;
+  automation?: StepAutomation;
 }
 
 @Entity('runbooks')

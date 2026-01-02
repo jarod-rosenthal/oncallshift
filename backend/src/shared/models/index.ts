@@ -25,6 +25,7 @@ export * from './IncidentResponder';
 export * from './Notification';
 export * from './DeviceToken';
 export * from './Runbook';
+export * from './RunbookExecution';
 export * from './MaintenanceWindow';
 export * from './Heartbeat';
 export * from './Integration';

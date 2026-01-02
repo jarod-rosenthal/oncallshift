@@ -28,6 +28,7 @@ import { IncidentEvent } from '../models/IncidentEvent';
 import { Notification } from '../models/Notification';
 import { DeviceToken } from '../models/DeviceToken';
 import { Runbook } from '../models/Runbook';
+import { RunbookExecution, RunbookExecutionApproval } from '../models/RunbookExecution';
 import { MaintenanceWindow } from '../models/MaintenanceWindow';
 import { Integration } from '../models/Integration';
 import { IntegrationEvent } from '../models/IntegrationEvent';
@@ -103,6 +104,8 @@ export async function createDataSource(): Promise<DataSource> {
       Notification,
       DeviceToken,
       Runbook,
+      RunbookExecution,
+      RunbookExecutionApproval,
       MaintenanceWindow,
       Integration,
       IntegrationEvent,

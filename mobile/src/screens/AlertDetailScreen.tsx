@@ -40,7 +40,7 @@ import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '
 import { severityColors, statusColors } from '../theme';
 import { useAppTheme } from '../context/ThemeContext';
 import * as hapticService from '../services/hapticService';
-import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel, ServiceHealthBadge, SimilarIncidentHint } from '../components';
+import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel, ServiceHealthBadge, SimilarIncidentHint, AIAssistantPanel } from '../components';
 import type { ResolutionData } from '../components';
 
 // Skeleton placeholder component for loading states
@@ -102,6 +102,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [notificationSummary, setNotificationSummary] = useState<NotificationSummary | null>(null);
   const [showNotifications, setShowNotifications] = useState(true);
   const [loadingNotifications, setLoadingNotifications] = useState(true);
+  const [aiPanelCollapsed, setAiPanelCollapsed] = useState(true);
   const isInitialMount = useRef(true);
 
   // Dynamic styles based on current theme
@@ -1042,8 +1043,21 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </Card>
         )}
 
-        {/* AI Diagnosis Section */}
-        {!loadingDetails && !diagnosis && !diagnosisLoading && (
+        {/* AI Assistant Panel - Inline Chat */}
+        {!loadingDetails && incident.state !== 'resolved' && (
+          <View style={{ marginHorizontal: 16 }}>
+            <AIAssistantPanel
+              incident={incident}
+              collapsed={aiPanelCollapsed}
+              onToggleCollapse={() => setAiPanelCollapsed(!aiPanelCollapsed)}
+              maxHeight={300}
+              onNoteSaved={fetchIncidentDetails}
+            />
+          </View>
+        )}
+
+        {/* Full Screen AI Chat Option */}
+        {!loadingDetails && !diagnosis && !diagnosisLoading && aiPanelCollapsed && (
           <Card style={dynamicStyles.card} mode="elevated">
             <Card.Content>
               <View style={themedStyles.diagnoseButtonContainer}>
@@ -1051,21 +1065,20 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                   <MaterialCommunityIcons name="robot" size={24} color={colors.accent} />
                   <View style={themedStyles.diagnoseTextContainer}>
                     <Text variant="titleSmall" style={themedStyles.diagnoseTitle}>
-                      Need help troubleshooting?
+                      Need more space?
                     </Text>
                     <Text variant="bodySmall" style={themedStyles.diagnoseSubtitle}>
-                      AI can analyze logs, metrics, and history
+                      Open full AI chat for detailed analysis
                     </Text>
                   </View>
                 </View>
                 <Button
-                  mode="contained"
+                  mode="outlined"
                   onPress={() => navigation.navigate('AIChat', { incident })}
-                  icon="robot-outline"
-                  buttonColor={colors.accent}
+                  icon="arrow-expand"
                   style={themedStyles.diagnoseButton}
                 >
-                  Chat with AI
+                  Full Screen
                 </Button>
               </View>
             </Card.Content>

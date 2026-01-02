@@ -40,6 +40,7 @@ import analyticsRoutes from './routes/analytics';
 import postmortemsRoutes from './routes/postmortems';
 import cloudCredentialsRoutes from './routes/cloud-credentials';
 import aiAssistantRoutes from './routes/ai-assistant';
+import runbookAutomationRoutes from './routes/runbook-automation';
 import { captureRawBody } from '../shared/middleware';
 
 export function createApp(): Express {
@@ -259,6 +260,7 @@ export function createApp(): Express {
   app.use('/api/v1/incidents', aiDiagnosisRoutes); // AI diagnosis routes (adds /diagnose endpoint to incidents)
   app.use('/api/v1/incidents', aiAssistantRoutes); // AI assistant routes with tool_use (adds /assistant endpoints)
   app.use('/api/v1/runbooks', runbookRoutes);
+  app.use('/api/v1/runbooks', runbookAutomationRoutes); // Runbook automation and execution
   app.use('/api/v1/actions', actionsRoutes);
   app.use('/api/v1/setup', setupRoutes);
   app.use('/api/v1/integrations', integrationsRoutes);

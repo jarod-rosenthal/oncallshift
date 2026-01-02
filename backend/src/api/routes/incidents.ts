@@ -1172,17 +1172,21 @@ router.get('/:id/similar', async (req: Request, res: Response) => {
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    const candidates = await incidentRepo
-      .createQueryBuilder('incident')
-      .leftJoinAndSelect('incident.service', 'service')
-      .leftJoinAndSelect('incident.resolvedByUser', 'resolver')
-      .where('incident.org_id = :orgId', { orgId })
-      .andWhere('incident.service_id = :serviceId', { serviceId: currentIncident.serviceId })
-      .andWhere('incident.id != :currentId', { currentId: id })
-      .andWhere('incident.triggered_at > :since', { since: ninetyDaysAgo })
-      .orderBy('incident.triggered_at', 'DESC')
-      .take(50) // Get more candidates for scoring
-      .getMany();
+    // Use find() instead of query builder to avoid TypeORM databaseName issues
+    const allCandidates = await incidentRepo.find({
+      where: {
+        orgId,
+        serviceId: currentIncident.serviceId,
+      },
+      relations: ['service', 'resolvedByUser'],
+      order: { triggeredAt: 'DESC' },
+      take: 100, // Get more to filter
+    });
+
+    // Filter out current incident and old incidents
+    const candidates = allCandidates.filter(
+      inc => inc.id !== id && new Date(inc.triggeredAt) > ninetyDaysAgo
+    ).slice(0, 50);
 
     // Score and rank candidates
     const scored = candidates.map(incident => {
@@ -2041,16 +2045,39 @@ router.post(
       // Create default title if not provided
       const defaultTitle = title || `Postmortem: ${incident.summary}`;
 
-      // Create postmortem
+      // Pre-fill timeline from incident events
+      const incidentEvents = await eventRepo.find({
+        where: { incidentId: id },
+        order: { createdAt: 'ASC' },
+        relations: ['actor'],
+      });
+
+      const timeline = incidentEvents
+        .filter(e => ['triggered', 'acknowledged', 'resolved', 'escalated', 'reassigned'].includes(e.type))
+        .map(e => ({
+          timestamp: e.createdAt.toISOString(),
+          event: e.type.charAt(0).toUpperCase() + e.type.slice(1),
+          description: e.message || undefined,
+        }));
+
+      // Pre-fill summary from resolution note if available
+      // Resolution notes are stored as IncidentEvent with type 'note' and message prefix '[Resolution Note]'
+      const resolutionNoteEvent = incidentEvents.find(
+        e => e.type === 'note' && e.message?.startsWith('[Resolution Note]')
+      );
+      const resolutionNote = resolutionNoteEvent?.message?.replace('[Resolution Note] ', '') || null;
+      const defaultSummary = summary || resolutionNote;
+
+      // Create postmortem with pre-filled data
       const postmortem = postmortemRepo.create({
         orgId,
         incidentId: id,
         title: defaultTitle,
-        summary: summary || null,
-        timeline: [],
+        summary: defaultSummary,
+        timeline,
         rootCause: null,
         contributingFactors: [],
-        impact: null,
+        impact: `Incident severity: ${incident.severity || 'Not specified'}`,
         whatWentWell: null,
         whatCouldBeImproved: null,
         actionItems: [],
