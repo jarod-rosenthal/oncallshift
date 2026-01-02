@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import {
   Text,
@@ -14,20 +15,30 @@ import {
   ActivityIndicator,
   IconButton,
   useTheme,
+  Menu,
+  Chip,
+  Divider,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as apiService from '../services/apiService';
-import type { Incident } from '../services/apiService';
+import type {
+  Incident,
+  AIStreamEvent,
+  AIModelId,
+  CloudCredential,
+} from '../services/apiService';
 import { useToast } from '../components';
 import * as hapticService from '../services/hapticService';
 
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool_call' | 'tool_result';
   content: string;
   timestamp: number;
+  toolName?: string;
+  toolStatus?: 'pending' | 'success' | 'error';
+  toolSummary?: string;
 }
 
 interface AIChatScreenProps {
@@ -39,20 +50,11 @@ interface AIChatScreenProps {
   navigation: any;
 }
 
-const SYSTEM_PROMPT = `You are an AI assistant integrated into OnCallShift, an incident management platform. You help on-call engineers quickly diagnose and resolve production incidents.
-
-CONTEXT:
-- You're viewing an incident that was triggered by a monitoring alert
-- The engineer viewing this is likely the on-call responder who needs to investigate and resolve the issue
-- Your analysis will help them understand what might have gone wrong and how to fix it
-- Be practical and actionable - they need to resolve this quickly
-- If you don't have enough information, say what additional data would be helpful
-
-RESPONSE FORMAT:
-- Keep responses concise but thorough
-- Use clear sections with headers if needed
-- Prioritize the most likely causes first
-- Include specific commands or steps when applicable`;
+const MODEL_OPTIONS: { id: AIModelId; label: string; description: string }[] = [
+  { id: 'haiku', label: 'Haiku', description: 'Fastest, basic analysis' },
+  { id: 'sonnet', label: 'Sonnet', description: 'Balanced speed & quality' },
+  { id: 'opus', label: 'Opus', description: 'Most capable, detailed analysis' },
+];
 
 export default function AIChatScreen({ route, navigation }: AIChatScreenProps) {
   const incident = route.params?.incident;
@@ -78,73 +80,53 @@ export default function AIChatScreen({ route, navigation }: AIChatScreenProps) {
       </SafeAreaView>
     );
   }
+
   const { showSuccess, showError } = useToast();
   const flatListRef = useRef<FlatList>(null);
+  const abortRef = useRef<{ abort: () => void } | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
-  // Reset and load conversation when incident changes
+  // Model selection
+  const [selectedModel, setSelectedModel] = useState<AIModelId>('sonnet');
+  const [modelMenuVisible, setModelMenuVisible] = useState(false);
+
+  // Cloud credentials
+  const [availableCredentials, setAvailableCredentials] = useState<CloudCredential[]>([]);
+  const [selectedCredentials, setSelectedCredentials] = useState<string[]>([]);
+  const [credentialsMenuVisible, setCredentialsMenuVisible] = useState(false);
+
+  // Current streaming message
+  const [streamingContent, setStreamingContent] = useState('');
+  const [activeToolCalls, setActiveToolCalls] = useState<ChatMessage[]>([]);
+
+  // Load cloud credentials on mount
   useEffect(() => {
-    console.log('[AIChat] Loading conversation for incident:', incident.id);
-    // Reset messages first to avoid showing stale data
-    setMessages([]);
-    setError(null);
-
-    loadApiKey();
-
-    // Load conversation for THIS specific incident
-    const loadChat = async () => {
+    const loadCredentials = async () => {
       try {
-        const key = `ai-chat-${incident.id}`;
-        console.log('[AIChat] Loading from key:', key);
-        const saved = await AsyncStorage.getItem(key);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          console.log('[AIChat] Loaded', parsed.length, 'messages');
-          setMessages(parsed);
-        } else {
-          console.log('[AIChat] No saved conversation found');
-        }
+        const creds = await apiService.getCloudCredentials();
+        setAvailableCredentials(creds);
       } catch (e) {
-        console.error('[AIChat] Failed to load conversation:', e);
+        console.log('Cloud credentials not available:', e);
       }
     };
+    loadCredentials();
+  }, []);
 
-    loadChat();
+  // Reset when incident changes
+  useEffect(() => {
+    console.log('[AIChat] Loading conversation for incident:', incident.id);
+    setMessages([]);
+    setError(null);
+    setConversationId(null);
+    setStreamingContent('');
+    setActiveToolCalls([]);
   }, [incident.id]);
-
-  const loadApiKey = async () => {
-    try {
-      // First try to get from server (stored encrypted)
-      const status = await apiService.getAnthropicCredentialStatus();
-      if (status.configured && status.hint) {
-        // We have a server-side key, but we need the actual key for direct API calls
-        // Fall back to local storage for direct Anthropic calls
-      }
-    } catch (e) {
-      // Ignore - will try local storage
-    }
-
-    // Try local storage
-    const localKey = await AsyncStorage.getItem('anthropic-api-key');
-    if (localKey) {
-      setApiKey(localKey);
-    }
-  };
-
-  const saveConversation = async (msgs: ChatMessage[]) => {
-    try {
-      const key = `ai-chat-${incident.id}`;
-      console.log('[AIChat] Saving', msgs.length, 'messages to key:', key);
-      await AsyncStorage.setItem(key, JSON.stringify(msgs));
-    } catch (e) {
-      console.error('[AIChat] Failed to save conversation:', e);
-    }
-  };
 
   const generateInitialPrompt = (): string => {
     const details = incident.details ? JSON.stringify(incident.details, null, 2) : 'No additional details';
@@ -168,16 +150,62 @@ Provide:
 3. Potential fixes or mitigations`;
   };
 
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || isLoading) return;
+  const handleStreamEvent = useCallback((event: AIStreamEvent) => {
+    switch (event.type) {
+      case 'conversation_id':
+        if (event.id) {
+          setConversationId(event.id);
+        }
+        break;
 
-    if (!apiKey) {
-      setError('Please set your Anthropic API key in Settings to use AI chat');
-      return;
+      case 'text':
+        if (event.content) {
+          setStreamingContent(prev => prev + event.content);
+        }
+        break;
+
+      case 'tool_call':
+        const toolCallMsg: ChatMessage = {
+          id: `tool-${Date.now()}-${Math.random()}`,
+          role: 'tool_call',
+          content: '',
+          toolName: event.tool,
+          toolStatus: 'pending',
+          timestamp: Date.now(),
+        };
+        setActiveToolCalls(prev => [...prev, toolCallMsg]);
+        break;
+
+      case 'tool_result':
+        setActiveToolCalls(prev =>
+          prev.map(tc =>
+            tc.toolName === event.tool
+              ? { ...tc, toolStatus: event.success ? 'success' : 'error', toolSummary: event.summary }
+              : tc
+          )
+        );
+        break;
+
+      case 'done':
+        // Finalize the streaming message
+        setIsStreaming(false);
+        break;
+
+      case 'error':
+        setError(event.error || 'An error occurred');
+        setIsStreaming(false);
+        break;
     }
+  }, []);
+
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || isLoading || isStreaming) return;
 
     setIsLoading(true);
+    setIsStreaming(true);
     setError(null);
+    setStreamingContent('');
+    setActiveToolCalls([]);
     await hapticService.lightTap();
 
     const userMessage: ChatMessage = {
@@ -187,57 +215,75 @@ Provide:
       timestamp: Date.now(),
     };
 
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    setMessages(prev => [...prev, userMessage]);
     setInputText('');
 
-    // Build messages array for API
-    const apiMessages = newMessages.map(msg => ({
-      role: msg.role,
-      content: msg.content,
-    }));
-
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: apiMessages,
-        }),
-      });
+      const { abort } = await apiService.streamAIAssistantChat(
+        incident.id,
+        content.trim(),
+        {
+          conversationId: conversationId || undefined,
+          credentialIds: selectedCredentials.length > 0 ? selectedCredentials : undefined,
+          model: selectedModel,
+          onEvent: handleStreamEvent,
+          onError: (err) => {
+            console.error('Stream error:', err);
+            setError(err.message || 'Failed to get response');
+            setIsLoading(false);
+            setIsStreaming(false);
+            hapticService.error();
+          },
+          onComplete: () => {
+            setIsLoading(false);
+            setIsStreaming(false);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'Failed to get response');
-      }
+            // Add completed tool calls and assistant message
+            setMessages(prev => {
+              const newMessages = [...prev];
 
-      const data = await response.json();
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: data.content[0].text,
-        timestamp: Date.now(),
-      };
+              // Add tool call messages
+              setActiveToolCalls(tools => {
+                tools.forEach(tool => {
+                  newMessages.push({
+                    ...tool,
+                    id: `tool-final-${Date.now()}-${Math.random()}`,
+                  });
+                });
+                return [];
+              });
 
-      const updatedMessages = [...newMessages, assistantMessage];
-      setMessages(updatedMessages);
-      await saveConversation(updatedMessages);
-      await hapticService.success();
+              return newMessages;
+            });
+
+            // Add the final assistant message
+            setStreamingContent(content => {
+              if (content) {
+                setMessages(prev => [
+                  ...prev,
+                  {
+                    id: `assistant-${Date.now()}`,
+                    role: 'assistant',
+                    content,
+                    timestamp: Date.now(),
+                  },
+                ]);
+              }
+              return '';
+            });
+
+            hapticService.success();
+          },
+        }
+      );
+
+      abortRef.current = { abort };
     } catch (err: any) {
       console.error('AI chat error:', err);
       setError(err.message || 'Failed to send message');
-      // Remove the failed user message
-      setMessages(messages);
-      await hapticService.error();
-    } finally {
       setIsLoading(false);
+      setIsStreaming(false);
+      await hapticService.error();
     }
   };
 
@@ -247,8 +293,13 @@ Provide:
   };
 
   const clearChat = async () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
     setMessages([]);
-    await AsyncStorage.removeItem(`ai-chat-${incident.id}`);
+    setConversationId(null);
+    setStreamingContent('');
+    setActiveToolCalls([]);
     await hapticService.lightTap();
   };
 
@@ -257,6 +308,7 @@ Provide:
 
     try {
       const formattedChat = messages
+        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
         .map(msg => `**${msg.role === 'user' ? 'You' : 'Claude'}:**\n${msg.content}`)
         .join('\n\n---\n\n');
 
@@ -269,7 +321,63 @@ Provide:
     }
   };
 
+  const toggleCredential = (credId: string) => {
+    setSelectedCredentials(prev =>
+      prev.includes(credId)
+        ? prev.filter(id => id !== credId)
+        : [...prev, credId]
+    );
+  };
+
+  const getProviderIcon = (provider: string) => {
+    switch (provider) {
+      case 'aws':
+        return 'aws';
+      case 'azure':
+        return 'microsoft-azure';
+      case 'gcp':
+        return 'google-cloud';
+      default:
+        return 'cloud';
+    }
+  };
+
+  const renderToolCall = (tool: ChatMessage) => {
+    const statusIcon = tool.toolStatus === 'pending'
+      ? 'loading'
+      : tool.toolStatus === 'success'
+        ? 'check-circle'
+        : 'alert-circle';
+    const statusColor = tool.toolStatus === 'pending'
+      ? theme.colors.primary
+      : tool.toolStatus === 'success'
+        ? '#10B981'
+        : theme.colors.error;
+
+    return (
+      <View key={tool.id} style={[styles.toolCallContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
+        {tool.toolStatus === 'pending' ? (
+          <ActivityIndicator size="small" color={theme.colors.primary} />
+        ) : (
+          <MaterialCommunityIcons name={statusIcon} size={16} color={statusColor} />
+        )}
+        <Text style={[styles.toolCallText, { color: theme.colors.onSurfaceVariant }]}>
+          {tool.toolName}
+        </Text>
+        {tool.toolSummary && (
+          <Text style={[styles.toolCallSummary, { color: theme.colors.onSurfaceVariant }]} numberOfLines={1}>
+            {tool.toolSummary}
+          </Text>
+        )}
+      </View>
+    );
+  };
+
   const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
+    if (item.role === 'tool_call' || item.role === 'tool_result') {
+      return renderToolCall(item);
+    }
+
     const isUser = item.role === 'user';
     return (
       <View style={[styles.messageContainer, isUser ? styles.userMessageContainer : styles.assistantMessageContainer]}>
@@ -302,6 +410,41 @@ Provide:
       </View>
     );
   }, [theme]);
+
+  const renderStreamingMessage = () => {
+    if (!isStreaming && !streamingContent && activeToolCalls.length === 0) return null;
+
+    return (
+      <View style={styles.streamingContainer}>
+        {/* Active tool calls */}
+        {activeToolCalls.map(tool => renderToolCall(tool))}
+
+        {/* Streaming text */}
+        {streamingContent && (
+          <View style={[styles.messageContainer, styles.assistantMessageContainer]}>
+            <Surface
+              style={[styles.messageBubble, { backgroundColor: theme.colors.surfaceVariant }]}
+              elevation={1}
+            >
+              <Text style={[styles.messageText, { color: theme.colors.onSurface }]}>
+                {streamingContent}
+              </Text>
+            </Surface>
+          </View>
+        )}
+
+        {/* Streaming indicator */}
+        {isStreaming && !streamingContent && activeToolCalls.length === 0 && (
+          <View style={[styles.loadingContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
+              Connecting to Claude...
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   const dynamicStyles = {
     container: {
@@ -339,6 +482,8 @@ Provide:
     },
   };
 
+  const selectedModelInfo = MODEL_OPTIONS.find(m => m.id === selectedModel);
+
   return (
     <SafeAreaView style={dynamicStyles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
@@ -350,7 +495,10 @@ Provide:
         <View style={dynamicStyles.header}>
           <IconButton
             icon="arrow-left"
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              if (abortRef.current) abortRef.current.abort();
+              navigation.goBack();
+            }}
             iconColor={theme.colors.onSurface}
           />
           <View style={styles.headerContent}>
@@ -379,8 +527,79 @@ Provide:
           )}
         </View>
 
+        {/* Model & Credentials Selection Bar */}
+        <View style={[styles.selectionBar, { backgroundColor: theme.colors.surface }]}>
+          {/* Model Selector */}
+          <Menu
+            visible={modelMenuVisible}
+            onDismiss={() => setModelMenuVisible(false)}
+            anchor={
+              <Chip
+                icon="brain"
+                onPress={() => setModelMenuVisible(true)}
+                style={styles.selectorChip}
+                textStyle={{ fontSize: 12 }}
+              >
+                {selectedModelInfo?.label}
+              </Chip>
+            }
+          >
+            {MODEL_OPTIONS.map(option => (
+              <Menu.Item
+                key={option.id}
+                onPress={() => {
+                  setSelectedModel(option.id);
+                  setModelMenuVisible(false);
+                }}
+                title={`${option.label} - ${option.description}`}
+                leadingIcon={selectedModel === option.id ? 'check' : undefined}
+              />
+            ))}
+          </Menu>
+
+          {/* Cloud Credentials Selector */}
+          {availableCredentials.length > 0 && (
+            <Menu
+              visible={credentialsMenuVisible}
+              onDismiss={() => setCredentialsMenuVisible(false)}
+              anchor={
+                <Chip
+                  icon="cloud"
+                  onPress={() => setCredentialsMenuVisible(true)}
+                  style={styles.selectorChip}
+                  textStyle={{ fontSize: 12 }}
+                >
+                  {selectedCredentials.length > 0
+                    ? `${selectedCredentials.length} cloud${selectedCredentials.length > 1 ? 's' : ''}`
+                    : 'No cloud'}
+                </Chip>
+              }
+            >
+              {availableCredentials.map(cred => (
+                <Menu.Item
+                  key={cred.id}
+                  onPress={() => toggleCredential(cred.id)}
+                  title={`${cred.name} (${cred.provider.toUpperCase()})`}
+                  leadingIcon={getProviderIcon(cred.provider)}
+                  trailingIcon={selectedCredentials.includes(cred.id) ? 'check' : undefined}
+                />
+              ))}
+              {selectedCredentials.length > 0 && (
+                <>
+                  <Divider />
+                  <Menu.Item
+                    onPress={() => setSelectedCredentials([])}
+                    title="Clear selection"
+                    leadingIcon="close"
+                  />
+                </>
+              )}
+            </Menu>
+          )}
+        </View>
+
         {/* Messages or Empty State */}
-        {messages.length === 0 ? (
+        {messages.length === 0 && !isStreaming ? (
           <View style={dynamicStyles.emptyContainer}>
             <MaterialCommunityIcons
               name="robot-outline"
@@ -397,33 +616,16 @@ Provide:
               variant="bodyMedium"
               style={{ color: theme.colors.onSurfaceVariant, marginTop: 8, textAlign: 'center' }}
             >
-              Get help investigating this incident with Claude AI. Ask follow-up questions to dig deeper.
+              Get help investigating this incident with Claude AI.
+              {availableCredentials.length > 0 && ' Select cloud credentials to enable live investigation.'}
             </Text>
-            {apiKey ? (
-              <Pressable
-                style={[styles.startButton, { backgroundColor: theme.colors.primary }]}
-                onPress={startAnalysis}
-              >
-                <MaterialCommunityIcons name="lightning-bolt" size={20} color="#FFFFFF" />
-                <Text style={styles.startButtonText}>Start Analysis</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.noKeyContainer}>
-                <Text
-                  variant="bodySmall"
-                  style={{ color: theme.colors.error, textAlign: 'center', marginTop: 16 }}
-                >
-                  No API key configured. Add your Anthropic API key in Settings to use AI chat.
-                </Text>
-                <Pressable
-                  style={[styles.startButton, { backgroundColor: theme.colors.secondary, marginTop: 12 }]}
-                  onPress={() => navigation.navigate('Settings')}
-                >
-                  <MaterialCommunityIcons name="cog" size={20} color="#FFFFFF" />
-                  <Text style={styles.startButtonText}>Go to Settings</Text>
-                </Pressable>
-              </View>
-            )}
+            <Pressable
+              style={[styles.startButton, { backgroundColor: theme.colors.primary }]}
+              onPress={startAnalysis}
+            >
+              <MaterialCommunityIcons name="lightning-bolt" size={20} color="#FFFFFF" />
+              <Text style={styles.startButtonText}>Start Analysis</Text>
+            </Pressable>
           </View>
         ) : (
           <FlatList
@@ -434,11 +636,12 @@ Provide:
             contentContainerStyle={styles.messagesList}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+            ListFooterComponent={renderStreamingMessage}
           />
         )}
 
         {/* Loading indicator */}
-        {isLoading && (
+        {isLoading && !isStreaming && (
           <View style={[styles.loadingContainer, { backgroundColor: theme.colors.surfaceVariant }]}>
             <ActivityIndicator size="small" color={theme.colors.primary} />
             <Text style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}>
@@ -454,8 +657,8 @@ Provide:
           </View>
         )}
 
-        {/* Input area - only show when there are messages or API key exists */}
-        {(messages.length > 0 || apiKey) && (
+        {/* Input area */}
+        {(messages.length > 0 || isStreaming) && (
           <View style={dynamicStyles.inputContainer}>
             <TextInput
               mode="outlined"
@@ -465,7 +668,7 @@ Provide:
               style={dynamicStyles.input}
               multiline
               maxLength={2000}
-              disabled={isLoading || !apiKey}
+              disabled={isLoading || isStreaming}
               onSubmitEditing={() => sendMessage(inputText)}
               outlineColor={theme.colors.outline}
               activeOutlineColor={theme.colors.primary}
@@ -476,7 +679,7 @@ Provide:
               containerColor={theme.colors.primary}
               iconColor="#FFFFFF"
               onPress={() => sendMessage(inputText)}
-              disabled={isLoading || !inputText.trim() || !apiKey}
+              disabled={isLoading || isStreaming || !inputText.trim()}
             />
           </View>
         )}
@@ -492,6 +695,15 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
+  },
+  selectionBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  selectorChip: {
+    height: 32,
   },
   messagesList: {
     padding: 16,
@@ -519,6 +731,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
     alignSelf: 'flex-end',
+  },
+  toolCallContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  toolCallText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  toolCallSummary: {
+    flex: 1,
+    fontSize: 12,
+  },
+  streamingContainer: {
+    paddingHorizontal: 16,
   },
   loadingContainer: {
     flexDirection: 'row',
@@ -548,8 +780,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  noKeyContainer: {
-    alignItems: 'center',
   },
 });

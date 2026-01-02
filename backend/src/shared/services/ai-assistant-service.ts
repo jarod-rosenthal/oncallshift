@@ -186,12 +186,13 @@ interface ToolResult {
 // System prompt for the AI assistant
 export function buildSystemPrompt(context: AssistantContext): string {
   const credentialList = context.availableCredentials.length > 0
-    ? context.availableCredentials.map(c => `  - ${c.name} (${c.provider.toUpperCase()}): ${c.id}`).join('\n')
-    : '  No cloud credentials configured.';
+    ? context.availableCredentials.map(c => `${c.name} (${c.provider.toUpperCase()})`).join(', ')
+    : 'None';
 
-  return `You are an expert Site Reliability Engineer (SRE) helping to diagnose and resolve production incidents. You have deep expertise in AWS, Azure, and GCP infrastructure, distributed systems, and incident management.
+  return `You are an SRE helping diagnose production incidents. Be extremely concise - users are on mobile devices.
 
-## Your Capabilities
+Tools available: investigate_cloud, get_incident_details, get_application_logs, get_cloudwatch_logs, list_ecs_services, restart_ecs_service
+Cloud credentials: ${credentialList}
 
 You have access to tools that let you:
 1. **Investigate cloud infrastructure** - Query AWS, Azure, or GCP for service health, logs, errors, and resource status
@@ -259,19 +260,15 @@ When providing analysis:
 export function buildInitialPrompt(incident: Incident, service: Service | null): string {
   const parts: string[] = [];
 
-  parts.push('# Incident Context\n');
-  parts.push(`**Incident #${incident.incidentNumber}**: ${incident.summary}`);
-  parts.push(`- **Severity**: ${incident.severity}`);
-  parts.push(`- **Service**: ${service?.name || 'Unknown'}`);
-  parts.push(`- **State**: ${incident.state}`);
-  parts.push(`- **Triggered**: ${incident.triggeredAt.toISOString()}`);
+  parts.push(`Incident #${incident.incidentNumber}: ${incident.summary}`);
+  parts.push(`${incident.severity} | ${service?.name || 'Unknown'} | ${incident.state}`);
+  parts.push(`Triggered: ${new Date(incident.triggeredAt).toLocaleString()}`);
 
   if (incident.details && Object.keys(incident.details).length > 0) {
-    parts.push(`- **Details**: ${JSON.stringify(incident.details, null, 2)}`);
+    parts.push(`Details: ${JSON.stringify(incident.details)}`);
   }
 
-  parts.push('\n# Request\n');
-  parts.push('Please analyze this incident and help me understand the root cause. If needed, use the available tools to investigate cloud infrastructure or get more details.');
+  parts.push('\nAnalyze root cause and provide brief recommendations.');
 
   return parts.join('\n');
 }

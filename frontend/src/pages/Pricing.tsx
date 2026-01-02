@@ -13,32 +13,52 @@ export function Pricing() {
       monthlyPrice: 0,
       annualPrice: 0,
       features: [
-        'Up to 5 users',
-        '1 on-call schedule',
-        'Email alerts',
-        'Basic incident management',
+        'Up to 10 users',
+        '3 on-call schedules',
+        'Email + Push notifications',
+        'AI diagnosis (10/month)',
+        'Mobile app (full access)',
         'Community support',
-        '7-day incident history',
+        '30-day incident history',
       ],
       cta: 'Start Free',
       ctaLink: '/register',
       highlighted: false,
     },
     {
-      name: 'Professional',
-      description: 'For growing teams who need more',
-      monthlyPrice: 19,
-      annualPrice: 15,
+      name: 'Starter',
+      description: 'For teams ready to scale',
+      monthlyPrice: 9,
+      annualPrice: 7,
       features: [
         'Unlimited users',
         'Unlimited schedules',
-        'All notification channels',
-        'AI-powered diagnosis',
+        'All notification channels (SMS, Voice)',
+        'AI diagnosis (100/month)',
         'Escalation policies',
-        'Integrations (Slack, Teams, etc)',
+        'Standard integrations',
         'Priority email support',
         '90-day incident history',
-        'API access',
+      ],
+      cta: 'Start Free Trial',
+      ctaLink: '/register?plan=starter',
+      highlighted: false,
+      badge: 'Best Value',
+    },
+    {
+      name: 'Professional',
+      description: 'For teams who need unlimited AI',
+      monthlyPrice: 19,
+      annualPrice: 15,
+      features: [
+        'Everything in Starter',
+        'Unlimited AI diagnosis',
+        'AI execution (runbooks + cloud)',
+        'Cloud credentials (AWS/Azure/GCP)',
+        'Custom AI models (Haiku/Sonnet/Opus)',
+        'All integrations',
+        '1-year incident history',
+        'Priority email + chat support',
       ],
       cta: 'Start Free Trial',
       ctaLink: '/register?plan=professional',
@@ -53,10 +73,10 @@ export function Pricing() {
       features: [
         'Everything in Professional',
         'SSO/SAML authentication',
-        'Custom SLA',
+        'Custom SLA (99.99%)',
         'Dedicated account manager',
         'On-premise deployment option',
-        'Advanced analytics',
+        'White-label option',
         'Custom integrations',
         'Unlimited incident history',
         '24/7 phone support',
@@ -96,8 +116,11 @@ export function Pricing() {
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
           Simple, Transparent Pricing
         </h1>
-        <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
+        <p className="text-xl text-slate-600 mb-4 max-w-2xl mx-auto">
           No hidden fees. No "contact sales" surprises. Start free and upgrade when you're ready.
+        </p>
+        <p className="text-lg text-slate-500 italic max-w-2xl mx-auto mb-8">
+          We price it how we'd want to pay. Because we're DevOps engineers, not a sales team.
         </p>
 
         {/* Billing toggle */}
@@ -122,7 +145,7 @@ export function Pricing() {
         </div>
 
         {/* Pricing cards */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
           {plans.map((plan) => (
             <Card
               key={plan.name}
@@ -189,16 +212,65 @@ export function Pricing() {
         </div>
       </section>
 
+      {/* BYOK Option */}
+      <section className="bg-purple-50 py-12">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-white rounded-lg shadow-lg p-8 border-2 border-purple-300">
+              <div className="flex items-start gap-4">
+                <div className="text-4xl">🔑</div>
+                <div className="flex-1">
+                  <h3 className="text-2xl font-bold mb-2">Professional + BYOK (Bring Your Own Key)</h3>
+                  <p className="text-slate-600 mb-4">
+                    Want complete control over your AI costs? Use your own Anthropic API key and pay them directly.
+                  </p>
+                  <div className="grid md:grid-cols-2 gap-6 mb-4">
+                    <div>
+                      <p className="font-semibold text-lg mb-2">$29/month flat fee</p>
+                      <p className="text-sm text-slate-600">Not per user! One price for your whole team.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-lg mb-2">+ Your Anthropic costs</p>
+                      <p className="text-sm text-slate-600">~$0.01-0.05 per incident. You control the model.</p>
+                    </div>
+                  </div>
+                  <div className="bg-green-50 border border-green-200 rounded p-4 mb-4">
+                    <p className="text-sm font-semibold text-green-800 mb-1">Example: 50-person team</p>
+                    <p className="text-sm text-green-700">
+                      Professional: 50 × $19 = <strong>$950/month</strong><br />
+                      Pro + BYOK: $29 + (500 incidents × $0.03) = <strong>$44/month</strong><br />
+                      <strong className="text-green-900">You save: $906/month ($10,872/year)</strong>
+                    </p>
+                  </div>
+                  <ul className="space-y-2 text-sm text-slate-600 mb-4">
+                    <li>✓ All Professional features</li>
+                    <li>✓ Your data goes directly to Anthropic (never stored by us)</li>
+                    <li>✓ Choose your model (Haiku for speed, Opus for depth)</li>
+                    <li>✓ No per-user AI fees</li>
+                  </ul>
+                  <Link to="/register?plan=byok">
+                    <Button className="bg-purple-600 hover:bg-purple-700">
+                      Start with BYOK
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Feature comparison */}
       <section className="container mx-auto px-4 py-16">
         <h2 className="text-2xl font-bold text-center mb-8">Compare Plans</h2>
 
-        <div className="max-w-4xl mx-auto overflow-x-auto">
+        <div className="max-w-5xl mx-auto overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b">
                 <th className="py-4 px-4 font-medium">Feature</th>
                 <th className="py-4 px-4 text-center">Free</th>
+                <th className="py-4 px-4 text-center">Starter</th>
                 <th className="py-4 px-4 text-center text-blue-600">Professional</th>
                 <th className="py-4 px-4 text-center">Enterprise</th>
               </tr>
@@ -206,56 +278,65 @@ export function Pricing() {
             <tbody className="text-sm">
               <tr className="border-b">
                 <td className="py-4 px-4">Users</td>
-                <td className="py-4 px-4 text-center">Up to 5</td>
+                <td className="py-4 px-4 text-center">Up to 10</td>
+                <td className="py-4 px-4 text-center">Unlimited</td>
                 <td className="py-4 px-4 text-center">Unlimited</td>
                 <td className="py-4 px-4 text-center">Unlimited</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 px-4">On-call schedules</td>
-                <td className="py-4 px-4 text-center">1</td>
+                <td className="py-4 px-4 text-center">3</td>
                 <td className="py-4 px-4 text-center">Unlimited</td>
                 <td className="py-4 px-4 text-center">Unlimited</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-4 px-4">Notification channels</td>
-                <td className="py-4 px-4 text-center">Email only</td>
-                <td className="py-4 px-4 text-center">All (Push, SMS, Voice, Email)</td>
-                <td className="py-4 px-4 text-center">All + Custom</td>
+                <td className="py-4 px-4 text-center">Unlimited</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 px-4">AI Diagnosis</td>
+                <td className="py-4 px-4 text-center text-green-500">10/month</td>
+                <td className="py-4 px-4 text-center text-green-500">100/month</td>
+                <td className="py-4 px-4 text-center text-green-500">✓ Unlimited</td>
+                <td className="py-4 px-4 text-center text-green-500">✓ Unlimited</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-4 px-4">AI Execution</td>
+                <td className="py-4 px-4 text-center">—</td>
                 <td className="py-4 px-4 text-center">—</td>
                 <td className="py-4 px-4 text-center text-green-500">✓</td>
                 <td className="py-4 px-4 text-center text-green-500">✓</td>
+              </tr>
+              <tr className="border-b">
+                <td className="py-4 px-4">Notification channels</td>
+                <td className="py-4 px-4 text-center">Email + Push</td>
+                <td className="py-4 px-4 text-center">All (+ SMS, Voice)</td>
+                <td className="py-4 px-4 text-center">All</td>
+                <td className="py-4 px-4 text-center">All + Custom</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 px-4">Escalation policies</td>
                 <td className="py-4 px-4 text-center">—</td>
                 <td className="py-4 px-4 text-center text-green-500">✓</td>
                 <td className="py-4 px-4 text-center text-green-500">✓</td>
+                <td className="py-4 px-4 text-center text-green-500">✓</td>
               </tr>
               <tr className="border-b">
-                <td className="py-4 px-4">Integrations</td>
-                <td className="py-4 px-4 text-center">Webhook only</td>
-                <td className="py-4 px-4 text-center">All standard</td>
-                <td className="py-4 px-4 text-center">All + Custom</td>
+                <td className="py-4 px-4">Cloud investigation</td>
+                <td className="py-4 px-4 text-center">—</td>
+                <td className="py-4 px-4 text-center">—</td>
+                <td className="py-4 px-4 text-center text-green-500">✓</td>
+                <td className="py-4 px-4 text-center text-green-500">✓</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 px-4">SSO/SAML</td>
                 <td className="py-4 px-4 text-center">—</td>
                 <td className="py-4 px-4 text-center">—</td>
-                <td className="py-4 px-4 text-center text-green-500">✓</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-4 px-4">SLA</td>
                 <td className="py-4 px-4 text-center">—</td>
-                <td className="py-4 px-4 text-center">99.9%</td>
-                <td className="py-4 px-4 text-center">99.99% + Custom</td>
+                <td className="py-4 px-4 text-center text-green-500">✓</td>
               </tr>
               <tr className="border-b">
                 <td className="py-4 px-4">Support</td>
                 <td className="py-4 px-4 text-center">Community</td>
                 <td className="py-4 px-4 text-center">Priority email</td>
+                <td className="py-4 px-4 text-center">Email + Chat</td>
                 <td className="py-4 px-4 text-center">24/7 phone + CSM</td>
               </tr>
             </tbody>
@@ -304,8 +385,18 @@ export function Pricing() {
             <div className="bg-white rounded-lg p-6 shadow-sm">
               <h3 className="font-semibold mb-2">How does the AI diagnosis feature work with data privacy?</h3>
               <p className="text-slate-600 text-sm">
-                You can bring your own Anthropic API key (BYOK), so your incident data
+                You can bring your own Anthropic API key (BYOK with Pro + BYOK plan), so your incident data
                 is processed directly with Anthropic and never stored by OnCallShift for AI purposes.
+                Or use our included AI (we provide the key) on Starter/Professional tiers.
+              </p>
+            </div>
+
+            <div className="bg-white rounded-lg p-6 shadow-sm">
+              <h3 className="font-semibold mb-2">Why would I choose BYOK over Professional?</h3>
+              <p className="text-slate-600 text-sm">
+                If you have 30+ users, BYOK saves significant money. For example, 50 users on Professional
+                costs $950/month. Pro + BYOK costs $29 + your Anthropic usage (~$15-50/month) = huge savings.
+                Plus, you get complete control over AI costs and data privacy.
               </p>
             </div>
 
@@ -342,12 +433,22 @@ export function Pricing() {
 
       {/* Footer */}
       <footer className="border-t py-8 bg-slate-50">
-        <div className="container mx-auto px-4 text-center text-sm text-slate-500">
-          <p>&copy; 2025 OnCallShift. All rights reserved.</p>
-          <div className="mt-2 space-x-4">
-            <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
-            <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
-            <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-4">
+            <p className="text-slate-500 text-sm italic">
+              Built by DevOps engineers who get paged. Questions?{' '}
+              <a href="mailto:jarod@oncallshift.com" className="text-blue-600 hover:text-blue-700">
+                Email the founder
+              </a>
+            </p>
+          </div>
+          <div className="text-center text-sm text-slate-500">
+            <p>&copy; 2025 OnCallShift. All rights reserved.</p>
+            <div className="mt-2 space-x-4">
+              <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
+              <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
+              <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
+            </div>
           </div>
         </div>
       </footer>

@@ -8,6 +8,17 @@ import { PaperProvider, ActivityIndicator, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 1000 * 60, // 1 minute
+    },
+  },
+});
 
 // Theme Context
 import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
@@ -311,11 +322,21 @@ function AppContent() {
       });
 
       const cleanup = setupNotificationListeners(
-        (notification) => {
+        async (notification) => {
           console.log('Notification received in foreground:', notification.request.content);
           // Update badge count and unread notifications when notification arrives
           updateBadgeCount();
           updateUnreadCount();
+
+          // Play sound for foreground notifications (since system sound doesn't work in Expo Go)
+          const priority = notification.request.content.data?.priority as string;
+          const severity = notification.request.content.data?.severity as string;
+          if (priority === 'critical' || severity === 'critical' || severity === 'high') {
+            await soundService.playCriticalAlert();
+          } else {
+            await soundService.playCriticalAlert(); // Play alert for all incident notifications
+          }
+          await hapticService.warning();
         },
         (response) => {
           handleNotificationResponse(response);
@@ -672,11 +693,13 @@ function AppContent() {
   );
 }
 
-// Root component with ThemeProvider
+// Root component with ThemeProvider and QueryClientProvider
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }

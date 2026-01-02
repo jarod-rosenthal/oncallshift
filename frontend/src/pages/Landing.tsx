@@ -138,12 +138,16 @@ export function Landing() {
           </div>
 
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-            On-Call Scheduling &amp; Incident Management
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"> for Teams Who Ship Fast</span>
+            Don't Just Get Alerted.
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"> Get Answers.</span>
           </h1>
 
-          <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
-            Get your team on-call in minutes, not days. AI-powered diagnosis, smart escalations, and a mobile app your engineers will actually use.
+          <p className="text-xl text-slate-600 mb-6 max-w-2xl mx-auto">
+            OnCallShift uses AI to diagnose incidents, suggest fixes, and execute remediation—all from your phone.
+          </p>
+
+          <p className="text-lg text-slate-500 mb-8 max-w-2xl mx-auto italic">
+            Built by DevOps engineers who got tired of waking up at 3am with no answers.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
@@ -191,46 +195,33 @@ export function Landing() {
 
       {/* Problem/Solution Section */}
       <section className="container mx-auto px-4 py-20">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-12">
-            On-Call Shouldn't Be This Hard
+            The Old Way vs. The OnCallShift Way
           </h2>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-red-50 border border-red-100 rounded-lg p-6">
-              <div className="text-red-500 font-medium mb-2">The Problem</div>
-              <p className="text-slate-700">"Alerts wake up the wrong person at 3am"</p>
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-8">
+              <div className="text-red-600 font-bold text-xl mb-4">❌ The Old Way</div>
+              <ul className="space-y-3 text-slate-700">
+                <li>• Alert goes off at 3am</li>
+                <li>• Scramble to laptop</li>
+                <li>• Dig through logs</li>
+                <li>• Google the error</li>
+                <li>• Try random fixes</li>
+                <li>• 2 hours later: finally resolved</li>
+              </ul>
             </div>
-            <div className="bg-green-50 border border-green-100 rounded-lg p-6">
-              <div className="text-green-600 font-medium mb-2">OnCallShift Solution</div>
-              <p className="text-slate-700">Smart escalations route to whoever's actually on-call</p>
-            </div>
-
-            <div className="bg-red-50 border border-red-100 rounded-lg p-6">
-              <div className="text-red-500 font-medium mb-2">The Problem</div>
-              <p className="text-slate-700">"Setting up schedules takes hours"</p>
-            </div>
-            <div className="bg-green-50 border border-green-100 rounded-lg p-6">
-              <div className="text-green-600 font-medium mb-2">OnCallShift Solution</div>
-              <p className="text-slate-700">Build rotations in minutes with our visual scheduler</p>
-            </div>
-
-            <div className="bg-red-50 border border-red-100 rounded-lg p-6">
-              <div className="text-red-500 font-medium mb-2">The Problem</div>
-              <p className="text-slate-700">"Nobody knows what's happening during incidents"</p>
-            </div>
-            <div className="bg-green-50 border border-green-100 rounded-lg p-6">
-              <div className="text-green-600 font-medium mb-2">OnCallShift Solution</div>
-              <p className="text-slate-700">Real-time incident timeline with AI-powered diagnosis</p>
-            </div>
-
-            <div className="bg-red-50 border border-red-100 rounded-lg p-6">
-              <div className="text-red-500 font-medium mb-2">The Problem</div>
-              <p className="text-slate-700">"Engineers hate our clunky mobile app"</p>
-            </div>
-            <div className="bg-green-50 border border-green-100 rounded-lg p-6">
-              <div className="text-green-600 font-medium mb-2">OnCallShift Solution</div>
-              <p className="text-slate-700">Native iOS &amp; Android apps built for speed</p>
+            <div className="bg-green-50 border-2 border-green-200 rounded-lg p-8">
+              <div className="text-green-600 font-bold text-xl mb-4">✅ The OnCallShift Way</div>
+              <ul className="space-y-3 text-slate-700">
+                <li>• Alert goes off at 3am</li>
+                <li>• Open phone, see AI diagnosis</li>
+                <li>• Tap "Restart Pods"</li>
+                <li>• AI confirms it worked</li>
+                <li>• Back to sleep in 60 seconds</li>
+                <li>• <strong className="text-green-700">Your laptop stays in your bag</strong></li>
+              </ul>
             </div>
           </div>
         </div>
@@ -246,20 +237,21 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
-            <Card className="hover:shadow-lg transition-shadow">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <Card className="hover:shadow-lg transition-shadow border-2 border-blue-200 bg-blue-50">
               <CardHeader>
-                <div className="text-3xl mb-2">📅</div>
-                <CardTitle className="text-lg">On-Call Scheduling</CardTitle>
+                <div className="text-3xl mb-2">🤖</div>
+                <CardTitle className="text-lg">AI That Fixes Problems</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-slate-600">
-                <ul className="space-y-1">
-                  <li>• Visual rotation builder</li>
-                  <li>• Override management</li>
-                  <li>• Follow-the-sun support</li>
+              <CardContent className="text-sm text-slate-700">
+                <ul className="space-y-2">
+                  <li>• <strong>Auto-diagnoses</strong> every incident</li>
+                  <li>• <strong>Executes</strong> remediation actions</li>
+                  <li>• Investigates your cloud (AWS/Azure/GCP)</li>
+                  <li>• Learns from every resolution</li>
                 </ul>
-                <Link to="/product/on-call-scheduling" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
-                  Learn more →
+                <Link to="/product/ai-resolution" className="text-blue-700 font-medium text-sm mt-3 inline-block hover:underline">
+                  See how it works →
                 </Link>
               </CardContent>
             </Card>
@@ -267,32 +259,16 @@ export function Landing() {
             <Card className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="text-3xl mb-2">🔔</div>
-                <CardTitle className="text-lg">Smart Escalations</CardTitle>
+                <CardTitle className="text-lg">Always Reach the Right Person</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-slate-600">
-                <ul className="space-y-1">
-                  <li>• Multi-step policies</li>
-                  <li>• Schedule-aware routing</li>
+                <ul className="space-y-2">
+                  <li>• Smart escalations</li>
+                  <li>• Multi-channel (Push, SMS, Voice)</li>
                   <li>• Repeat until acknowledged</li>
+                  <li>• Visual schedule builder</li>
                 </ul>
-                <Link to="/product/escalation-policies" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
-                  Learn more →
-                </Link>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="text-3xl mb-2">🤖</div>
-                <CardTitle className="text-lg">AI-Powered Diagnosis</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-slate-600">
-                <ul className="space-y-1">
-                  <li>• Instant root cause analysis</li>
-                  <li>• Log correlation</li>
-                  <li>• Suggested remediation</li>
-                </ul>
-                <Link to="/product/ai-diagnosis" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
+                <Link to="/product/incident-management" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
                   Learn more →
                 </Link>
               </CardContent>
@@ -301,13 +277,14 @@ export function Landing() {
             <Card className="hover:shadow-lg transition-shadow">
               <CardHeader>
                 <div className="text-3xl mb-2">📱</div>
-                <CardTitle className="text-lg">Mobile-First</CardTitle>
+                <CardTitle className="text-lg">Designed for 3am Wake-Ups</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-slate-600">
-                <ul className="space-y-1">
-                  <li>• Native iOS &amp; Android</li>
-                  <li>• One-tap acknowledge</li>
-                  <li>• Push, SMS, Voice, Email</li>
+                <ul className="space-y-2">
+                  <li>• Native iOS & Android apps</li>
+                  <li>• One-tap incident actions</li>
+                  <li>• Execute runbooks from phone</li>
+                  <li>• Works offline</li>
                 </ul>
                 <Link to="/product/mobile-app" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
                   Learn more →
@@ -320,43 +297,75 @@ export function Landing() {
 
       {/* Differentiator Section */}
       <section className="container mx-auto px-4 py-20">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-12">
-            Why Teams Choose OnCallShift
+            Built by DevOps for DevOps
           </h2>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b">
+                <tr className="border-b-2">
                   <th className="py-4 px-4 font-semibold"></th>
                   <th className="py-4 px-4 font-semibold text-blue-600">OnCallShift</th>
-                  <th className="py-4 px-4 font-semibold text-slate-500">Typical Enterprise Tools</th>
+                  <th className="py-4 px-4 font-semibold text-slate-500">PagerDuty</th>
+                  <th className="py-4 px-4 font-semibold text-slate-500">OpsGenie</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="text-sm">
                 <tr className="border-b">
-                  <td className="py-4 px-4 font-medium">Setup time</td>
-                  <td className="py-4 px-4 text-green-600 font-medium">5 minutes</td>
-                  <td className="py-4 px-4 text-slate-500">Days to weeks</td>
+                  <td className="py-3 px-4 font-medium">Built By</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">DevOps Engineers</td>
+                  <td className="py-3 px-4 text-slate-500">Enterprise Co.</td>
+                  <td className="py-3 px-4 text-slate-500">Atlassian</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-4 px-4 font-medium">AI diagnosis</td>
-                  <td className="py-4 px-4 text-green-600 font-medium">Included</td>
-                  <td className="py-4 px-4 text-slate-500">$$ add-on</td>
+                  <td className="py-3 px-4 font-medium">AI Diagnosis</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Included</td>
+                  <td className="py-3 px-4 text-slate-500">$$$ Add-on</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-4 px-4 font-medium">Pricing</td>
-                  <td className="py-4 px-4 text-green-600 font-medium">Transparent</td>
-                  <td className="py-4 px-4 text-slate-500">"Contact sales"</td>
+                  <td className="py-3 px-4 font-medium">AI Execution</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Yes</td>
+                  <td className="py-3 px-4 text-slate-500">✗ No</td>
+                  <td className="py-3 px-4 text-slate-500">✗ No</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-4 px-4 font-medium">Data privacy</td>
-                  <td className="py-4 px-4 text-green-600 font-medium">Your key, your data</td>
-                  <td className="py-4 px-4 text-slate-500">Trains on your incidents</td>
+                  <td className="py-3 px-4 font-medium">Mobile AI</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Full</td>
+                  <td className="py-3 px-4 text-slate-500">✗ Limited</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Setup Time</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">5 minutes</td>
+                  <td className="py-3 px-4 text-slate-500">Days</td>
+                  <td className="py-3 px-4 text-slate-500">Hours</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Starting Price</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">$0/month</td>
+                  <td className="py-3 px-4 text-slate-500">$25/user</td>
+                  <td className="py-3 px-4 text-slate-500">$15/user</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Sales Process</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">Self-serve</td>
+                  <td className="py-3 px-4 text-slate-500">Required</td>
+                  <td className="py-3 px-4 text-slate-500">Required</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-8 text-center">
+            <p className="text-slate-600 italic">
+              "We built the tool we wish we had when we were getting paged at 3am."
+            </p>
+            <Link to="/about" className="text-blue-600 hover:underline text-sm mt-2 inline-block">
+              Read our story →
+            </Link>
           </div>
         </div>
       </section>
@@ -530,13 +539,23 @@ export function Landing() {
             </div>
           </div>
 
-          <div className="border-t border-slate-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-slate-500">
-              &copy; 2025 OnCallShift. All rights reserved.
-            </p>
-            <div className="flex items-center gap-4 text-sm text-slate-500">
-              <span>🔒 SOC 2 Type II</span>
-              <span>99.9% Uptime SLA</span>
+          <div className="border-t border-slate-800 mt-12 pt-8">
+            <div className="text-center mb-4">
+              <p className="text-slate-400 text-sm italic">
+                Built by DevOps engineers who get paged. Questions?{' '}
+                <a href="mailto:jarod@oncallshift.com" className="text-blue-400 hover:text-blue-300">
+                  Email the founder
+                </a>
+              </p>
+            </div>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+              <p className="text-sm text-slate-500">
+                &copy; 2025 OnCallShift. All rights reserved.
+              </p>
+              <div className="flex items-center gap-4 text-sm text-slate-500">
+                <span>🔒 SOC 2 Type II</span>
+                <span>99.9% Uptime SLA</span>
+              </div>
             </div>
           </div>
         </div>

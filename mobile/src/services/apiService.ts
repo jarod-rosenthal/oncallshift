@@ -1,4 +1,5 @@
 import axios from 'axios';
+import EventSource from 'react-native-sse';
 import { config } from '../config';
 import { getAccessToken, signOut } from './authService';
 
@@ -491,6 +492,32 @@ export const unregisterDevice = async (deviceId: string): Promise<void> => {
     await apiClient.delete(`/v1/devices/${deviceId}`);
   } catch (error) {
     console.error('Error unregistering device:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get push notification debug info
+ */
+export const getPushDebugInfo = async (): Promise<any> => {
+  try {
+    const response = await apiClient.get('/v1/devices/debug');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching push debug info:', error);
+    throw error;
+  }
+};
+
+/**
+ * Clean up old non-Expo device tokens
+ */
+export const cleanupDevices = async (): Promise<{ message: string; removedCount: number }> => {
+  try {
+    const response = await apiClient.delete('/v1/devices/cleanup');
+    return response.data;
+  } catch (error) {
+    console.error('Error cleaning up devices:', error);
     throw error;
   }
 };
@@ -2655,5 +2682,195 @@ export const removeProfilePicture = async (): Promise<{ message: string }> => {
     console.error('Error removing profile picture:', error);
     throw error;
   }
+};
+
+// ============ AI ASSISTANT (Streaming) ============
+
+export type AIModelId = 'haiku' | 'sonnet' | 'opus';
+
+export interface CloudCredential {
+  id: string;
+  name: string;
+  provider: 'aws' | 'azure' | 'gcp';
+}
+
+export interface AIStreamEvent {
+  type: 'conversation_id' | 'text' | 'tool_call' | 'tool_result' | 'done' | 'error';
+  id?: string;
+  content?: string;
+  tool?: string;
+  input?: any;
+  success?: boolean;
+  summary?: string;
+  conversation_id?: string;
+  error?: string;
+}
+
+export interface AIAssistantPromptResponse {
+  prompt: string;
+  incident: {
+    id: string;
+    number: number;
+    summary: string;
+    severity: string;
+    state: string;
+    service: string | null;
+  };
+  available_credentials: CloudCredential[];
+}
+
+export interface AIConversation {
+  id: string;
+  status: 'active' | 'completed';
+  created_at: string;
+  updated_at: string;
+  user: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface AIMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'tool_call' | 'tool_result';
+  content: string | null;
+  tool_name?: string;
+  tool_input?: any;
+  tool_output?: any;
+  created_at: string;
+}
+
+/**
+ * Get the default AI assistant prompt for an incident
+ */
+export const getAIAssistantPrompt = async (incidentId: string): Promise<AIAssistantPromptResponse> => {
+  try {
+    const response = await apiClient.get(`/v1/incidents/${incidentId}/assistant/prompt`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching AI assistant prompt:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get cloud credentials for AI assistant
+ */
+export const getCloudCredentials = async (): Promise<CloudCredential[]> => {
+  try {
+    const response = await apiClient.get('/v1/cloud-credentials');
+    return response.data.credentials
+      .filter((c: any) => c.provider !== 'anthropic' && c.enabled)
+      .map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        provider: c.provider,
+      }));
+  } catch (error) {
+    console.error('Error fetching cloud credentials:', error);
+    // Return empty array if endpoint doesn't exist
+    return [];
+  }
+};
+
+/**
+ * List conversations for an incident
+ */
+export const getAIConversations = async (incidentId: string): Promise<AIConversation[]> => {
+  try {
+    const response = await apiClient.get(`/v1/incidents/${incidentId}/assistant/conversations`);
+    return response.data.conversations;
+  } catch (error) {
+    console.error('Error fetching AI conversations:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific conversation with messages
+ */
+export const getAIConversation = async (
+  incidentId: string,
+  conversationId: string
+): Promise<{ conversation: AIConversation; messages: AIMessage[] }> => {
+  try {
+    const response = await apiClient.get(
+      `/v1/incidents/${incidentId}/assistant/conversations/${conversationId}`
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching AI conversation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Stream AI assistant chat response
+ * Uses react-native-sse for SSE support in React Native
+ */
+export const streamAIAssistantChat = async (
+  incidentId: string,
+  message: string,
+  options: {
+    conversationId?: string;
+    credentialIds?: string[];
+    model?: AIModelId;
+    onEvent: (event: AIStreamEvent) => void;
+    onError: (error: Error) => void;
+    onComplete: () => void;
+  }
+): Promise<{ abort: () => void }> => {
+  const { conversationId, credentialIds, model = 'sonnet', onEvent, onError, onComplete } = options;
+
+  const token = await getAccessToken();
+  const url = `${config.apiUrl}/v1/incidents/${incidentId}/assistant/chat`;
+
+  const es = new EventSource(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId,
+      credential_ids: credentialIds,
+      model,
+    }),
+  });
+
+  es.addEventListener('message', (event: any) => {
+    if (event.data) {
+      try {
+        const data = JSON.parse(event.data);
+        onEvent(data);
+
+        // Check if this is the done event
+        if (data.type === 'done') {
+          es.close();
+          onComplete();
+        }
+      } catch (parseError) {
+        console.warn('Failed to parse SSE data:', event.data);
+      }
+    }
+  });
+
+  es.addEventListener('error', (event: any) => {
+    console.error('SSE error:', event);
+    es.close();
+    onError(new Error(event.message || 'Connection error'));
+  });
+
+  es.addEventListener('close', () => {
+    onComplete();
+  });
+
+  return {
+    abort: () => {
+      es.close();
+    },
+  };
 };
 

@@ -12,7 +12,6 @@ import { IncidentTimeline } from '../components/IncidentTimeline';
 import { EscalationStatusPanel } from '../components/EscalationStatusPanel';
 import { NotificationStatusPanel } from '../components/NotificationStatusPanel';
 import { RunbookPanel } from '../components/RunbookPanel';
-import { RelatedIncidents } from '../components/RelatedIncidents';
 import { SimilarIncidentHint } from '../components/SimilarIncidentHint';
 import { ResolveModal } from '../components/ResolveModal';
 import { RespondersPanel } from '../components/RespondersPanel';
@@ -39,7 +38,6 @@ export function IncidentDetail() {
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isAIChatActive, setIsAIChatActive] = useState(false);
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
 
@@ -111,7 +109,7 @@ export function IncidentDetail() {
   const incidentState = incident?.state;
 
   useEffect(() => {
-    if (!incidentId || incidentState === 'resolved' || isAIChatActive) return;
+    if (!incidentId || incidentState === 'resolved') return;
 
     const interval = setInterval(() => {
       loadIncidentData();
@@ -119,7 +117,7 @@ export function IncidentDetail() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [incidentId, incidentState, isAIChatActive, loadIncidentData, loadTimeline]);
+  }, [incidentId, incidentState, loadIncidentData, loadTimeline]);
 
   const refreshData = async () => {
     await Promise.all([loadIncidentData(), loadTimeline()]);
@@ -402,8 +400,6 @@ export function IncidentDetail() {
               onUnsnooze={handleUnsnooze}
             />
 
-            <RelatedIncidents currentIncident={incident} />
-
             <ConferenceBridgePanel
               incidentId={incident.id}
               incidentState={incident.state}
@@ -442,7 +438,6 @@ export function IncidentDetail() {
             <RunbookPanel
               incident={incident}
               onAddNote={handleAddNote}
-              onAIChatActiveChange={setIsAIChatActive}
             />
 
             <IncidentTimeline events={events} isLoading={isTimelineLoading} />

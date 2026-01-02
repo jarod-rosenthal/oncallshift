@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
-import { runbooksAPI, aiAssistantAPI, cloudCredentialsAPI } from '../lib/api-client';
+import apiClient, { runbooksAPI, aiAssistantAPI, cloudCredentialsAPI } from '../lib/api-client';
 import type { Incident, RunbookStep as APIRunbookStep, RunbookStepAction, CloudProvider } from '../types/api';
 import axios from 'axios';
+import { Play, CheckCircle, XCircle, Loader2, AlertTriangle, Terminal, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 // Generate a Claude Code prompt for incident analysis
 function generateClaudePrompt(incident: Incident): string {
@@ -45,8 +47,35 @@ interface Runbook {
 
 interface ActionState {
   stepId: string;
-  status: 'idle' | 'confirming' | 'executing' | 'success' | 'error';
+  status: 'idle' | 'confirming' | 'executing' | 'success' | 'error' | 'pending_approval';
   message?: string;
+  output?: string;
+  exitCode?: number;
+}
+
+interface RunbookExecution {
+  id: string;
+  runbookId: string;
+  incidentId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'requires_approval';
+  currentStepIndex: number;
+  startedAt: string;
+  completedAt?: string;
+  stepResults: Array<{
+    stepId: string;
+    stepIndex: number;
+    status: 'success' | 'failed' | 'skipped' | 'pending';
+    output?: string;
+    error?: string;
+    exitCode?: number;
+  }>;
+  errorMessage?: string;
+}
+
+interface ToolCall {
+  name: string;
+  status: 'pending' | 'success' | 'error';
+  summary?: string;
 }
 
 interface ToolCall {
@@ -71,7 +100,6 @@ interface CloudCredentialOption {
 interface RunbookPanelProps {
   incident: Incident;
   onAddNote?: (content: string) => Promise<void>;
-  onAIChatActiveChange?: (isActive: boolean) => void;
 }
 
 // Generate a mock runbook based on service name
@@ -110,7 +138,7 @@ function getMockRunbook(serviceName: string): Runbook {
   };
 }
 
-export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: RunbookPanelProps) {
+export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
   const [runbook, setRunbook] = useState<Runbook | null>(null);
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -121,10 +149,10 @@ export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: Runb
   const [userInput, setUserInput] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [noteAdded, setNoteAdded] = useState(false);
-  const [refreshPaused, setRefreshPaused] = useState(true);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [currentExecution, setCurrentExecution] = useState<RunbookExecution | null>(null);
   const [availableCredentials, setAvailableCredentials] = useState<CloudCredentialOption[]>([]);
   const [selectedCredentials, setSelectedCredentials] = useState<string[]>([]);
   const [showCredentialSelector, setShowCredentialSelector] = useState(false);
@@ -206,24 +234,153 @@ export function RunbookPanel({ incident, onAddNote, onAIChatActiveChange }: Runb
     }));
   };
 
-  // Notify parent when chat becomes active/inactive (respects user override)
-  useEffect(() => {
-    // Only pause if there are messages AND user hasn't manually resumed
-    onAIChatActiveChange?.(chatMessages.length > 0 && refreshPaused);
-  }, [chatMessages.length, refreshPaused, onAIChatActiveChange]);
+  // Execute an automated step
+  const executeAutomatedStep = async (stepId: string, stepIndex: number, requiresApproval: boolean) => {
+    if (!runbook) return;
+
+    // If requires approval and not already confirming, show confirmation
+    if (requiresApproval && actionStates[stepId]?.status !== 'confirming') {
+      setActionStates(prev => ({
+        ...prev,
+        [stepId]: { stepId, status: 'confirming', message: 'This step requires approval before execution. Are you sure you want to proceed?' }
+      }));
+      return;
+    }
+
+    setActionStates(prev => ({
+      ...prev,
+      [stepId]: { stepId, status: 'executing' }
+    }));
+
+    try {
+      // Start or continue execution
+      let executionId: string = currentExecution?.id || '';
+
+      if (!executionId) {
+        // Start a new execution
+        const response = await apiClient.post(
+          `/runbooks/${runbook.id}/executions`,
+          {
+            incident_id: incident.id,
+            credential_ids: selectedCredentials,
+          }
+        );
+        executionId = response.data.execution.id as string;
+        setCurrentExecution({
+          id: executionId,
+          runbookId: runbook.id,
+          incidentId: incident.id,
+          status: 'running',
+          currentStepIndex: 0,
+          startedAt: new Date().toISOString(),
+          stepResults: [],
+        });
+      }
+
+      // Execute the specific step (pass approved: true if user already confirmed)
+      const wasConfirming = actionStates[stepId]?.status === 'confirming' || requiresApproval;
+      const stepResponse = await apiClient.post(
+        `/runbooks/executions/${executionId}/steps/${stepIndex}/execute`,
+        { approved: wasConfirming }
+      );
+
+      const stepResult = stepResponse.data.step_result;
+
+      const stepTitle = runbook.steps[stepIndex]?.title || `Step ${stepIndex + 1}`;
+
+      setActionStates(prev => ({
+        ...prev,
+        [stepId]: {
+          stepId,
+          status: stepResult.status === 'success' ? 'success' : 'error',
+          message: stepResult.status === 'success' ? 'Step completed successfully' : stepResult.error,
+          output: stepResult.output,
+          exitCode: stepResult.exit_code,
+        }
+      }));
+
+      // Mark step as completed if successful
+      if (stepResult.status === 'success' && !completedSteps.includes(stepId)) {
+        const newCompletedSteps = [...completedSteps, stepId];
+        setCompletedSteps(newCompletedSteps);
+        localStorage.setItem(`runbook-progress-${incident.id}`, JSON.stringify(newCompletedSteps));
+      }
+
+      // Auto-save to incident notes
+      if (onAddNote && stepResult.output) {
+        const noteContent = `**Runbook Step Executed: ${stepTitle}**\n\n` +
+          `**Status:** ${stepResult.status === 'success' ? '✅ Success' : '❌ Failed'}\n` +
+          `**Exit Code:** ${stepResult.exit_code ?? 'N/A'}\n` +
+          `**Executed At:** ${new Date().toLocaleString()}\n\n` +
+          `**Output:**\n\`\`\`\n${stepResult.output}\n\`\`\``;
+        onAddNote(noteContent).catch(err => console.error('Failed to save note:', err));
+      }
+
+      // Refresh execution status
+      const execResponse = await apiClient.get(`/runbooks/executions/${executionId}`);
+      setCurrentExecution({
+        id: execResponse.data.execution.id,
+        runbookId: execResponse.data.execution.runbook_id,
+        incidentId: execResponse.data.execution.incident_id,
+        status: execResponse.data.execution.status,
+        currentStepIndex: execResponse.data.execution.current_step_index,
+        startedAt: execResponse.data.execution.started_at,
+        completedAt: execResponse.data.execution.completed_at,
+        stepResults: execResponse.data.execution.step_results || [],
+        errorMessage: execResponse.data.execution.error_message,
+      });
+
+      // Clear status after delay
+      setTimeout(() => {
+        setActionStates(prev => ({
+          ...prev,
+          [stepId]: { stepId, status: 'idle' }
+        }));
+      }, 5000);
+
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || error.message || 'Execution failed';
+      setActionStates(prev => ({
+        ...prev,
+        [stepId]: { stepId, status: 'error', message: errorMessage }
+      }));
+
+      setTimeout(() => {
+        setActionStates(prev => ({
+          ...prev,
+          [stepId]: { stepId, status: 'idle' }
+        }));
+      }, 5000);
+    }
+  };
+
 
   useEffect(() => {
-    // Fetch runbook from API, fall back to mock if none found
+    // Fetch runbook from API, fall back to org-wide runbooks if none for service
     const loadRunbook = async () => {
       try {
+        // First try service-specific runbooks
         const response = await runbooksAPI.listForService(incident.service.id);
-        const serviceRunbooks = response.runbooks;
+        let serviceRunbooks = response.runbooks;
+
+        // If no service-specific runbooks, try ALL org runbooks with automated steps
+        if (serviceRunbooks.length === 0) {
+          try {
+            const allResponse = await runbooksAPI.list();
+            // Filter to runbooks that have automated steps
+            serviceRunbooks = allResponse.runbooks.filter((rb: any) =>
+              rb.steps?.some((s: any) => s.type === 'automated')
+            );
+          } catch (e) {
+            console.log('Could not fetch org runbooks:', e);
+          }
+        }
 
         if (serviceRunbooks.length > 0) {
           // Find the best matching runbook:
           // 1. Match severity if specified
           // 2. Otherwise use the first one
-          let matchedRunbook = serviceRunbooks.find(rb =>
+          let matchedRunbook = serviceRunbooks.find((rb: any) =>
             rb.severity.length === 0 || rb.severity.includes(incident.severity)
           );
 
@@ -494,11 +651,18 @@ Provide:
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
               <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
             </svg>
-            <CardTitle className="text-lg">Runbook</CardTitle>
+            <Link
+              to={`/runbooks?edit=${runbook.id}`}
+              className="group flex items-center gap-1.5 min-w-0 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              title="Click to edit this runbook"
+            >
+              <CardTitle className="text-lg truncate">{runbook.title}</CardTitle>
+              <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 flex-shrink-0" />
+            </Link>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
@@ -535,26 +699,11 @@ Provide:
 
         {/* Claude AI Integration */}
         <div className="mt-4 p-3 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-600" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-              </svg>
-              <span className="font-medium text-orange-800 dark:text-orange-200">AI-Assisted Analysis</span>
-            </div>
-            {chatMessages.length > 0 && (
-              <button
-                onClick={() => setRefreshPaused(!refreshPaused)}
-                className={`text-xs px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                  refreshPaused
-                    ? 'text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/50 hover:bg-orange-200 dark:hover:bg-orange-900'
-                    : 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 hover:bg-green-200 dark:hover:bg-green-900'
-                }`}
-                title={refreshPaused ? 'Click to resume auto-refresh' : 'Click to pause auto-refresh'}
-              >
-                {refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh on'}
-              </button>
-            )}
+          <div className="flex items-center gap-2 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-600" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+            </svg>
+            <span className="font-medium text-orange-800 dark:text-orange-200">AI-Assisted Analysis</span>
           </div>
 
           {/* Initial buttons when no chat */}
@@ -839,6 +988,8 @@ Provide:
               const isDisabled = incident.state === 'resolved';
               const actionState = actionStates[step.id];
               const hasAction = !!step.action;
+              const isAutomated = step.type === 'automated' && step.automation;
+              const requiresApproval = step.automation?.requiresApproval ?? false;
 
               return (
                 <div
@@ -850,6 +1001,8 @@ Provide:
                       ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
                       : actionState?.status === 'error'
                       ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+                      : isAutomated
+                      ? 'bg-purple-50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800'
                       : 'bg-background border-border'
                   }`}
                 >
@@ -857,18 +1010,37 @@ Provide:
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`font-medium ${isCompleted ? 'line-through text-muted-foreground' : ''}`}>
+                        <Link
+                          to={`/runbooks?edit=${runbook.id}&step=${step.id}`}
+                          className={`font-medium hover:text-blue-600 dark:hover:text-blue-400 hover:underline transition-colors ${isCompleted ? 'line-through text-muted-foreground' : ''}`}
+                          title="Click to edit this step"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {index + 1}. {step.title}
-                        </span>
+                        </Link>
                         {step.isOptional && (
                           <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                             Optional
                           </span>
                         )}
+                        {isAutomated && step.automation?.mode === 'claude_code_api' && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 flex items-center gap-1">
+                            🤖 AI Action
+                          </span>
+                        )}
+                        {isAutomated && step.automation?.mode !== 'claude_code_api' && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 flex items-center gap-1">
+                            🖥️ Script
+                          </span>
+                        )}
+                        {requiresApproval && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            Approval
+                          </span>
+                        )}
                         {isCompleted && (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
+                          <CheckCircle className="h-4 w-4 text-green-500" />
                         )}
                       </div>
                       <p className={`text-sm mt-1 ${isCompleted ? 'text-muted-foreground/70' : 'text-muted-foreground'}`}>
@@ -876,8 +1048,67 @@ Provide:
                       </p>
                     </div>
 
-                    {/* Action Button or Checkbox */}
-                    {hasAction && step.action ? (
+                    {/* Automated Step Button */}
+                    {isAutomated ? (
+                      <div className="flex-shrink-0">
+                        {actionState?.status === 'confirming' ? (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => executeAutomatedStep(step.id, index, requiresApproval)}
+                              disabled={isDisabled}
+                              className="bg-purple-600 hover:bg-purple-700"
+                            >
+                              <Play className="h-4 w-4 mr-1" />
+                              Confirm
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => cancelConfirmation(step.id)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : actionState?.status === 'executing' ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-md text-sm font-medium animate-pulse">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Executing script...</span>
+                            </div>
+                          </div>
+                        ) : actionState?.status === 'success' ? (
+                          <Button size="sm" variant="outline" disabled className="min-w-[100px] text-green-600 border-green-300">
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Done
+                          </Button>
+                        ) : actionState?.status === 'error' ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => executeAutomatedStep(step.id, index, requiresApproval)}
+                            disabled={isDisabled}
+                            className="min-w-[100px] text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Retry
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant={isCompleted ? "outline" : "default"}
+                            onClick={() => executeAutomatedStep(step.id, index, requiresApproval)}
+                            disabled={isDisabled}
+                            className={`min-w-[100px] ${!isCompleted ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+                          >
+                            <Play className="h-4 w-4 mr-1" />
+                            Execute
+                          </Button>
+                        )}
+                      </div>
+                    ) : hasAction && step.action ? (
+                      /* HTTP Webhook Action Button */
                       <div className="flex-shrink-0">
                         {actionState?.status === 'confirming' ? (
                           <div className="flex gap-2">
@@ -899,17 +1130,12 @@ Provide:
                           </div>
                         ) : actionState?.status === 'executing' ? (
                           <Button size="sm" disabled className="min-w-[100px]">
-                            <svg className="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
+                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                             Running...
                           </Button>
                         ) : actionState?.status === 'success' ? (
                           <Button size="sm" variant="outline" disabled className="min-w-[100px] text-green-600 border-green-300">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
+                            <CheckCircle className="h-4 w-4 mr-1" />
                             Done
                           </Button>
                         ) : (
@@ -920,14 +1146,13 @@ Provide:
                             disabled={isDisabled}
                             className={`min-w-[100px] ${!isCompleted ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                            </svg>
+                            <Play className="h-4 w-4 mr-1" />
                             {step.action.label}
                           </Button>
                         )}
                       </div>
                     ) : (
+                      /* Manual Step Checkbox */
                       <div
                         className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${
                           isCompleted
@@ -963,6 +1188,40 @@ Provide:
                   {actionState?.status === 'error' && (
                     <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/30 rounded text-sm text-red-800 dark:text-red-200">
                       {actionState.message}
+                    </div>
+                  )}
+
+                  {/* Automation Output - Always visible */}
+                  {actionState?.output && (actionState?.status === 'success' || actionState?.status === 'error') && (
+                    <div className="mt-3 border rounded-lg overflow-hidden">
+                      <div className={`px-3 py-2 flex items-center justify-between ${
+                        actionState.exitCode === 0
+                          ? 'bg-green-100 dark:bg-green-900/40 border-b border-green-200 dark:border-green-800'
+                          : 'bg-red-100 dark:bg-red-900/40 border-b border-red-200 dark:border-red-800'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <Terminal className="h-4 w-4" />
+                          <span className="text-sm font-medium">Output</span>
+                          {actionState.exitCode !== undefined && (
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              actionState.exitCode === 0
+                                ? 'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                : 'bg-red-200 text-red-800 dark:bg-red-800 dark:text-red-200'
+                            }`}>
+                              Exit: {actionState.exitCode}
+                            </span>
+                          )}
+                        </div>
+                        {onAddNote && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <CheckCircle className="h-3 w-3 text-green-500" />
+                            Saved to notes
+                          </span>
+                        )}
+                      </div>
+                      <pre className="p-3 bg-gray-50 dark:bg-gray-900 text-xs overflow-x-auto max-h-64 font-mono whitespace-pre-wrap">
+                        {actionState.output}
+                      </pre>
                     </div>
                   )}
 

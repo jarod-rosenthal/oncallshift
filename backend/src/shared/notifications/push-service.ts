@@ -44,25 +44,42 @@ async function sendExpoNotification(
       categoryId: 'incident',
     };
 
+    logger.info('Sending Expo push notification', {
+      token: expoPushToken.substring(0, 30) + '...',
+      title,
+      incidentId: incident.id,
+    });
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
+      'Content-Type': 'application/json',
+    };
+
+    // Add Expo access token if available (required for standalone apps)
+    if (process.env.EXPO_ACCESS_TOKEN) {
+      headers['Authorization'] = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
+    }
+
     const response = await fetch(EXPO_PUSH_URL, {
       method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(message),
     });
 
     const result = await response.json() as {
-      data?: { status: string; id?: string; message?: string };
+      data?: { status: string; id?: string; message?: string; details?: { error?: string } };
       errors?: unknown[];
     };
+
+    logger.info('Expo push response', { result: JSON.stringify(result) });
 
     if (result.data && result.data.status === 'ok') {
       return { success: true, messageId: result.data.id };
     } else if (result.data && result.data.status === 'error') {
-      return { success: false, error: result.data.message || 'Expo push error' };
+      const errorMsg = result.data.details?.error || result.data.message || 'Expo push error';
+      logger.error('Expo push error', { error: errorMsg, token: expoPushToken.substring(0, 30) });
+      return { success: false, error: errorMsg };
     } else if (result.errors) {
       return { success: false, error: JSON.stringify(result.errors) };
     }
@@ -150,8 +167,28 @@ export async function sendPushNotification(payload: PushNotificationPayload): Pr
       return;
     }
 
+    // Log all devices for debugging
+    logger.info('Found active devices for push notification', {
+      userId,
+      userEmail: user.email,
+      deviceCount: devices.length,
+      devices: devices.map(d => ({
+        id: d.id,
+        platform: d.platform,
+        tokenPrefix: d.token.substring(0, 50),
+        isExpoToken: isExpoPushToken(d.token),
+      })),
+    });
+
     // Send notification to each device
     for (const device of devices) {
+      logger.info('Processing device for push notification', {
+        deviceId: device.id,
+        platform: device.platform,
+        tokenPrefix: device.token.substring(0, 50),
+        isExpoToken: isExpoPushToken(device.token),
+      });
+
       const notification = notificationRepo.create({
         incidentId,
         userId,
@@ -194,6 +231,27 @@ export async function sendPushNotification(payload: PushNotificationPayload): Pr
         }
 
         // For non-Expo tokens, use SNS
+        // Check if SNS platform is configured for this device type
+        const platformAppArn = device.platform === 'ios'
+          ? process.env.APNS_PLATFORM_APP_ARN
+          : process.env.FCM_PLATFORM_APP_ARN;
+
+        if (!platformAppArn) {
+          // SNS not configured, skip this device but don't mark as failed
+          // This is expected for Expo-based apps without native SNS setup
+          logger.warn('SNS platform not configured for device, skipping', {
+            deviceId: device.id,
+            platform: device.platform,
+            tokenPrefix: device.token.substring(0, 30),
+            hint: 'This device has a non-Expo token. Either configure SNS or use Expo push tokens.',
+          });
+          notification.status = 'failed';
+          notification.errorMessage = `SNS not configured for ${device.platform}. Use Expo push tokens instead.`;
+          notification.failedAt = new Date();
+          await notificationRepo.save(notification);
+          continue;
+        }
+
         // Get or create SNS platform endpoint
         const endpointArn = await getOrCreatePlatformEndpoint(device);
 

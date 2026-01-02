@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lightbulb, CheckCircle, ChevronRight } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { incidentsAPI } from '../lib/api-client';
 import type { SimilarIncident } from '../lib/api-client';
 import type { Incident } from '../types/api';
@@ -58,59 +59,53 @@ export function SimilarIncidentHint({ currentIncident }: SimilarIncidentHintProp
   };
 
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 p-4 mb-4">
-      <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-          <Lightbulb className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                Similar Incident Found
-              </h4>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                #{bestMatch.incidentNumber} &middot; {formatTimeAgo(bestMatch.triggeredAt)}
-                {bestMatch.state === 'resolved' && ' \u2022 Resolved'}
-              </p>
-            </div>
-
-            {bestMatch.similarityPercent >= 70 && (
-              <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">
-                {bestMatch.similarityPercent}% match
-              </span>
-            )}
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Lightbulb className="w-5 h-5 text-primary" />
+            <CardTitle className="text-lg">Similar Incident Found</CardTitle>
           </div>
+          {bestMatch.similarityPercent >= 70 && (
+            <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400">
+              {bestMatch.similarityPercent}% match
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          #{bestMatch.incidentNumber} &middot; {formatTimeAgo(bestMatch.triggeredAt)}
+          {bestMatch.state === 'resolved' && ' • Resolved'}
+        </p>
+      </CardHeader>
 
-          {/* Resolution hint - the key value */}
-          {bestMatch.resolutionNote && bestMatch.state === 'resolved' && (
-            <div className="mt-3 p-3 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1">
-                    How it was fixed:
-                  </p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-                    {truncateText(bestMatch.resolutionNote, 200)}
-                  </p>
-                </div>
+      <CardContent className="pt-0 space-y-3">
+        {/* Resolution hint - the key value */}
+        {bestMatch.resolutionNote && bestMatch.state === 'resolved' && (
+          <div className="p-3 rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
+            <div className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1">
+                  How it was fixed:
+                </p>
+                <p className="text-sm text-foreground leading-relaxed">
+                  {truncateText(bestMatch.resolutionNote, 200)}
+                </p>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* View button */}
-          <button
-            onClick={() => navigate(`/incidents/${bestMatch.id}`)}
-            className="mt-3 w-full flex items-center justify-center gap-1 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-700 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
-          >
-            View Incident #{bestMatch.incidentNumber}
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    </div>
+        {/* View button */}
+        <button
+          onClick={() => navigate(`/incidents/${bestMatch.id}`)}
+          className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm font-medium text-primary border border-border rounded-md hover:bg-accent transition-colors"
+        >
+          View Incident #{bestMatch.incidentNumber}
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </CardContent>
+    </Card>
   );
 }
 

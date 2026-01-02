@@ -2,8 +2,9 @@ import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { Runbook, Service } from '../../shared/models';
+import { Runbook, Service, StepType, AutomationMode, ScriptLanguage } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { In } from 'typeorm';
 
 const router = Router();
 
@@ -297,6 +298,220 @@ router.delete('/:id', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error deleting runbook:', error);
     return res.status(500).json({ error: 'Failed to delete runbook' });
+  }
+});
+
+/**
+ * POST /api/v1/runbooks/seed-examples
+ * Seed example automated runbooks for the current org (admin only)
+ */
+router.post('/seed-examples', async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+    const userId = req.user!.id;
+    const dataSource = await getDataSource();
+    const runbookRepo = dataSource.getRepository(Runbook);
+    const serviceRepo = dataSource.getRepository(Service);
+
+    // Check admin role
+    if (req.user!.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get existing services
+    const services = await serviceRepo.find({ where: { orgId, status: 'active' } });
+    if (services.length === 0) {
+      return res.status(400).json({ error: 'No active services found. Create a service first.' });
+    }
+
+    // Delete existing example runbooks
+    await runbookRepo.delete({
+      orgId,
+      title: In([
+        'Restart API Service',
+        'Scale API Service Up',
+        'Rollback API Deployment',
+        'Reset Database Connections',
+        'Kill Slow Queries',
+        'Clear SQS Queue Backlog',
+        'Invalidate CloudFront Cache',
+      ]),
+    });
+
+    const primaryService = services[0];
+
+    // Create example runbooks with AUTOMATED steps
+    const exampleRunbooks = [
+      {
+        title: 'Restart API Service',
+        description: 'Force a new ECS deployment to restart all API tasks. Use for stuck connections, memory leaks, or configuration updates.',
+        severity: ['high', 'critical'],
+        tags: ['api', 'ecs', 'restart'],
+        steps: [
+          {
+            id: 'step-1',
+            order: 1,
+            title: 'Check Current Service State',
+            description: 'Verify the current health of the ECS service before restarting',
+            isOptional: false,
+            estimatedMinutes: 1,
+            type: 'automated' as StepType,
+            automation: {
+              mode: 'server_sandbox' as AutomationMode,
+              timeout: 30,
+              requiresApproval: false,
+              script: {
+                language: 'bash' as ScriptLanguage,
+                code: `#!/bin/bash
+set -e
+CLUSTER="pagerduty-lite-dev"
+SERVICE="pagerduty-lite-dev-api"
+echo "Checking ECS service status..."
+aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --region us-east-1 --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' --output table`,
+                version: 1,
+              },
+            },
+          },
+          {
+            id: 'step-2',
+            order: 2,
+            title: 'Force New Deployment',
+            description: 'Restart all tasks by forcing a new deployment',
+            isOptional: false,
+            estimatedMinutes: 2,
+            type: 'automated' as StepType,
+            automation: {
+              mode: 'server_sandbox' as AutomationMode,
+              timeout: 60,
+              requiresApproval: true,
+              script: {
+                language: 'bash' as ScriptLanguage,
+                code: `#!/bin/bash
+set -e
+CLUSTER="pagerduty-lite-dev"
+SERVICE="pagerduty-lite-dev-api"
+echo "Forcing new deployment..."
+aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment --region us-east-1 --output json | jq '.service | {status, runningCount, desiredCount}'
+echo "New deployment initiated. Tasks will restart in ~2 minutes."`,
+                version: 1,
+              },
+            },
+          },
+        ],
+      },
+      {
+        title: 'Scale API Service Up',
+        description: 'Increase the number of API tasks to handle higher load or traffic spikes.',
+        severity: ['high', 'critical'],
+        tags: ['api', 'ecs', 'scaling'],
+        steps: [
+          {
+            id: 'step-1',
+            order: 1,
+            title: 'Check Current Capacity',
+            description: 'View current task count',
+            isOptional: false,
+            estimatedMinutes: 1,
+            type: 'automated' as StepType,
+            automation: {
+              mode: 'server_sandbox' as AutomationMode,
+              timeout: 30,
+              requiresApproval: false,
+              script: {
+                language: 'bash' as ScriptLanguage,
+                code: `#!/bin/bash
+aws ecs describe-services --cluster pagerduty-lite-dev --services pagerduty-lite-dev-api --region us-east-1 --query 'services[0].{Desired:desiredCount,Running:runningCount,Pending:pendingCount}' --output table`,
+                version: 1,
+              },
+            },
+          },
+          {
+            id: 'step-2',
+            order: 2,
+            title: 'Scale to +1 Tasks',
+            description: 'Increase desired task count by 1',
+            isOptional: false,
+            estimatedMinutes: 2,
+            type: 'automated' as StepType,
+            automation: {
+              mode: 'server_sandbox' as AutomationMode,
+              timeout: 60,
+              requiresApproval: true,
+              script: {
+                language: 'bash' as ScriptLanguage,
+                code: `#!/bin/bash
+set -e
+CURRENT=$(aws ecs describe-services --cluster pagerduty-lite-dev --services pagerduty-lite-dev-api --query 'services[0].desiredCount' --output text)
+NEW_COUNT=$((CURRENT + 1))
+echo "Scaling from $CURRENT to $NEW_COUNT tasks..."
+aws ecs update-service --cluster pagerduty-lite-dev --service pagerduty-lite-dev-api --desired-count "$NEW_COUNT" --region us-east-1 --output json | jq '.service.desiredCount'
+echo "Service scaled successfully!"`,
+                version: 1,
+              },
+            },
+          },
+        ],
+      },
+      {
+        title: 'Invalidate CloudFront Cache',
+        description: 'Clear the CloudFront CDN cache to force users to get the latest frontend assets.',
+        severity: ['medium', 'high'],
+        tags: ['cloudfront', 'cache', 'frontend'],
+        steps: [
+          {
+            id: 'step-1',
+            order: 1,
+            title: 'Create Cache Invalidation',
+            description: 'Invalidate all paths (/*) in the CloudFront distribution',
+            isOptional: false,
+            estimatedMinutes: 1,
+            type: 'automated' as StepType,
+            automation: {
+              mode: 'server_sandbox' as AutomationMode,
+              timeout: 30,
+              requiresApproval: false,
+              script: {
+                language: 'bash' as ScriptLanguage,
+                code: `#!/bin/bash
+set -e
+DISTRIBUTION_ID="REDACTED_CLOUDFRONT_DIST_ID"
+echo "Creating CloudFront invalidation..."
+aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --region us-east-1 --output json | jq '.Invalidation | {Id, Status, CreateTime}'
+echo "Cache invalidation created! Users will get fresh content in 1-2 minutes."`,
+                version: 1,
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    // Save runbooks
+    const savedRunbooks: Runbook[] = [];
+    for (const rb of exampleRunbooks) {
+      const runbook = runbookRepo.create({
+        orgId,
+        serviceId: primaryService.id,
+        createdById: userId,
+        title: rb.title,
+        description: rb.description,
+        severity: rb.severity,
+        tags: rb.tags,
+        isActive: true,
+        steps: rb.steps,
+      });
+      savedRunbooks.push(await runbookRepo.save(runbook));
+    }
+
+    logger.info('Example runbooks seeded', { orgId, count: savedRunbooks.length, userId });
+
+    return res.json({
+      message: `Created ${savedRunbooks.length} example runbooks with automated steps`,
+      runbooks: savedRunbooks.map(formatRunbook),
+    });
+  } catch (error) {
+    logger.error('Error seeding example runbooks:', error);
+    return res.status(500).json({ error: 'Failed to seed example runbooks' });
   }
 });
 

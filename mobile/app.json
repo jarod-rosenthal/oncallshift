@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "OnCallShift",
-    "slug": "oncallshift",
+    "slug": "oncallshift-ft2ynzapva2fgiwgezhv1",
     "scheme": "oncallshift",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,7 +19,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.oncallshift.mobile",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "audio"],
+        "UIBackgroundModes": [
+          "remote-notification",
+          "audio"
+        ],
         "NSFaceIDUsageDescription": "Use Face ID to quickly unlock the app"
       },
       "entitlements": {
@@ -38,15 +41,16 @@
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
         "ACCESS_NOTIFICATION_POLICY",
-        "USE_FULL_SCREEN_INTENT"
+        "USE_FULL_SCREEN_INTENT",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "plugins": [
       [
         "expo-notifications",
         {
-          "sounds": ["./assets/sounds/critical-alert.wav"],
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/icon.png",
           "color": "#E53E3E"
         }
       ],
@@ -63,16 +67,20 @@
           "project": "oncallshift-mobile",
           "organization": "oncallshift"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "@sentry/react-native",
+      "expo-secure-store"
     ],
     "updates": {
       "enabled": false
     },
     "extra": {
+      "sentryDsn": "https://your-sentry-dsn@o0.ingest.sentry.io/0",
       "eas": {
-        "projectId": "your-project-id-here"
-      },
-      "sentryDsn": "https://your-sentry-dsn@o0.ingest.sentry.io/0"
-    }
+        "projectId": "7311a48c-3b87-4bb8-8bba-549de8a578e7"
+      }
+    },
+    "owner": "jarod.rosenthal"
   }
 }

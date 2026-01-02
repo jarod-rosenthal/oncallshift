@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createApp } from './app';
 import { getDataSource } from '../shared/db/data-source';
 import { logger } from '../shared/utils/logger';
+import { seedOnCallShiftRunbooks } from '../shared/db/seeds/oncallshift-runbooks';
 
 const PORT = process.env.PORT || 3000;
 
@@ -276,6 +277,14 @@ async function startServer() {
 
       // Run migrations
       await runMigrations();
+
+      // Seed OnCallShift example runbooks if they don't exist
+      try {
+        await seedOnCallShiftRunbooks();
+        logger.info('✅ OnCallShift runbooks seeded successfully');
+      } catch (error: any) {
+        logger.warn('Could not seed OnCallShift runbooks:', error.message);
+      }
     } else {
       logger.warn('No database configured - running without database connection');
       logger.warn('API endpoints that require database will fail');

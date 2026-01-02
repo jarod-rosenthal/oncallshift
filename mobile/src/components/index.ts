@@ -25,3 +25,4 @@ export { SimilarIncidentHint } from './SimilarIncidentHint';
 export { OnCallBanner } from './OnCallBanner';
 export { ShiftHandoffNotes } from './ShiftHandoffNotes';
 export { ProfilePictureEditor } from './ProfilePictureEditor';
+export { default as AIAssistantPanel } from './AIAssistantPanel';

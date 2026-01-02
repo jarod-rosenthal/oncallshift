@@ -21,6 +21,8 @@ Notifications.setNotificationHandler({
       shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       // iOS 15+ interruption level for critical alerts
       priority: isCritical
         ? Notifications.AndroidNotificationPriority.MAX
@@ -169,16 +171,22 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
   // Get the push token
   try {
+    console.log('[Notifications] Requesting push token with projectId:', config.expoProjectId);
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: config.expoProjectId,
     });
-    console.log('[Notifications] Push token obtained successfully');
+    console.log('[Notifications] Push token obtained successfully:', tokenData.data.substring(0, 30));
     return tokenData.data;
   } catch (error: any) {
-    // This is expected to fail on simulators or when Expo Push is not configured
-    // Log as info rather than error to avoid alarming console output
-    console.log('[Notifications] Push token unavailable:', error?.message || 'Unknown error');
-    return null;
+    // Log the full error for debugging
+    console.error('[Notifications] Push token error:', {
+      message: error?.message,
+      code: error?.code,
+      projectId: config.expoProjectId,
+      fullError: JSON.stringify(error, null, 2),
+    });
+    // Re-throw with more context so the UI can show it
+    throw new Error(`Push token failed: ${error?.message || 'Unknown error'}`);
   }
 }
 
@@ -255,8 +263,8 @@ export function setupNotificationListeners(
 
   // Return cleanup function
   return () => {
-    Notifications.removeNotificationSubscription(notificationListener);
-    Notifications.removeNotificationSubscription(responseListener);
+    notificationListener.remove();
+    responseListener.remove();
   };
 }
 

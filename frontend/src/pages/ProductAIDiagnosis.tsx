@@ -5,20 +5,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 export function ProductAIDiagnosis() {
   const capabilities = [
     {
-      title: 'Root Cause Analysis',
-      description: 'Claude analyzes alert context, service metadata, and recent changes to suggest likely root causes.',
+      title: 'Auto-Diagnosis',
+      description: 'Every incident is automatically analyzed. No button clicks. AI examines logs, metrics, and past incidents.',
+      icon: '🔍'
     },
     {
-      title: 'Remediation Steps',
-      description: 'Get actionable suggestions based on similar past incidents and best practices.',
+      title: 'Cloud Investigation',
+      description: 'AI uses your cloud credentials to query CloudWatch logs, check ECS services, review deployments—in real-time.',
+      icon: '☁️'
     },
     {
-      title: 'Impact Assessment',
-      description: 'Understand which services and users are affected by the current incident.',
+      title: 'Execute Remediation',
+      description: 'One tap to restart services, scale deployments, rollback releases. AI doesn\'t just suggest—it executes.',
+      icon: '⚡'
     },
     {
-      title: 'Runbook Recommendations',
-      description: 'AI suggests relevant runbooks from your library based on the incident type.',
+      title: 'Learning Loop',
+      description: 'AI tracks what worked, learns from your team, and gets smarter with every resolution.',
+      icon: '🧠'
     },
   ];
 
@@ -70,14 +74,16 @@ export function ProductAIDiagnosis() {
           <span>Powered by Anthropic Claude</span>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold mb-6">
-          AI-Powered<br />
+          AI That Doesn't Just Talk.<br />
           <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Incident Diagnosis
+            It Takes Action.
           </span>
         </h1>
-        <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
-          Let Claude analyze your incidents and suggest root causes, remediation steps, and relevant runbooks.
-          Reduce MTTR with AI-assisted troubleshooting.
+        <p className="text-xl text-slate-600 mb-6 max-w-2xl mx-auto">
+          While other tools suggest fixes, OnCallShift's AI actually executes them. From diagnosis to remediation in seconds.
+        </p>
+        <p className="text-lg text-slate-500 italic mb-8 max-w-2xl mx-auto">
+          Built by DevOps engineers tired of AI that only talks. We wanted AI that does.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register">
@@ -105,18 +111,18 @@ export function ProductAIDiagnosis() {
 
       {/* Capabilities */}
       <section className="container mx-auto px-4 py-16">
-        <h2 className="text-2xl font-bold text-center mb-4">What AI Diagnosis Does</h2>
+        <h2 className="text-2xl font-bold text-center mb-4">The Complete AI Workflow</h2>
         <p className="text-slate-600 text-center mb-12 max-w-2xl mx-auto">
-          Claude uses your incident context to provide actionable insights.
+          From detection to resolution. Automatically.
         </p>
 
         <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
           {capabilities.map((cap, i) => (
-            <Card key={i} className="border">
+            <Card key={i} className="border-2 hover:border-blue-300 transition-colors">
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <span className="text-purple-600">🤖</span>
-                  {cap.title}
+                  <span className="text-3xl">{cap.icon}</span>
+                  <span>{cap.title}</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -124,6 +130,22 @@ export function ProductAIDiagnosis() {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        <div className="mt-12 text-center">
+          <div className="inline-block bg-blue-50 border-2 border-blue-200 rounded-lg p-6 max-w-2xl">
+            <p className="font-semibold text-blue-900 mb-2">The Difference</p>
+            <div className="grid md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-red-600 font-medium mb-1">❌ Other Tools</p>
+                <p className="text-slate-600">"Here's what might be wrong. Good luck!"</p>
+              </div>
+              <div>
+                <p className="text-green-600 font-medium mb-1">✅ OnCallShift</p>
+                <p className="text-slate-600">"I found the issue AND I fixed it."</p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -160,35 +182,83 @@ export function ProductAIDiagnosis() {
 
       {/* How It Works */}
       <section className="container mx-auto px-4 py-16">
-        <h2 className="text-2xl font-bold text-center mb-12">How It Works</h2>
-        <div className="grid md:grid-cols-4 gap-6 max-w-4xl mx-auto">
+        <h2 className="text-2xl font-bold text-center mb-12">See It In Action: 60 Seconds to Resolution</h2>
+        <div className="grid md:grid-cols-4 gap-6 max-w-5xl mx-auto">
           <div className="text-center">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-blue-600 font-bold">1</span>
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">🚨</span>
             </div>
-            <h3 className="font-semibold mb-2">Incident Created</h3>
-            <p className="text-xs text-slate-600">Alert comes in with context</p>
+            <h3 className="font-semibold mb-2">0:00 - Alert Arrives</h3>
+            <p className="text-sm text-slate-600">AI starts analyzing immediately</p>
           </div>
           <div className="text-center">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-blue-600 font-bold">2</span>
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">🔍</span>
             </div>
-            <h3 className="font-semibold mb-2">Click "Diagnose"</h3>
-            <p className="text-xs text-slate-600">One click from incident page</p>
+            <h3 className="font-semibold mb-2">0:15 - AI Investigates</h3>
+            <p className="text-sm text-slate-600">Queries logs, checks cloud, finds root cause</p>
           </div>
           <div className="text-center">
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-purple-600 font-bold">3</span>
+            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">⚡</span>
             </div>
-            <h3 className="font-semibold mb-2">Claude Analyzes</h3>
-            <p className="text-xs text-slate-600">Your API key, direct to Anthropic</p>
+            <h3 className="font-semibold mb-2">0:30 - You Tap "Fix"</h3>
+            <p className="text-sm text-slate-600">AI executes: restart pods, scale up</p>
           </div>
           <div className="text-center">
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-green-600 font-bold">4</span>
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">✅</span>
             </div>
-            <h3 className="font-semibold mb-2">Get Insights</h3>
-            <p className="text-xs text-slate-600">Root cause + remediation</p>
+            <h3 className="font-semibold mb-2">1:00 - Resolved</h3>
+            <p className="text-sm text-slate-600">Back to sleep. Laptop untouched.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* AI Tools Available */}
+      <section className="bg-slate-50 py-16">
+        <div className="container mx-auto px-4">
+          <h2 className="text-2xl font-bold text-center mb-4">What AI Can Actually Do</h2>
+          <p className="text-slate-600 text-center mb-12 max-w-2xl mx-auto">
+            These aren't hypothetical. These are the actual tools OnCallShift's AI has access to.
+          </p>
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="bg-white rounded-lg p-6 border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <span className="text-xl">🔍</span>
+                Incident Analysis
+              </h3>
+              <ul className="text-sm text-slate-600 space-y-1">
+                <li>• Get incident timeline & events</li>
+                <li>• Fetch application logs</li>
+                <li>• Compare with past incidents</li>
+                <li>• Identify patterns</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-lg p-6 border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <span className="text-xl">☁️</span>
+                Cloud Investigation
+              </h3>
+              <ul className="text-sm text-slate-600 space-y-1">
+                <li>• Query CloudWatch logs (AWS)</li>
+                <li>• Check ECS service health</li>
+                <li>• Review recent deployments</li>
+                <li>• Analyze metrics & errors</li>
+              </ul>
+            </div>
+            <div className="bg-white rounded-lg p-6 border">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <span className="text-xl">⚡</span>
+                Remediation Actions
+              </h3>
+              <ul className="text-sm text-slate-600 space-y-1">
+                <li>• Restart ECS services</li>
+                <li>• Scale deployments</li>
+                <li>• Execute custom runbooks</li>
+                <li>• Trigger webhooks</li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
@@ -196,36 +266,45 @@ export function ProductAIDiagnosis() {
       {/* Privacy */}
       <section className="bg-slate-900 py-16 text-white">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-2xl font-bold mb-4">Your Data, Your Keys</h2>
+          <h2 className="text-2xl font-bold mb-4">Your Data, Your Control</h2>
           <p className="text-slate-300 mb-8 max-w-2xl mx-auto">
-            With BYOK (Bring Your Own Key), AI requests go directly from your browser to Anthropic.
-            OnCallShift never sees or stores the AI conversation.
+            With BYOK (Bring Your Own Key), your incident data goes directly to Anthropic—never stored by OnCallShift for AI training.
           </p>
           <div className="grid md:grid-cols-3 gap-8 max-w-3xl mx-auto">
             <div>
               <p className="text-2xl mb-2">🔐</p>
-              <p className="font-semibold">Your API Key</p>
-              <p className="text-sm text-slate-400">Stored encrypted, used only for AI calls</p>
+              <p className="font-semibold">Encrypted Storage</p>
+              <p className="text-sm text-slate-400">Your API key encrypted at rest</p>
             </div>
             <div>
               <p className="text-2xl mb-2">🚀</p>
-              <p className="font-semibold">Direct to Anthropic</p>
-              <p className="text-sm text-slate-400">No proxy through OnCallShift servers</p>
+              <p className="font-semibold">Direct to Claude</p>
+              <p className="text-sm text-slate-400">No proxy, no middleman</p>
             </div>
             <div>
-              <p className="text-2xl mb-2">📊</p>
-              <p className="font-semibold">Your Usage</p>
-              <p className="text-sm text-slate-400">Billed directly by Anthropic</p>
+              <p className="text-2xl mb-2">💰</p>
+              <p className="font-semibold">You Control Costs</p>
+              <p className="text-sm text-slate-400">Choose Haiku (fast) or Opus (thorough)</p>
             </div>
+          </div>
+          <div className="mt-8">
+            <Link to="/pricing">
+              <Button variant="secondary" size="lg">
+                See Pricing (BYOK from $29/month)
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
 
       {/* CTA */}
       <section className="container mx-auto px-4 py-16 text-center">
-        <h2 className="text-2xl font-bold mb-4">Ready to Diagnose Faster?</h2>
-        <p className="text-slate-600 mb-6">
-          AI diagnosis is included in Professional. Start your free trial today.
+        <h2 className="text-2xl font-bold mb-4">Ready for AI That Actually Works at 3am?</h2>
+        <p className="text-slate-600 mb-2">
+          AI execution included in Professional ($19/user). Or bring your own key ($29/month flat).
+        </p>
+        <p className="text-sm text-slate-500 italic mb-6">
+          Built by engineers who get paged. We use this every day.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register?plan=professional">
@@ -243,12 +322,22 @@ export function ProductAIDiagnosis() {
 
       {/* Footer */}
       <footer className="border-t py-8 bg-slate-50">
-        <div className="container mx-auto px-4 text-center text-sm text-slate-500">
-          <p>&copy; 2025 OnCallShift. All rights reserved.</p>
-          <div className="mt-2 space-x-4">
-            <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
-            <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
-            <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-4">
+            <p className="text-slate-500 text-sm italic">
+              Built by DevOps engineers who get paged. Questions?{' '}
+              <a href="mailto:jarod@oncallshift.com" className="text-blue-600 hover:text-blue-700">
+                Email the founder
+              </a>
+            </p>
+          </div>
+          <div className="text-center text-sm text-slate-500">
+            <p>&copy; 2025 OnCallShift. All rights reserved.</p>
+            <div className="mt-2 space-x-4">
+              <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
+              <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
+              <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
+            </div>
           </div>
         </div>
       </footer>
