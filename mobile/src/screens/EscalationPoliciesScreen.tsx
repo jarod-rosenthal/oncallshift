@@ -58,7 +58,6 @@ export default function EscalationPoliciesScreen() {
       const data = await apiService.getEscalationPolicies();
       setPolicies(data);
     } catch (error: any) {
-      console.error('Failed to fetch escalation policies:', error);
       showToast({ message: 'Failed to load escalation policies', type: 'error' });
     } finally {
       setLoading(false);
@@ -89,7 +88,6 @@ export default function EscalationPoliciesScreen() {
       resetForm();
       fetchPolicies();
     } catch (error: any) {
-      console.error('Failed to create policy:', error);
       showToast({ message: error.message || 'Failed to create policy', type: 'error' });
     } finally {
       setSaving(false);
@@ -111,7 +109,6 @@ export default function EscalationPoliciesScreen() {
       resetForm();
       fetchPolicies();
     } catch (error: any) {
-      console.error('Failed to update policy:', error);
       showToast({ message: error.message || 'Failed to update policy', type: 'error' });
     } finally {
       setSaving(false);
@@ -162,7 +159,6 @@ export default function EscalationPoliciesScreen() {
       resetStepForm();
       fetchPolicies();
     } catch (error: any) {
-      console.error('Failed to add rule:', error);
       showToast({ message: error.message || 'Failed to add rule', type: 'error' });
     } finally {
       setSaving(false);

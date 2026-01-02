@@ -183,3 +183,9 @@ variable "fargate_spot_percentage" {
   type        = number
   default     = 70
 }
+
+variable "ecr_repository_url" {
+  description = "Optional external ECR repository URL. If provided, skips ECR creation and uses this repo."
+  type        = string
+  default     = null
+}

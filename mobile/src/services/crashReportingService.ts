@@ -8,7 +8,6 @@ let isInitialized = false;
 export const initCrashReporting = () => {
   // Only initialize in production or if explicitly enabled
   if (__DEV__) {
-    console.log('Crash reporting disabled in development mode');
     return;
   }
 
@@ -30,7 +29,6 @@ export const initCrashReporting = () => {
     Sentry.setTag('app.build', Application.nativeBuildVersion || 'unknown');
     isInitialized = true;
   } catch (error) {
-    console.error('Failed to initialize Sentry:', error);
   }
 };
 
@@ -44,7 +42,6 @@ export const setUserContext = (userId: string, email: string, username?: string)
       username,
     });
   } catch (error) {
-    console.error('Failed to set user context:', error);
   }
 };
 
@@ -54,7 +51,6 @@ export const clearUserContext = () => {
   try {
     Sentry.setUser(null);
   } catch (error) {
-    console.error('Failed to clear user context:', error);
   }
 };
 
@@ -69,7 +65,6 @@ export const addBreadcrumb = (message: string, category: string, data?: Record<s
       level: 'info',
     });
   } catch (error) {
-    console.error('Failed to add breadcrumb:', error);
   }
 };
 
@@ -88,7 +83,6 @@ export const captureException = (error: Error, context?: Record<string, any>) =>
       Sentry.captureException(error);
     }
   } catch (err) {
-    console.error('Failed to capture exception:', err);
   }
 };
 
@@ -98,7 +92,6 @@ export const captureMessage = (message: string, level: 'info' | 'warning' | 'err
   try {
     Sentry.captureMessage(message, level);
   } catch (error) {
-    console.error('Failed to capture message:', error);
   }
 };
 

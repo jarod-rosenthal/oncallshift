@@ -665,6 +665,8 @@ module "api_service" {
 }
 
 # Notification Worker Service
+# NOTE: All workers use the same Docker image as the API (same codebase, different CMD).
+# We share the API's ECR repository to ensure all services get updates from deploy.sh.
 module "notification_worker" {
   source = "../../modules/ecs-service"
 
@@ -676,11 +678,17 @@ module "notification_worker" {
   private_subnet_ids = module.networking.private_subnet_ids
   security_group_id  = module.networking.ecs_security_group_id
 
+  # Use API's ECR repository - all services share the same Docker image
+  ecr_repository_url = module.api_service.ecr_repository_url
+
   task_cpu    = "256"
   task_memory = "512"
 
   desired_count = var.worker_desired_count
   container_port = null # Worker service, no HTTP port
+
+  # Override Docker CMD to run notification worker instead of API server
+  command = ["node", "dist/workers/notification-worker.js"]
 
   environment_variables = {
     NODE_ENV = var.environment
@@ -729,6 +737,7 @@ module "notification_worker" {
 }
 
 # Alert Processor Worker Service
+# NOTE: Uses same Docker image as API - shares ECR repository
 module "alert_processor" {
   source = "../../modules/ecs-service"
 
@@ -739,6 +748,9 @@ module "alert_processor" {
   ecs_cluster_id     = aws_ecs_cluster.main.id
   private_subnet_ids = module.networking.private_subnet_ids
   security_group_id  = module.networking.ecs_security_group_id
+
+  # Use API's ECR repository - all services share the same Docker image
+  ecr_repository_url = module.api_service.ecr_repository_url
 
   task_cpu    = "256"
   task_memory = "512"
@@ -778,6 +790,7 @@ module "alert_processor" {
 }
 
 # Escalation Timer Worker Service
+# NOTE: Uses same Docker image as API - shares ECR repository
 module "escalation_timer" {
   source = "../../modules/ecs-service"
 
@@ -788,6 +801,9 @@ module "escalation_timer" {
   ecs_cluster_id     = aws_ecs_cluster.main.id
   private_subnet_ids = module.networking.private_subnet_ids
   security_group_id  = module.networking.ecs_security_group_id
+
+  # Use API's ECR repository - all services share the same Docker image
+  ecr_repository_url = module.api_service.ecr_repository_url
 
   task_cpu    = "256"
   task_memory = "512"
@@ -824,6 +840,29 @@ module "escalation_timer" {
 
   log_retention_days = var.log_retention_days
 }
+
+# =============================================================================
+# ECR Repository Consolidation Notes
+# =============================================================================
+# All workers now use the API's ECR repository (same Docker image, different CMD).
+#
+# BEFORE running terraform apply, remove the old worker ECR repos from state
+# to prevent them from being destroyed (they're no longer managed):
+#
+#   terraform state rm 'module.notification_worker.aws_ecr_repository.app[0]'
+#   terraform state rm 'module.notification_worker.aws_ecr_lifecycle_policy.app[0]'
+#   terraform state rm 'module.alert_processor.aws_ecr_repository.app[0]'
+#   terraform state rm 'module.alert_processor.aws_ecr_lifecycle_policy.app[0]'
+#   terraform state rm 'module.escalation_timer.aws_ecr_repository.app[0]'
+#   terraform state rm 'module.escalation_timer.aws_ecr_lifecycle_policy.app[0]'
+#
+# After terraform apply, you can optionally delete the orphaned ECR repos:
+#   aws ecr delete-repository --repository-name pagerduty-lite-dev-notification-worker --force
+#   aws ecr delete-repository --repository-name pagerduty-lite-dev-alert-processor --force
+#   aws ecr delete-repository --repository-name pagerduty-lite-dev-escalation-timer --force
+#
+# See TECHNICAL_DEBT.md section 0.1 for context.
+# =============================================================================
 
 # S3 bucket for user uploads (profile pictures, etc.)
 resource "aws_s3_bucket" "uploads" {
@@ -1161,252 +1200,253 @@ resource "aws_iam_role" "github_actions" {
   }
 }
 
-# GitHub Actions Policy - Full permissions for Terraform and deployments
-resource "aws_iam_role_policy" "github_actions_terraform" {
-  count = var.github_org != null ? 1 : 0
+# GitHub Actions Policies - Split into multiple policies to stay under 10KB limit
+# while maintaining principle of least privilege with scoped resources
 
-  name = "terraform-and-deploy"
-  role = aws_iam_role.github_actions[0].id
+# Policy 1: Compute (EC2, ECS, ECR, ELB)
+resource "aws_iam_role_policy" "github_actions_compute" {
+  count = var.github_org != null ? 1 : 0
+  name  = "compute-permissions"
+  role  = aws_iam_role.github_actions[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # EC2 - VPC, Subnets, Security Groups, etc.
       {
-        Effect = "Allow"
-        Action = [
-          "ec2:Describe*",
-          "ec2:CreateVpc",
-          "ec2:DeleteVpc",
-          "ec2:ModifyVpcAttribute",
-          "ec2:CreateSubnet",
-          "ec2:DeleteSubnet",
-          "ec2:CreateRouteTable",
-          "ec2:DeleteRouteTable",
-          "ec2:AssociateRouteTable",
-          "ec2:DisassociateRouteTable",
-          "ec2:CreateRoute",
-          "ec2:DeleteRoute",
-          "ec2:CreateInternetGateway",
-          "ec2:DeleteInternetGateway",
-          "ec2:AttachInternetGateway",
-          "ec2:DetachInternetGateway",
-          "ec2:CreateNatGateway",
-          "ec2:DeleteNatGateway",
-          "ec2:AllocateAddress",
-          "ec2:ReleaseAddress",
-          "ec2:CreateSecurityGroup",
-          "ec2:DeleteSecurityGroup",
-          "ec2:AuthorizeSecurityGroupIngress",
-          "ec2:AuthorizeSecurityGroupEgress",
-          "ec2:RevokeSecurityGroupIngress",
-          "ec2:RevokeSecurityGroupEgress",
-          "ec2:CreateVpcEndpoint",
-          "ec2:DeleteVpcEndpoints",
-          "ec2:ModifyVpcEndpoint",
-          "ec2:CreateTags",
-          "ec2:DeleteTags"
-        ]
+        Effect   = "Allow"
+        Action   = ["ec2:Describe*", "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute", "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable", "ec2:CreateRoute", "ec2:DeleteRoute", "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway", "ec2:AttachInternetGateway", "ec2:DetachInternetGateway", "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:AllocateAddress", "ec2:ReleaseAddress", "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup", "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:CreateVpcEndpoint", "ec2:DeleteVpcEndpoints", "ec2:ModifyVpcEndpoint", "ec2:CreateTags", "ec2:DeleteTags"]
         Resource = "*"
       },
-      # ECS
       {
-        Effect = "Allow"
-        Action = [
-          "ecs:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["ecs:*"]
+        Resource = ["arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/${var.project_name}-*", "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${var.project_name}-*/*", "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${var.project_name}-*/*", "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${var.project_name}-*:*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:RegisterTaskDefinition", "ecs:DeregisterTaskDefinition", "ecs:DescribeTaskDefinition", "ecs:ListTaskDefinitions", "ecs:ListTaskDefinitionFamilies", "ecs:DescribeCapacityProviders", "ecs:ListAccountSettings", "ecs:ListClusters"]
         Resource = "*"
       },
-      # ECR
       {
-        Effect = "Allow"
-        Action = [
-          "ecr:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
         Resource = "*"
       },
-      # ELB
       {
-        Effect = "Allow"
-        Action = [
-          "elasticloadbalancing:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["ecr:*"]
+        Resource = ["arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:*"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Policy 2: Data (RDS, S3, Secrets Manager)
+resource "aws_iam_role_policy" "github_actions_data" {
+  count = var.github_org != null ? 1 : 0
+  name  = "data-permissions"
+  role  = aws_iam_role.github_actions[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["rds:Describe*", "rds:ListTagsForResource", "rds:AddTagsToResource", "rds:RemoveTagsFromResource"]
         Resource = "*"
       },
-      # RDS
       {
-        Effect = "Allow"
-        Action = [
-          "rds:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["rds:CreateDBInstance", "rds:DeleteDBInstance", "rds:ModifyDBInstance", "rds:RebootDBInstance", "rds:CreateDBSubnetGroup", "rds:DeleteDBSubnetGroup", "rds:ModifyDBSubnetGroup", "rds:CreateDBParameterGroup", "rds:DeleteDBParameterGroup", "rds:ModifyDBParameterGroup"]
+        Resource = ["arn:aws:rds:${var.aws_region}:${data.aws_caller_identity.current.account_id}:db:${var.project_name}-*", "arn:aws:rds:${var.aws_region}:${data.aws_caller_identity.current.account_id}:subgrp:${var.project_name}-*", "arn:aws:rds:${var.aws_region}:${data.aws_caller_identity.current.account_id}:pg:*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListAllMyBuckets", "s3:GetBucketLocation"]
         Resource = "*"
       },
-      # S3
       {
-        Effect = "Allow"
-        Action = [
-          "s3:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["s3:*"]
+        Resource = ["arn:aws:s3:::oncallshift-*", "arn:aws:s3:::oncallshift-*/*", "arn:aws:s3:::${var.project_name}-*", "arn:aws:s3:::${var.project_name}-*/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:ListSecrets"]
         Resource = "*"
       },
-      # CloudFront
       {
-        Effect = "Allow"
-        Action = [
-          "cloudfront:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["secretsmanager:*"]
+        Resource = ["arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-*"]
+      }
+    ]
+  })
+}
+
+# Policy 3: Networking & CDN (CloudFront, Route53, ACM)
+resource "aws_iam_role_policy" "github_actions_networking" {
+  count = var.github_org != null ? 1 : 0
+  name  = "networking-permissions"
+  role  = aws_iam_role.github_actions[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["cloudfront:List*", "cloudfront:Get*"]
         Resource = "*"
       },
-      # Route53
       {
-        Effect = "Allow"
-        Action = [
-          "route53:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["cloudfront:CreateDistribution", "cloudfront:DeleteDistribution", "cloudfront:UpdateDistribution", "cloudfront:TagResource", "cloudfront:UntagResource", "cloudfront:CreateInvalidation", "cloudfront:CreateOriginAccessControl", "cloudfront:DeleteOriginAccessControl", "cloudfront:UpdateOriginAccessControl"]
+        Resource = ["arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:distribution/*", "arn:aws:cloudfront::${data.aws_caller_identity.current.account_id}:origin-access-control/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["route53:ListHostedZones", "route53:GetHostedZone", "route53:ListResourceRecordSets", "route53:GetChange"]
         Resource = "*"
       },
-      # ACM
       {
-        Effect = "Allow"
-        Action = [
-          "acm:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["route53:ChangeResourceRecordSets"]
+        Resource = ["arn:aws:route53:::hostedzone/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["acm:List*", "acm:Describe*", "acm:Get*"]
         Resource = "*"
       },
-      # Cognito
       {
-        Effect = "Allow"
-        Action = [
-          "cognito-idp:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["acm:RequestCertificate", "acm:DeleteCertificate", "acm:AddTagsToCertificate", "acm:RemoveTagsFromCertificate"]
+        Resource = ["arn:aws:acm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:certificate/*", "arn:aws:acm:us-east-1:${data.aws_caller_identity.current.account_id}:certificate/*"]
+      }
+    ]
+  })
+}
+
+# Policy 4: Messaging & Auth (Cognito, SQS, SNS, SES)
+resource "aws_iam_role_policy" "github_actions_messaging" {
+  count = var.github_org != null ? 1 : 0
+  name  = "messaging-permissions"
+  role  = aws_iam_role.github_actions[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["cognito-idp:List*", "cognito-idp:Describe*"]
         Resource = "*"
       },
-      # SQS
       {
-        Effect = "Allow"
-        Action = [
-          "sqs:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["cognito-idp:*"]
+        Resource = ["arn:aws:cognito-idp:${var.aws_region}:${data.aws_caller_identity.current.account_id}:userpool/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["sqs:ListQueues"]
         Resource = "*"
       },
-      # SNS
       {
-        Effect = "Allow"
-        Action = [
-          "sns:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["sqs:*"]
+        Resource = ["arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.project_name}-*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["sns:ListTopics", "sns:ListPlatformApplications"]
         Resource = "*"
       },
-      # SES
       {
-        Effect = "Allow"
-        Action = [
-          "ses:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["sns:*"]
+        Resource = ["arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.project_name}-*", "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:app/*", "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ses:*"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Policy 5: IAM & Monitoring (IAM, Logs, CloudWatch, KMS, SSM)
+resource "aws_iam_role_policy" "github_actions_iam_monitoring" {
+  count = var.github_org != null ? 1 : 0
+  name  = "iam-monitoring-permissions"
+  role  = aws_iam_role.github_actions[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["iam:ListRoles", "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListOpenIDConnectProviders", "iam:GetOpenIDConnectProvider"]
         Resource = "*"
       },
-      # Secrets Manager
       {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["iam:*"]
+        Resource = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*", "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/github-actions-${var.project_name}", "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:DescribeLogGroups", "logs:ListTagsForResource"]
         Resource = "*"
       },
-      # IAM - Limited to managing roles for this project
       {
-        Effect = "Allow"
-        Action = [
-          "iam:GetRole",
-          "iam:GetRolePolicy",
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:AttachRolePolicy",
-          "iam:DetachRolePolicy",
-          "iam:PassRole",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:ListInstanceProfilesForRole",
-          "iam:TagRole",
-          "iam:UntagRole",
-          "iam:UpdateAssumeRolePolicy"
-        ]
-        Resource = [
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*",
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/github-actions-${var.project_name}"
-        ]
+        Effect   = "Allow"
+        Action   = ["logs:*"]
+        Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-*", "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-*:*"]
       },
-      # IAM - Read-only for listing
       {
-        Effect = "Allow"
-        Action = [
-          "iam:ListRoles",
-          "iam:GetPolicy",
-          "iam:GetPolicyVersion"
-        ]
+        Effect   = "Allow"
+        Action   = ["cloudwatch:Describe*", "cloudwatch:List*", "cloudwatch:Get*"]
         Resource = "*"
       },
-      # CloudWatch Logs
       {
-        Effect = "Allow"
-        Action = [
-          "logs:*"
-        ]
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource", "cloudwatch:PutDashboard", "cloudwatch:DeleteDashboards"]
+        Resource = ["arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.project_name}-*", "arn:aws:cloudwatch::${data.aws_caller_identity.current.account_id}:dashboard/${var.project_name}-*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:List*", "kms:Describe*", "kms:Get*"]
         Resource = "*"
       },
-      # KMS
       {
-        Effect = "Allow"
-        Action = [
-          "kms:Describe*",
-          "kms:Get*",
-          "kms:List*",
-          "kms:CreateKey",
-          "kms:CreateAlias",
-          "kms:DeleteAlias",
-          "kms:UpdateAlias",
-          "kms:TagResource",
-          "kms:UntagResource",
-          "kms:ScheduleKeyDeletion"
-        ]
+        Effect   = "Allow"
+        Action   = ["kms:CreateKey", "kms:CreateAlias", "kms:DeleteAlias", "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:EnableKeyRotation"]
+        Resource = ["arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/*", "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alias/${var.project_name}-*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ssm:DescribeParameters"]
         Resource = "*"
       },
-      # SSM Parameter Store
       {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter*",
-          "ssm:PutParameter",
-          "ssm:DeleteParameter",
-          "ssm:DescribeParameters",
-          "ssm:AddTagsToResource"
-        ]
+        Effect   = "Allow"
+        Action   = ["ssm:*"]
+        Resource = ["arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["application-autoscaling:*"]
         Resource = "*"
       },
-      # CloudWatch
       {
-        Effect = "Allow"
-        Action = [
-          "cloudwatch:*"
-        ]
-        Resource = "*"
-      },
-      # Application Auto Scaling
-      {
-        Effect = "Allow"
-        Action = [
-          "application-autoscaling:*"
-        ]
-        Resource = "*"
-      },
-      # Service Quotas - needed for some Terraform operations
-      {
-        Effect = "Allow"
-        Action = [
-          "servicequotas:GetServiceQuota"
-        ]
+        Effect   = "Allow"
+        Action   = ["servicequotas:GetServiceQuota"]
         Resource = "*"
       }
     ]

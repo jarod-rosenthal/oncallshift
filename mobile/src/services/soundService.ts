@@ -75,7 +75,6 @@ export const initSoundService = async (): Promise<void> => {
       selectedAlertSound = alertSoundStr as AlertSoundType;
     }
   } catch (error) {
-    console.error('Failed to initialize sound service:', error);
   }
 };
 
@@ -134,9 +133,7 @@ const playAlertSoundByType = async (type: AlertSoundType): Promise<void> => {
       }
     });
 
-    console.log(`[SoundService] Playing ${type} alert sound`);
   } catch (error) {
-    console.error(`[SoundService] Failed to play ${type} alert:`, error);
   }
 };
 
@@ -172,7 +169,6 @@ export const stopCurrentSound = async (): Promise<void> => {
       await currentSound.unloadAsync();
       currentSound = null;
     } catch (error) {
-      console.error('Failed to stop sound:', error);
     }
   }
 };
@@ -235,9 +231,7 @@ export const playCriticalAlert = async (): Promise<void> => {
       }
     });
 
-    console.log(`[SoundService] Critical alert sound playing (${selectedAlertSound})`);
   } catch (error) {
-    console.error('[SoundService] Failed to play critical alert:', error);
   }
 };
 
@@ -439,10 +433,8 @@ export const playAlertSound = async (severity: Severity): Promise<void> => {
       });
     } else {
       // Log for development - in production this would play actual sounds
-      console.log(`[SoundService] Would play ${severity} alert (${config.frequency}Hz, ${config.duration}ms)`);
     }
   } catch (error) {
-    console.log('Sound playback not available:', error);
   }
 };
 
@@ -450,7 +442,6 @@ export const playAlertSound = async (severity: Severity): Promise<void> => {
 const playSystemSound = async (severity: Severity): Promise<void> => {
   // On real devices, this would trigger a system notification sound
   // For now, we log the intent
-  console.log(`Playing ${severity} alert sound at volume ${soundVolume}`);
 };
 
 // Play a specific action sound (for feedback)
@@ -472,10 +463,8 @@ export const playActionSound = async (action: 'acknowledge' | 'resolve'): Promis
         }
       });
     } else {
-      console.log(`[SoundService] Would play ${action} action sound`);
     }
   } catch (error) {
-    console.log('Action sound not available');
   }
 };
 

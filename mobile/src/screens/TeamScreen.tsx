@@ -74,7 +74,6 @@ export default function TeamScreen({ navigation }: any) {
 
       setMembers(teamMembers);
     } catch (error) {
-      console.error('Failed to fetch team data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

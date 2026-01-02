@@ -75,7 +75,6 @@ export default function OnCallCalendarScreen() {
       setOnCallData(oncall);
       setSchedules(scheduleList);
     } catch (error) {
-      console.error('Failed to fetch on-call data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

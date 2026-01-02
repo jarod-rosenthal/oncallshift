@@ -72,7 +72,6 @@ export default function ManageUsersScreen() {
       const current = usersData.find(u => u.id === profile.id) || null;
       setCurrentUser(current);
     } catch (error: any) {
-      console.error('Failed to fetch users:', error);
       showToast({ message: 'Failed to load users', type: 'error' });
     } finally {
       setLoading(false);
@@ -107,7 +106,6 @@ export default function ManageUsersScreen() {
       resetInviteForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to invite user:', error);
       showToast({ message: error.message || 'Failed to send invitation', type: 'error' });
     } finally {
       setSaving(false);
@@ -131,7 +129,6 @@ export default function ManageUsersScreen() {
       setShowEditModal(false);
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update role:', error);
       showToast({ message: error.message || 'Failed to update role', type: 'error' });
     } finally {
       setSaving(false);

@@ -18,6 +18,74 @@ interface AWSCredentials {
   aws_region: string;
 }
 
+/**
+ * Raw data structure for cloud investigation evidence
+ * These types are intentionally flexible to accommodate different cloud provider responses
+ */
+interface RawCloudData {
+  logs?: Array<{
+    timestamp?: string | Date | null;
+    severity?: string | null;
+    resource?: string;
+    message?: string;
+    exceptionType?: string;
+    appRole?: string;
+    time?: string | Date;
+  }>;
+  appServices?: Array<{
+    name?: string;
+    state?: string;
+    resourceGroup?: string;
+    defaultHostName?: string;
+  }>;
+  vms?: Array<{
+    name?: string;
+    resourceGroup?: string;
+    vmSize?: string;
+    statuses?: Array<{ code?: string; displayStatus?: string }>;
+    zone?: string;
+    status?: string | null;
+    machineType?: string;
+  }>;
+  aks?: Array<{
+    name?: string;
+    provisioningState?: string;
+    powerState?: string;
+    kubernetesVersion?: string;
+    nodeResourceGroup?: string;
+  }>;
+  cloudRun?: Array<{
+    name?: string | null;
+    uri?: string | null;
+    latestReadyRevision?: string | null;
+    latestCreatedRevision?: string | null;
+    conditions?: Array<{ type?: string | null; state?: string | null }>;
+  }>;
+  compute?: Array<{
+    name?: string | null;
+    zone?: string;
+    status?: string | null;
+    machineType?: string;
+  }>;
+  gke?: Array<{
+    name?: string | null;
+    location?: string | null;
+    status?: string | number | null;
+    currentMasterVersion?: string | null;
+    currentNodeCount?: number | null;
+  }>;
+}
+
+/**
+ * Evidence collected during cloud investigation
+ */
+interface CloudInvestigationEvidence {
+  errorPatterns?: string[];
+  unhealthyResources?: string[];
+  logEntries?: string[];
+  resourceStates?: Record<string, string>;
+}
+
 interface InvestigationResult {
   success: boolean;
   findings: string[];
@@ -36,7 +104,8 @@ interface InvestigationResult {
   }>;
   error_message?: string;
   root_cause?: string;
-  evidence?: Record<string, any>;
+  evidence?: CloudInvestigationEvidence;
+  raw_data?: RawCloudData;
 }
 
 /**
@@ -172,13 +241,14 @@ async function searchCloudWatchLogs(
             errors.push(pattern);
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         commands.push({
           command: `FilterLogEvents: ${logGroup.logGroupName}`,
           service: 'CloudWatch Logs',
           timestamp: new Date().toISOString(),
           result: 'error',
-          output: err.message,
+          output: errorMessage,
         });
       }
     }
@@ -186,10 +256,11 @@ async function searchCloudWatchLogs(
     if (relevantLogGroups.length === 0) {
       findings.push('No relevant CloudWatch Log groups found for investigation');
     }
-  } catch (err: any) {
-    findings.push(`CloudWatch Logs access failed: ${err.message}`);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    findings.push(`CloudWatch Logs access failed: ${errorMessage}`);
     commands[commands.length - 1].result = 'error';
-    commands[commands.length - 1].output = err.message;
+    commands[commands.length - 1].output = errorMessage;
   }
 
   return { findings, errors };
@@ -265,13 +336,14 @@ async function checkECSServices(
             findings.push(`ECS Service ${service.serviceName} has failed deployments`);
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         commands.push({
           command: `DescribeServices: ${clusterArn}`,
           service: 'ECS',
           timestamp: new Date().toISOString(),
           result: 'error',
-          output: err.message,
+          output: errorMessage,
         });
       }
     }
@@ -279,10 +351,11 @@ async function checkECSServices(
     if (clusterArns.length === 0) {
       findings.push('No ECS clusters found in this region');
     }
-  } catch (err: any) {
-    findings.push(`ECS access failed: ${err.message}`);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    findings.push(`ECS access failed: ${errorMessage}`);
     commands[commands.length - 1].result = 'error';
-    commands[commands.length - 1].output = err.message;
+    commands[commands.length - 1].output = errorMessage;
   }
 
   return { findings, unhealthyServices };
@@ -338,10 +411,11 @@ async function checkEC2Instances(
     if ((statusResponse.InstanceStatuses?.length || 0) === 0) {
       findings.push('No EC2 instances found or no instance status available');
     }
-  } catch (err: any) {
-    findings.push(`EC2 access failed: ${err.message}`);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    findings.push(`EC2 access failed: ${errorMessage}`);
     commands[commands.length - 1].result = 'error';
-    commands[commands.length - 1].output = err.message;
+    commands[commands.length - 1].output = errorMessage;
   }
 
   return { findings, unhealthyInstances };
@@ -500,11 +574,12 @@ export async function runAWSInvestigation(
 
     result.success = true;
     logger.info('AWS investigation completed', { credentialId, incidentId, findingsCount: result.findings.length });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     result.success = false;
-    result.error_message = error.message;
-    result.findings.push(`Investigation failed: ${error.message}`);
-    logger.error('AWS investigation failed', { credentialId, incidentId, error: error.message });
+    result.error_message = errorMessage;
+    result.findings.push(`Investigation failed: ${errorMessage}`);
+    logger.error('AWS investigation failed', { credentialId, incidentId, error: errorMessage });
 
     // Update access log with failure
     try {
@@ -514,7 +589,7 @@ export async function runAWSInvestigation(
           status: 'failed',
           success: false,
           sessionEndedAt: new Date(),
-          errorMessage: error.message,
+          errorMessage: errorMessage,
           commandsExecuted: result.commands_executed.map(cmd => ({
             command: cmd.command,
             timestamp: cmd.timestamp,
@@ -524,8 +599,9 @@ export async function runAWSInvestigation(
           })),
         }
       );
-    } catch (updateError) {
-      logger.error('Failed to update access log', { error: updateError });
+    } catch (updateError: unknown) {
+      const updateErrorMessage = updateError instanceof Error ? updateError.message : String(updateError);
+      logger.error('Failed to update access log', { error: updateErrorMessage });
     }
   }
 
@@ -641,7 +717,7 @@ export async function runCloudInvestigation(
     throw new Error('Cloud credential is disabled');
   }
 
-  let baseResult: InvestigationResult & { raw_data?: any };
+  let baseResult: InvestigationResult;
   const provider = credential.provider as 'aws' | 'azure' | 'gcp';
 
   // Route to appropriate provider
@@ -739,14 +815,15 @@ export async function runCloudInvestigation(
         confidence: aiAnalysis.confidence,
         recommendationsCount: aiAnalysis.recommendations.length,
       });
-    } catch (aiError: any) {
+    } catch (aiError: unknown) {
+      const aiErrorMessage = aiError instanceof Error ? aiError.message : String(aiError);
       logger.error('AI analysis failed', {
         credentialId,
         incidentId,
-        error: aiError.message,
+        error: aiErrorMessage,
       });
       // Don't fail the whole investigation if AI fails
-      result.findings.push(`AI analysis unavailable: ${aiError.message}`);
+      result.findings.push(`AI analysis unavailable: ${aiErrorMessage}`);
     }
   }
 

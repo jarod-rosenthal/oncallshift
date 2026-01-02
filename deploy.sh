@@ -68,11 +68,38 @@ docker build -t $ECR_REPO:latest .
 echo "⬆️  Pushing to ECR..."
 docker push $ECR_REPO:latest
 
-# 6. Force new ECS deployment
-echo "🔄 Triggering ECS deployment..."
+# 6. Force new ECS deployment for ALL services
+# NOTE: All services (API, notification-worker, alert-processor, escalation-timer)
+# use the SAME Docker image from the API's ECR repository. We must force-redeploy
+# all of them to ensure they pick up the new image.
+echo "🔄 Triggering ECS deployment for API..."
 aws ecs update-service \
   --cluster $ECS_CLUSTER \
   --service $ECS_SERVICE \
+  --force-new-deployment \
+  --region $AWS_REGION \
+  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+
+echo "🔄 Triggering ECS deployment for notification-worker..."
+aws ecs update-service \
+  --cluster $ECS_CLUSTER \
+  --service pagerduty-lite-dev-notification-worker \
+  --force-new-deployment \
+  --region $AWS_REGION \
+  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+
+echo "🔄 Triggering ECS deployment for alert-processor..."
+aws ecs update-service \
+  --cluster $ECS_CLUSTER \
+  --service pagerduty-lite-dev-alert-processor \
+  --force-new-deployment \
+  --region $AWS_REGION \
+  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+
+echo "🔄 Triggering ECS deployment for escalation-timer..."
+aws ecs update-service \
+  --cluster $ECS_CLUSTER \
+  --service pagerduty-lite-dev-escalation-timer \
   --force-new-deployment \
   --region $AWS_REGION \
   --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
@@ -89,12 +116,14 @@ for i in {1..18}; do
     echo "🗄️  Running database migrations..."
 
     # Run migrations via ECS execute-command
+    # Note: AWS RDS certificates are trusted by default in Node.js when using
+    # the Amazon Root CA which is included in the system CA bundle
     MIGRATION_OUTPUT=$(aws ecs execute-command \
       --cluster $ECS_CLUSTER \
       --task "$TASK_ARN" \
       --container api \
       --interactive \
-      --command "sh -c 'NODE_TLS_REJECT_UNAUTHORIZED=0 node /app/dist/shared/db/migrate.js 2>&1'" \
+      --command "sh -c 'node /app/dist/shared/db/migrate.js 2>&1'" \
       --region $AWS_REGION 2>&1) || true
 
     if echo "$MIGRATION_OUTPUT" | grep -q "All migrations completed"; then

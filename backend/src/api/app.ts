@@ -41,7 +41,11 @@ import postmortemsRoutes from './routes/postmortems';
 import cloudCredentialsRoutes from './routes/cloud-credentials';
 import aiAssistantRoutes from './routes/ai-assistant';
 import runbookAutomationRoutes from './routes/runbook-automation';
-import { captureRawBody } from '../shared/middleware';
+import aiConfigurationRoutes from './routes/ai-configuration';
+import apiKeysRoutes from './routes/api-keys';
+import onboardingRoutes from './routes/onboarding';
+import { captureRawBody, etagMiddleware } from '../shared/middleware';
+import { idempotencyMiddleware } from '../shared/middleware/idempotency';
 
 export function createApp(): Express {
   const app = express();
@@ -80,6 +84,10 @@ export function createApp(): Express {
     });
     next();
   });
+
+  // ETag middleware for HTTP caching (RFC 7232)
+  // Adds ETag headers to GET responses and handles If-None-Match/If-Match
+  app.use(etagMiddleware());
 
   // Health check endpoint
   app.get('/health', (_req, res) => {
@@ -249,38 +257,41 @@ export function createApp(): Express {
   // API routes
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/alerts', alertRoutes);
-  app.use('/api/v1/incidents', incidentRoutes);
-  app.use('/api/v1/schedules', scheduleRoutes);
-  app.use('/api/v1/escalation-policies', escalationPoliciesRoutes);
-  app.use('/api/v1/services', serviceRoutes);
-  app.use('/api/v1/devices', deviceRoutes);
-  app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/incidents', idempotencyMiddleware, incidentRoutes);
+  app.use('/api/v1/schedules', idempotencyMiddleware, scheduleRoutes);
+  app.use('/api/v1/escalation-policies', idempotencyMiddleware, escalationPoliciesRoutes);
+  app.use('/api/v1/services', idempotencyMiddleware, serviceRoutes);
+  app.use('/api/v1/devices', idempotencyMiddleware, deviceRoutes);
+  app.use('/api/v1/users', idempotencyMiddleware, userRoutes);
   app.use('/api/v1/notifications', notificationRoutes);
   app.use('/api/v1/demo', demoRoutes);
   app.use('/api/v1/incidents', aiDiagnosisRoutes); // AI diagnosis routes (adds /diagnose endpoint to incidents)
   app.use('/api/v1/incidents', aiAssistantRoutes); // AI assistant routes with tool_use (adds /assistant endpoints)
-  app.use('/api/v1/runbooks', runbookRoutes);
+  app.use('/api/v1/runbooks', idempotencyMiddleware, runbookRoutes);
   app.use('/api/v1/runbooks', runbookAutomationRoutes); // Runbook automation and execution
-  app.use('/api/v1/actions', actionsRoutes);
+  app.use('/api/v1/actions', idempotencyMiddleware, actionsRoutes);
   app.use('/api/v1/setup', setupRoutes);
-  app.use('/api/v1/integrations', integrationsRoutes);
-  app.use('/api/v1/teams', teamsRoutes);
-  app.use('/api/v1/routing-rules', routingRulesRoutes);
-  app.use('/api/v1/priorities', prioritiesRoutes);
-  app.use('/api/v1/business-services', businessServicesRoutes);
-  app.use('/api/v1/tags', tagsRoutes);
+  app.use('/api/v1/integrations', idempotencyMiddleware, integrationsRoutes);
+  app.use('/api/v1/teams', idempotencyMiddleware, teamsRoutes);
+  app.use('/api/v1/routing-rules', idempotencyMiddleware, routingRulesRoutes);
+  app.use('/api/v1/priorities', idempotencyMiddleware, prioritiesRoutes);
+  app.use('/api/v1/business-services', idempotencyMiddleware, businessServicesRoutes);
+  app.use('/api/v1/tags', idempotencyMiddleware, tagsRoutes);
   app.use('/api/v1/webhooks', webhooksRoutes);
   app.use('/api/v1/import', importRoutes);
   app.use('/api/v1/export', exportRoutes);
-  app.use('/api/v1/heartbeats', heartbeatsRoutes);
-  app.use('/api/v1/status-pages', statusPagesRoutes);
-  app.use('/api/v1/workflows', workflowsRoutes);
-  app.use('/api/v1/webhook-subscriptions', webhookSubscriptionsRoutes);
-  app.use('/api/v1/reports', reportsRoutes);
+  app.use('/api/v1/heartbeats', idempotencyMiddleware, heartbeatsRoutes);
+  app.use('/api/v1/status-pages', idempotencyMiddleware, statusPagesRoutes);
+  app.use('/api/v1/workflows', idempotencyMiddleware, workflowsRoutes);
+  app.use('/api/v1/webhook-subscriptions', idempotencyMiddleware, webhookSubscriptionsRoutes);
+  app.use('/api/v1/reports', idempotencyMiddleware, reportsRoutes);
   app.use('/api/v1', conferenceBridgesRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
-  app.use('/api/v1/postmortems', postmortemsRoutes);
-  app.use('/api/v1/cloud-credentials', cloudCredentialsRoutes);
+  app.use('/api/v1/postmortems', idempotencyMiddleware, postmortemsRoutes);
+  app.use('/api/v1/cloud-credentials', idempotencyMiddleware, cloudCredentialsRoutes);
+  app.use('/api/v1/ai', aiConfigurationRoutes); // AI-powered natural language configuration
+  app.use('/api/v1/api-keys', idempotencyMiddleware, apiKeysRoutes); // Organization API key management
+  app.use('/api/v1/onboarding', onboardingRoutes); // AI-powered conversational onboarding
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

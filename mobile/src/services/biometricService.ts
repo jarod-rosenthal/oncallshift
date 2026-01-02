@@ -34,7 +34,6 @@ export const getBiometricCapability = async (): Promise<BiometricCapability> => 
       isEnrolled,
     };
   } catch (error) {
-    console.error('Error checking biometric capability:', error);
     return {
       isAvailable: false,
       biometricType: 'none',
@@ -67,7 +66,6 @@ export const isBiometricEnabled = async (): Promise<boolean> => {
     const enabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
     return enabled === 'true';
   } catch (error) {
-    console.error('Error checking biometric enabled:', error);
     return false;
   }
 };
@@ -83,7 +81,6 @@ export const setBiometricEnabled = async (enabled: boolean): Promise<void> => {
       await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_KEY);
     }
   } catch (error) {
-    console.error('Error setting biometric enabled:', error);
     throw error;
   }
 };
@@ -123,7 +120,6 @@ export const authenticateWithBiometrics = async (
       return { success: false, error: errorMessage };
     }
   } catch (error: any) {
-    console.error('Biometric authentication error:', error);
     return { success: false, error: error.message || 'Authentication error' };
   }
 };

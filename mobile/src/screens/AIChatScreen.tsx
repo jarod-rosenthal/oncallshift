@@ -111,8 +111,8 @@ export default function AIChatScreen({ route, navigation }: AIChatScreenProps) {
       try {
         const creds = await apiService.getCloudCredentials();
         setAvailableCredentials(creds);
-      } catch (e) {
-        console.log('Cloud credentials not available:', e);
+      } catch (_e) {
+        // Cloud credentials endpoint may not be available
       }
     };
     loadCredentials();
@@ -120,7 +120,6 @@ export default function AIChatScreen({ route, navigation }: AIChatScreenProps) {
 
   // Reset when incident changes
   useEffect(() => {
-    console.log('[AIChat] Loading conversation for incident:', incident.id);
     setMessages([]);
     setError(null);
     setConversationId(null);
@@ -228,7 +227,6 @@ Provide:
           model: selectedModel,
           onEvent: handleStreamEvent,
           onError: (err) => {
-            console.error('Stream error:', err);
             setError(err.message || 'Failed to get response');
             setIsLoading(false);
             setIsStreaming(false);
@@ -279,7 +277,6 @@ Provide:
 
       abortRef.current = { abort };
     } catch (err: any) {
-      console.error('AI chat error:', err);
       setError(err.message || 'Failed to send message');
       setIsLoading(false);
       setIsStreaming(false);

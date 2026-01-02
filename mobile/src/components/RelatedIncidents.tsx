@@ -21,7 +21,7 @@ export default function RelatedIncidents({ currentIncident, onIncidentPress }: R
   const dynamicStyles = {
     container: {
       margin: 16,
-      marginTop: 0,
+      marginBottom: 12,
       borderRadius: 12,
       backgroundColor: theme.colors.surface,
       overflow: 'hidden' as const,
@@ -86,8 +86,8 @@ export default function RelatedIncidents({ currentIncident, onIncidentPress }: R
         .slice(0, 5);
 
       setRelatedIncidents(related);
-    } catch (error) {
-      console.error('Error fetching related incidents:', error);
+    } catch (_error) {
+      // Related incidents are optional, show empty list on error
     } finally {
       setLoading(false);
     }

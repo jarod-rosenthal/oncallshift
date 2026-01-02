@@ -82,8 +82,8 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
         const parsed = JSON.parse(stored);
         setSettings(parsed);
       }
-    } catch (error) {
-      console.error('Failed to load DND settings:', error);
+    } catch (_error) {
+      // Use default settings
     } finally {
       setLoading(false);
     }
@@ -92,8 +92,8 @@ export function DNDControls({ onSettingsChange, compact = false }: DNDControlsPr
   const saveSettings = async (newSettings: DNDSettings) => {
     try {
       await AsyncStorage.setItem(DND_STORAGE_KEY, JSON.stringify(newSettings));
-    } catch (error) {
-      console.error('Failed to save DND settings:', error);
+    } catch (_error) {
+      // Settings will be saved on next successful save
     }
   };
 
@@ -448,8 +448,8 @@ export function useDNDStatus(): DNDSettings {
           }
           setSettings(parsed);
         }
-      } catch (error) {
-        console.error('Failed to load DND settings:', error);
+      } catch (_error) {
+        // Use default settings
       }
     };
 

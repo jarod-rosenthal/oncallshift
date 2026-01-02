@@ -56,6 +56,9 @@ Thumbs.db
 dist/
 build/
 
+# Exception: MCP package build (no source files, track compiled output)
+!packages/oncallshift-mcp/build/
+
 # Temporary files
 tmp/
 temp/

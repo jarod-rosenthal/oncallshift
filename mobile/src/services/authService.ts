@@ -109,8 +109,7 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
       idToken: idToken || '',
       refreshToken: refreshToken || '',
     };
-  } catch (error) {
-    console.error('Error getting current user:', error);
+  } catch (_error) {
     return null;
   }
 };
@@ -132,7 +131,7 @@ export const getAccessToken = async (): Promise<string | null> => {
     return new Promise((resolve) => {
       cognitoUser.getSession(async (err: Error | null, session: CognitoUserSession | null) => {
         if (err || !session || !session.isValid()) {
-          console.log('Session expired, signing out...');
+          // Session expired
           await signOut();
           notifyAuthStateChange(false);
           resolve(null);
@@ -148,8 +147,7 @@ export const getAccessToken = async (): Promise<string | null> => {
         resolve(accessToken);
       });
     });
-  } catch (error) {
-    console.error('Error getting access token:', error);
+  } catch (_error) {
     return null;
   }
 };

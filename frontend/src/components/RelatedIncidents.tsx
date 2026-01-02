@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { incidentsAPI } from '../lib/api-client';
+import { getSeveritySolidColor, getStateBadgeColor } from '../utils/colors';
 import type { Incident } from '../types/api';
 
 interface RelatedIncidentsProps {
@@ -85,32 +86,6 @@ export function RelatedIncidents({ currentIncident }: RelatedIncidentsProps) {
     return `${Math.floor(diffDays / 30)} months ago`;
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return 'bg-red-500';
-      case 'error':
-        return 'bg-orange-500';
-      case 'warning':
-        return 'bg-yellow-500';
-      default:
-        return 'bg-blue-500';
-    }
-  };
-
-  const getStateColor = (state: string) => {
-    switch (state) {
-      case 'triggered':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      case 'acknowledged':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'resolved':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
-    }
-  };
-
   if (isLoading) {
     return (
       <Card>
@@ -169,13 +144,13 @@ export function RelatedIncidents({ currentIncident }: RelatedIncidentsProps) {
                 className="flex items-center gap-3 py-3 hover:bg-accent/50 transition-colors -mx-6 px-6"
               >
                 {/* Severity dot */}
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getSeverityColor(incident.severity)}`} />
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getSeveritySolidColor(incident.severity)}`} />
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{incident.summary}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-xs px-1.5 py-0.5 rounded capitalize ${getStateColor(incident.state)}`}>
+                    <span className={`text-xs px-1.5 py-0.5 rounded capitalize ${getStateBadgeColor(incident.state)}`}>
                       {incident.state}
                     </span>
                     <span className="text-xs text-muted-foreground">

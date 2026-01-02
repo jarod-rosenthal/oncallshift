@@ -4,6 +4,7 @@ import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { EscalationPolicy, EscalationStep, EscalationTarget, Schedule, User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
@@ -18,8 +19,57 @@ const isValidUUID = (value: any) => {
 router.use(authenticateUser);
 
 /**
- * GET /api/v1/escalation-policies
- * List all escalation policies for the organization
+ * @swagger
+ * /api/v1/escalation-policies:
+ *   get:
+ *     summary: List all escalation policies
+ *     description: Returns all escalation policies for the organization with their steps, targets, and resolved on-call users.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *         description: Maximum number of policies to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of policies to skip for pagination
+ *     responses:
+ *       200:
+ *         description: List of escalation policies with pagination
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 policies:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/EscalationPolicy'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get(
   '/',
@@ -80,8 +130,51 @@ router.get(
 );
 
 /**
- * GET /api/v1/escalation-policies/:id
- * Get a single escalation policy
+ * @swagger
+ * /api/v1/escalation-policies/{id}:
+ *   get:
+ *     summary: Get an escalation policy by ID
+ *     description: Returns detailed information about a specific escalation policy, including all steps, targets, and resolved on-call users.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *     responses:
+ *       200:
+ *         description: Escalation policy details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 policy:
+ *                   $ref: '#/components/schemas/EscalationPolicy'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -123,8 +216,49 @@ router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) =
 });
 
 /**
- * POST /api/v1/escalation-policies
- * Create a new escalation policy
+ * @swagger
+ * /api/v1/escalation-policies:
+ *   post:
+ *     summary: Create an escalation policy
+ *     description: Creates a new escalation policy with one or more steps. Each step defines who to notify and for how long before escalating.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/EscalationPolicyCreate'
+ *     responses:
+ *       201:
+ *         description: Escalation policy created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 policy:
+ *                   $ref: '#/components/schemas/EscalationPolicy'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/',
@@ -233,6 +367,7 @@ router.post(
         steps: createdSteps.length,
       });
 
+      setLocationHeader(res, req, '/api/v1/escalation-policies', policy.id);
       return res.status(201).json({ policy: formatPolicy(policy) });
     } catch (error) {
       logger.error('Error creating escalation policy:', error);
@@ -242,8 +377,63 @@ router.post(
 );
 
 /**
- * PUT /api/v1/escalation-policies/:id
- * Update an escalation policy (including steps)
+ * @swagger
+ * /api/v1/escalation-policies/{id}:
+ *   put:
+ *     summary: Update an escalation policy
+ *     description: Updates an escalation policy. If steps are provided, they replace all existing steps.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/EscalationPolicyUpdate'
+ *     responses:
+ *       200:
+ *         description: Escalation policy updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 policy:
+ *                   $ref: '#/components/schemas/EscalationPolicy'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id',
@@ -384,8 +574,65 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/escalation-policies/:id
- * Delete an escalation policy
+ * @swagger
+ * /api/v1/escalation-policies/{id}:
+ *   delete:
+ *     summary: Delete an escalation policy
+ *     description: Deletes an escalation policy. Cannot delete policies that are currently in use by services.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *     responses:
+ *       200:
+ *         description: Escalation policy deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Escalation policy deleted successfully
+ *       400:
+ *         description: Cannot delete policy that is in use by services
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Cannot delete escalation policy that is in use by services
+ *                 servicesCount:
+ *                   type: integer
+ *                   description: Number of services using this policy
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', [param('id').isUUID()], async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -429,8 +676,63 @@ router.delete('/:id', [param('id').isUUID()], async (req: Request, res: Response
 });
 
 /**
- * POST /api/v1/escalation-policies/:id/steps
- * Add a new step to an escalation policy
+ * @swagger
+ * /api/v1/escalation-policies/{id}/steps:
+ *   post:
+ *     summary: Add a step to an escalation policy
+ *     description: Adds a new escalation step to the policy. Steps are ordered and can be inserted at specific positions.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/EscalationStepCreate'
+ *     responses:
+ *       201:
+ *         description: Escalation step added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 step:
+ *                   $ref: '#/components/schemas/EscalationStep'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/steps',
@@ -504,6 +806,7 @@ router.post(
         stepOrder,
       });
 
+      setLocationHeader(res, req, `/api/v1/escalation-policies/${policy.id}/steps`, step.id);
       return res.status(201).json({ step: formatStep(step) });
     } catch (error) {
       logger.error('Error adding escalation step:', error);
@@ -513,8 +816,91 @@ router.post(
 );
 
 /**
- * PUT /api/v1/escalation-policies/:policyId/steps/:stepId
- * Update an escalation step
+ * @swagger
+ * /api/v1/escalation-policies/{policyId}/steps/{stepId}:
+ *   put:
+ *     summary: Update an escalation step
+ *     description: Updates an existing escalation step's configuration.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: policyId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *       - in: path
+ *         name: stepId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation step ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               targetType:
+ *                 type: string
+ *                 enum: [schedule, users]
+ *                 description: Type of escalation target
+ *               scheduleId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Schedule ID (required if targetType is "schedule")
+ *               userIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 nullable: true
+ *                 description: User IDs (required if targetType is "users")
+ *               timeoutSeconds:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Seconds to wait before escalating to the next step
+ *     responses:
+ *       200:
+ *         description: Escalation step updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 step:
+ *                   $ref: '#/components/schemas/EscalationStep'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy or step not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:policyId/steps/:stepId',
@@ -578,8 +964,69 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/escalation-policies/:policyId/steps/:stepId
- * Delete an escalation step
+ * @swagger
+ * /api/v1/escalation-policies/{policyId}/steps/{stepId}:
+ *   delete:
+ *     summary: Delete an escalation step
+ *     description: Deletes an escalation step from the policy. Cannot delete the last remaining step - policies must have at least one step.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: policyId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *       - in: path
+ *         name: stepId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation step ID
+ *     responses:
+ *       200:
+ *         description: Escalation step deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Escalation step deleted successfully
+ *       400:
+ *         description: Cannot delete the last escalation step
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Cannot delete the last escalation step. Policy must have at least one step.
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy or step not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete(
   '/:policyId/steps/:stepId',
@@ -647,8 +1094,74 @@ router.delete(
 );
 
 /**
- * PUT /api/v1/escalation-policies/:id/steps/reorder
- * Reorder escalation steps
+ * @swagger
+ * /api/v1/escalation-policies/{id}/steps/reorder:
+ *   put:
+ *     summary: Reorder escalation steps
+ *     description: Reorders the escalation steps by providing a new ordered list of step IDs. All step IDs must belong to the policy.
+ *     tags: [Escalation Policies]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Escalation policy ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - stepIds
+ *             properties:
+ *               stepIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 minItems: 1
+ *                 description: Ordered list of step IDs
+ *     responses:
+ *       200:
+ *         description: Steps reordered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Steps reordered successfully
+ *       400:
+ *         description: Validation error or step count mismatch
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Escalation policy not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id/steps/reorder',

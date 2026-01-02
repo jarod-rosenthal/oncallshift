@@ -149,7 +149,6 @@ export default function AnalyticsScreen({ navigation }: any) {
         dailyTrend,
       });
     } catch (error) {
-      console.error('Failed to fetch analytics:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

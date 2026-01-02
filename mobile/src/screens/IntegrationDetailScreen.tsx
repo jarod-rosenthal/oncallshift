@@ -101,7 +101,6 @@ export default function IntegrationDetailScreen() {
       setCurrentUser(profile);
       setIntegrationName(integrationData.name);
     } catch (error: any) {
-      console.error('Failed to fetch integration:', error);
       showToast({ message: 'Failed to load integration', type: 'error' });
     } finally {
       setLoading(false);
@@ -130,7 +129,6 @@ export default function IntegrationDetailScreen() {
       setShowEditModal(false);
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update integration:', error);
       showToast({ message: error.response?.data?.error || 'Failed to update', type: 'error' });
     } finally {
       setSaving(false);
@@ -184,7 +182,6 @@ export default function IntegrationDetailScreen() {
       setSelectedServiceId('');
       fetchData();
     } catch (error: any) {
-      console.error('Failed to link service:', error);
       showToast({ message: error.response?.data?.error || 'Failed to link service', type: 'error' });
     } finally {
       setSaving(false);

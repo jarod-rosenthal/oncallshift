@@ -266,7 +266,23 @@ export const findRunbookForIncident = async (
   keywords?: string[]
 ): Promise<Runbook | null> => {
   try {
-    const runbooks = await getRunbooksForService(serviceId);
+    // First, try service-specific runbooks
+    let runbooks = await getRunbooksForService(serviceId);
+
+    // If no service-specific runbooks, try ALL org runbooks with automated steps
+    if (runbooks.length === 0) {
+      console.log('[RunbookService] No service-specific runbooks, trying org-wide...');
+      try {
+        const allRunbooks = await listRunbooks();
+        // Filter to runbooks that have automated steps
+        runbooks = allRunbooks.filter(rb =>
+          rb.steps?.some(s => s.type === 'automated')
+        );
+        console.log('[RunbookService] Found org-wide automated runbooks:', runbooks.length);
+      } catch (e) {
+        console.log('[RunbookService] Could not fetch org runbooks:', e);
+      }
+    }
 
     if (runbooks.length === 0) {
       return null;

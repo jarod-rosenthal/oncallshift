@@ -111,7 +111,6 @@ export default function ScheduleLayersScreen() {
       setOverrides(overridesData);
       setUsers(usersData);
     } catch (error: any) {
-      console.error('Failed to fetch schedule data:', error);
       showToast({ message: 'Failed to load schedule data', type: 'error' });
     } finally {
       setLoading(false);
@@ -146,7 +145,6 @@ export default function ScheduleLayersScreen() {
       resetLayerForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to create layer:', error);
       showToast({ message: error.response?.data?.error || 'Failed to create layer', type: 'error' });
     } finally {
       setSaving(false);
@@ -171,7 +169,6 @@ export default function ScheduleLayersScreen() {
       resetLayerForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update layer:', error);
       showToast({ message: error.response?.data?.error || 'Failed to update layer', type: 'error' });
     } finally {
       setSaving(false);
@@ -214,7 +211,6 @@ export default function ScheduleLayersScreen() {
       setShowMembersModal(false);
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update members:', error);
       showToast({ message: error.response?.data?.error || 'Failed to update members', type: 'error' });
     } finally {
       setSaving(false);
@@ -249,7 +245,6 @@ export default function ScheduleLayersScreen() {
       resetOverrideForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to create override:', error);
       showToast({ message: error.response?.data?.error || 'Failed to create override', type: 'error' });
     } finally {
       setSaving(false);

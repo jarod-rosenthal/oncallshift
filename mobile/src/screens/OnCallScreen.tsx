@@ -91,7 +91,6 @@ export default function OnCallScreen({ navigation }: any) {
         setCurrentUser(profile);
       }
     } catch (err: any) {
-      console.error('Failed to fetch on-call data:', err);
       setError(err.message || 'Failed to load on-call data');
     } finally {
       setLoading(false);

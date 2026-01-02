@@ -44,8 +44,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (saved && ['light', 'dark', 'system'].includes(saved)) {
         setThemeModeState(saved as ThemeMode);
       }
-    } catch (error) {
-      console.error('Failed to load theme preference:', error);
+    } catch (_error) {
+      // Use default theme on error
     } finally {
       setIsLoaded(true);
     }
@@ -55,8 +55,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeModeState(mode);
     try {
       await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
-    } catch (error) {
-      console.error('Failed to save theme preference:', error);
+    } catch (_error) {
+      // Theme will reset on next load
     }
   };
 

@@ -16,7 +16,6 @@ async function getCalendar(): Promise<typeof import('expo-calendar') | null> {
     _Calendar = await import('expo-calendar');
     return _Calendar;
   } catch (error) {
-    console.log('[Calendar] expo-calendar not available (requires development build)');
     return null;
   }
 }
@@ -46,7 +45,6 @@ export async function requestCalendarPermissions(): Promise<boolean> {
     const { status } = await Calendar.requestCalendarPermissionsAsync();
     return status === 'granted';
   } catch (error) {
-    console.error('Failed to request calendar permissions:', error);
     return false;
   }
 }
@@ -62,7 +60,6 @@ export async function hasCalendarPermissions(): Promise<boolean> {
     const { status } = await Calendar.getCalendarPermissionsAsync();
     return status === 'granted';
   } catch (error) {
-    console.error('Failed to check calendar permissions:', error);
     return false;
   }
 }
@@ -110,7 +107,6 @@ async function getOrCreateOnCallCalendar(): Promise<string | null> {
     }
 
     if (!defaultCalendarSource) {
-      console.error('No calendar source found');
       return null;
     }
 
@@ -127,7 +123,6 @@ async function getOrCreateOnCallCalendar(): Promise<string | null> {
 
     return newCalendarId;
   } catch (error) {
-    console.error('Failed to get or create calendar:', error);
     return null;
   }
 }
@@ -235,7 +230,6 @@ export async function exportShiftsToCalendar(
       eventsCreated,
     };
   } catch (error: any) {
-    console.error('Failed to export shifts to calendar:', error);
     return {
       success: false,
       message: error.message || 'Failed to export shifts. Please try again.',

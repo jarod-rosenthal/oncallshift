@@ -1,12 +1,15 @@
 import { Router, Request, Response } from 'express';
-import { body, query, validationResult } from 'express-validator';
+import { body, param, query, validationResult } from 'express-validator';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminDisableUserCommand, AdminEnableUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
-import { User, UserContactMethod, UserNotificationRule } from '../../shared/models';
+import { User, UserContactMethod, UserNotificationRule, ScheduleMember, TeamMembership } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { generateEntityETag } from '../../shared/utils/etag';
+import { checkETagAndRespond } from '../../shared/middleware/etag';
+import { setLocationHeader } from '../../shared/utils/location-header';
 import {
   encryptCredential,
   decryptCredential,
@@ -337,6 +340,565 @@ router.get(
 );
 
 /**
+ * @swagger
+ * /api/v1/users:
+ *   post:
+ *     summary: Create user directly (API key auth only)
+ *     description: |
+ *       Creates a user without the invitation flow. This endpoint is only available
+ *       when authenticating via organization API key (for Terraform provider usage).
+ *       Users created this way will have status 'pending' and need to set up their
+ *       password on first login.
+ *     tags: [Users]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, fullName]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: User's email address (must be unique)
+ *               fullName:
+ *                 type: string
+ *                 description: User's full name
+ *               role:
+ *                 type: string
+ *                 enum: [admin, member]
+ *                 default: member
+ *                 description: User's role in the organization
+ *               timezone:
+ *                 type: string
+ *                 description: User's timezone (IANA format, e.g., "America/New_York")
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       403:
+ *         description: Direct user creation requires API key authentication
+ *       409:
+ *         description: User with this email already exists
+ */
+router.post(
+  '/',
+  [
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('fullName').isString().notEmpty().withMessage('Full name is required').isLength({ min: 2, max: 255 }).withMessage('Full name must be 2-255 characters'),
+    body('role').optional().isIn(['admin', 'member']).withMessage('Role must be admin or member'),
+    body('timezone').optional().isString().withMessage('Timezone must be a string'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      // Only allow direct creation via API key (for Terraform provider)
+      // Check if request was authenticated via user JWT (req.user exists) vs API key
+      // API key auth would have orgId but no user object
+      if (req.user) {
+        return res.status(403).json({
+          error: 'Direct user creation requires API key authentication. Use POST /api/v1/users/invite for user JWT auth.',
+        });
+      }
+
+      const orgId = req.orgId!;
+      const { email, fullName, role = 'member', timezone } = req.body;
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+
+      // Check if user already exists in this org
+      const existingUser = await userRepo.findOne({ where: { email } });
+      if (existingUser) {
+        return res.status(409).json({ error: 'User with this email already exists' });
+      }
+
+      // Create user without Cognito (they'll set password on first login)
+      const user = userRepo.create({
+        email,
+        fullName,
+        orgId,
+        role,
+        cognitoSub: `pending_${Date.now()}`, // Placeholder until user sets up auth
+        status: 'pending' as any, // User needs to complete signup
+        settings: timezone ? { profileTimezone: timezone } : null,
+      });
+
+      await userRepo.save(user);
+
+      logger.info('User created directly via API key', { userId: user.id, email, orgId });
+
+      setLocationHeader(res, req, '/api/v1/users', user.id);
+      return res.status(201).json({
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          status: user.status,
+          timezone: user.settings?.profileTimezone || null,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error creating user:', error);
+      return res.status(500).json({ error: 'Failed to create user' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/v1/users/{id}:
+ *   get:
+ *     summary: Get user by ID
+ *     description: Retrieves a single user by their ID, including related teams, contact methods, and notification rules.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The user's unique identifier
+ *     responses:
+ *       200:
+ *         description: User details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFound'
+ */
+router.get(
+  '/:id',
+  [
+    param('id').isUUID().withMessage('Valid user ID is required'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const orgId = req.orgId!;
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+      const teamMembershipRepo = dataSource.getRepository(TeamMembership);
+
+      // Get user with relations
+      const user = await userRepo.findOne({
+        where: { id, orgId },
+        relations: ['contactMethods', 'notificationRules', 'notificationRules.contactMethod'],
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Generate ETag from user ID and updatedAt timestamp
+      const etag = generateEntityETag(user.id, user.updatedAt);
+
+      // Check If-None-Match - return 304 if client's cached version is current
+      if (checkETagAndRespond(req, res, etag)) {
+        return; // 304 was sent
+      }
+
+      // Get team memberships separately (not directly on User entity)
+      const teamMemberships = await teamMembershipRepo.find({
+        where: { userId: id },
+        relations: ['team'],
+      });
+
+      return res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          baseRole: user.baseRole,
+          status: user.status,
+          phoneNumber: user.phoneNumber,
+          profilePictureUrl: user.profilePictureUrl,
+          timezone: user.settings?.profileTimezone || null,
+          teams: teamMemberships.map(tm => ({
+            id: tm.team.id,
+            name: tm.team.name,
+            role: tm.role,
+          })),
+          contactMethods: user.contactMethods.map(cm => ({
+            id: cm.id,
+            type: cm.type,
+            address: cm.address,
+            label: cm.label,
+            verified: cm.verified,
+            isDefault: cm.isDefault,
+          })),
+          notificationRules: user.notificationRules.map(nr => ({
+            id: nr.id,
+            contactMethodId: nr.contactMethodId,
+            contactMethod: nr.contactMethod ? {
+              id: nr.contactMethod.id,
+              type: nr.contactMethod.type,
+              address: nr.contactMethod.address,
+            } : null,
+            urgency: nr.urgency,
+            startDelayMinutes: nr.startDelayMinutes,
+            enabled: nr.enabled,
+          })),
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching user:', error);
+      return res.status(500).json({ error: 'Failed to fetch user' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/v1/users/{id}:
+ *   put:
+ *     summary: Update user
+ *     description: |
+ *       Update a user's profile information. Requires admin role.
+ *       This endpoint consolidates user updates and allows modifying fullName, role, status, and timezone.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The user's unique identifier
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *                 description: User's full name (2-255 characters)
+ *               role:
+ *                 type: string
+ *                 enum: [admin, member]
+ *                 description: User's role in the organization
+ *               status:
+ *                 type: string
+ *                 enum: [active, inactive]
+ *                 description: User's account status
+ *               timezone:
+ *                 type: string
+ *                 description: User's timezone (IANA format)
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Validation error or no valid fields to update
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: User not found
+ */
+router.put(
+  '/:id',
+  [
+    param('id').isUUID().withMessage('Valid user ID is required'),
+    body('fullName').optional().isString().isLength({ min: 2, max: 255 }).withMessage('Full name must be 2-255 characters'),
+    body('role').optional().isIn(['admin', 'member']).withMessage('Role must be admin or member'),
+    body('status').optional().isIn(['active', 'inactive']).withMessage('Status must be active or inactive'),
+    body('timezone').optional().isString().withMessage('Timezone must be a string'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const currentUser = req.user;
+      const orgId = req.orgId!;
+
+      // Require admin role (for JWT auth) or allow API key auth
+      if (currentUser && currentUser.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const { fullName, role, status, timezone } = req.body;
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+
+      const targetUser = await userRepo.findOne({
+        where: { id, orgId },
+      });
+
+      if (!targetUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Prevent self-deactivation
+      if (currentUser && id === currentUser.id && status === 'inactive') {
+        return res.status(400).json({ error: 'Cannot deactivate your own account' });
+      }
+
+      // Build update object
+      const updateData: Partial<User> = {};
+
+      if (fullName !== undefined) {
+        updateData.fullName = fullName;
+      }
+
+      if (role !== undefined) {
+        updateData.role = role;
+      }
+
+      if (status !== undefined) {
+        updateData.status = status;
+
+        // Update Cognito status if changing activation state
+        if (targetUser.cognitoSub && !targetUser.cognitoSub.startsWith('pending_')) {
+          try {
+            if (status === 'inactive') {
+              const disableCommand = new AdminDisableUserCommand({
+                UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+                Username: targetUser.email,
+              });
+              await cognitoClient.send(disableCommand);
+            } else if (status === 'active') {
+              const enableCommand = new AdminEnableUserCommand({
+                UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+                Username: targetUser.email,
+              });
+              await cognitoClient.send(enableCommand);
+            }
+          } catch (cognitoError: any) {
+            logger.error('Error updating Cognito user status:', cognitoError);
+            // Continue with DB update even if Cognito fails
+          }
+        }
+      }
+
+      if (timezone !== undefined) {
+        const currentSettings = targetUser.settings || {};
+        updateData.settings = {
+          ...currentSettings,
+          profileTimezone: timezone,
+        };
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'No valid fields to update' });
+      }
+
+      await userRepo.update(id, updateData);
+
+      // Fetch updated user
+      const updatedUser = await userRepo.findOne({ where: { id } });
+
+      logger.info('User updated', {
+        userId: id,
+        updatedFields: Object.keys(updateData),
+        updatedBy: currentUser?.id || 'api_key',
+      });
+
+      return res.json({
+        message: 'User updated successfully',
+        user: {
+          id: updatedUser!.id,
+          email: updatedUser!.email,
+          fullName: updatedUser!.fullName,
+          role: updatedUser!.role,
+          status: updatedUser!.status,
+          timezone: updatedUser!.settings?.profileTimezone || null,
+          createdAt: updatedUser!.createdAt,
+          updatedAt: updatedUser!.updatedAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating user:', error);
+      return res.status(500).json({ error: 'Failed to update user' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/v1/users/{id}:
+ *   delete:
+ *     summary: Delete user (soft delete)
+ *     description: |
+ *       Soft deletes a user by setting their status to 'deleted'.
+ *       The user cannot be deleted if they have active schedule assignments.
+ *       Requires admin role.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The user's unique identifier
+ *     responses:
+ *       204:
+ *         description: User deleted successfully
+ *       400:
+ *         description: Cannot delete your own account
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Cannot delete user with active schedule assignments
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 activeSchedules:
+ *                   type: integer
+ *                   description: Number of active schedule assignments
+ */
+router.delete(
+  '/:id',
+  [
+    param('id').isUUID().withMessage('Valid user ID is required'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const currentUser = req.user;
+      const orgId = req.orgId!;
+
+      // Require admin role (for JWT auth) or allow API key auth
+      if (currentUser && currentUser.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      // Prevent self-deletion
+      if (currentUser && id === currentUser.id) {
+        return res.status(400).json({ error: 'Cannot delete your own account' });
+      }
+
+      const dataSource = await getDataSource();
+      const userRepo = dataSource.getRepository(User);
+      const scheduleMemberRepo = dataSource.getRepository(ScheduleMember);
+
+      const targetUser = await userRepo.findOne({
+        where: { id, orgId },
+      });
+
+      if (!targetUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Check for active schedule assignments
+      const activeScheduleCount = await scheduleMemberRepo.count({
+        where: { userId: id },
+      });
+
+      if (activeScheduleCount > 0) {
+        return res.status(409).json({
+          error: 'Cannot delete user with active schedule assignments. Remove them from all schedules first.',
+          activeSchedules: activeScheduleCount,
+        });
+      }
+
+      // Soft delete - set status to 'deleted'
+      await userRepo.update(id, { status: 'deleted' as any });
+
+      // Disable user in Cognito if they have a valid Cognito account
+      if (targetUser.cognitoSub && !targetUser.cognitoSub.startsWith('pending_')) {
+        try {
+          const disableCommand = new AdminDisableUserCommand({
+            UserPoolId: process.env.COGNITO_USER_POOL_ID!,
+            Username: targetUser.email,
+          });
+          await cognitoClient.send(disableCommand);
+        } catch (cognitoError: any) {
+          logger.error('Error disabling Cognito user on delete:', cognitoError);
+          // Continue even if Cognito fails
+        }
+      }
+
+      logger.info('User deleted (soft)', {
+        userId: id,
+        email: targetUser.email,
+        deletedBy: currentUser?.id || 'api_key',
+      });
+
+      return res.status(204).send();
+    } catch (error) {
+      logger.error('Error deleting user:', error);
+      return res.status(500).json({ error: 'Failed to delete user' });
+    }
+  }
+);
+
+/**
  * PUT /api/v1/users/:id/role
  * Update user role (admin-only or for bootstrapping first admin)
  */
@@ -470,6 +1032,7 @@ router.post(
 
       logger.info('Invited user created in database', { userId: user.id, email, invitedBy: currentUser.id });
 
+      setLocationHeader(res, req, '/api/v1/users', user.id);
       return res.status(201).json({
         message: 'User invited successfully. They will receive an email with login instructions.',
         user: {
@@ -853,6 +1416,7 @@ router.post(
 
       logger.info('Contact method added', { userId: user.id, type, methodId: contactMethod.id });
 
+      setLocationHeader(res, req, '/api/v1/users/me/contact-methods', contactMethod.id);
       return res.status(201).json({
         message: 'Contact method added successfully',
         contactMethod: {
@@ -1147,6 +1711,7 @@ router.post(
 
       logger.info('Notification rule created', { userId: user.id, ruleId: rule.id });
 
+      setLocationHeader(res, req, '/api/v1/users/me/notification-rules', rule.id);
       return res.status(201).json({
         message: 'Notification rule created successfully',
         notificationRule: {

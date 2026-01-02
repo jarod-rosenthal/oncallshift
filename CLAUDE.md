@@ -10,6 +10,76 @@ OnCallShift is a production incident management platform deployed at https://onc
 - Mobile app (React Native + Expo)
 - AWS infrastructure managed by Terraform
 
+## Agent Workflow Guidelines
+
+**Always consider spawning parallel agents to maximize efficiency.** This is a full-stack monorepo where work can often be parallelized across backend, frontend, and mobile.
+
+### When to Use Parallel Agents
+
+- **Cross-stack features**: Spawn agents for backend API, frontend UI, and mobile screens simultaneously
+- **Independent file changes**: When modifying multiple unrelated files, use parallel agents
+- **Research + implementation**: One agent explores/investigates while another implements known work
+- **Type checking**: Run `npx tsc --noEmit` checks in parallel across backend/frontend/mobile
+- **Multi-file refactoring**: Split large refactors across agents by file or directory
+
+### Parallelization Examples
+
+| Task | Parallel Approach |
+|------|-------------------|
+| Add new API endpoint + UI | Agent 1: backend route, Agent 2: frontend page, Agent 3: mobile screen |
+| Fix bug across platforms | Agent 1: backend fix, Agent 2: frontend fix, Agent 3: mobile fix |
+| Add new model + routes | Agent 1: TypeORM model + migration, Agent 2: API routes |
+| Investigate + fix | Agent 1: search logs/code for root cause, Agent 2: implement known fixes |
+
+### Agent Best Practices
+
+1. **Spawn early**: Launch parallel agents at the start of multi-part tasks
+2. **Clear boundaries**: Give each agent distinct files/directories to avoid conflicts
+3. **Background agents**: Use `run_in_background: true` for long-running tasks
+4. **Collect results**: Use `TaskOutput` to gather parallel agent results before proceeding
+
+### Tool Installation Policy
+
+**Always install tools that improve quality rather than wasting time on workarounds.**
+
+- If a CLI tool (gh, jq, aws-cli, etc.) would make a task easier or more reliable, install it immediately using `winget install` or the appropriate package manager
+- Don't spend time crafting complex workarounds when a proper tool exists
+- Common tools to install when needed:
+  - `GitHub.cli` (gh) - For PR creation, issue management
+  - `stedolan.jq` (jq) - For JSON processing
+  - `Amazon.AWSCLI` - For AWS operations
+  - `Hashicorp.Terraform` - For infrastructure
+
+**Example**: If you need to create a PR and `gh` isn't installed, install it rather than telling the user to do it manually.
+
+## Local LLM Usage (Ollama)
+
+A local Ollama server is available with high-performance models running on an RTX 5090 (32GB VRAM). **Prefer using local models for code generation tasks to save API costs and leverage local GPU power.**
+
+### Available Models
+- **devstral-small-2** (24B) - Mistral's agentic coding model, excellent for multi-file edits
+- **qwen3-coder** (30B MoE) - Fast inference, strong at code generation and analysis
+
+### When to Use Local Models
+- Generating boilerplate code, scaffolding, or repetitive patterns
+- Writing unit tests or test fixtures
+- Creating CRUD endpoints or standard API routes
+- Generating TypeScript interfaces from examples
+- Bulk code transformations or refactoring suggestions
+
+### How to Use
+```
+> Use the ollama tool to generate a REST controller for [entity]
+> Ask devstral-small-2 to write unit tests for this function
+> Have qwen3-coder generate TypeScript types for this API response
+```
+
+### When to Use Claude Instead
+- Complex reasoning, debugging, or architectural decisions
+- Tasks requiring full codebase context
+- Multi-step planning and investigation
+- Security-sensitive code review
+
 ## Build and Development Commands
 
 ### Backend
@@ -23,6 +93,7 @@ npm run migrate      # Run database migrations
 npm run migrate:create  # Create new migration
 npm run seed         # Seed test data
 npm run lint         # ESLint
+npx tsc --noEmit     # Type check without emitting
 npm test             # Run all tests
 npm test -- --testPathPattern=webhooks  # Run single test file
 ```
@@ -30,6 +101,7 @@ npm test -- --testPathPattern=webhooks  # Run single test file
 ### Backend Workers
 ```bash
 cd backend
+# Note: Alert processor runs as separate ECS task in production (consumes from SQS)
 npm run start:worker             # Notification worker
 npm run start:escalation-timer   # Escalation timer worker
 npm run start:snooze-expiry      # Snooze expiry worker
@@ -43,6 +115,7 @@ npm install
 npm run dev          # Development server (localhost:5173)
 npm run build        # Production build (includes tsc)
 npm run lint         # ESLint
+npx tsc -b           # Type check only
 npm run preview      # Preview production build
 ```
 
@@ -62,14 +135,13 @@ The mobile app connects to the **production API** at `https://oncallshift.com/ap
 **Starting the Metro Bundler:**
 ```bash
 cd mobile
-npx expo start --host lan    # Binds to LAN IP (192.168.50.192:8081)
+npx expo start --host lan    # Binds to LAN IP for physical device testing
 ```
 
 **Connecting from your phone:**
-1. Ensure phone is on the same WiFi network (192.168.50.x subnet)
+1. Ensure phone is on the same WiFi network as your dev machine
 2. Open Expo Go app on phone
-3. Enter URL: `exp://192.168.50.192:8081`
-4. Or scan QR code from terminal
+3. Scan QR code from terminal, or enter URL shown in terminal (e.g., `exp://<YOUR_IP>:8081`)
 
 **TypeScript Validation:**
 ```bash
@@ -80,7 +152,7 @@ npx tsc --noEmit    # Check for TypeScript errors before testing
 **Troubleshooting:**
 - If phone can't connect, check Windows Firewall allows Node.js on port 8081
 - Verify Metro is running: `netstat -an | findstr "8081"` should show LISTENING
-- Test from phone browser: `http://192.168.50.192:8081` should return packager status
+- Test from phone browser: `http://<YOUR_LAN_IP>:8081` should return packager status
 
 **Config file:** `mobile/src/config/index.ts` - Points to production API, no changes needed for development.
 
@@ -125,18 +197,20 @@ terraform apply
 - **backend/src/shared/**: Middleware, utilities, database configuration
 - **frontend/src/pages/**: React page components
 - **frontend/src/components/**: Shared UI components
-- **mobile/src/screens/**: React Native screens
+- **mobile/src/screens/**: React Native screens (31 screens)
 - **mobile/src/services/**: API client, auth, push notifications, runbooks
 - **mobile/src/components/**: Shared mobile components
 
 ### Key Features Implemented
-- **Escalation Timer**: `backend/src/workers/escalation-timer.ts` - Auto-advances escalation steps
-- **Runbooks**: `backend/src/api/routes/runbooks.ts` - CRUD + execution
-- **Runbook Automation**: `backend/src/api/routes/runbook-automation.ts` - Claude AI-powered no-code runbook execution with sandbox
-- **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered analysis
-- **User Actions**: Reassign, escalate in `backend/src/api/routes/incidents.ts`
+- **Escalation Timer**: `backend/src/workers/escalation-timer.ts` - Auto-advances escalation steps every 30s
+- **Runbooks**: `backend/src/api/routes/runbooks.ts` - CRUD + manual execution
+- **Runbook Automation**: `backend/src/api/routes/runbook-automation.ts` - Claude AI-powered automated runbook execution with sandboxed environments
+- **AI Assistant**: `backend/src/api/routes/ai-assistant.ts` - Unified AI chat with org-specific API keys and cloud investigation
+- **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered incident analysis
+- **User Actions**: Reassign, escalate, snooze, add responders in `backend/src/api/routes/incidents.ts`
 - **Setup Wizard**: `frontend/src/pages/SetupWizard.tsx` and `mobile/src/screens/SetupWizardScreen.tsx`
 - **Notification Tracking**: Delivery status per user/channel
+- **Cloud Credentials**: `backend/src/api/routes/cloud-credentials.ts` - AWS/GCP/Azure credential management for investigation
 
 ### Data Flow
 1. **Alert Ingestion**: Webhook → API → SQS → Alert Processor → Incident created → Escalation starts
@@ -174,6 +248,12 @@ Workers in `backend/src/workers/` consume from SQS queues using long polling or 
 ### Mobile Navigation
 React Navigation with bottom tabs + stack navigation. Deep linking for push notifications.
 
+### AI Integration
+- **Claude API**: Used for incident diagnosis, runbook automation, and cloud investigation
+- **Org-specific API keys**: Organizations can provide their own Anthropic API keys stored encrypted in the database
+- **Cloud Investigation**: AI can query AWS/GCP/Azure resources when credentials are configured
+- **Runbook Automation**: AI executes runbook steps in sandboxed environments with approval workflows
+
 ## Infrastructure Rules
 
 **CRITICAL: Terraform is the ONLY source of truth for all AWS infrastructure.**
@@ -204,6 +284,62 @@ git add . && git commit # Commit immediately after apply
 - Services may use outdated configurations
 - Debugging becomes difficult when actual state differs from expected
 
+## Security Requirements
+
+**CRITICAL: Security is NOT optional. Never compromise on security best practices.**
+
+### Principle of Least Privilege (MANDATORY)
+
+1. **IAM Policies must be scoped** - Never use `Resource: "*"` with destructive actions
+   - Split large policies into multiple smaller policies (10KB limit per inline policy)
+   - Scope resources to specific ARN patterns: `arn:aws:service:region:account:resource/project-*`
+   - Use separate statements for read-only vs write operations
+
+2. **Never disable security controls** - These are FORBIDDEN:
+   - `NODE_TLS_REJECT_UNAUTHORIZED=0` - Never disable TLS validation
+   - Hardcoded credentials in code or scripts
+   - Overly permissive security groups (0.0.0.0/0 for non-public services)
+   - Disabling SSL/TLS requirements for databases
+
+3. **Secrets Management**
+   - Use AWS Secrets Manager for all credentials
+   - Never commit secrets to git (use .env.example templates)
+   - Rotate credentials regularly
+
+4. **Input Validation**
+   - Validate all webhook payloads (use HMAC signatures for Slack, PagerDuty, etc.)
+   - Use express-validator for all API inputs
+   - Sanitize user inputs to prevent injection attacks
+
+### Security Review Checklist
+
+Before any deployment, verify:
+- [ ] IAM policies use least-privilege with scoped resources
+- [ ] No hardcoded credentials or secrets
+- [ ] TLS/SSL enabled for all connections
+- [ ] Webhook signature verification implemented
+- [ ] Input validation on all endpoints
+- [ ] No overly permissive security groups
+
+### When Making IAM Changes
+
+```hcl
+# WRONG - Too permissive
+Action   = ["s3:*"]
+Resource = "*"
+
+# CORRECT - Scoped to project resources
+Action   = ["s3:GetObject", "s3:PutObject"]
+Resource = ["arn:aws:s3:::oncallshift-*/*"]
+```
+
+If a policy exceeds 10KB, split into multiple policies by domain:
+- `compute-permissions` - EC2, ECS, ECR, ELB
+- `data-permissions` - RDS, S3, Secrets Manager
+- `networking-permissions` - CloudFront, Route53, ACM
+- `messaging-permissions` - Cognito, SQS, SNS, SES
+- `iam-monitoring-permissions` - IAM, Logs, CloudWatch
+
 ## CI/CD
 
 GitHub Actions workflows in `.github/workflows/`:
@@ -218,7 +354,7 @@ GitHub Actions workflows in `.github/workflows/`:
 - **AWS Region**: us-east-1
 - **Live URL**: https://oncallshift.com
 - **API Docs**: https://oncallshift.com/api-docs
-- **Cognito User Pool**: us-east-1_vMk9CQycK
+- **Cognito User Pool**: us-east-1_qWv6JSIYH
 
 ## Troubleshooting
 
@@ -233,6 +369,7 @@ aws ecs describe-services --cluster pagerduty-lite-dev \
 aws logs tail /ecs/pagerduty-lite-dev/api --follow --region us-east-1
 aws logs tail /ecs/pagerduty-lite-dev/alert-processor --follow --region us-east-1
 aws logs tail /ecs/pagerduty-lite-dev/notification-worker --follow --region us-east-1
+aws logs tail /ecs/pagerduty-lite-dev/escalation-timer --follow --region us-east-1
 ```
 
 ### Database Access

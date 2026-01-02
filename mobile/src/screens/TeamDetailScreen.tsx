@@ -88,7 +88,6 @@ export default function TeamDetailScreen() {
       setTeamName(teamData.name);
       setTeamDescription(teamData.description || '');
     } catch (error: any) {
-      console.error('Failed to fetch team:', error);
       showToast({ message: 'Failed to load team', type: 'error' });
     } finally {
       setLoading(false);
@@ -118,7 +117,6 @@ export default function TeamDetailScreen() {
       setShowEditModal(false);
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update team:', error);
       showToast({ message: error.response?.data?.error || 'Failed to update team', type: 'error' });
     } finally {
       setSaving(false);
@@ -141,7 +139,6 @@ export default function TeamDetailScreen() {
       setSelectedRole('member');
       fetchData();
     } catch (error: any) {
-      console.error('Failed to add member:', error);
       showToast({ message: error.response?.data?.error || 'Failed to add member', type: 'error' });
     } finally {
       setSaving(false);
@@ -160,7 +157,6 @@ export default function TeamDetailScreen() {
       setSelectedMember(null);
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update role:', error);
       showToast({ message: error.response?.data?.error || 'Failed to update role', type: 'error' });
     } finally {
       setSaving(false);

@@ -220,7 +220,7 @@ interface ValidationResult {
  * Validates import data without making changes.
  */
 router.post('/pagerduty/validate', async (req: Request, res: Response) => {
-  const user = (req as any).user;
+  const user = req.user!;
   const orgId = user.orgId;
 
   const { data: importData }: { data: PagerDutyImportData } =
@@ -392,7 +392,7 @@ router.post('/pagerduty/validate', async (req: Request, res: Response) => {
  */
 router.post('/pagerduty', async (req: Request, res: Response) => {
   const startTime = Date.now();
-  const user = (req as any).user;
+  const user = req.user!;
   const orgId = user.orgId;
 
   const { data: importData, options = {} }: { data: PagerDutyImportData; options?: ImportOptions } =
@@ -488,9 +488,9 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
                     contactMethodIdMap.set(pdContact.id || pdContact.address, existingContact.id);
                     results.contact_methods.skipped++;
                   }
-                } catch (error: any) {
+                } catch (error) {
                   results.contact_methods.errors.push(
-                    `Contact for ${pdUser.email}: ${error.message}`
+                    `Contact for ${pdUser.email}: ${error instanceof Error ? error.message : String(error)}`
                   );
                 }
               }
@@ -560,9 +560,9 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
                       );
                     }
                   }
-                } catch (error: any) {
+                } catch (error) {
                   results.notification_rules.errors.push(
-                    `Rule for ${pdUser.email}: ${error.message}`
+                    `Rule for ${pdUser.email}: ${error instanceof Error ? error.message : String(error)}`
                   );
                 }
               }
@@ -572,8 +572,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
             results.users.skipped++;
             logger.info('User not found, will need to be invited', { pdId: pdUser.id, email: pdUser.email });
           }
-        } catch (error: any) {
-          results.users.errors.push(`User ${pdUser.email}: ${error.message}`);
+        } catch (error) {
+          results.users.errors.push(`User ${pdUser.email}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -625,8 +625,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
               }
             }
           }
-        } catch (error: any) {
-          results.teams.errors.push(`Team ${pdTeam.name}: ${error.message}`);
+        } catch (error) {
+          results.teams.errors.push(`Team ${pdTeam.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -698,8 +698,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
           }
 
           scheduleIdMap.set(pdSchedule.id, schedule.id);
-        } catch (error: any) {
-          results.schedules.errors.push(`Schedule ${pdSchedule.name}: ${error.message}`);
+        } catch (error) {
+          results.schedules.errors.push(`Schedule ${pdSchedule.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -799,8 +799,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
           }
 
           policyIdMap.set(pdPolicy.id, policy.id);
-        } catch (error: any) {
-          results.escalation_policies.errors.push(`Policy ${pdPolicy.name}: ${error.message}`);
+        } catch (error) {
+          results.escalation_policies.errors.push(`Policy ${pdPolicy.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -865,8 +865,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
             }
             results.services.skipped++;
           }
-        } catch (error: any) {
-          results.services.errors.push(`Service ${pdService.name}: ${error.message}`);
+        } catch (error) {
+          results.services.errors.push(`Service ${pdService.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -937,8 +937,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
           } else {
             results.routing_rules.skipped++;
           }
-        } catch (error: any) {
-          results.routing_rules.errors.push(`Rule ${pdRule.label || pdRule.id}: ${error.message}`);
+        } catch (error) {
+          results.routing_rules.errors.push(`Rule ${pdRule.label || pdRule.id}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1017,9 +1017,9 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
           } else {
             results.maintenance_windows.skipped++;
           }
-        } catch (error: any) {
+        } catch (error) {
           results.maintenance_windows.errors.push(
-            `Window ${pdWindow.summary || pdWindow.id}: ${error.message}`
+            `Window ${pdWindow.summary || pdWindow.id}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
@@ -1078,9 +1078,9 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
           } else {
             results.service_dependencies.skipped++;
           }
-        } catch (error: any) {
+        } catch (error) {
           results.service_dependencies.errors.push(
-            `Dependency ${pdDep.id}: ${error.message}`
+            `Dependency ${pdDep.id}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
@@ -1155,8 +1155,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
                 const tagName = pdTag.label || pdTag.summary || pdTag.id;
                 const tagId = await getOrCreateTag(tagName);
                 await associateTag(tagId, 'service', serviceId);
-              } catch (error: any) {
-                results.tags.errors.push(`Service tag ${pdTag.label || pdTag.id}: ${error.message}`);
+              } catch (error) {
+                results.tags.errors.push(`Service tag ${pdTag.label || pdTag.id}: ${error instanceof Error ? error.message : String(error)}`);
               }
             }
           }
@@ -1175,8 +1175,8 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
                 const tagName = pdTag.label || pdTag.summary || pdTag.id;
                 const tagId = await getOrCreateTag(tagName);
                 await associateTag(tagId, 'team', teamId);
-              } catch (error: any) {
-                results.tags.errors.push(`Team tag ${pdTag.label || pdTag.id}: ${error.message}`);
+              } catch (error) {
+                results.tags.errors.push(`Team tag ${pdTag.label || pdTag.id}: ${error instanceof Error ? error.message : String(error)}`);
               }
             }
           }
@@ -1205,11 +1205,11 @@ router.post('/pagerduty', async (req: Request, res: Response) => {
         escalation_policies: Object.fromEntries(policyIdMap),
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('PagerDuty import failed:', error);
     return res.status(500).json({
       status: 'error',
-      message: error.message,
+      message: error instanceof Error ? error.message : String(error),
       results,
     });
   }
@@ -1319,6 +1319,29 @@ interface OpsgenieTeam {
   tags?: string[];
 }
 
+// Time restriction types for Opsgenie schedules
+interface OpsgenieTimeOfDayRestriction {
+  startHour?: number;
+  startMin?: number;
+  endHour?: number;
+  endMin?: number;
+}
+
+interface OpsgenieWeekdayRestriction {
+  startDay?: string;
+  endDay?: string;
+  startHour?: number;
+  startMin?: number;
+  endHour?: number;
+  endMin?: number;
+}
+
+interface OpsgenieTimeRestriction {
+  type: 'time-of-day' | 'weekday-and-time-of-day';
+  restriction?: OpsgenieTimeOfDayRestriction;
+  restrictions?: OpsgenieWeekdayRestriction[];
+}
+
 interface OpsgenieSchedule {
   id: string;
   name: string;
@@ -1337,11 +1360,7 @@ interface OpsgenieSchedule {
       id?: string;
       username?: string;
     }>;
-    timeRestriction?: {
-      type: string;
-      restriction?: any;
-      restrictions?: any[];
-    };
+    timeRestriction?: OpsgenieTimeRestriction;
   }>;
 }
 
@@ -1393,7 +1412,7 @@ interface OpsgenieService {
  */
 router.post('/opsgenie', async (req: Request, res: Response) => {
   const startTime = Date.now();
-  const user = (req as any).user;
+  const user = req.user!;
   const orgId = user.orgId;
 
   const { data: importData, options = {} }: { data: OpsgenieImportData; options?: ImportOptions } =
@@ -1486,9 +1505,9 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
                     contactMethodIdMap.set(ogContact.id || ogContact.to, existingContact.id);
                     results.contact_methods.skipped++;
                   }
-                } catch (error: any) {
+                } catch (error) {
                   results.contact_methods.errors.push(
-                    `Contact for ${ogUser.username}: ${error.message}`
+                    `Contact for ${ogUser.username}: ${error instanceof Error ? error.message : String(error)}`
                   );
                 }
               }
@@ -1545,9 +1564,9 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
                       }
                     }
                   }
-                } catch (error: any) {
+                } catch (error) {
                   results.notification_rules.errors.push(
-                    `Rule for ${ogUser.username}: ${error.message}`
+                    `Rule for ${ogUser.username}: ${error instanceof Error ? error.message : String(error)}`
                   );
                 }
               }
@@ -1556,8 +1575,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
             results.users.skipped++;
             logger.info('User not found, will need to be invited', { ogId: ogUser.id, email: ogUser.username });
           }
-        } catch (error: any) {
-          results.users.errors.push(`User ${ogUser.username}: ${error.message}`);
+        } catch (error) {
+          results.users.errors.push(`User ${ogUser.username}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1607,8 +1626,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
               }
             }
           }
-        } catch (error: any) {
-          results.teams.errors.push(`Team ${ogTeam.name}: ${error.message}`);
+        } catch (error) {
+          results.teams.errors.push(`Team ${ogTeam.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1683,8 +1702,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           }
 
           scheduleIdMap.set(ogSchedule.id, schedule.id);
-        } catch (error: any) {
-          results.schedules.errors.push(`Schedule ${ogSchedule.name}: ${error.message}`);
+        } catch (error) {
+          results.schedules.errors.push(`Schedule ${ogSchedule.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1799,8 +1818,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           }
 
           escalationIdMap.set(ogEscalation.id, policy.id);
-        } catch (error: any) {
-          results.escalations.errors.push(`Escalation ${ogEscalation.name}: ${error.message}`);
+        } catch (error) {
+          results.escalations.errors.push(`Escalation ${ogEscalation.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1856,8 +1875,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
             }
             results.services.skipped++;
           }
-        } catch (error: any) {
-          results.services.errors.push(`Service ${ogService.name}: ${error.message}`);
+        } catch (error) {
+          results.services.errors.push(`Service ${ogService.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1922,8 +1941,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           } else {
             results.routing_rules.skipped++;
           }
-        } catch (error: any) {
-          results.routing_rules.errors.push(`Policy ${ogPolicy.name}: ${error.message}`);
+        } catch (error) {
+          results.routing_rules.errors.push(`Policy ${ogPolicy.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -1975,8 +1994,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           } else {
             results.heartbeats.skipped++;
           }
-        } catch (error: any) {
-          results.heartbeats.errors.push(`Heartbeat ${ogHeartbeat.name}: ${error.message}`);
+        } catch (error) {
+          results.heartbeats.errors.push(`Heartbeat ${ogHeartbeat.name}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -2084,9 +2103,9 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
           } else {
             results.maintenance_windows.skipped++;
           }
-        } catch (error: any) {
+        } catch (error) {
           results.maintenance_windows.errors.push(
-            `Window ${ogWindow.id}: ${error.message}`
+            `Window ${ogWindow.id}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
@@ -2160,8 +2179,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
               try {
                 const tagId = await getOrCreateTag(tagName);
                 await associateTag(tagId, 'service', serviceId);
-              } catch (error: any) {
-                results.tags.errors.push(`Service tag ${tagName}: ${error.message}`);
+              } catch (error) {
+                results.tags.errors.push(`Service tag ${tagName}: ${error instanceof Error ? error.message : String(error)}`);
               }
             }
           }
@@ -2179,8 +2198,8 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
               try {
                 const tagId = await getOrCreateTag(tagName);
                 await associateTag(tagId, 'team', teamId);
-              } catch (error: any) {
-                results.tags.errors.push(`Team tag ${tagName}: ${error.message}`);
+              } catch (error) {
+                results.tags.errors.push(`Team tag ${tagName}: ${error instanceof Error ? error.message : String(error)}`);
               }
             }
           }
@@ -2209,11 +2228,11 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
         escalations: Object.fromEntries(escalationIdMap),
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Opsgenie import failed:', error);
     return res.status(500).json({
       status: 'error',
-      message: error.message,
+      message: error instanceof Error ? error.message : String(error),
       results,
     });
   }
@@ -2225,8 +2244,101 @@ router.post('/opsgenie', async (req: Request, res: Response) => {
  *
  * Analyzes import data and returns what would be created without making changes.
  */
+// Preview detail types for type-safe preview responses
+interface PreviewUserDetail {
+  email: string;
+  status: 'existing' | 'unmapped';
+  id?: string;
+  note?: string;
+}
+
+interface PreviewContactMethodDetail {
+  userEmail: string;
+  type: string;
+  address: string;
+  status: 'existing' | 'new';
+}
+
+interface PreviewNotificationRuleDetail {
+  userEmail: string;
+  ruleCount: number;
+  status: 'new';
+  note?: string;
+}
+
+interface PreviewTeamDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+}
+
+interface PreviewScheduleDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+  layers?: number;
+}
+
+interface PreviewEscalationPolicyDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+  steps: number;
+  totalTargets: number;
+  multiTargetSteps: number;
+}
+
+interface PreviewServiceDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+  externalKeyPreserved?: boolean;
+}
+
+interface PreviewRoutingRuleDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+  conditions: number;
+  enabled: boolean;
+  targetServiceName?: string;
+}
+
+interface PreviewHeartbeatDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+  intervalSeconds: number;
+  enabled: boolean;
+}
+
+interface PreviewMaintenanceWindowDetail {
+  description: string;
+  status: 'existing' | 'new' | 'skipped';
+  id?: string;
+  reason?: string;
+  startTime: string;
+  endTime: string;
+  note?: string;
+}
+
+interface PreviewServiceDependencyDetail {
+  supporting: string;
+  dependent: string;
+  status: 'existing' | 'new' | 'unmapped';
+  id?: string;
+  reason?: string;
+}
+
+interface PreviewTagDetail {
+  name: string;
+  status: 'existing' | 'new';
+  id?: string;
+  color?: string;
+}
+
 router.post('/preview', async (req: Request, res: Response) => {
-  const user = (req as any).user;
+  const user = req.user!;
   const orgId = user.orgId;
   const { source, data, options = {} } = req.body;
   const { preserveKeys = false } = options as ImportOptions;
@@ -2269,18 +2381,18 @@ router.post('/preview', async (req: Request, res: Response) => {
         tags: { total: 0, existing: 0, new: 0, associations: 0 },
       },
       details: {
-        users: [] as any[],
-        contact_methods: [] as any[],
-        notification_rules: [] as any[],
-        teams: [] as any[],
-        schedules: [] as any[],
-        escalation_policies: [] as any[],
-        services: [] as any[],
-        routing_rules: [] as any[],
-        heartbeats: [] as any[],
-        maintenance_windows: [] as any[],
-        service_dependencies: [] as any[],
-        tags: [] as any[],
+        users: [] as PreviewUserDetail[],
+        contact_methods: [] as PreviewContactMethodDetail[],
+        notification_rules: [] as PreviewNotificationRuleDetail[],
+        teams: [] as PreviewTeamDetail[],
+        schedules: [] as PreviewScheduleDetail[],
+        escalation_policies: [] as PreviewEscalationPolicyDetail[],
+        services: [] as PreviewServiceDetail[],
+        routing_rules: [] as PreviewRoutingRuleDetail[],
+        heartbeats: [] as PreviewHeartbeatDetail[],
+        maintenance_windows: [] as PreviewMaintenanceWindowDetail[],
+        service_dependencies: [] as PreviewServiceDependencyDetail[],
+        tags: [] as PreviewTagDetail[],
       },
     };
 
@@ -2303,7 +2415,8 @@ router.post('/preview', async (req: Request, res: Response) => {
           if (contactMethods && contactMethods.length > 0) {
             for (const cm of contactMethods) {
               // Map contact method type
-              const typeMapping: Record<string, string> = source === 'pagerduty'
+              type ContactType = 'email' | 'sms' | 'phone' | 'push';
+              const typeMapping: Record<string, ContactType> = source === 'pagerduty'
                 ? {
                     'email_contact_method': 'email',
                     'phone_contact_method': 'phone',
@@ -2317,11 +2430,11 @@ router.post('/preview', async (req: Request, res: Response) => {
                     'mobile': 'push',
                   };
 
-              const contactType = typeMapping[source === 'pagerduty' ? cm.type : cm.method] || 'email';
+              const contactType: ContactType = typeMapping[source === 'pagerduty' ? cm.type : cm.method] || 'email';
               const address = source === 'pagerduty' ? cm.address : cm.to;
 
               const existingContact = await contactMethodRepo.findOne({
-                where: { userId: existing.id, type: contactType as any, address },
+                where: { userId: existing.id, type: contactType, address },
               });
 
               preview.summary.contact_methods.total++;
@@ -2350,7 +2463,7 @@ router.post('/preview', async (req: Request, res: Response) => {
           if (notificationRules && notificationRules.length > 0) {
             const ruleCount = source === 'pagerduty'
               ? notificationRules.length
-              : notificationRules.reduce((acc: number, r: any) => acc + (r.steps?.length || 0), 0);
+              : notificationRules.reduce((acc: number, r: { steps?: unknown[] }) => acc + (r.steps?.length || 0), 0);
 
             preview.summary.notification_rules.total += ruleCount;
             preview.summary.notification_rules.new += ruleCount; // Simplified - actual import deduplicates
@@ -2509,7 +2622,7 @@ router.post('/preview', async (req: Request, res: Response) => {
         // Get target service name if available
         let targetServiceName: string | undefined;
         if (source === 'pagerduty' && rule.actions?.route?.value) {
-          const targetService = services?.find((s: any) => s.id === rule.actions.route.value);
+          const targetService = services?.find((s: { id: string; name?: string }) => s.id === rule.actions.route.value);
           targetServiceName = targetService?.name;
         }
 
@@ -2759,7 +2872,7 @@ router.post('/preview', async (req: Request, res: Response) => {
     const dataServices = data.services || [];
     for (const svc of dataServices) {
       const serviceTags = source === 'pagerduty'
-        ? (svc.tags || []).map((t: any) => t.label || t.summary || t.id)
+        ? (svc.tags || []).map((t: { label?: string; summary?: string; id: string }) => t.label || t.summary || t.id)
         : (svc.tags || []);
 
       for (const tagName of serviceTags) {
@@ -2772,7 +2885,7 @@ router.post('/preview', async (req: Request, res: Response) => {
     const dataTeams = data.teams || [];
     for (const tm of dataTeams) {
       const teamTags = source === 'pagerduty'
-        ? (tm.tags || []).map((tag: any) => tag.label || tag.summary || tag.id)
+        ? (tm.tags || []).map((tag: { label?: string; summary?: string; id: string }) => tag.label || tag.summary || tag.id)
         : (tm.tags || []);
 
       for (const tagName of teamTags) {
@@ -2811,10 +2924,10 @@ router.post('/preview', async (req: Request, res: Response) => {
     preview.summary.tags.associations = tagAssociations.length;
 
     return res.status(200).json(preview);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Import preview failed:', error);
     return res.status(500).json({
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -2889,33 +3002,109 @@ function extractTimeFromISO(isoString: string): string {
   }
 }
 
-function convertRestrictions(pdRestrictions: any[]): any {
+// Schedule restriction types for converted data
+// Note: The LayerRestrictions type in the ScheduleLayer model requires 'weekly' type
+// with specific interval format. These conversion functions produce compatible output.
+interface PagerDutyRestriction {
+  type: string;
+  start_time_of_day: string;
+  duration_seconds: number;
+  start_day_of_week?: number;
+}
+
+/**
+ * Convert PagerDuty schedule restrictions to LayerRestrictions format.
+ * Returns the data structure expected by ScheduleLayer.restrictions.
+ */
+function convertRestrictions(pdRestrictions: PagerDutyRestriction[]): Record<string, unknown> {
+  // Convert PagerDuty restrictions to our format
+  // PagerDuty uses start_day_of_week (1=Monday) and duration_seconds
+  // We convert to startDay/endDay with startTime/endTime
+  const intervals = pdRestrictions.map(r => {
+    const startDay = r.start_day_of_week !== undefined ? r.start_day_of_week : 0;
+    const startTime = r.start_time_of_day;
+
+    // Calculate end time based on duration
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const endTotalMinutes = startHour * 60 + startMinute + Math.floor(r.duration_seconds / 60);
+    const endHour = Math.floor(endTotalMinutes / 60) % 24;
+    const endMinute = endTotalMinutes % 60;
+    const endTime = `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+
+    // Calculate end day (may be same or next day)
+    const daySpan = Math.floor(endTotalMinutes / (24 * 60));
+    const endDay = (startDay + daySpan) % 7;
+
+    return {
+      startDay,
+      startTime,
+      endDay,
+      endTime,
+    };
+  });
+
   return {
     type: 'weekly',
-    intervals: pdRestrictions.map(r => ({
-      type: r.type,
-      startTime: r.start_time_of_day,
-      durationSeconds: r.duration_seconds,
-      startDayOfWeek: r.start_day_of_week,
-    })),
+    intervals,
   };
 }
 
-function convertOpsgenieRestrictions(timeRestriction: any): any {
+/**
+ * Convert Opsgenie time restrictions to LayerRestrictions format.
+ * Returns the data structure expected by ScheduleLayer.restrictions.
+ */
+function convertOpsgenieRestrictions(timeRestriction: OpsgenieTimeRestriction): Record<string, unknown> | null {
   if (timeRestriction.type === 'time-of-day') {
-    return {
-      type: 'daily',
-      intervals: [{
-        startHour: timeRestriction.restriction?.startHour,
-        startMin: timeRestriction.restriction?.startMin,
-        endHour: timeRestriction.restriction?.endHour,
-        endMin: timeRestriction.restriction?.endMin,
-      }],
-    };
-  } else if (timeRestriction.type === 'weekday-and-time-of-day') {
+    // Daily restriction - convert to weekly format that applies every day
+    const startHour = timeRestriction.restriction?.startHour ?? 0;
+    const startMin = timeRestriction.restriction?.startMin ?? 0;
+    const endHour = timeRestriction.restriction?.endHour ?? 23;
+    const endMin = timeRestriction.restriction?.endMin ?? 59;
+
+    const startTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
+    const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+
+    // Create intervals for each day of the week
+    const intervals = [];
+    for (let day = 0; day < 7; day++) {
+      intervals.push({
+        startDay: day,
+        startTime,
+        endDay: day,
+        endTime,
+      });
+    }
+
     return {
       type: 'weekly',
-      intervals: timeRestriction.restrictions || [],
+      intervals,
+    };
+  } else if (timeRestriction.type === 'weekday-and-time-of-day') {
+    // Weekly restrictions - convert Opsgenie format to our format
+    const intervals = (timeRestriction.restrictions || []).map(r => {
+      // Opsgenie uses day names, convert to numbers (0=Sunday)
+      const dayMap: Record<string, number> = {
+        'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3,
+        'thursday': 4, 'friday': 5, 'saturday': 6,
+      };
+
+      const startDay = r.startDay ? dayMap[r.startDay.toLowerCase()] ?? 0 : 0;
+      const endDay = r.endDay ? dayMap[r.endDay.toLowerCase()] ?? 0 : startDay;
+
+      const startTime = `${String(r.startHour ?? 0).padStart(2, '0')}:${String(r.startMin ?? 0).padStart(2, '0')}`;
+      const endTime = `${String(r.endHour ?? 23).padStart(2, '0')}:${String(r.endMin ?? 59).padStart(2, '0')}`;
+
+      return {
+        startDay,
+        startTime,
+        endDay,
+        endTime,
+      };
+    });
+
+    return {
+      type: 'weekly',
+      intervals,
     };
   }
   return null;
@@ -3063,11 +3252,11 @@ router.post('/fetch/pagerduty/test', async (req: Request, res: Response) => {
     const result = await service.testConnection();
 
     return res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('PagerDuty connection test failed:', error);
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -3091,11 +3280,11 @@ router.post('/fetch/opsgenie/test', async (req: Request, res: Response) => {
     const result = await service.testConnection();
 
     return res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Opsgenie connection test failed:', error);
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -3164,11 +3353,11 @@ router.post('/fetch/pagerduty', async (req: Request, res: Response) => {
       success: true,
       data: result,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('PagerDuty data fetch failed:', error);
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -3237,11 +3426,11 @@ router.post('/fetch/opsgenie', async (req: Request, res: Response) => {
       success: true,
       data: result,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Opsgenie data fetch failed:', error);
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });
@@ -3252,8 +3441,8 @@ router.post('/fetch/opsgenie', async (req: Request, res: Response) => {
 
 interface ValidationDiff {
   field: string;
-  source: any;
-  current: any;
+  source: string | number | boolean | null;
+  current: string | number | boolean | null;
   severity: 'info' | 'warning' | 'error';
 }
 
@@ -3292,7 +3481,7 @@ interface ValidationReport {
  */
 router.post('/validate', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     const orgId = user.orgId;
     const { source, data } = req.body;
 
@@ -3660,11 +3849,11 @@ router.post('/validate', async (req: Request, res: Response) => {
       success: true,
       report,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Migration validation failed:', error);
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });

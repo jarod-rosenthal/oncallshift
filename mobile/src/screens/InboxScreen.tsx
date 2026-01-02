@@ -72,7 +72,6 @@ export default function InboxScreen({ navigation }: any) {
       const data = await apiService.getNotifications();
       setNotifications(data);
     } catch (err: any) {
-      console.log('Failed to fetch notifications from API, using mock data:', err.message);
       // Fall back to mock data if API fails
       setNotifications(getMockNotifications());
     } finally {
@@ -98,7 +97,6 @@ export default function InboxScreen({ navigation }: any) {
     try {
       await apiService.markNotificationRead(id);
     } catch (err) {
-      console.log('Failed to mark notification as read:', err);
     }
   };
 
@@ -108,7 +106,6 @@ export default function InboxScreen({ navigation }: any) {
     try {
       await apiService.markAllNotificationsRead();
     } catch (err) {
-      console.log('Failed to mark all notifications as read:', err);
     }
   };
 

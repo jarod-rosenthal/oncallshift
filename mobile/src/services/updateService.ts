@@ -58,13 +58,11 @@ const fetchVersionInfo = async (): Promise<VersionInfo | null> => {
     });
 
     if (!response.ok) {
-      console.log('[UpdateService] Failed to fetch version info');
       return null;
     }
 
     return await response.json();
   } catch (error) {
-    console.error('[UpdateService] Error fetching version info:', error);
     return null;
   }
 };
@@ -83,7 +81,6 @@ export const checkForUpdate = async (force = false): Promise<{
       if (lastCheck) {
         const lastCheckTime = parseInt(lastCheck, 10);
         if (Date.now() - lastCheckTime < UPDATE_CHECK_INTERVAL) {
-          console.log('[UpdateService] Skipping check, too soon');
           return null;
         }
       }
@@ -132,7 +129,6 @@ export const checkForUpdate = async (force = false): Promise<{
       forceUpdate: false,
     };
   } catch (error) {
-    console.error('[UpdateService] Error checking for update:', error);
     return null;
   }
 };
@@ -144,7 +140,6 @@ const checkForUpdateFallback = async (): Promise<{
 } | null> => {
   // In fallback mode, we can't determine if an update is available
   // This could be enhanced to check the App Store / Play Store directly
-  console.log('[UpdateService] Using fallback update check');
   return null;
 };
 
@@ -210,7 +205,6 @@ export const openAppStore = (): void => {
       : 'https://play.google.com/store/apps/details?id=com.oncallshift.mobile';
 
   Linking.openURL(storeUrl).catch((err) => {
-    console.error('[UpdateService] Failed to open store:', err);
     Alert.alert('Error', 'Could not open the app store. Please update manually.');
   });
 };

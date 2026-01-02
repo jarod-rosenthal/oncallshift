@@ -68,8 +68,8 @@ export default function LoginScreen({ navigation, onLoginSuccess }: LoginScreenP
     try {
       await authService.signIn(email, password);
 
-      initializePushNotifications().catch(err => {
-        console.warn('Failed to initialize push notifications:', err);
+      initializePushNotifications().catch(_err => {
+        // Push notifications may not be available on all devices
       });
 
       if (onLoginSuccess) {

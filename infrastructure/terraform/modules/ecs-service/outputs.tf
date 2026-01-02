@@ -1,11 +1,11 @@
 output "ecr_repository_url" {
-  description = "URL of the ECR repository"
-  value       = aws_ecr_repository.app.repository_url
+  description = "URL of the ECR repository (created or provided)"
+  value       = local.effective_ecr_repository_url
 }
 
 output "ecr_repository_arn" {
-  description = "ARN of the ECR repository"
-  value       = aws_ecr_repository.app.arn
+  description = "ARN of the ECR repository (null if using external repo)"
+  value       = var.ecr_repository_url == null ? aws_ecr_repository.app[0].arn : null
 }
 
 output "ecs_cluster_id" {

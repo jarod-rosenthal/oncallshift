@@ -105,7 +105,6 @@ export default function RoutingRulesScreen() {
       setRules(rulesData.sort((a, b) => a.ruleOrder - b.ruleOrder));
       setServices(servicesData);
     } catch (error: any) {
-      console.error('Failed to fetch routing rules:', error);
       showToast({ message: 'Failed to load routing rules', type: 'error' });
     } finally {
       setLoading(false);
@@ -147,7 +146,6 @@ export default function RoutingRulesScreen() {
       resetForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to create rule:', error);
       showToast({ message: error.response?.data?.error || 'Failed to create rule', type: 'error' });
     } finally {
       setSaving(false);
@@ -180,7 +178,6 @@ export default function RoutingRulesScreen() {
       resetForm();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to update rule:', error);
       showToast({ message: error.response?.data?.error || 'Failed to update rule', type: 'error' });
     } finally {
       setSaving(false);

@@ -4,6 +4,9 @@ import { authenticateUser, requireAdmin } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Team, TeamMembership, User, Schedule, EscalationPolicy, Service } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { generateEntityETag } from '../../shared/utils/etag';
+import { checkETagAndRespond } from '../../shared/middleware/etag';
+import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
@@ -11,8 +14,45 @@ const router = Router();
 router.use(authenticateUser);
 
 /**
- * GET /api/v1/teams
- * List all teams in the organization
+ * @swagger
+ * /api/v1/teams:
+ *   get:
+ *     summary: List all teams
+ *     description: Retrieves all teams in the authenticated user's organization with their members.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of teams retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 teams:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/Team'
+ *                       - type: object
+ *                         properties:
+ *                           memberCount:
+ *                             type: integer
+ *                             description: Number of members in the team
+ *                           members:
+ *                             type: array
+ *                             items:
+ *                               $ref: '#/components/schemas/TeamMember'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -55,8 +95,90 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/teams/:id
- * Get a specific team with members and resources
+ * @swagger
+ * /api/v1/teams/{id}:
+ *   get:
+ *     summary: Get a team by ID
+ *     description: Retrieves a specific team with its members and associated resources (schedules, escalation policies, services).
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *     responses:
+ *       200:
+ *         description: Team retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 team:
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/Team'
+ *                     - type: object
+ *                       properties:
+ *                         memberCount:
+ *                           type: integer
+ *                           description: Number of members in the team
+ *                         members:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/TeamMember'
+ *                         resources:
+ *                           type: object
+ *                           properties:
+ *                             schedules:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: string
+ *                                     format: uuid
+ *                                   name:
+ *                                     type: string
+ *                             escalationPolicies:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: string
+ *                                     format: uuid
+ *                                   name:
+ *                                     type: string
+ *                             services:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: string
+ *                                     format: uuid
+ *                                   name:
+ *                                     type: string
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Team not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -76,6 +198,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
+    }
+
+    // Generate ETag from team ID and updatedAt timestamp
+    const etag = generateEntityETag(team.id, team.updatedAt);
+
+    // Check If-None-Match - return 304 if client's cached version is current
+    if (checkETagAndRespond(req, res, etag)) {
+      return; // 304 was sent
     }
 
     // Get resources assigned to this team
@@ -120,8 +250,64 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/teams
- * Create a new team (admin only)
+ * @swagger
+ * /api/v1/teams:
+ *   post:
+ *     summary: Create a new team
+ *     description: Creates a new team in the organization. Requires admin privileges.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TeamCreate'
+ *     responses:
+ *       201:
+ *         description: Team created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Team created successfully
+ *                 team:
+ *                   $ref: '#/components/schemas/Team'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       409:
+ *         description: Team with this name or slug already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: A team with this name or slug already exists
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/',
@@ -171,6 +357,7 @@ router.post(
 
       logger.info('Team created', { teamId: team.id, orgId, name });
 
+      setLocationHeader(res, req, '/api/v1/teams', team.id);
       return res.status(201).json({
         message: 'Team created successfully',
         team: {
@@ -190,8 +377,78 @@ router.post(
 );
 
 /**
- * PUT /api/v1/teams/:id
- * Update a team (admin only)
+ * @swagger
+ * /api/v1/teams/{id}:
+ *   put:
+ *     summary: Update a team
+ *     description: Updates an existing team. Requires admin privileges.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TeamUpdate'
+ *     responses:
+ *       200:
+ *         description: Team updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Team updated successfully
+ *                 team:
+ *                   $ref: '#/components/schemas/Team'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Team not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       409:
+ *         description: Team with this name or slug already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: A team with this name already exists
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id',
@@ -270,8 +527,54 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/teams/:id
- * Delete a team (admin only)
+ * @swagger
+ * /api/v1/teams/{id}:
+ *   delete:
+ *     summary: Delete a team
+ *     description: Deletes a team from the organization. Requires admin privileges.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *     responses:
+ *       200:
+ *         description: Team deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Team deleted successfully
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Team not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   try {
@@ -301,8 +604,54 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
 // ============ Team Membership Routes ============
 
 /**
- * GET /api/v1/teams/:id/members
- * List team members
+ * @swagger
+ * /api/v1/teams/{id}/members:
+ *   get:
+ *     summary: List team members
+ *     description: Retrieves all members of a specific team.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *     responses:
+ *       200:
+ *         description: Team members retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 teamId:
+ *                   type: string
+ *                   format: uuid
+ *                 teamName:
+ *                   type: string
+ *                 members:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/TeamMember'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Team not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/members', async (req: Request, res: Response) => {
   try {
@@ -346,8 +695,90 @@ router.get('/:id/members', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/teams/:id/members
- * Add a member to a team (admin only)
+ * @swagger
+ * /api/v1/teams/{id}/members:
+ *   post:
+ *     summary: Add a member to a team
+ *     description: Adds a user as a member of the team. Requires admin privileges.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the user to add
+ *               role:
+ *                 type: string
+ *                 enum: [manager, member]
+ *                 default: member
+ *                 description: Role of the member in the team
+ *     responses:
+ *       201:
+ *         description: Member added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Member added successfully
+ *                 member:
+ *                   $ref: '#/components/schemas/TeamMember'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Team or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       409:
+ *         description: User is already a member of this team
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: User is already a member of this team
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/members',
@@ -400,6 +831,7 @@ router.post(
 
       logger.info('Team member added', { teamId: id, userId, role, orgId });
 
+      setLocationHeader(res, req, `/api/v1/teams/${id}/members`, membership.id);
       return res.status(201).json({
         message: 'Member added successfully',
         member: {
@@ -422,8 +854,82 @@ router.post(
 );
 
 /**
- * PUT /api/v1/teams/:id/members/:userId
- * Update a member's role (admin only)
+ * @swagger
+ * /api/v1/teams/{id}/members/{userId}:
+ *   put:
+ *     summary: Update a member's role
+ *     description: Updates the role of a team member. Requires admin privileges.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: User ID of the member
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - role
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [manager, member]
+ *                 description: New role for the member
+ *     responses:
+ *       200:
+ *         description: Member role updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Member role updated successfully
+ *                 member:
+ *                   $ref: '#/components/schemas/TeamMember'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Team or member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id/members/:userId',
@@ -485,8 +991,61 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/teams/:id/members/:userId
- * Remove a member from a team (admin only)
+ * @swagger
+ * /api/v1/teams/{id}/members/{userId}:
+ *   delete:
+ *     summary: Remove a member from a team
+ *     description: Removes a user from the team. Requires admin privileges.
+ *     tags: [Teams]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Team ID
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: User ID of the member to remove
+ *     responses:
+ *       200:
+ *         description: Member removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Member removed successfully
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ForbiddenError'
+ *       404:
+ *         description: Team or member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id/members/:userId', requireAdmin, async (req: Request, res: Response) => {
   try {

@@ -7,8 +7,10 @@ terraform {
   }
 }
 
-# ECR Repository
+# ECR Repository - only create if ecr_repository_url is not provided
 resource "aws_ecr_repository" "app" {
+  count = var.ecr_repository_url == null ? 1 : 0
+
   name                 = "${var.project_name}-${var.environment}-${var.service_name}"
   image_tag_mutability = "MUTABLE"
 
@@ -27,9 +29,11 @@ resource "aws_ecr_repository" "app" {
   }
 }
 
-# ECR Lifecycle Policy
+# ECR Lifecycle Policy - only create if we created the ECR repository
 resource "aws_ecr_lifecycle_policy" "app" {
-  repository = aws_ecr_repository.app.name
+  count = var.ecr_repository_url == null ? 1 : 0
+
+  repository = aws_ecr_repository.app[0].name
 
   policy = jsonencode({
     rules = [
@@ -69,6 +73,9 @@ locals {
   # notification-worker -> notif-worker, escalation-timer -> esc-timer
   short_service_name = replace(replace(var.service_name, "notification-", "notif-"), "escalation-", "esc-")
   cluster_name = split("/", var.ecs_cluster_id)[1]
+
+  # Use provided ECR URL or the one from created repository
+  effective_ecr_repository_url = coalesce(var.ecr_repository_url, try(aws_ecr_repository.app[0].repository_url, ""))
 }
 
 # CloudWatch Log Group
@@ -226,7 +233,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name      = var.service_name
-      image     = "${aws_ecr_repository.app.repository_url}:${var.image_tag}"
+      image     = "${local.effective_ecr_repository_url}:${var.image_tag}"
       essential = true
 
       portMappings = var.container_port != null ? [

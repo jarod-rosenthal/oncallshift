@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import crypto from 'crypto';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Integration, IntegrationType, Service } from '../../shared/models';
@@ -9,7 +10,123 @@ import { logger } from '../../shared/utils/logger';
 
 const router = Router();
 
-// All routes require authentication
+// ==================== Slack Signature Verification ====================
+
+/**
+ * Verify Slack request signature using HMAC-SHA256.
+ *
+ * Slack signs requests with a timestamp and signature in headers.
+ * This prevents spoofing attacks where someone pretends to be Slack.
+ *
+ * @see https://api.slack.com/authentication/verifying-requests-from-slack
+ */
+function verifySlackSignature(req: Request): { valid: boolean; error?: string } {
+  const signingSecret = process.env.SLACK_SIGNING_SECRET;
+
+  if (!signingSecret) {
+    // TODO: When SLACK_SIGNING_SECRET is not configured, we currently allow the request.
+    // In production, you MUST set this environment variable for security.
+    // Consider failing closed (returning false) in production environments.
+    logger.warn('SLACK_SIGNING_SECRET not configured - signature verification skipped');
+    return { valid: true };
+  }
+
+  const timestamp = req.headers['x-slack-request-timestamp'] as string;
+  const slackSignature = req.headers['x-slack-signature'] as string;
+
+  // Check for required headers
+  if (!timestamp || !slackSignature) {
+    return { valid: false, error: 'Missing Slack signature headers' };
+  }
+
+  // Prevent replay attacks - reject requests older than 5 minutes
+  const requestTimestamp = parseInt(timestamp, 10);
+  const currentTimestamp = Math.floor(Date.now() / 1000);
+  const fiveMinutesInSeconds = 5 * 60;
+
+  if (Math.abs(currentTimestamp - requestTimestamp) > fiveMinutesInSeconds) {
+    return { valid: false, error: 'Request timestamp too old (possible replay attack)' };
+  }
+
+  // Get raw body for signature verification
+  const rawBody = (req as any).rawBody;
+  if (!rawBody) {
+    logger.error('Raw body not available for Slack signature verification');
+    return { valid: false, error: 'Internal error: raw body not available' };
+  }
+
+  // Create the signature base string: v0:timestamp:body
+  const sigBaseString = `v0:${timestamp}:${rawBody.toString()}`;
+
+  // Calculate expected signature using HMAC-SHA256
+  const expectedSignature = 'v0=' + crypto
+    .createHmac('sha256', signingSecret)
+    .update(sigBaseString)
+    .digest('hex');
+
+  // Use timing-safe comparison to prevent timing attacks
+  try {
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature),
+      Buffer.from(slackSignature)
+    );
+
+    if (!isValid) {
+      return { valid: false, error: 'Invalid signature' };
+    }
+
+    return { valid: true };
+  } catch {
+    // timingSafeEqual throws if buffers have different lengths
+    return { valid: false, error: 'Invalid signature format' };
+  }
+}
+
+// ==================== Webhook for Slack Interactive Components ====================
+// NOTE: This endpoint must be BEFORE authenticateUser middleware since Slack
+// doesn't send JWT tokens - it uses signature verification instead.
+
+/**
+ * POST /api/v1/integrations/slack/interactions
+ * Handle Slack interactive components (buttons, etc.)
+ * Note: This endpoint needs to be added to Slack app configuration
+ */
+router.post('/slack/interactions', async (req: Request, res: Response) => {
+  try {
+    // Verify Slack signature to prevent spoofing attacks
+    const signatureResult = verifySlackSignature(req);
+    if (!signatureResult.valid) {
+      logger.warn('Slack signature verification failed', {
+        error: signatureResult.error,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      return res.status(401).json({ error: 'Unauthorized: ' + signatureResult.error });
+    }
+
+    // Slack sends payload as form-urlencoded with a 'payload' field
+    const payload = JSON.parse(req.body.payload || '{}');
+
+    if (!payload.type) {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    if (payload.type === 'block_actions') {
+      const dataSource = await getDataSource();
+      const slackIntegration = createSlackIntegration(dataSource);
+      const result = await slackIntegration.handleInteraction(payload);
+
+      return res.json(result);
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    logger.error('Error handling Slack interaction:', error);
+    return res.status(500).json({ error: 'Failed to handle interaction' });
+  }
+});
+
+// All routes below require authentication
 router.use(authenticateUser);
 
 /**
@@ -506,40 +623,6 @@ router.delete('/:id/services/:serviceId', async (req: Request, res: Response) =>
   } catch (error) {
     logger.error('Error unlinking service:', error);
     return res.status(500).json({ error: 'Failed to unlink service' });
-  }
-});
-
-// ==================== Webhook for Slack Interactive Components ====================
-
-/**
- * POST /api/v1/integrations/slack/interactions
- * Handle Slack interactive components (buttons, etc.)
- * Note: This endpoint needs to be added to Slack app configuration
- */
-router.post('/slack/interactions', async (req: Request, res: Response) => {
-  try {
-    // Slack sends payload as form-urlencoded with a 'payload' field
-    const payload = JSON.parse(req.body.payload || '{}');
-
-    if (!payload.type) {
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-
-    // Verify Slack signature in production
-    // TODO: Add Slack signature verification
-
-    if (payload.type === 'block_actions') {
-      const dataSource = await getDataSource();
-      const slackIntegration = createSlackIntegration(dataSource);
-      const result = await slackIntegration.handleInteraction(payload);
-
-      return res.json(result);
-    }
-
-    return res.json({ ok: true });
-  } catch (error) {
-    logger.error('Error handling Slack interaction:', error);
-    return res.status(500).json({ error: 'Failed to handle interaction' });
   }
 });
 

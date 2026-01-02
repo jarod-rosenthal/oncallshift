@@ -83,7 +83,6 @@ export default function ScheduleScreen({ route, navigation }: any) {
         generateScheduleEntries(scheduleData.schedule, membersData, oncall);
       }
     } catch (error) {
-      console.error('Failed to fetch schedule:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

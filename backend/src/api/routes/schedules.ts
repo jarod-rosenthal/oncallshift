@@ -5,6 +5,9 @@ import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Schedule, ScheduleMember, ScheduleOverride, ScheduleLayer, ScheduleLayerMember, Service, User, ShiftHandoffNote } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { generateEntityETag } from '../../shared/utils/etag';
+import { checkETagAndRespond } from '../../shared/middleware/etag';
+import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
@@ -12,8 +15,56 @@ const router = Router();
 router.use(authenticateUser);
 
 /**
- * GET /api/v1/schedules
- * List all schedules for the organization
+ * @swagger
+ * /api/v1/schedules:
+ *   get:
+ *     summary: List all schedules
+ *     description: Returns all on-call schedules for the authenticated user's organization, including the current on-call user for each schedule.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: List of schedules with current on-call user information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 schedules:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/Schedule'
+ *                       - type: object
+ *                         properties:
+ *                           currentOncallUser:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                                 format: uuid
+ *                               fullName:
+ *                                 type: string
+ *                               email:
+ *                                 type: string
+ *                               profilePictureUrl:
+ *                                 type: string
+ *                                 nullable: true
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -61,8 +112,78 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/schedules/oncall
- * Get current on-call users across all services
+ * @swagger
+ * /api/v1/schedules/oncall:
+ *   get:
+ *     summary: Get current on-call users
+ *     description: Returns the current on-call users for all active services in the organization that have schedules configured.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Current on-call information for all services
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 oncall:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       service:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           name:
+ *                             type: string
+ *                       schedule:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           name:
+ *                             type: string
+ *                       oncallUser:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           fullName:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                           profilePictureUrl:
+ *                             type: string
+ *                             nullable: true
+ *                       isOverride:
+ *                         type: boolean
+ *                         description: Whether the current on-call is due to an override
+ *                       overrideUntil:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *                         description: When the override expires
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/oncall', async (req: Request, res: Response) => {
   try {
@@ -127,8 +248,87 @@ router.get('/oncall', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/schedules/weekly-forecast
- * Get who's on-call for each day of the current week (and next week)
+ * @swagger
+ * /api/v1/schedules/weekly-forecast:
+ *   get:
+ *     summary: Get weekly on-call forecast
+ *     description: Returns a forecast showing who is on-call for each day over the next 2 weeks for all schedules.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Weekly on-call forecast for all schedules
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 forecast:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       schedule:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           name:
+ *                             type: string
+ *                           type:
+ *                             type: string
+ *                             enum: [manual, daily, weekly]
+ *                       days:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             date:
+ *                               type: string
+ *                               format: date
+ *                               example: '2024-01-15'
+ *                             dayOfWeek:
+ *                               type: string
+ *                               example: 'Mon'
+ *                             isToday:
+ *                               type: boolean
+ *                             oncallUser:
+ *                               type: object
+ *                               nullable: true
+ *                               properties:
+ *                                 id:
+ *                                   type: string
+ *                                   format: uuid
+ *                                 fullName:
+ *                                   type: string
+ *                                 email:
+ *                                   type: string
+ *                                 profilePictureUrl:
+ *                                   type: string
+ *                                   nullable: true
+ *                 weekStart:
+ *                   type: string
+ *                   format: date
+ *                   description: Start date of the forecast week
+ *                 generated:
+ *                   type: string
+ *                   format: date-time
+ *                   description: When the forecast was generated
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/weekly-forecast', async (req: Request, res: Response) => {
   try {
@@ -263,8 +463,65 @@ function calculateOncallForDate(
 }
 
 /**
- * GET /api/v1/schedules/:id
- * Get schedule details
+ * @swagger
+ * /api/v1/schedules/{id}:
+ *   get:
+ *     summary: Get schedule by ID
+ *     description: Returns detailed information about a specific schedule, including the current on-call user.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: Schedule details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *                 oncallUser:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     fullName:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     profilePictureUrl:
+ *                       type: string
+ *                       nullable: true
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
@@ -292,6 +549,14 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Schedule not found' });
     }
 
+    // Generate ETag from schedule ID and updatedAt timestamp
+    const etag = generateEntityETag(schedule.id, schedule.updatedAt);
+
+    // Check If-None-Match - return 304 if client's cached version is current
+    if (checkETagAndRespond(req, res, etag)) {
+      return; // 304 was sent
+    }
+
     // Get current on-call user if set
     let oncallUser = null;
     const oncallUserId = schedule.getCurrentOncallUserId();
@@ -316,8 +581,52 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/schedules
- * Create a new schedule
+ * @swagger
+ * /api/v1/schedules:
+ *   post:
+ *     summary: Create a new schedule
+ *     description: Creates a new on-call schedule in the organization.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ScheduleCreate'
+ *     responses:
+ *       201:
+ *         description: Schedule created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Schedule created successfully
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/',
@@ -352,6 +661,7 @@ router.post(
 
       logger.info('Schedule created', { scheduleId: schedule.id, name, orgId });
 
+      setLocationHeader(res, req, '/api/v1/schedules', schedule.id);
       return res.status(201).json({
         message: 'Schedule created successfully',
         schedule: formatSchedule(schedule),
@@ -364,8 +674,66 @@ router.post(
 );
 
 /**
- * PUT /api/v1/schedules/:id
- * Update schedule details
+ * @swagger
+ * /api/v1/schedules/{id}:
+ *   put:
+ *     summary: Update a schedule
+ *     description: Updates an existing schedule's details.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ScheduleUpdate'
+ *     responses:
+ *       200:
+ *         description: Schedule updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Schedule updated successfully
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id',
@@ -416,8 +784,52 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/schedules/:id
- * Delete a schedule (admin only)
+ * @swagger
+ * /api/v1/schedules/{id}:
+ *   delete:
+ *     summary: Delete a schedule
+ *     description: Deletes a schedule and unlinks all services that reference it. Schedule members are also removed.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: Schedule deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Schedule deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -459,8 +871,86 @@ router.delete('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * PUT /api/v1/schedules/:id/oncall
- * Set the current on-call user (manual assignment)
+ * @swagger
+ * /api/v1/schedules/{id}/oncall:
+ *   put:
+ *     summary: Set current on-call user
+ *     description: Manually sets the current on-call user for a schedule. This is typically used for manual schedules or to override the rotation.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID to set as on-call
+ *     responses:
+ *       200:
+ *         description: On-call user set successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: On-call user set successfully
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *                 oncallUser:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     fullName:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     profilePictureUrl:
+ *                       type: string
+ *                       nullable: true
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id/oncall',
@@ -518,8 +1008,88 @@ router.put(
 );
 
 /**
- * POST /api/v1/schedules/:id/override
- * Create a temporary on-call override
+ * @swagger
+ * /api/v1/schedules/{id}/override:
+ *   post:
+ *     summary: Create a temporary on-call override (legacy)
+ *     description: Creates a temporary override to the current on-call user. The override expires at the specified time. This is the legacy single-override endpoint; prefer using the /overrides endpoints for multi-override support.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - until
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID to set as the override on-call
+ *               until:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the override should expire (must be in the future)
+ *     responses:
+ *       200:
+ *         description: Override set successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: On-call override set successfully
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *                 overrideUser:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     fullName:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *       400:
+ *         description: Validation error or end time in the past
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/override',
@@ -584,8 +1154,54 @@ router.post(
 );
 
 /**
- * DELETE /api/v1/schedules/:id/override
- * Remove on-call override
+ * @swagger
+ * /api/v1/schedules/{id}/override:
+ *   delete:
+ *     summary: Remove on-call override (legacy)
+ *     description: Removes the current on-call override, restoring the normal rotation or manual assignment. This is the legacy single-override endpoint.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: Override removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: On-call override removed successfully
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id/override', async (req: Request, res: Response) => {
   try {
@@ -618,8 +1234,115 @@ router.delete('/:id/override', async (req: Request, res: Response) => {
 });
 
 /**
- * PUT /api/v1/schedules/:id/rotation
- * Configure rotation settings (for daily/weekly rotations)
+ * @swagger
+ * /api/v1/schedules/{id}/rotation:
+ *   put:
+ *     summary: Configure rotation settings
+ *     description: Configures automatic rotation settings for a schedule. Sets up daily or weekly rotation with specified users and timing.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - type
+ *               - userIds
+ *               - startDate
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [daily, weekly]
+ *                 description: Rotation type
+ *               userIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 minItems: 1
+ *                 description: User IDs in rotation order
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the rotation should start
+ *               rotationHour:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 23
+ *                 default: 9
+ *                 description: Hour of day when rotation occurs (0-23)
+ *               weekday:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 6
+ *                 default: 1
+ *                 description: Day of week for weekly rotations (0=Sunday, 6=Saturday)
+ *     responses:
+ *       200:
+ *         description: Rotation configured successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Rotation configured successfully
+ *                 schedule:
+ *                   $ref: '#/components/schemas/Schedule'
+ *                 rotation:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                     userIds:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                         format: uuid
+ *                     startDate:
+ *                       type: string
+ *                       format: date-time
+ *                     rotationHour:
+ *                       type: integer
+ *                     weekday:
+ *                       type: integer
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id/rotation',
@@ -750,8 +1473,53 @@ function calculateCurrentOncallUser(
 }
 
 /**
- * GET /api/v1/schedules/:id/members
- * Get schedule members (rotation list)
+ * @swagger
+ * /api/v1/schedules/{id}/members:
+ *   get:
+ *     summary: Get schedule members
+ *     description: Returns the list of users in the schedule's rotation, ordered by position.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: List of schedule members
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 members:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ScheduleMember'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/members', async (req: Request, res: Response) => {
   try {
@@ -804,8 +1572,73 @@ router.get('/:id/members', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/schedules/:id/members
- * Add a user to the schedule (admin only)
+ * @swagger
+ * /api/v1/schedules/{id}/members:
+ *   post:
+ *     summary: Add a member to the schedule
+ *     description: Adds a user to the schedule's rotation. The user must have availability configured.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID to add to the schedule
+ *     responses:
+ *       201:
+ *         description: Member added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: User added to schedule successfully
+ *                 member:
+ *                   $ref: '#/components/schemas/ScheduleMember'
+ *       400:
+ *         description: Validation error or user already member or user has no availability
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/members',
@@ -883,6 +1716,7 @@ router.post(
 
       logger.info('User added to schedule', { scheduleId: id, userId, position: nextPosition, addedBy: user.id });
 
+      setLocationHeader(res, req, `/api/v1/schedules/${id}/members`, member.id);
       return res.status(201).json({
         message: 'User added to schedule successfully',
         member: {
@@ -904,8 +1738,59 @@ router.post(
 );
 
 /**
- * DELETE /api/v1/schedules/:id/members/:memberId
- * Remove a user from the schedule (admin only)
+ * @swagger
+ * /api/v1/schedules/{id}/members/{memberId}:
+ *   delete:
+ *     summary: Remove a member from the schedule
+ *     description: Removes a user from the schedule's rotation. Remaining members are reordered.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID to remove
+ *     responses:
+ *       200:
+ *         description: Member removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: User removed from schedule successfully
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:id/members/:memberId', async (req: Request, res: Response) => {
   try {
@@ -959,8 +1844,78 @@ router.delete('/:id/members/:memberId', async (req: Request, res: Response) => {
 });
 
 /**
- * PUT /api/v1/schedules/:id/members/:memberId/position
- * Reorder member in the rotation (admin only)
+ * @swagger
+ * /api/v1/schedules/{id}/members/{memberId}/position:
+ *   put:
+ *     summary: Reorder a member in the rotation
+ *     description: Changes the position of a member in the schedule's rotation order.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID to reorder
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - position
+ *             properties:
+ *               position:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: New position in the rotation (0-indexed)
+ *     responses:
+ *       200:
+ *         description: Member position updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Member position updated successfully
+ *       400:
+ *         description: Invalid position
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:id/members/:memberId/position',
@@ -1063,8 +2018,110 @@ function formatSchedule(schedule: Schedule) {
 // ============================================================================
 
 /**
- * GET /api/v1/schedules/:id/overrides
- * List all overrides for a schedule (active, upcoming, and recent)
+ * @swagger
+ * /api/v1/schedules/{id}/overrides:
+ *   get:
+ *     summary: List schedule overrides
+ *     description: Returns all overrides for a schedule, including active, upcoming, and recently ended (past 7 days) overrides.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: List of schedule overrides
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 schedule:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     name:
+ *                       type: string
+ *                 overrides:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       scheduleId:
+ *                         type: string
+ *                         format: uuid
+ *                       userId:
+ *                         type: string
+ *                         format: uuid
+ *                       user:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           fullName:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                       startTime:
+ *                         type: string
+ *                         format: date-time
+ *                       endTime:
+ *                         type: string
+ *                         format: date-time
+ *                       reason:
+ *                         type: string
+ *                         nullable: true
+ *                       status:
+ *                         type: string
+ *                         enum: [active, upcoming, ended]
+ *                       createdBy:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           fullName:
+ *                             type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 activeOverride:
+ *                   type: object
+ *                   nullable: true
+ *                   description: The currently active override, if any
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/overrides', async (req: Request, res: Response) => {
   try {
@@ -1126,8 +2183,141 @@ router.get('/:id/overrides', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/schedules/:id/overrides
- * Create a new schedule override
+ * @swagger
+ * /api/v1/schedules/{id}/overrides:
+ *   post:
+ *     summary: Create a schedule override
+ *     description: Creates a new override for the schedule. Overrides cannot overlap with existing overrides.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - startTime
+ *               - endTime
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User who will cover the shift
+ *               startTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the override starts
+ *               endTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the override ends (must be after start and in the future)
+ *               reason:
+ *                 type: string
+ *                 maxLength: 500
+ *                 description: Optional reason for the override
+ *     responses:
+ *       201:
+ *         description: Override created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Override created successfully
+ *                 override:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     scheduleId:
+ *                       type: string
+ *                       format: uuid
+ *                     userId:
+ *                       type: string
+ *                       format: uuid
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         fullName:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                     startTime:
+ *                       type: string
+ *                       format: date-time
+ *                     endTime:
+ *                       type: string
+ *                       format: date-time
+ *                     reason:
+ *                       type: string
+ *                       nullable: true
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error or end time before start
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       409:
+ *         description: Override overlaps with existing override
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Override overlaps with an existing override
+ *                 conflictingOverride:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     startTime:
+ *                       type: string
+ *                       format: date-time
+ *                     endTime:
+ *                       type: string
+ *                       format: date-time
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/overrides',
@@ -1217,6 +2407,7 @@ router.post(
         createdBy: currentUser.id,
       });
 
+      setLocationHeader(res, req, `/api/v1/schedules/${id}/overrides`, override.id);
       return res.status(201).json({
         message: 'Override created successfully',
         override: {
@@ -1242,8 +2433,120 @@ router.post(
 );
 
 /**
- * PUT /api/v1/schedules/:scheduleId/overrides/:overrideId
- * Update an existing override
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/overrides/{overrideId}:
+ *   put:
+ *     summary: Update a schedule override
+ *     description: Updates an existing override's details.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: overrideId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Override ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User who will cover the shift
+ *               startTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the override starts
+ *               endTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the override ends
+ *               reason:
+ *                 type: string
+ *                 maxLength: 500
+ *                 description: Reason for the override
+ *     responses:
+ *       200:
+ *         description: Override updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Override updated successfully
+ *                 override:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     scheduleId:
+ *                       type: string
+ *                       format: uuid
+ *                     userId:
+ *                       type: string
+ *                       format: uuid
+ *                     user:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         fullName:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                     startTime:
+ *                       type: string
+ *                       format: date-time
+ *                     endTime:
+ *                       type: string
+ *                       format: date-time
+ *                     reason:
+ *                       type: string
+ *                       nullable: true
+ *       400:
+ *         description: Validation error or end time before start
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule, override, or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:scheduleId/overrides/:overrideId',
@@ -1342,8 +2645,59 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/schedules/:scheduleId/overrides/:overrideId
- * Delete an override
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/overrides/{overrideId}:
+ *   delete:
+ *     summary: Delete a schedule override
+ *     description: Deletes an override from the schedule.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: overrideId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Override ID
+ *     responses:
+ *       200:
+ *         description: Override deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Override deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or override not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:scheduleId/overrides/:overrideId', async (req: Request, res: Response) => {
   try {
@@ -1380,8 +2734,61 @@ router.delete('/:scheduleId/overrides/:overrideId', async (req: Request, res: Re
 // ============================================================================
 
 /**
- * GET /api/v1/schedules/:id/layers
- * List all layers for a schedule
+ * @swagger
+ * /api/v1/schedules/{id}/layers:
+ *   get:
+ *     summary: List schedule layers
+ *     description: Returns all rotation layers for a schedule. Layers allow complex rotation configurations with multiple overlapping schedules.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: List of schedule layers
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 schedule:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     name:
+ *                       type: string
+ *                 layers:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ScheduleLayer'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/layers', async (req: Request, res: Response) => {
   try {
@@ -1443,8 +2850,66 @@ router.get('/:id/layers', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/schedules/:id/layers
- * Create a new layer for a schedule
+ * @swagger
+ * /api/v1/schedules/{id}/layers:
+ *   post:
+ *     summary: Create a schedule layer
+ *     description: Creates a new rotation layer for the schedule. Layers can have different rotation types, handoff times, and restrictions.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ScheduleLayerCreate'
+ *     responses:
+ *       201:
+ *         description: Layer created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Layer created successfully
+ *                 layer:
+ *                   $ref: '#/components/schemas/ScheduleLayer'
+ *       400:
+ *         description: Validation error or users not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/layers',
@@ -1559,6 +3024,7 @@ router.post(
         memberCount: userIds?.length || 0,
       });
 
+      setLocationHeader(res, req, `/api/v1/schedules/${id}/layers`, layer.id);
       return res.status(201).json({
         message: 'Layer created successfully',
         layer: {
@@ -1597,8 +3063,58 @@ router.post(
 );
 
 /**
- * GET /api/v1/schedules/:scheduleId/layers/:layerId
- * Get a specific layer
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/layers/{layerId}:
+ *   get:
+ *     summary: Get a schedule layer
+ *     description: Returns details of a specific layer in the schedule.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: layerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Layer ID
+ *     responses:
+ *       200:
+ *         description: Layer details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 layer:
+ *                   $ref: '#/components/schemas/ScheduleLayer'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or layer not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:scheduleId/layers/:layerId', async (req: Request, res: Response) => {
   try {
@@ -1660,8 +3176,103 @@ router.get('/:scheduleId/layers/:layerId', async (req: Request, res: Response) =
 });
 
 /**
- * PUT /api/v1/schedules/:scheduleId/layers/:layerId
- * Update a layer
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/layers/{layerId}:
+ *   put:
+ *     summary: Update a schedule layer
+ *     description: Updates the configuration of an existing layer.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: layerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Layer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Layer name
+ *               rotationType:
+ *                 type: string
+ *                 enum: [daily, weekly, custom]
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *               endDate:
+ *                 type: string
+ *                 format: date-time
+ *                 nullable: true
+ *               handoffTime:
+ *                 type: string
+ *                 pattern: '^\d{2}:\d{2}(:\d{2})?$'
+ *                 example: '09:00'
+ *               handoffDay:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 6
+ *               rotationLength:
+ *                 type: integer
+ *                 minimum: 1
+ *               layerOrder:
+ *                 type: integer
+ *                 minimum: 0
+ *               restrictions:
+ *                 $ref: '#/components/schemas/LayerRestrictions'
+ *     responses:
+ *       200:
+ *         description: Layer updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Layer updated successfully
+ *                 layer:
+ *                   $ref: '#/components/schemas/ScheduleLayer'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or layer not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:scheduleId/layers/:layerId',
@@ -1768,8 +3379,59 @@ router.put(
 );
 
 /**
- * DELETE /api/v1/schedules/:scheduleId/layers/:layerId
- * Delete a layer
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/layers/{layerId}:
+ *   delete:
+ *     summary: Delete a schedule layer
+ *     description: Deletes a layer from the schedule. Members of the layer are also removed.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: layerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Layer ID
+ *     responses:
+ *       200:
+ *         description: Layer deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Layer deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or layer not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:scheduleId/layers/:layerId', async (req: Request, res: Response) => {
   try {
@@ -1802,8 +3464,88 @@ router.delete('/:scheduleId/layers/:layerId', async (req: Request, res: Response
 });
 
 /**
- * PUT /api/v1/schedules/:scheduleId/layers/:layerId/members
- * Set the members of a layer (replaces all existing members)
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/layers/{layerId}/members:
+ *   put:
+ *     summary: Set layer members
+ *     description: Replaces all existing members of a layer with a new list. Members are added in the order provided.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: layerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Layer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userIds
+ *             properties:
+ *               userIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: User IDs in rotation order
+ *     responses:
+ *       200:
+ *         description: Layer members updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Layer members updated successfully
+ *                 members:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ScheduleLayerMember'
+ *                 currentOncallUserId:
+ *                   type: string
+ *                   format: uuid
+ *                   nullable: true
+ *       400:
+ *         description: Validation error or users not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or layer not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/:scheduleId/layers/:layerId/members',
@@ -1898,8 +3640,119 @@ router.put(
 );
 
 /**
- * GET /api/v1/schedules/:id/rendered
- * Get the rendered schedule showing who's on-call over a time range
+ * @swagger
+ * /api/v1/schedules/{id}/rendered:
+ *   get:
+ *     summary: Get rendered schedule
+ *     description: Returns a rendered view of the schedule showing who is on-call for each time period. Combines layers and overrides to show the effective on-call person.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: query
+ *         name: since
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start of time range (defaults to now)
+ *       - in: query
+ *         name: until
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End of time range (defaults to 14 days from start)
+ *     responses:
+ *       200:
+ *         description: Rendered schedule entries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 schedule:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     name:
+ *                       type: string
+ *                     timezone:
+ *                       type: string
+ *                 since:
+ *                   type: string
+ *                   format: date-time
+ *                 until:
+ *                   type: string
+ *                   format: date-time
+ *                 entries:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       start:
+ *                         type: string
+ *                         format: date-time
+ *                       end:
+ *                         type: string
+ *                         format: date-time
+ *                       userId:
+ *                         type: string
+ *                         format: uuid
+ *                       user:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           fullName:
+ *                             type: string
+ *                             nullable: true
+ *                           email:
+ *                             type: string
+ *                       source:
+ *                         type: string
+ *                         enum: [layer, override, legacy]
+ *                         description: Where the on-call assignment came from
+ *                       layerId:
+ *                         type: string
+ *                         format: uuid
+ *                         description: Layer ID if source is layer
+ *                       overrideId:
+ *                         type: string
+ *                         format: uuid
+ *                         description: Override ID if source is override
+ *                 currentOncallUserId:
+ *                   type: string
+ *                   format: uuid
+ *                   nullable: true
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/rendered', async (req: Request, res: Response) => {
   try {
@@ -2048,8 +3901,107 @@ router.get('/:id/rendered', async (req: Request, res: Response) => {
 // ============================================================================
 
 /**
- * GET /api/v1/schedules/:id/handoff-notes
- * Get handoff notes for a schedule (recent and unread)
+ * @swagger
+ * /api/v1/schedules/{id}/handoff-notes:
+ *   get:
+ *     summary: Get handoff notes
+ *     description: Returns handoff notes for a schedule, including recent notes (last 7 days) and unread notes for the current user.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     responses:
+ *       200:
+ *         description: List of handoff notes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 schedule:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     name:
+ *                       type: string
+ *                 notes:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                       content:
+ *                         type: string
+ *                       shiftEndTime:
+ *                         type: string
+ *                         format: date-time
+ *                       isRead:
+ *                         type: boolean
+ *                       readAt:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       fromUser:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           fullName:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                       toUser:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           fullName:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                       isForMe:
+ *                         type: boolean
+ *                         description: Whether this note is addressed to the current user
+ *                 unreadCount:
+ *                   type: integer
+ *                   description: Number of unread notes for the current user
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get('/:id/handoff-notes', async (req: Request, res: Response) => {
   try {
@@ -2120,8 +4072,118 @@ router.get('/:id/handoff-notes', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/schedules/:id/handoff-notes
- * Create a new handoff note
+ * @swagger
+ * /api/v1/schedules/{id}/handoff-notes:
+ *   post:
+ *     summary: Create a handoff note
+ *     description: Creates a handoff note to pass information to the next on-call person.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *             properties:
+ *               content:
+ *                 type: string
+ *                 maxLength: 2000
+ *                 description: The handoff note content
+ *               toUserId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Specific user to address the note to (null = anyone)
+ *               shiftEndTime:
+ *                 type: string
+ *                 format: date-time
+ *                 description: When the shift ended (defaults to now)
+ *     responses:
+ *       201:
+ *         description: Handoff note created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Handoff note created successfully
+ *                 note:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     content:
+ *                       type: string
+ *                     shiftEndTime:
+ *                       type: string
+ *                       format: date-time
+ *                     isRead:
+ *                       type: boolean
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     fromUser:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         fullName:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                     toUser:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         fullName:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or recipient user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post(
   '/:id/handoff-notes',
@@ -2186,6 +4248,7 @@ router.post(
         toUserId: toUserId || 'anyone',
       });
 
+      setLocationHeader(res, req, `/api/v1/schedules/${id}/handoff-notes`, note.id);
       return res.status(201).json({
         message: 'Handoff note created successfully',
         note: {
@@ -2214,8 +4277,70 @@ router.post(
 );
 
 /**
- * PUT /api/v1/schedules/:scheduleId/handoff-notes/:noteId/read
- * Mark a handoff note as read
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/handoff-notes/{noteId}/read:
+ *   put:
+ *     summary: Mark handoff note as read
+ *     description: Marks a handoff note as read by the current user.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: noteId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Handoff note ID
+ *     responses:
+ *       200:
+ *         description: Note marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Note marked as read
+ *                 note:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     isRead:
+ *                       type: boolean
+ *                     readAt:
+ *                       type: string
+ *                       format: date-time
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       404:
+ *         description: Schedule or note not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put('/:scheduleId/handoff-notes/:noteId/read', async (req: Request, res: Response) => {
   try {
@@ -2260,8 +4385,69 @@ router.put('/:scheduleId/handoff-notes/:noteId/read', async (req: Request, res: 
 });
 
 /**
- * DELETE /api/v1/schedules/:scheduleId/handoff-notes/:noteId
- * Delete a handoff note (only by author)
+ * @swagger
+ * /api/v1/schedules/{scheduleId}/handoff-notes/{noteId}:
+ *   delete:
+ *     summary: Delete a handoff note
+ *     description: Deletes a handoff note. Only the author of the note can delete it.
+ *     tags: [Schedules]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: scheduleId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Schedule ID
+ *       - in: path
+ *         name: noteId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Handoff note ID
+ *     responses:
+ *       200:
+ *         description: Note deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Note deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UnauthorizedError'
+ *       403:
+ *         description: Not authorized to delete this note
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: You can only delete your own notes
+ *       404:
+ *         description: Schedule or note not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:scheduleId/handoff-notes/:noteId', async (req: Request, res: Response) => {
   try {
