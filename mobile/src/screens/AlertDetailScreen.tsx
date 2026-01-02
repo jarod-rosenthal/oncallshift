@@ -36,11 +36,11 @@ import * as runbookService from '../services/runbookService';
 import { getAccessToken } from '../services/authService';
 import { config } from '../config';
 import type { Incident, IncidentEvent, User, LegacyAIDiagnosisResponse, UserProfile, UserNotification, NotificationSummary, SimilarIncident } from '../services/apiService';
-import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction } from '../services/runbookService';
+import type { Runbook, RunbookStep, RunbookExecution, RunbookStepAction, StepResult, ExecuteStepResult, RunbookExecutionApproval } from '../services/runbookService';
 import { severityColors, statusColors } from '../theme';
 import { useAppTheme } from '../context/ThemeContext';
 import * as hapticService from '../services/hapticService';
-import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, RelatedIncidents, OwnerAvatar, AIDiagnosisPanel, ServiceHealthBadge, SimilarIncidentHint, AIAssistantPanel } from '../components';
+import { RespondersSection, StickyActionBar, useToast, toastMessages, useConfetti, ResolveTemplatesModal, ResolveIncidentModal, OwnerAvatar, AIDiagnosisPanel, ServiceHealthBadge, SimilarIncidentHint, AIAssistantPanel } from '../components';
 import type { ResolutionData } from '../components';
 
 // Skeleton placeholder component for loading states
@@ -98,6 +98,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [actionStates, setActionStates] = useState<Record<string, { status: 'idle' | 'confirming' | 'executing' | 'success' | 'error'; message?: string }>>({});
   const [confirmingAction, setConfirmingAction] = useState<{ stepId: string; action: RunbookStepAction } | null>(null);
+  // Automated step execution state
+  const [automatedStepStates, setAutomatedStepStates] = useState<Record<number, { status: 'idle' | 'executing' | 'requires_approval' | 'success' | 'error'; output?: string; error?: string; approvalId?: string }>>({});
+  const [pendingApproval, setPendingApproval] = useState<{ stepIndex: number; scriptCode: string; scriptLanguage: string; approvalId: string } | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalNotes, setApprovalNotes] = useState('');
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [notificationSummary, setNotificationSummary] = useState<NotificationSummary | null>(null);
   const [showNotifications, setShowNotifications] = useState(true);
@@ -420,6 +425,198 @@ export default function AlertDetailScreen({ route, navigation }: any) {
       ...prev,
       [stepId]: { status: 'idle' }
     }));
+  };
+
+  // Execute an automated step (script or AI action)
+  const executeAutomatedStep = async (stepIndex: number, step: RunbookStep, approved?: boolean) => {
+    if (!runbook || !step.automation) return;
+
+    // Check if we need approval and don't have it
+    if (step.automation.requiresApproval && !approved && automatedStepStates[stepIndex]?.status !== 'requires_approval') {
+      // Show approval modal
+      setPendingApproval({
+        stepIndex,
+        scriptCode: step.automation.script.code,
+        scriptLanguage: step.automation.script.language,
+        approvalId: '', // Will be set by backend
+      });
+      setShowApprovalModal(true);
+      return;
+    }
+
+    setAutomatedStepStates(prev => ({
+      ...prev,
+      [stepIndex]: { status: 'executing' }
+    }));
+    await hapticService.mediumTap();
+
+    try {
+      // Ensure we have an execution
+      let execId = runbookExecution?.id;
+      if (!execId && runbook && !runbook.id.startsWith('rb-')) {
+        const execution = await runbookService.startRunbookExecution(runbook.id, incident.id);
+        if (execution) {
+          setRunbookExecution(execution);
+          execId = execution.id;
+        }
+      }
+
+      if (!execId) {
+        throw new Error('Could not start runbook execution');
+      }
+
+      // Execute the step
+      const result = await runbookService.executeStep(execId, stepIndex, approved);
+
+      if (result.status === 'requires_approval') {
+        // Need approval - show the approval modal
+        setAutomatedStepStates(prev => ({
+          ...prev,
+          [stepIndex]: {
+            status: 'requires_approval',
+            approvalId: result.approvalId,
+          }
+        }));
+        setPendingApproval({
+          stepIndex,
+          scriptCode: step.automation!.script.code,
+          scriptLanguage: step.automation!.script.language,
+          approvalId: result.approvalId || '',
+        });
+        setShowApprovalModal(true);
+      } else if (result.status === 'completed') {
+        // Success!
+        setAutomatedStepStates(prev => ({
+          ...prev,
+          [stepIndex]: {
+            status: 'success',
+            output: result.output,
+          }
+        }));
+
+        // Mark step as completed
+        if (!completedSteps.includes(step.id)) {
+          setCompletedSteps(prev => [...prev, step.id]);
+        }
+
+        // Add note to incident
+        try {
+          const noteContent = `**Automated Step Executed:** ${step.title}\n\n` +
+            `- **Mode:** ${step.automation!.mode}\n` +
+            `- **Language:** ${step.automation!.script.language}\n` +
+            (result.output ? `- **Output:**\n\`\`\`\n${result.output}\n\`\`\`\n` : '') +
+            (result.exitCode !== undefined ? `- **Exit Code:** ${result.exitCode}\n` : '') +
+            (result.duration ? `- **Duration:** ${result.duration}ms\n` : '');
+
+          await apiService.addIncidentNote(incident.id, noteContent);
+          fetchIncidentDetails();
+        } catch (noteError) {
+          console.warn('Failed to add automation note:', noteError);
+        }
+
+        await hapticService.success();
+        showSuccess(`Step "${step.title}" completed`);
+
+        // Clear success after delay
+        setTimeout(() => {
+          setAutomatedStepStates(prev => ({
+            ...prev,
+            [stepIndex]: { status: 'idle' }
+          }));
+        }, 5000);
+      } else if (result.status === 'failed') {
+        throw new Error(result.error || 'Step execution failed');
+      }
+    } catch (error: any) {
+      console.error('Automated step execution error:', error);
+      const errorMessage = error.message || 'Step execution failed';
+
+      setAutomatedStepStates(prev => ({
+        ...prev,
+        [stepIndex]: {
+          status: 'error',
+          error: errorMessage,
+        }
+      }));
+
+      // Add error note
+      try {
+        const noteContent = `**Automated Step Failed:** ${step.title}\n\n` +
+          `- **Mode:** ${step.automation!.mode}\n` +
+          `- **Error:** ${errorMessage}`;
+
+        await apiService.addIncidentNote(incident.id, noteContent);
+        fetchIncidentDetails();
+      } catch (noteError) {
+        console.warn('Failed to add error note:', noteError);
+      }
+
+      await hapticService.error();
+      showError(errorMessage);
+
+      // Clear error after delay
+      setTimeout(() => {
+        setAutomatedStepStates(prev => ({
+          ...prev,
+          [stepIndex]: { status: 'idle' }
+        }));
+      }, 5000);
+    }
+  };
+
+  // Handle approval of a pending step
+  const handleApproveStep = async () => {
+    if (!pendingApproval || !runbook) return;
+
+    setShowApprovalModal(false);
+    const { stepIndex, approvalId } = pendingApproval;
+    const step = runbook.steps[stepIndex];
+
+    if (approvalId) {
+      // We have an approval ID - approve via API then re-execute
+      try {
+        await runbookService.approveStep(approvalId, approvalNotes);
+        // Now execute with approved flag
+        await executeAutomatedStep(stepIndex, step, true);
+      } catch (error: any) {
+        showError(error.message || 'Failed to approve step');
+      }
+    } else {
+      // No approval ID yet - just execute with approved flag
+      await executeAutomatedStep(stepIndex, step, true);
+    }
+
+    setPendingApproval(null);
+    setApprovalNotes('');
+  };
+
+  // Handle rejection of a pending step
+  const handleRejectStep = async () => {
+    if (!pendingApproval) return;
+
+    const { stepIndex, approvalId } = pendingApproval;
+
+    if (approvalId) {
+      try {
+        await runbookService.rejectStep(approvalId, approvalNotes);
+      } catch (error: any) {
+        console.warn('Failed to reject step:', error);
+      }
+    }
+
+    setAutomatedStepStates(prev => ({
+      ...prev,
+      [stepIndex]: {
+        status: 'error',
+        error: 'Step rejected',
+      }
+    }));
+
+    setShowApprovalModal(false);
+    setPendingApproval(null);
+    setApprovalNotes('');
+
+    showError('Step execution rejected');
   };
 
   const handleAcknowledge = async () => {
@@ -1043,44 +1240,80 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </Card>
         )}
 
-        {/* AI Assistant Panel - Inline Chat */}
+        {/* AI Assistant - Unified Section */}
         {!loadingDetails && incident.state !== 'resolved' && (
-          <View style={{ marginHorizontal: 16 }}>
-            <AIAssistantPanel
-              incident={incident}
-              collapsed={aiPanelCollapsed}
-              onToggleCollapse={() => setAiPanelCollapsed(!aiPanelCollapsed)}
-              maxHeight={300}
-              onNoteSaved={fetchIncidentDetails}
-            />
-          </View>
-        )}
-
-        {/* Full Screen AI Chat Option */}
-        {!loadingDetails && !diagnosis && !diagnosisLoading && aiPanelCollapsed && (
-          <Card style={dynamicStyles.card} mode="elevated">
-            <Card.Content>
-              <View style={themedStyles.diagnoseButtonContainer}>
-                <View style={themedStyles.diagnoseInfo}>
-                  <MaterialCommunityIcons name="robot" size={24} color={colors.accent} />
-                  <View style={themedStyles.diagnoseTextContainer}>
-                    <Text variant="titleSmall" style={themedStyles.diagnoseTitle}>
-                      Need more space?
+          <Card style={[dynamicStyles.card, themedStyles.aiAssistantCard]} mode="elevated">
+            <Card.Content style={{ padding: 0 }}>
+              {/* AI Assistant Header */}
+              <Pressable
+                style={themedStyles.aiAssistantHeader}
+                onPress={() => setAiPanelCollapsed(!aiPanelCollapsed)}
+              >
+                <View style={themedStyles.aiAssistantHeaderLeft}>
+                  <View style={[themedStyles.aiIconContainer, { backgroundColor: colors.accent + '15' }]}>
+                    <MaterialCommunityIcons name="robot" size={22} color={colors.accent} />
+                  </View>
+                  <View style={themedStyles.aiAssistantTitleContainer}>
+                    <Text variant="titleMedium" style={themedStyles.aiAssistantTitle}>
+                      AI Assistant
                     </Text>
-                    <Text variant="bodySmall" style={themedStyles.diagnoseSubtitle}>
-                      Open full AI chat for detailed analysis
+                    <Text variant="bodySmall" style={themedStyles.aiAssistantSubtitle}>
+                      {aiPanelCollapsed ? 'Tap to start analysis' : 'Claude-powered investigation'}
                     </Text>
                   </View>
                 </View>
-                <Button
-                  mode="outlined"
-                  onPress={() => navigation.navigate('AIChat', { incident })}
-                  icon="arrow-expand"
-                  style={themedStyles.diagnoseButton}
-                >
-                  Full Screen
-                </Button>
-              </View>
+                <View style={themedStyles.aiAssistantHeaderRight}>
+                  <IconButton
+                    icon="arrow-expand"
+                    size={20}
+                    onPress={() => navigation.navigate('AIChat', { incident })}
+                    style={themedStyles.aiFullScreenButton}
+                  />
+                  <MaterialCommunityIcons
+                    name={aiPanelCollapsed ? 'chevron-down' : 'chevron-up'}
+                    size={24}
+                    color={colors.textSecondary}
+                  />
+                </View>
+              </Pressable>
+
+              {/* Inline Chat Panel - shows when expanded */}
+              {!aiPanelCollapsed && (
+                <View style={themedStyles.aiAssistantContent}>
+                  <AIAssistantPanel
+                    incident={incident}
+                    collapsed={false}
+                    onToggleCollapse={() => {}}
+                    maxHeight={300}
+                    onNoteSaved={fetchIncidentDetails}
+                    hideHeader
+                  />
+                </View>
+              )}
+
+              {/* Quick Actions - shows when collapsed */}
+              {aiPanelCollapsed && (
+                <View style={themedStyles.aiQuickActions}>
+                  <Button
+                    mode="contained-tonal"
+                    icon="lightning-bolt"
+                    onPress={() => setAiPanelCollapsed(false)}
+                    style={themedStyles.aiQuickActionButton}
+                    compact
+                  >
+                    Quick Analysis
+                  </Button>
+                  <Button
+                    mode="outlined"
+                    icon="arrow-expand"
+                    onPress={() => navigation.navigate('AIChat', { incident })}
+                    style={themedStyles.aiQuickActionButton}
+                    compact
+                  >
+                    Full Screen Chat
+                  </Button>
+                </View>
+              )}
             </Card.Content>
           </Card>
         )}
@@ -1171,20 +1404,40 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                       const isCompleted = completedSteps.includes(step.id);
                       const canToggle = incident.state !== 'resolved';
                       const hasAction = !!step.action;
+                      const isAutomated = step.type === 'automated' && !!step.automation;
                       const actionState = actionStates[step.id];
+                      const automatedState = automatedStepStates[index];
+
+                      // Determine step type for badge
+                      const getStepTypeBadge = () => {
+                        if (isAutomated && step.automation) {
+                          const isAI = step.automation.mode === 'claude_code_api' || step.automation.script.language === 'natural_language';
+                          return {
+                            icon: isAI ? 'robot' : 'code-tags',
+                            label: isAI ? 'AI' : step.automation.script.language.toUpperCase(),
+                            color: isAI ? colors.accent : colors.info,
+                          };
+                        }
+                        if (hasAction) {
+                          return { icon: 'webhook', label: 'Webhook', color: colors.warning };
+                        }
+                        return null;
+                      };
+
+                      const stepBadge = getStepTypeBadge();
 
                       return (
                         <View
                           key={step.id}
                           style={[
                             themedStyles.runbookStep,
-                            actionState?.status === 'success' && themedStyles.runbookStepSuccess,
-                            actionState?.status === 'error' && themedStyles.runbookStepError,
+                            (actionState?.status === 'success' || automatedState?.status === 'success') && themedStyles.runbookStepSuccess,
+                            (actionState?.status === 'error' || automatedState?.status === 'error') && themedStyles.runbookStepError,
                           ]}
                         >
                           <View style={themedStyles.runbookStepHeader}>
-                            {/* Checkbox for non-action steps */}
-                            {!hasAction && (
+                            {/* Checkbox for manual steps without actions */}
+                            {!hasAction && !isAutomated && (
                               <Pressable
                                 style={themedStyles.runbookStepCheckbox}
                                 onPress={() => canToggle && toggleStepCompleted(step.id)}
@@ -1200,19 +1453,40 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                             )}
 
                             {/* Step content */}
-                            <View style={[themedStyles.runbookStepContent, hasAction && themedStyles.runbookStepContentWithAction]}>
-                              <Text
-                                variant="titleSmall"
-                                style={[
-                                  themedStyles.runbookStepTitle,
-                                  isCompleted && themedStyles.runbookStepCompleted,
-                                ]}
-                              >
-                                {index + 1}. {step.title}
-                                {step.isOptional && (
-                                  <Text style={themedStyles.optionalBadgeInline}> (Optional)</Text>
-                                )}
-                              </Text>
+                            <View style={[themedStyles.runbookStepContent, (hasAction || isAutomated) && themedStyles.runbookStepContentWithAction]}>
+                              <View style={themedStyles.stepTitleRow}>
+                                <Text
+                                  variant="titleSmall"
+                                  style={[
+                                    themedStyles.runbookStepTitle,
+                                    isCompleted && themedStyles.runbookStepCompleted,
+                                  ]}
+                                >
+                                  {index + 1}. {step.title}
+                                </Text>
+                                {/* Step type badges */}
+                                <View style={themedStyles.stepBadges}>
+                                  {stepBadge && (
+                                    <View style={[themedStyles.stepTypeBadge, { backgroundColor: stepBadge.color + '20' }]}>
+                                      <MaterialCommunityIcons name={stepBadge.icon as any} size={10} color={stepBadge.color} />
+                                      <Text style={[themedStyles.stepTypeBadgeText, { color: stepBadge.color }]}>
+                                        {stepBadge.label}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  {step.isOptional && (
+                                    <Text style={themedStyles.optionalBadgeInline}>(Optional)</Text>
+                                  )}
+                                  {isAutomated && step.automation?.requiresApproval && (
+                                    <View style={[themedStyles.stepTypeBadge, { backgroundColor: colors.warning + '20' }]}>
+                                      <MaterialCommunityIcons name="shield-check" size={10} color={colors.warning} />
+                                      <Text style={[themedStyles.stepTypeBadgeText, { color: colors.warning }]}>
+                                        Approval
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
                               <Text
                                 variant="bodySmall"
                                 style={[
@@ -1232,8 +1506,79 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                               )}
                             </View>
 
-                            {/* Action button or completed check for action steps */}
-                            {hasAction && step.action && (
+                            {/* Automated step execution button */}
+                            {isAutomated && step.automation && (
+                              <View style={themedStyles.runbookActionContainer}>
+                                {automatedState?.status === 'executing' ? (
+                                  <Button
+                                    mode="contained"
+                                    disabled
+                                    loading
+                                    compact
+                                    style={themedStyles.runbookActionButton}
+                                  >
+                                    Running
+                                  </Button>
+                                ) : automatedState?.status === 'requires_approval' ? (
+                                  <Button
+                                    mode="contained"
+                                    compact
+                                    icon="shield-check"
+                                    style={themedStyles.runbookActionButton}
+                                    buttonColor={colors.warning}
+                                    onPress={() => {
+                                      setPendingApproval({
+                                        stepIndex: index,
+                                        scriptCode: step.automation!.script.code,
+                                        scriptLanguage: step.automation!.script.language,
+                                        approvalId: automatedState.approvalId || '',
+                                      });
+                                      setShowApprovalModal(true);
+                                    }}
+                                  >
+                                    Approve
+                                  </Button>
+                                ) : automatedState?.status === 'success' ? (
+                                  <Button
+                                    mode="outlined"
+                                    disabled
+                                    compact
+                                    icon="check"
+                                    style={themedStyles.runbookActionButton}
+                                    textColor={colors.success}
+                                  >
+                                    Done
+                                  </Button>
+                                ) : isCompleted ? (
+                                  <Button
+                                    mode="outlined"
+                                    compact
+                                    icon="refresh"
+                                    style={themedStyles.runbookActionButton}
+                                    textColor={colors.accent}
+                                    onPress={() => canToggle && executeAutomatedStep(index, step)}
+                                    disabled={!canToggle}
+                                  >
+                                    Rerun
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    mode="contained"
+                                    compact
+                                    icon="play"
+                                    style={themedStyles.runbookActionButton}
+                                    buttonColor={colors.accent}
+                                    onPress={() => canToggle && executeAutomatedStep(index, step)}
+                                    disabled={!canToggle}
+                                  >
+                                    Run
+                                  </Button>
+                                )}
+                              </View>
+                            )}
+
+                            {/* Legacy webhook action button */}
+                            {hasAction && !isAutomated && step.action && (
                               <View style={themedStyles.runbookActionContainer}>
                                 {actionState?.status === 'executing' ? (
                                   <Button
@@ -1285,7 +1630,7 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                             )}
                           </View>
 
-                          {/* Confirmation prompt */}
+                          {/* Confirmation prompt for webhook actions */}
                           {actionState?.status === 'confirming' && step.action && (
                             <View style={themedStyles.runbookConfirmContainer}>
                               <Text variant="bodySmall" style={themedStyles.runbookConfirmText}>
@@ -1311,11 +1656,33 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                             </View>
                           )}
 
-                          {/* Error message */}
+                          {/* Automated step output */}
+                          {automatedState?.status === 'success' && automatedState.output && (
+                            <View style={themedStyles.automatedOutputContainer}>
+                              <Text variant="labelSmall" style={themedStyles.automatedOutputLabel}>Output:</Text>
+                              <ScrollView horizontal style={themedStyles.automatedOutputScroll}>
+                                <Text style={themedStyles.automatedOutputText} selectable>
+                                  {automatedState.output.slice(0, 500)}
+                                  {automatedState.output.length > 500 ? '...' : ''}
+                                </Text>
+                              </ScrollView>
+                            </View>
+                          )}
+
+                          {/* Error message for webhook actions */}
                           {actionState?.status === 'error' && (
                             <View style={themedStyles.runbookErrorContainer}>
                               <Text variant="bodySmall" style={themedStyles.runbookErrorText}>
                                 {actionState.message}
+                              </Text>
+                            </View>
+                          )}
+
+                          {/* Error message for automated steps */}
+                          {automatedState?.status === 'error' && (
+                            <View style={themedStyles.runbookErrorContainer}>
+                              <Text variant="bodySmall" style={themedStyles.runbookErrorText}>
+                                {automatedState.error}
                               </Text>
                             </View>
                           )}
@@ -1340,14 +1707,6 @@ export default function AlertDetailScreen({ route, navigation }: any) {
             </Card.Content>
           </Card>
         )}
-
-        {/* Related Incidents - right after Runbooks */}
-        <RelatedIncidents
-          currentIncident={incident}
-          onIncidentPress={(relatedIncident) => {
-            navigation.push('AlertDetail', { alert: relatedIncident });
-          }}
-        />
 
         {/* Responders Card - only show if there's content */}
         {!loadingDetails && incident.acknowledgedBy && (
@@ -1977,6 +2336,78 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           </View>
         </Modal>
       </Portal>
+
+      {/* Script Approval Modal */}
+      <Portal>
+        <Modal
+          visible={showApprovalModal}
+          onDismiss={() => { setShowApprovalModal(false); setPendingApproval(null); setApprovalNotes(''); }}
+          contentContainerStyle={themedStyles.approvalModalContainer}
+        >
+          <View style={dynamicStyles.reassignModalContent}>
+            <View style={themedStyles.reassignModalHeader}>
+              <MaterialCommunityIcons name="shield-check" size={32} color={colors.warning} />
+              <Text variant="titleLarge" style={themedStyles.modalTitle}>
+                Approve Script Execution
+              </Text>
+            </View>
+
+            <Text variant="bodyMedium" style={themedStyles.reassignSubtitle}>
+              Review the script before execution. This action cannot be undone.
+            </Text>
+
+            {pendingApproval && (
+              <>
+                <View style={themedStyles.scriptLanguageBadge}>
+                  <MaterialCommunityIcons
+                    name={pendingApproval.scriptLanguage === 'natural_language' ? 'robot' : 'code-tags'}
+                    size={14}
+                    color={colors.info}
+                  />
+                  <Text style={themedStyles.scriptLanguageText}>
+                    {pendingApproval.scriptLanguage === 'natural_language' ? 'AI Action' : pendingApproval.scriptLanguage.toUpperCase()}
+                  </Text>
+                </View>
+
+                <ScrollView style={themedStyles.scriptPreviewContainer}>
+                  <Text style={themedStyles.scriptPreviewText} selectable>
+                    {pendingApproval.scriptCode}
+                  </Text>
+                </ScrollView>
+              </>
+            )}
+
+            <TextInput
+              mode="outlined"
+              placeholder="Approval notes (optional)"
+              value={approvalNotes}
+              onChangeText={setApprovalNotes}
+              style={dynamicStyles.modalInput}
+              multiline
+              numberOfLines={2}
+            />
+
+            <View style={themedStyles.modalActions}>
+              <Button
+                mode="outlined"
+                onPress={handleRejectStep}
+                style={themedStyles.modalButton}
+                textColor="#C53030"
+              >
+                Reject
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleApproveStep}
+                buttonColor={colors.success}
+                style={themedStyles.modalButton}
+              >
+                Approve & Run
+              </Button>
+            </View>
+          </View>
+        </Modal>
+      </Portal>
     </KeyboardAvoidingView>
   );
 }
@@ -1991,7 +2422,7 @@ const styles = (colors: any) => StyleSheet.create({
   },
   card: {
     margin: 16,
-    marginBottom: 0,
+    marginBottom: 12,
     borderRadius: 12,
     backgroundColor: colors.surface,
   },
@@ -2471,6 +2902,93 @@ const styles = (colors: any) => StyleSheet.create({
     marginTop: 16,
     borderRadius: 8,
   },
+  // Step title row and badges
+  stepTitleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginLeft: 4,
+  },
+  stepTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  stepTypeBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  // Automated step output
+  automatedOutputContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  automatedOutputLabel: {
+    color: colors.textMuted,
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  automatedOutputScroll: {
+    maxHeight: 100,
+  },
+  automatedOutputText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
+  // Approval modal styles
+  approvalModalContainer: {
+    backgroundColor: colors.surface,
+    margin: 24,
+    borderRadius: 16,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  scriptLanguageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.info + '20',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 12,
+  },
+  scriptLanguageText: {
+    color: colors.info,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  scriptPreviewContainer: {
+    maxHeight: 200,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  scriptPreviewText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    color: colors.textPrimary,
+    lineHeight: 18,
+  },
   // AI Diagnosis styles
   diagnoseButtonContainer: {
     gap: 12,
@@ -2492,6 +3010,63 @@ const styles = (colors: any) => StyleSheet.create({
     marginTop: 2,
   },
   diagnoseButton: {
+    borderRadius: 8,
+  },
+  // Unified AI Assistant styles
+  aiAssistantCard: {
+    overflow: 'hidden',
+  },
+  aiAssistantHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 0,
+  },
+  aiAssistantHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  aiIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aiAssistantTitleContainer: {
+    flex: 1,
+  },
+  aiAssistantTitle: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  aiAssistantSubtitle: {
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  aiAssistantHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  aiFullScreenButton: {
+    margin: 0,
+  },
+  aiAssistantContent: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  aiQuickActions: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    paddingTop: 4,
+  },
+  aiQuickActionButton: {
+    flex: 1,
     borderRadius: 8,
   },
   // Notification Status styles
