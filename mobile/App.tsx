@@ -53,6 +53,8 @@ import ScheduleLayersScreen from './src/screens/ScheduleLayersScreen';
 import ContactMethodsScreen from './src/screens/ContactMethodsScreen';
 import ServiceSettingsScreen from './src/screens/ServiceSettingsScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
+import RunbooksScreen from './src/screens/RunbooksScreen';
+import RunbookEditorScreen from './src/screens/RunbookEditorScreen';
 
 // Components
 import { ToastProvider, OfflineBanner, ConfettiProvider } from './src/components';
@@ -641,6 +643,18 @@ function AppContent() {
                     name="SetupWizard"
                     component={SetupWizardScreen}
                     options={{ title: 'Setup Wizard', headerShown: false }}
+                  />
+                  <Stack.Screen
+                    name="Runbooks"
+                    component={RunbooksScreen}
+                    options={{ title: 'Runbooks' }}
+                  />
+                  <Stack.Screen
+                    name="RunbookEditor"
+                    component={RunbookEditorScreen}
+                    options={({ route }: any) => ({
+                      title: route.params?.runbookId ? 'Edit Runbook' : 'New Runbook',
+                    })}
                   />
                   <Stack.Screen
                     name="Teams"

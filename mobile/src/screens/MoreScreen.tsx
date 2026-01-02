@@ -136,6 +136,14 @@ export default function MoreScreen({ navigation, onLogout }: MoreScreenProps) {
           showChevron: true,
         },
         {
+          id: 'runbooks',
+          title: 'Runbooks',
+          subtitle: 'Manage incident response procedures',
+          icon: 'book-open-page-variant',
+          screen: 'Runbooks',
+          showChevron: true,
+        },
+        {
           id: 'escalation-policies',
           title: 'Escalation Policies',
           subtitle: 'Manage escalation rules',

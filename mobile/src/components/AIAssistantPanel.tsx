@@ -43,6 +43,7 @@ interface AIAssistantPanelProps {
   onToggleCollapse?: () => void;
   maxHeight?: number;
   onNoteSaved?: () => void;
+  hideHeader?: boolean; // Hide the header when embedded in a parent container
 }
 
 const MODEL_OPTIONS: { id: AIModelId; label: string }[] = [
@@ -57,6 +58,7 @@ export default function AIAssistantPanel({
   onToggleCollapse,
   maxHeight = 400,
   onNoteSaved,
+  hideHeader = false,
 }: AIAssistantPanelProps) {
   const theme = useTheme();
   const { showSuccess, showError } = useToast();
@@ -319,27 +321,44 @@ export default function AIAssistantPanel({
   }
 
   return (
-    <Surface style={[styles.container, { backgroundColor: theme.colors.surface }]} elevation={1}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.colors.outlineVariant }]}>
-        <Pressable onPress={onToggleCollapse} style={styles.headerTitle}>
-          <MaterialCommunityIcons name="robot-outline" size={20} color={theme.colors.primary} />
-          <Text variant="titleSmall" style={{ color: theme.colors.onSurface, marginLeft: 8 }}>
-            AI Assistant
-          </Text>
-          {onToggleCollapse && (
-            <MaterialCommunityIcons name="chevron-up" size={20} color={theme.colors.onSurfaceVariant} style={{ marginLeft: 4 }} />
+    <Surface style={[styles.container, hideHeader && styles.containerEmbedded, { backgroundColor: theme.colors.surface }]} elevation={hideHeader ? 0 : 1}>
+      {/* Header - hidden when embedded */}
+      {!hideHeader && (
+        <View style={[styles.header, { borderBottomColor: theme.colors.outlineVariant }]}>
+          <Pressable onPress={onToggleCollapse} style={styles.headerTitle}>
+            <MaterialCommunityIcons name="robot-outline" size={20} color={theme.colors.primary} />
+            <Text variant="titleSmall" style={{ color: theme.colors.onSurface, marginLeft: 8 }}>
+              AI Assistant
+            </Text>
+            {onToggleCollapse && (
+              <MaterialCommunityIcons name="chevron-up" size={20} color={theme.colors.onSurfaceVariant} style={{ marginLeft: 4 }} />
+            )}
+          </Pressable>
+          {messages.length > 0 && (
+            <IconButton
+              icon="content-save-outline"
+              onPress={handleSaveToNotes}
+              iconColor={theme.colors.primary}
+              size={18}
+            />
           )}
-        </Pressable>
-        {messages.length > 0 && (
+        </View>
+      )}
+
+      {/* Save button when header is hidden */}
+      {hideHeader && messages.length > 0 && (
+        <View style={styles.embeddedSaveBar}>
           <IconButton
             icon="content-save-outline"
             onPress={handleSaveToNotes}
             iconColor={theme.colors.primary}
             size={18}
           />
-        )}
-      </View>
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            Save to notes
+          </Text>
+        </View>
+      )}
 
       {/* Selection Bar */}
       <View style={styles.selectionBar}>
@@ -479,6 +498,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     marginVertical: 8,
+  },
+  containerEmbedded: {
+    marginVertical: 0,
+    borderRadius: 0,
+  },
+  embeddedSaveBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
   },
   collapsedContainer: {
     flexDirection: 'row',
