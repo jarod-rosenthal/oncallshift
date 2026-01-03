@@ -5,6 +5,9 @@ import { getDataSource } from '../../shared/db/data-source';
 import { Tag, EntityTag } from '../../shared/models';
 import { EntityType } from '../../shared/models/EntityTag';
 import { In } from 'typeorm';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators, searchFilterValidator } from '../../shared/validators/pagination';
+import { notFound, internalError, validationError, conflict, badRequest, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -63,34 +66,64 @@ function formatTag(tag: Tag) {
  * Get all tags for the organization
  */
 router.get('/',
-  query('search').optional().isString(),
+  [
+    ...paginationValidators,
+    searchFilterValidator,
+  ],
   async (req: Request, res: Response) => {
     try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
+
       const orgId = req.user!.orgId;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('tags', pagination.sort, 'name');
+      const sortOrder = pagination.order?.toUpperCase() as 'ASC' | 'DESC' || 'ASC';
+
       const { search } = req.query;
       const dataSource = await getDataSource();
       const tagRepo = dataSource.getRepository(Tag);
 
-      let queryBuilder = tagRepo.createQueryBuilder('tag')
+      const queryBuilder = tagRepo.createQueryBuilder('tag')
         .where('tag.orgId = :orgId', { orgId });
 
+      // Apply search filter
       if (search && typeof search === 'string' && search.trim()) {
-        queryBuilder = queryBuilder.andWhere('LOWER(tag.name) LIKE LOWER(:search)', {
+        queryBuilder.andWhere('LOWER(tag.name) LIKE LOWER(:search)', {
           search: `%${search.trim()}%`,
         });
       }
 
-      queryBuilder = queryBuilder.orderBy('tag.usageCount', 'DESC').addOrderBy('tag.name', 'ASC');
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting and pagination
+      queryBuilder
+        .orderBy(`tag.${sortField}`, sortOrder)
+        .skip(pagination.offset)
+        .take(pagination.limit);
 
       const tags = await queryBuilder.getMany();
+      const mappedTags = tags.map(formatTag);
+
+      const lastItem = tags[tags.length - 1];
+      const response = paginatedResponse(
+        mappedTags,
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'tags'
+      );
 
       return res.json({
-        tags: tags.map(formatTag),
+        ...response,
         suggestedColors: SUGGESTED_COLORS,
       });
     } catch (error) {
       console.error('Error fetching tags:', error);
-      return res.status(500).json({ error: 'Failed to fetch tags' });
+      return internalError(res);
     }
   }
 );
@@ -105,7 +138,7 @@ router.get('/:id',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -118,13 +151,13 @@ router.get('/:id',
       });
 
       if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+        return notFound(res, 'Tag', id);
       }
 
       return res.json({ tag: formatTag(tag) });
     } catch (error) {
       console.error('Error fetching tag:', error);
-      return res.status(500).json({ error: 'Failed to fetch tag' });
+      return internalError(res);
     }
   }
 );
@@ -141,7 +174,7 @@ router.post('/',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -154,7 +187,7 @@ router.post('/',
         where: { orgId, name: name.trim() },
       });
       if (existing) {
-        return res.status(409).json({ error: 'A tag with this name already exists' });
+        return conflict(res, 'A tag with this name already exists');
       }
 
       const tag = tagRepo.create({
@@ -172,7 +205,7 @@ router.post('/',
       });
     } catch (error) {
       console.error('Error creating tag:', error);
-      return res.status(500).json({ error: 'Failed to create tag' });
+      return internalError(res);
     }
   }
 );
@@ -190,7 +223,7 @@ router.put('/:id',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -201,7 +234,7 @@ router.put('/:id',
 
       const tag = await tagRepo.findOne({ where: { id, orgId } });
       if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+        return notFound(res, 'Tag', id);
       }
 
       // Check for duplicate name if changing
@@ -210,7 +243,7 @@ router.put('/:id',
           where: { orgId, name: name.trim() },
         });
         if (existing) {
-          return res.status(409).json({ error: 'A tag with this name already exists' });
+          return conflict(res, 'A tag with this name already exists');
         }
       }
 
@@ -226,7 +259,7 @@ router.put('/:id',
       });
     } catch (error) {
       console.error('Error updating tag:', error);
-      return res.status(500).json({ error: 'Failed to update tag' });
+      return internalError(res);
     }
   }
 );
@@ -241,7 +274,7 @@ router.delete('/:id',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -251,15 +284,15 @@ router.delete('/:id',
 
       const tag = await tagRepo.findOne({ where: { id, orgId } });
       if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+        return notFound(res, 'Tag', id);
       }
 
       await tagRepo.remove(tag);
 
-      return res.json({ message: 'Tag deleted successfully' });
+      return res.status(204).send();
     } catch (error) {
       console.error('Error deleting tag:', error);
-      return res.status(500).json({ error: 'Failed to delete tag' });
+      return internalError(res);
     }
   }
 );
@@ -279,7 +312,7 @@ router.get('/entity/:entityType/:entityId',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -301,7 +334,7 @@ router.get('/entity/:entityType/:entityId',
       });
     } catch (error) {
       console.error('Error fetching entity tags:', error);
-      return res.status(500).json({ error: 'Failed to fetch entity tags' });
+      return internalError(res);
     }
   }
 );
@@ -319,7 +352,7 @@ router.put('/entity/:entityType/:entityId',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -335,7 +368,7 @@ router.put('/entity/:entityType/:entityId',
           where: { id: In(tagIds), orgId },
         });
         if (tags.length !== tagIds.length) {
-          return res.status(400).json({ error: 'One or more tags not found' });
+          return badRequest(res, 'One or more tags not found');
         }
       }
 
@@ -373,7 +406,7 @@ router.put('/entity/:entityType/:entityId',
       });
     } catch (error) {
       console.error('Error updating entity tags:', error);
-      return res.status(500).json({ error: 'Failed to update entity tags' });
+      return internalError(res);
     }
   }
 );
@@ -390,7 +423,7 @@ router.post('/entity/:entityType/:entityId/add',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -403,7 +436,7 @@ router.post('/entity/:entityType/:entityId/add',
       // Verify tag exists
       const tag = await tagRepo.findOne({ where: { id: tagId, orgId } });
       if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+        return notFound(res, 'Tag', tagId);
       }
 
       // Check if already tagged
@@ -415,7 +448,7 @@ router.post('/entity/:entityType/:entityId/add',
         },
       });
       if (existing) {
-        return res.status(409).json({ error: 'Entity already has this tag' });
+        return conflict(res, 'Entity already has this tag');
       }
 
       const entityTag = entityTagRepo.create({
@@ -432,7 +465,7 @@ router.post('/entity/:entityType/:entityId/add',
       });
     } catch (error) {
       console.error('Error adding tag to entity:', error);
-      return res.status(500).json({ error: 'Failed to add tag to entity' });
+      return internalError(res);
     }
   }
 );
@@ -449,7 +482,7 @@ router.delete('/entity/:entityType/:entityId/:tagId',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -467,15 +500,15 @@ router.delete('/entity/:entityType/:entityId/:tagId',
       });
 
       if (!entityTag) {
-        return res.status(404).json({ error: 'Tag not found on this entity' });
+        return notFound(res, 'Entity tag');
       }
 
       await entityTagRepo.remove(entityTag);
 
-      return res.json({ message: 'Tag removed from entity' });
+      return res.status(204).send();
     } catch (error) {
       console.error('Error removing tag from entity:', error);
-      return res.status(500).json({ error: 'Failed to remove tag from entity' });
+      return internalError(res);
     }
   }
 );
@@ -491,7 +524,7 @@ router.get('/:id/entities',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -504,10 +537,10 @@ router.get('/:id/entities',
       // Verify tag exists
       const tag = await tagRepo.findOne({ where: { id, orgId } });
       if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+        return notFound(res, 'Tag', id);
       }
 
-      let whereClause: any = { orgId, tagId: id };
+      const whereClause: any = { orgId, tagId: id };
       if (entityType) {
         whereClause.entityType = entityType;
       }
@@ -533,7 +566,7 @@ router.get('/:id/entities',
       });
     } catch (error) {
       console.error('Error fetching tag entities:', error);
-      return res.status(500).json({ error: 'Failed to fetch tag entities' });
+      return internalError(res);
     }
   }
 );
@@ -551,7 +584,7 @@ router.post('/bulk',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -588,7 +621,7 @@ router.post('/bulk',
       });
     } catch (error) {
       console.error('Error bulk creating tags:', error);
-      return res.status(500).json({ error: 'Failed to create tags' });
+      return internalError(res);
     }
   }
 );
@@ -636,7 +669,7 @@ router.post('/seed-defaults', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error seeding default tags:', error);
-    return res.status(500).json({ error: 'Failed to seed default tags' });
+    return internalError(res);
   }
 });
 

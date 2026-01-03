@@ -240,7 +240,25 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            <Card className="hover:shadow-lg transition-shadow border-2 border-green-200 bg-green-50">
+              <CardHeader>
+                <div className="text-3xl mb-2">🏗️</div>
+                <CardTitle className="text-lg">Terraform Provider</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-700">
+                <ul className="space-y-2">
+                  <li>• <strong>Everything in code</strong> - schedules, policies, services</li>
+                  <li>• <code className="bg-green-100 px-1 rounded text-xs">terraform apply</code> your on-call config</li>
+                  <li>• GitOps workflows for incident management</li>
+                  <li>• State management, drift detection, import</li>
+                </ul>
+                <Link to="/docs/terraform" className="text-green-700 font-medium text-sm mt-3 inline-block hover:underline">
+                  Terraform docs →
+                </Link>
+              </CardContent>
+            </Card>
+
             <Card className="hover:shadow-lg transition-shadow border-2 border-purple-200 bg-purple-50">
               <CardHeader>
                 <div className="text-3xl mb-2">🔌</div>
@@ -262,17 +280,35 @@ export function Landing() {
             <Card className="hover:shadow-lg transition-shadow border-2 border-blue-200 bg-blue-50">
               <CardHeader>
                 <div className="text-3xl mb-2">🤖</div>
-                <CardTitle className="text-lg">AI That Fixes Problems</CardTitle>
+                <CardTitle className="text-lg">Self-Healing Infrastructure</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-slate-700">
                 <ul className="space-y-2">
-                  <li>• <strong>Auto-diagnoses</strong> every incident</li>
-                  <li>• <strong>Executes</strong> remediation actions</li>
-                  <li>• Queries your AWS/Azure/GCP directly</li>
-                  <li>• BYOK for enterprise compliance</li>
+                  <li>• AI <strong>resolves incidents</strong> while you sleep</li>
+                  <li>• Auto-restarts, scales, and remediates</li>
+                  <li>• <strong>80% target</strong> auto-resolution rate</li>
+                  <li>• Human review for novel problems only</li>
                 </ul>
                 <Link to="/product/ai-diagnosis" className="text-blue-700 font-medium text-sm mt-3 inline-block hover:underline">
                   See how it works →
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="text-3xl mb-2">🔮</div>
+                <CardTitle className="text-lg">Predictive AI</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-600">
+                <ul className="space-y-2">
+                  <li>• <strong>Prevent</strong> incidents before they happen</li>
+                  <li>• Anomaly detection & capacity prediction</li>
+                  <li>• Auto-scale before traffic spikes hit</li>
+                  <li>• Risk scoring for deployments</li>
+                </ul>
+                <Link to="/product/predictive-ai" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
+                  Learn more →
                 </Link>
               </CardContent>
             </Card>
@@ -297,18 +333,36 @@ export function Landing() {
 
             <Card className="hover:shadow-lg transition-shadow">
               <CardHeader>
-                <div className="text-3xl mb-2">🔔</div>
-                <CardTitle className="text-lg">Always Reach the Right Person</CardTitle>
+                <div className="text-3xl mb-2">💻</div>
+                <CardTitle className="text-lg">CLI & Developer Tools</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-slate-600">
                 <ul className="space-y-2">
-                  <li>• Smart escalations</li>
-                  <li>• Multi-channel (Push, SMS, Voice)</li>
-                  <li>• Repeat until acknowledged</li>
-                  <li>• Visual schedule builder</li>
+                  <li>• <code className="bg-slate-100 px-1 rounded text-xs">ocs incidents ack</code> from terminal</li>
+                  <li>• GitHub Action for CI/CD integration</li>
+                  <li>• Complete OpenAPI spec + SDKs</li>
+                  <li>• Scriptable, automatable, developer-first</li>
                 </ul>
-                <Link to="/product/incident-management" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
-                  Learn more →
+                <Link to="/docs/cli" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
+                  CLI reference →
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="text-3xl mb-2">🔐</div>
+                <CardTitle className="text-lg">Enterprise Ready</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-600">
+                <ul className="space-y-2">
+                  <li>• <strong>SAML/OIDC SSO</strong> (Okta, Azure AD)</li>
+                  <li>• SCIM provisioning for user sync</li>
+                  <li>• SOC 2 Type II compliance</li>
+                  <li>• RBAC, audit logs, data residency</li>
+                </ul>
+                <Link to="/company/security" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
+                  Security details →
                 </Link>
               </CardContent>
             </Card>
@@ -352,6 +406,75 @@ export function Landing() {
         </div>
       </section>
 
+      {/* DevOps Integration Section */}
+      <section className="container mx-auto px-4 py-16">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-2xl font-bold text-center mb-4">
+            Built for the Modern DevOps Stack
+          </h2>
+          <p className="text-slate-600 text-center mb-10 max-w-2xl mx-auto">
+            Integrates with the tools you already use. Infrastructure as code from day one.
+          </p>
+
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-6 mb-12">
+            {[
+              { name: 'Terraform', icon: '🏗️', category: 'IaC' },
+              { name: 'Kubernetes', icon: '☸️', category: 'Orchestration' },
+              { name: 'AWS', icon: '☁️', category: 'Cloud' },
+              { name: 'Datadog', icon: '📊', category: 'Monitoring' },
+              { name: 'Prometheus', icon: '🔥', category: 'Metrics' },
+              { name: 'Slack', icon: '💬', category: 'Chat' },
+              { name: 'GitHub', icon: '🐙', category: 'CI/CD' },
+              { name: 'Docker', icon: '🐳', category: 'Container' },
+              { name: 'GitLab', icon: '🦊', category: 'CI/CD' },
+              { name: 'Grafana', icon: '📈', category: 'Dashboards' },
+              { name: 'Azure', icon: '☁️', category: 'Cloud' },
+              { name: 'GCP', icon: '☁️', category: 'Cloud' },
+            ].map((tool, i) => (
+              <div key={i} className="flex flex-col items-center text-center p-4 rounded-lg hover:bg-slate-50 transition-colors">
+                <div className="text-3xl mb-2">{tool.icon}</div>
+                <div className="text-sm font-medium text-slate-900">{tool.name}</div>
+                <div className="text-xs text-slate-500">{tool.category}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Terminal-style code example */}
+          <div className="bg-slate-900 rounded-lg p-6 max-w-3xl mx-auto shadow-xl">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              <span className="text-slate-500 text-sm ml-2 font-mono">terminal</span>
+            </div>
+            <div className="font-mono text-sm space-y-2 text-slate-300">
+              <div className="flex items-start gap-2">
+                <span className="text-green-400 select-none">$</span>
+                <span className="text-slate-100">ocs incidents list --triggered</span>
+              </div>
+              <div className="text-slate-400 pl-4">
+                <div className="text-red-400">INC-1234</div>
+                <div>[P1] API Gateway 500 Errors - 5m ago</div>
+              </div>
+              <div className="flex items-start gap-2 mt-3">
+                <span className="text-green-400 select-none">$</span>
+                <span className="text-slate-100">ocs incidents ack INC-1234</span>
+              </div>
+              <div className="text-green-400 pl-4">Incident acknowledged.</div>
+              <div className="flex items-start gap-2 mt-3">
+                <span className="text-green-400 select-none">$</span>
+                <span className="text-slate-100">terraform apply -target=oncallshift_schedule.primary</span>
+              </div>
+              <div className="text-slate-400 pl-4">Apply complete! Resources: 1 updated.</div>
+            </div>
+          </div>
+
+          <p className="text-center text-slate-500 text-sm mt-6">
+            Everything as code. Everything automated. Everything auditable.
+          </p>
+        </div>
+      </section>
+
       {/* Differentiator Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-5xl mx-auto">
@@ -374,6 +497,12 @@ export function Landing() {
                 </tr>
               </thead>
               <tbody className="text-sm">
+                <tr className="border-b bg-green-50">
+                  <td className="py-3 px-4 font-medium">Terraform Provider</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Full IaC support</td>
+                  <td className="py-3 px-4 text-slate-500">✓ Available</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
+                </tr>
                 <tr className="border-b bg-purple-50">
                   <td className="py-3 px-4 font-medium">MCP Server (AI Assistant)</td>
                   <td className="py-3 px-4 text-green-600 font-medium">✓ Full integration</td>
@@ -381,10 +510,10 @@ export function Landing() {
                   <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Built By</td>
-                  <td className="py-3 px-4 text-green-600 font-medium">DevOps Veterans (15+ yrs)</td>
-                  <td className="py-3 px-4 text-slate-500">Enterprise Co.</td>
-                  <td className="py-3 px-4 text-slate-500">Atlassian (sunsetting)</td>
+                  <td className="py-3 px-4 font-medium">Self-Healing (Auto-Resolution)</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ 80% target</td>
+                  <td className="py-3 px-4 text-slate-500">Suggestions only</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Cloud Investigation</td>
@@ -393,10 +522,10 @@ export function Landing() {
                   <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">AI Diagnosis + Execution</td>
-                  <td className="py-3 px-4 text-green-600 font-medium">✓ Included</td>
-                  <td className="py-3 px-4 text-slate-500">$$$ Add-on</td>
-                  <td className="py-3 px-4 text-slate-500">✗ None</td>
+                  <td className="py-3 px-4 font-medium">CLI Tool</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Full CLI (ocs)</td>
+                  <td className="py-3 px-4 text-slate-500">✓ pd CLI</td>
+                  <td className="py-3 px-4 text-slate-500">Limited</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">BYOK (Bring Your Own Key)</td>
@@ -415,12 +544,6 @@ export function Landing() {
                   <td className="py-3 px-4 text-green-600 font-medium">$0/month</td>
                   <td className="py-3 px-4 text-slate-500">$21/user</td>
                   <td className="py-3 px-4 text-slate-500">Bundled w/ JSM</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Sales Process</td>
-                  <td className="py-3 px-4 text-green-600 font-medium">Self-serve</td>
-                  <td className="py-3 px-4 text-slate-500">Required</td>
-                  <td className="py-3 px-4 text-slate-500">Required</td>
                 </tr>
               </tbody>
             </table>

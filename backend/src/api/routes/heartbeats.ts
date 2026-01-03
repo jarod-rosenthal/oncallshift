@@ -1,9 +1,15 @@
 import { Router, Request, Response } from 'express';
-import { body, param, validationResult } from 'express-validator';
+import { body, param, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Heartbeat, Service, Incident, IncidentEvent } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { parsePaginationParams, paginatedResponse, validateSortField, VALID_SORT_FIELDS } from '../../shared/utils/pagination';
+import { paginationValidators, searchFilterValidator, uuidFilterValidator } from '../../shared/validators/pagination';
+import { badRequest, notFound, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
+
+// Add heartbeats to valid sort fields
+VALID_SORT_FIELDS.heartbeats = ['name', 'createdAt', 'updatedAt', 'status', 'lastPingAt'];
 
 const router = Router();
 
@@ -37,27 +43,99 @@ function formatHeartbeat(heartbeat: Heartbeat) {
 /**
  * GET /api/v1/heartbeats
  * List all heartbeats for the authenticated user's organization
+ * Supports pagination, filtering by service_id, status, and search
  */
-router.get('/', authenticateUser, async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
-    const dataSource = await getDataSource();
-    const heartbeatRepo = dataSource.getRepository(Heartbeat);
+router.get(
+  '/',
+  authenticateUser,
+  [
+    ...paginationValidators,
+    uuidFilterValidator('service_id'),
+    query('status')
+      .optional()
+      .isIn(['unknown', 'healthy', 'expired'])
+      .withMessage('status must be unknown, healthy, or expired'),
+    searchFilterValidator,
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const heartbeats = await heartbeatRepo.find({
-      where: { orgId },
-      relations: ['service'],
-      order: { name: 'ASC' },
-    });
+      const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('heartbeats', pagination.sort, 'name');
+      const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
-    return res.json({
-      heartbeats: heartbeats.map(formatHeartbeat),
-    });
-  } catch (error) {
-    logger.error('Error fetching heartbeats:', error);
-    return res.status(500).json({ error: 'Failed to fetch heartbeats' });
+      const { service_id, status, search } = req.query;
+
+      const dataSource = await getDataSource();
+      const heartbeatRepo = dataSource.getRepository(Heartbeat);
+
+      // Build where conditions
+      const whereConditions: any = { orgId };
+
+      if (service_id) {
+        whereConditions.serviceId = service_id;
+      }
+
+      if (status) {
+        whereConditions.status = status;
+      }
+
+      // For search, we need to use QueryBuilder for ILIKE support
+      let heartbeats: Heartbeat[];
+      let total: number;
+
+      if (search) {
+        const queryBuilder = heartbeatRepo.createQueryBuilder('heartbeat')
+          .leftJoinAndSelect('heartbeat.service', 'service')
+          .where('heartbeat.orgId = :orgId', { orgId });
+
+        if (service_id) {
+          queryBuilder.andWhere('heartbeat.serviceId = :serviceId', { serviceId: service_id });
+        }
+
+        if (status) {
+          queryBuilder.andWhere('heartbeat.status = :status', { status });
+        }
+
+        queryBuilder.andWhere('(heartbeat.name ILIKE :search OR heartbeat.description ILIKE :search)', {
+          search: `%${search}%`,
+        });
+
+        queryBuilder
+          .orderBy(`heartbeat.${sortField}`, sortOrder)
+          .skip(pagination.offset)
+          .take(pagination.limit);
+
+        [heartbeats, total] = await queryBuilder.getManyAndCount();
+      } else {
+        [heartbeats, total] = await heartbeatRepo.findAndCount({
+          where: whereConditions,
+          relations: ['service'],
+          order: { [sortField]: sortOrder },
+          skip: pagination.offset,
+          take: pagination.limit,
+        });
+      }
+
+      const lastItem = heartbeats[heartbeats.length - 1];
+      return res.json(paginatedResponse(
+        heartbeats.map(formatHeartbeat),
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'heartbeats'
+      ));
+    } catch (error) {
+      logger.error('Error fetching heartbeats:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * GET /api/v1/heartbeats/:id
@@ -77,13 +155,13 @@ router.get('/:id', authenticateUser, async (req: Request, res: Response) => {
     });
 
     if (!heartbeat) {
-      return res.status(404).json({ error: 'Heartbeat not found' });
+      return notFound(res, 'Heartbeat', id);
     }
 
     return res.json({ heartbeat: formatHeartbeat(heartbeat) });
   } catch (error) {
     logger.error('Error fetching heartbeat:', error);
-    return res.status(500).json({ error: 'Failed to fetch heartbeat' });
+    return internalError(res);
   }
 });
 
@@ -106,7 +184,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -120,14 +198,14 @@ router.post(
         const serviceRepo = dataSource.getRepository(Service);
         const service = await serviceRepo.findOne({ where: { id: serviceId, orgId } });
         if (!service) {
-          return res.status(400).json({ error: 'Service not found' });
+          return notFound(res, 'Service', serviceId);
         }
       }
 
       // Check for duplicate name
       const existing = await heartbeatRepo.findOne({ where: { name, orgId } });
       if (existing) {
-        return res.status(400).json({ error: 'A heartbeat with this name already exists' });
+        return badRequest(res, 'A heartbeat with this name already exists');
       }
 
       const heartbeat = heartbeatRepo.create({
@@ -148,7 +226,7 @@ router.post(
       return res.status(201).json({ heartbeat: formatHeartbeat(heartbeat) });
     } catch (error) {
       logger.error('Error creating heartbeat:', error);
-      return res.status(500).json({ error: 'Failed to create heartbeat' });
+      return internalError(res);
     }
   }
 );
@@ -178,7 +256,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { id } = req.params;
@@ -193,7 +271,7 @@ router.put(
       });
 
       if (!heartbeat) {
-        return res.status(404).json({ error: 'Heartbeat not found' });
+        return notFound(res, 'Heartbeat', id);
       }
 
       const { name, description, intervalSeconds, alertAfterMissedCount, serviceId, enabled } = req.body;
@@ -203,7 +281,7 @@ router.put(
         const serviceRepo = dataSource.getRepository(Service);
         const service = await serviceRepo.findOne({ where: { id: serviceId, orgId } });
         if (!service) {
-          return res.status(400).json({ error: 'Service not found' });
+          return notFound(res, 'Service', serviceId);
         }
       }
 
@@ -211,7 +289,7 @@ router.put(
       if (name && name !== heartbeat.name) {
         const existing = await heartbeatRepo.findOne({ where: { name, orgId } });
         if (existing) {
-          return res.status(400).json({ error: 'A heartbeat with this name already exists' });
+          return badRequest(res, 'A heartbeat with this name already exists');
         }
       }
 
@@ -236,7 +314,7 @@ router.put(
       return res.json({ heartbeat: formatHeartbeat(updated!) });
     } catch (error) {
       logger.error('Error updating heartbeat:', error);
-      return res.status(500).json({ error: 'Failed to update heartbeat' });
+      return internalError(res);
     }
   }
 );
@@ -256,7 +334,7 @@ router.delete('/:id', authenticateUser, async (req: Request, res: Response) => {
     const heartbeat = await heartbeatRepo.findOne({ where: { id, orgId } });
 
     if (!heartbeat) {
-      return res.status(404).json({ error: 'Heartbeat not found' });
+      return notFound(res, 'Heartbeat', id);
     }
 
     await heartbeatRepo.remove(heartbeat);
@@ -266,7 +344,7 @@ router.delete('/:id', authenticateUser, async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting heartbeat:', error);
-    return res.status(500).json({ error: 'Failed to delete heartbeat' });
+    return internalError(res);
   }
 });
 
@@ -289,11 +367,11 @@ async function processPingByName(name: string, res: Response): Promise<Response>
       .getOne();
 
     if (!heartbeat) {
-      return res.status(404).json({ error: 'Heartbeat not found' });
+      return notFound(res, 'Heartbeat');
     }
 
     if (!heartbeat.enabled) {
-      return res.status(400).json({ error: 'Heartbeat is disabled' });
+      return badRequest(res, 'Heartbeat is disabled');
     }
 
     // Record the ping
@@ -347,7 +425,7 @@ async function processPingByName(name: string, res: Response): Promise<Response>
     });
   } catch (error) {
     logger.error('Error processing heartbeat ping:', error);
-    return res.status(500).json({ error: 'Failed to process ping' });
+    return internalError(res);
   }
 }
 
@@ -382,11 +460,11 @@ router.get('/ping/:key', async (req: Request, res: Response) => {
     const heartbeat = await heartbeatRepo.findOne({ where: { heartbeatKey: key } });
 
     if (!heartbeat) {
-      return res.status(404).json({ error: 'Heartbeat not found' });
+      return notFound(res, 'Heartbeat');
     }
 
     if (!heartbeat.enabled) {
-      return res.status(400).json({ error: 'Heartbeat is disabled' });
+      return badRequest(res, 'Heartbeat is disabled');
     }
 
     // Record the ping
@@ -439,7 +517,7 @@ router.get('/ping/:key', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error processing heartbeat ping:', error);
-    return res.status(500).json({ error: 'Failed to process ping' });
+    return internalError(res);
   }
 });
 

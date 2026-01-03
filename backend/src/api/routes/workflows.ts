@@ -5,6 +5,10 @@ import { getDataSource } from '../../shared/db/data-source';
 import { IncidentWorkflow, WorkflowAction, WorkflowExecution, Service, Team, User, Schedule } from '../../shared/models';
 import { workflowEngine } from '../../shared/services/workflow-engine';
 import { logger } from '../../shared/utils/logger';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators, searchFilterValidator } from '../../shared/validators/pagination';
+import { query as queryValidator } from 'express-validator';
+import { notFound, badRequest, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -15,21 +19,67 @@ router.use(authenticateUser);
  * GET /api/v1/workflows
  * List all workflows for the organization
  */
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
+router.get(
+  '/',
+  [
+    ...paginationValidators,
+    searchFilterValidator,
+    queryValidator('enabled').optional().isIn(['true', 'false']).withMessage('enabled must be true or false'),
+    queryValidator('trigger_type').optional().isIn(['manual', 'automatic']).withMessage('trigger_type must be manual or automatic'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const dataSource = await getDataSource();
-    const workflowRepo = dataSource.getRepository(IncidentWorkflow);
+      const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('workflows', pagination.sort, 'createdAt');
+      const sortOrder = pagination.order?.toUpperCase() as 'ASC' | 'DESC' || 'DESC';
 
-    const workflows = await workflowRepo.find({
-      where: { orgId },
-      relations: ['actions', 'createdByUser'],
-      order: { createdAt: 'DESC' },
-    });
+      // Parse filters
+      const { search, enabled, trigger_type } = req.query;
 
-    return res.json({
-      workflows: workflows.map(w => ({
+      const dataSource = await getDataSource();
+      const workflowRepo = dataSource.getRepository(IncidentWorkflow);
+
+      // Build query
+      const queryBuilder = workflowRepo
+        .createQueryBuilder('workflow')
+        .leftJoinAndSelect('workflow.actions', 'actions')
+        .leftJoinAndSelect('workflow.createdByUser', 'createdByUser')
+        .where('workflow.orgId = :orgId', { orgId });
+
+      // Apply filters
+      if (search) {
+        queryBuilder.andWhere(
+          '(workflow.name ILIKE :search OR workflow.description ILIKE :search)',
+          { search: `%${search}%` }
+        );
+      }
+
+      if (enabled !== undefined) {
+        queryBuilder.andWhere('workflow.enabled = :enabled', { enabled: enabled === 'true' });
+      }
+
+      if (trigger_type) {
+        queryBuilder.andWhere('workflow.triggerType = :triggerType', { triggerType: trigger_type });
+      }
+
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting and pagination
+      queryBuilder
+        .orderBy(`workflow.${sortField}`, sortOrder)
+        .skip(pagination.offset)
+        .take(pagination.limit);
+
+      const workflows = await queryBuilder.getMany();
+
+      const mappedWorkflows = workflows.map(w => ({
         id: w.id,
         name: w.name,
         description: w.description,
@@ -55,13 +105,22 @@ router.get('/', async (req: Request, res: Response) => {
         } : null,
         createdAt: w.createdAt,
         updatedAt: w.updatedAt,
-      })),
-    });
-  } catch (error) {
-    logger.error('Error fetching workflows:', error);
-    return res.status(500).json({ error: 'Failed to fetch workflows' });
+      }));
+
+      const lastItem = workflows[workflows.length - 1];
+      return res.json(paginatedResponse(
+        mappedWorkflows,
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'workflows'
+      ));
+    } catch (error) {
+      logger.error('Error fetching workflows:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * GET /api/v1/workflows/:id
@@ -81,7 +140,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!workflow) {
-      return res.status(404).json({ error: 'Workflow not found' });
+      return notFound(res, 'Workflow', id);
     }
 
     return res.json({
@@ -113,7 +172,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching workflow:', error);
-    return res.status(500).json({ error: 'Failed to fetch workflow' });
+    return internalError(res);
   }
 });
 
@@ -141,7 +200,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -219,7 +278,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating workflow:', error);
-      return res.status(500).json({ error: 'Failed to create workflow' });
+      return internalError(res);
     }
   }
 );
@@ -246,7 +305,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -273,7 +332,7 @@ router.put(
       });
 
       if (!workflow) {
-        return res.status(404).json({ error: 'Workflow not found' });
+        return notFound(res, 'Workflow', id);
       }
 
       // Update workflow fields
@@ -339,7 +398,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating workflow:', error);
-      return res.status(500).json({ error: 'Failed to update workflow' });
+      return internalError(res);
     }
   }
 );
@@ -361,7 +420,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     if (!workflow) {
-      return res.status(404).json({ error: 'Workflow not found' });
+      return notFound(res, 'Workflow', id);
     }
 
     await workflowRepo.remove(workflow);
@@ -371,7 +430,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting workflow:', error);
-    return res.status(500).json({ error: 'Failed to delete workflow' });
+    return internalError(res);
   }
 });
 
@@ -388,7 +447,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -404,7 +463,7 @@ router.post(
       });
 
       if (!workflow) {
-        return res.status(404).json({ error: 'Workflow not found' });
+        return notFound(res, 'Workflow', id);
       }
 
       // Run the workflow
@@ -422,7 +481,7 @@ router.post(
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to run workflow';
       logger.error('Error running workflow:', error);
-      return res.status(500).json({ error: message });
+      return badRequest(res, message);
     }
   }
 );
@@ -431,36 +490,42 @@ router.post(
  * GET /api/v1/workflows/:id/executions
  * Get execution history for a workflow
  */
-router.get('/:id/executions', async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
-    const { id } = req.params;
-    const limit = parseInt(req.query.limit as string) || 50;
-    const offset = parseInt(req.query.offset as string) || 0;
+router.get(
+  '/:id/executions',
+  [...paginationValidators],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const dataSource = await getDataSource();
-    const workflowRepo = dataSource.getRepository(IncidentWorkflow);
-    const executionRepo = dataSource.getRepository(WorkflowExecution);
+      const orgId = req.orgId!;
+      const { id } = req.params;
+      const pagination = parsePaginationParams(req.query);
 
-    // Verify workflow belongs to org
-    const workflow = await workflowRepo.findOne({
-      where: { id, orgId },
-    });
+      const dataSource = await getDataSource();
+      const workflowRepo = dataSource.getRepository(IncidentWorkflow);
+      const executionRepo = dataSource.getRepository(WorkflowExecution);
 
-    if (!workflow) {
-      return res.status(404).json({ error: 'Workflow not found' });
-    }
+      // Verify workflow belongs to org
+      const workflow = await workflowRepo.findOne({
+        where: { id, orgId },
+      });
 
-    const [executions, total] = await executionRepo.findAndCount({
-      where: { workflowId: id },
-      relations: ['incident', 'triggeredByUser'],
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
+      if (!workflow) {
+        return notFound(res, 'Workflow', id);
+      }
 
-    return res.json({
-      executions: executions.map(e => ({
+      const [executions, total] = await executionRepo.findAndCount({
+        where: { workflowId: id },
+        relations: ['incident', 'triggeredByUser'],
+        order: { createdAt: 'DESC' },
+        take: pagination.limit,
+        skip: pagination.offset,
+      });
+
+      const mappedExecutions = executions.map(e => ({
         id: e.id,
         incidentId: e.incidentId,
         incident: e.incident ? {
@@ -481,19 +546,22 @@ router.get('/:id/executions', async (req: Request, res: Response) => {
         startedAt: e.startedAt,
         completedAt: e.completedAt,
         durationMs: e.getDurationMs(),
-      })),
-      pagination: {
+      }));
+
+      const lastItem = executions[executions.length - 1];
+      return res.json(paginatedResponse(
+        mappedExecutions,
         total,
-        limit,
-        offset,
-        hasMore: offset + executions.length < total,
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching workflow executions:', error);
-    return res.status(500).json({ error: 'Failed to fetch executions' });
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'executions'
+      ));
+    } catch (error) {
+      logger.error('Error fetching workflow executions:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * GET /api/v1/workflows/available-options
@@ -552,7 +620,7 @@ router.get('/available-options', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching workflow options:', error);
-    return res.status(500).json({ error: 'Failed to fetch options' });
+    return internalError(res);
   }
 });
 

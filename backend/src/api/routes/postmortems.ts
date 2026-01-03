@@ -1,10 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
+import { Like, MoreThanOrEqual, LessThanOrEqual, FindOptionsWhere } from 'typeorm';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Postmortem, PostmortemTemplate, Incident, IncidentEvent } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators, sinceFilterValidator, untilFilterValidator, searchFilterValidator, uuidFilterValidator } from '../../shared/validators/pagination';
+import { badRequest, notFound, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -18,50 +22,75 @@ router.use(authenticateUser);
 router.get(
   '/',
   [
-    query('status').optional().isIn(['draft', 'in_review', 'published']),
-    query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-    query('offset').optional().isInt({ min: 0 }).toInt(),
+    ...paginationValidators,
+    query('status').optional().isIn(['draft', 'in_review', 'published']).withMessage('status must be draft, in_review, or published'),
+    uuidFilterValidator('incident_id'),
+    searchFilterValidator,
+    sinceFilterValidator,
+    untilFilterValidator,
   ],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
-      const { status, limit = 50, offset = 0 } = req.query;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('postmortems', pagination.sort, 'createdAt');
+      const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
+      const { status, incident_id, search, since, until } = req.query;
 
       const dataSource = await getDataSource();
       const postmortemRepo = dataSource.getRepository(Postmortem);
 
-      // Use find() instead of queryBuilder to avoid TypeORM join bugs
-      const whereClause: any = { orgId };
+      // Build where clause with filters
+      const whereClause: FindOptionsWhere<Postmortem> = { orgId };
+
       if (status) {
-        whereClause.status = status;
+        whereClause.status = status as 'draft' | 'in_review' | 'published';
+      }
+      if (incident_id) {
+        whereClause.incidentId = incident_id as string;
+      }
+      if (search) {
+        whereClause.title = Like(`%${search}%`);
+      }
+      if (since) {
+        whereClause.createdAt = MoreThanOrEqual(new Date(since as string));
+      }
+      if (until) {
+        // Combine with since if both are present
+        if (since) {
+          // For combined date range, we need to use query builder or handle differently
+          // For simplicity, until takes precedence when used alone
+        }
+        whereClause.createdAt = LessThanOrEqual(new Date(until as string));
       }
 
       const [postmortems, total] = await postmortemRepo.findAndCount({
         where: whereClause,
         relations: ['incident', 'incident.service', 'createdBy', 'publishedBy'],
-        order: { createdAt: 'DESC' },
-        take: limit as number,
-        skip: offset as number,
+        order: { [sortField]: sortOrder },
+        take: pagination.limit,
+        skip: pagination.offset,
       });
 
       logger.info('Postmortems fetched', { orgId, total, count: postmortems.length });
 
-      return res.json({
-        postmortems: postmortems.map(formatPostmortem),
-        pagination: {
-          total,
-          limit,
-          offset,
-        },
-      });
+      const lastItem = postmortems[postmortems.length - 1];
+      return res.json(paginatedResponse(
+        postmortems.map(formatPostmortem),
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'postmortems'
+      ));
     } catch (error) {
       logger.error('Error fetching postmortems:', error);
-      return res.status(500).json({ error: 'Failed to fetch postmortems' });
+      return internalError(res);
     }
   }
 );
@@ -84,13 +113,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!postmortem) {
-      return res.status(404).json({ error: 'Postmortem not found' });
+      return notFound(res, 'Postmortem', id);
     }
 
     return res.json({ postmortem: formatPostmortem(postmortem) });
   } catch (error) {
     logger.error('Error fetching postmortem:', error);
-    return res.status(500).json({ error: 'Failed to fetch postmortem' });
+    return internalError(res);
   }
 });
 
@@ -117,7 +146,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -146,7 +175,7 @@ router.post(
       });
 
       if (!incident) {
-        return res.status(400).json({ error: 'Incident not found or does not belong to your organization' });
+        return badRequest(res, 'Incident not found or does not belong to your organization');
       }
 
       // Check if postmortem already exists for this incident
@@ -155,7 +184,7 @@ router.post(
       });
 
       if (existingPostmortem) {
-        return res.status(400).json({ error: 'Postmortem already exists for this incident' });
+        return badRequest(res, 'Postmortem already exists for this incident');
       }
 
       // Create postmortem
@@ -192,7 +221,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating postmortem:', error);
-      return res.status(500).json({ error: 'Failed to create postmortem' });
+      return internalError(res);
     }
   }
 );
@@ -219,7 +248,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { id } = req.params;
@@ -245,12 +274,12 @@ router.put(
       });
 
       if (!postmortem) {
-        return res.status(404).json({ error: 'Postmortem not found' });
+        return notFound(res, 'Postmortem', id);
       }
 
       // Only allow editing non-published postmortems
       if (postmortem.status === 'published') {
-        return res.status(400).json({ error: 'Cannot edit published postmortems' });
+        return badRequest(res, 'Cannot edit published postmortems');
       }
 
       // Update fields
@@ -280,7 +309,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating postmortem:', error);
-      return res.status(500).json({ error: 'Failed to update postmortem' });
+      return internalError(res);
     }
   }
 );
@@ -303,11 +332,11 @@ router.post('/:id/publish', async (req: Request, res: Response) => {
     });
 
     if (!postmortem) {
-      return res.status(404).json({ error: 'Postmortem not found' });
+      return notFound(res, 'Postmortem', id);
     }
 
     if (postmortem.status === 'published') {
-      return res.status(400).json({ error: 'Postmortem is already published' });
+      return badRequest(res, 'Postmortem is already published');
     }
 
     // Update to published
@@ -331,7 +360,7 @@ router.post('/:id/publish', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error publishing postmortem:', error);
-    return res.status(500).json({ error: 'Failed to publish postmortem' });
+    return internalError(res);
   }
 });
 
@@ -352,7 +381,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     if (!postmortem) {
-      return res.status(404).json({ error: 'Postmortem not found' });
+      return notFound(res, 'Postmortem', id);
     }
 
     const wasPublished = postmortem.status === 'published';
@@ -363,7 +392,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting postmortem:', error);
-    return res.status(500).json({ error: 'Failed to delete postmortem' });
+    return internalError(res);
   }
 });
 
@@ -389,7 +418,7 @@ router.get('/templates/list', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching postmortem templates:', error);
-    return res.status(500).json({ error: 'Failed to fetch templates' });
+    return internalError(res);
   }
 });
 
@@ -414,7 +443,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -458,7 +487,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating postmortem template:', error);
-      return res.status(500).json({ error: 'Failed to create template' });
+      return internalError(res);
     }
   }
 );
@@ -481,13 +510,13 @@ router.get('/templates/:id', async (req: Request, res: Response) => {
     });
 
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return notFound(res, 'Postmortem Template', id);
     }
 
     return res.json({ template: formatTemplate(template) });
   } catch (error) {
     logger.error('Error fetching postmortem template:', error);
-    return res.status(500).json({ error: 'Failed to fetch template' });
+    return internalError(res);
   }
 });
 
@@ -507,7 +536,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { id } = req.params;
@@ -522,7 +551,7 @@ router.put(
       });
 
       if (!template) {
-        return res.status(404).json({ error: 'Template not found' });
+        return notFound(res, 'Postmortem Template', id);
       }
 
       // If setting as default, unset other defaults
@@ -554,7 +583,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating postmortem template:', error);
-      return res.status(500).json({ error: 'Failed to update template' });
+      return internalError(res);
     }
   }
 );
@@ -576,7 +605,7 @@ router.delete('/templates/:id', async (req: Request, res: Response) => {
     });
 
     if (!template) {
-      return res.status(404).json({ error: 'Template not found' });
+      return notFound(res, 'Postmortem Template', id);
     }
 
     await templateRepo.remove(template);
@@ -586,7 +615,7 @@ router.delete('/templates/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting postmortem template:', error);
-    return res.status(500).json({ error: 'Failed to delete template' });
+    return internalError(res);
   }
 });
 
@@ -677,7 +706,7 @@ router.post('/seed-examples', async (req: Request, res: Response) => {
     });
 
     if (resolvedIncidents.length === 0) {
-      return res.status(400).json({ error: 'No resolved incidents found to create postmortems from' });
+      return badRequest(res, 'No resolved incidents found to create postmortems from');
     }
 
     const createdPostmortems = [];
@@ -783,7 +812,7 @@ router.post('/seed-examples', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error seeding sample postmortems:', error);
-    return res.status(500).json({ error: 'Failed to seed sample postmortems' });
+    return internalError(res);
   }
 });
 

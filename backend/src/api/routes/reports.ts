@@ -1,9 +1,14 @@
 import { Router, Request, Response } from 'express';
+import { query, body, validationResult } from 'express-validator';
+import { Like, MoreThanOrEqual, LessThanOrEqual, FindOptionsWhere } from 'typeorm';
 import { getDataSource } from '../../shared/db/data-source';
 import { IncidentReport, ReportExecution } from '../../shared/models';
 import { ReportGenerationService } from '../../shared/services/report-generation-service';
 import { ReportDeliveryService } from '../../shared/services/report-delivery';
 import { logger } from '../../shared/utils/logger';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators, sinceFilterValidator, untilFilterValidator, searchFilterValidator } from '../../shared/validators/pagination';
+import { badRequest, notFound, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -11,20 +16,61 @@ const router = Router();
  * GET /api/v1/reports
  * List all reports for the organization
  */
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
-    const dataSource = await getDataSource();
-    const reportRepo = dataSource.getRepository(IncidentReport);
+router.get(
+  '/',
+  [
+    ...paginationValidators,
+    query('schedule').optional().isIn(['manual', 'daily', 'weekly', 'monthly']).withMessage('schedule must be manual, daily, weekly, or monthly'),
+    query('enabled').optional().isBoolean().withMessage('enabled must be true or false'),
+    searchFilterValidator,
+    sinceFilterValidator,
+    untilFilterValidator,
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const reports = await reportRepo.find({
-      where: { orgId },
-      relations: ['creator'],
-      order: { createdAt: 'DESC' },
-    });
+      const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('reports', pagination.sort, 'createdAt');
+      const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
-    return res.json({
-      reports: reports.map(report => ({
+      const { schedule, enabled, search, since, until } = req.query;
+
+      const dataSource = await getDataSource();
+      const reportRepo = dataSource.getRepository(IncidentReport);
+
+      // Build where clause with filters
+      const whereClause: FindOptionsWhere<IncidentReport> = { orgId };
+
+      if (schedule) {
+        whereClause.schedule = schedule as 'manual' | 'daily' | 'weekly' | 'monthly';
+      }
+      if (enabled !== undefined && enabled !== '') {
+        whereClause.enabled = enabled === 'true';
+      }
+      if (search) {
+        whereClause.name = Like(`%${search}%`);
+      }
+      if (since) {
+        whereClause.createdAt = MoreThanOrEqual(new Date(since as string));
+      }
+      if (until) {
+        whereClause.createdAt = LessThanOrEqual(new Date(until as string));
+      }
+
+      const [reports, total] = await reportRepo.findAndCount({
+        where: whereClause,
+        relations: ['creator'],
+        order: { [sortField]: sortOrder },
+        take: pagination.limit,
+        skip: pagination.offset,
+      });
+
+      const formattedReports = reports.map(report => ({
         id: report.id,
         name: report.name,
         description: report.description,
@@ -42,165 +88,207 @@ router.get('/', async (req: Request, res: Response) => {
         } : null,
         createdAt: report.createdAt,
         updatedAt: report.updatedAt,
-      })),
-    });
-  } catch (error: any) {
-    logger.error('Error listing reports:', error);
-    return res.status(500).json({ error: 'Failed to list reports' });
+      }));
+
+      const lastItem = reports[reports.length - 1];
+      return res.json(paginatedResponse(
+        formattedReports,
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'reports'
+      ));
+    } catch (error: any) {
+      logger.error('Error listing reports:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * POST /api/v1/reports
  * Create a new report
  */
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
-    const user = req.user!;
-    const dataSource = await getDataSource();
-    const reportRepo = dataSource.getRepository(IncidentReport);
+router.post(
+  '/',
+  [
+    body('name').isString().trim().notEmpty().withMessage('Report name is required'),
+    body('description').optional().isString(),
+    body('schedule').optional().isIn(['manual', 'daily', 'weekly', 'monthly']).withMessage('Invalid schedule type'),
+    body('scheduleDay').optional().isInt({ min: 0, max: 6 }),
+    body('scheduleHour').optional().isInt({ min: 0, max: 23 }),
+    body('format').optional().isIn(['summary', 'detailed', 'csv']).withMessage('Invalid format type'),
+    body('config').optional().isObject(),
+    body('deliveryConfig').optional().isObject(),
+    body('enabled').optional().isBoolean(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const {
-      name,
-      description,
-      schedule,
-      scheduleDay,
-      scheduleHour,
-      format,
-      config,
-      deliveryConfig,
-      enabled,
-    } = req.body;
+      const orgId = req.orgId!;
+      const user = req.user!;
+      const dataSource = await getDataSource();
+      const reportRepo = dataSource.getRepository(IncidentReport);
 
-    // Validation
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({ error: 'Report name is required' });
-    }
+      const {
+        name,
+        description,
+        schedule,
+        scheduleDay,
+        scheduleHour,
+        format,
+        config,
+        deliveryConfig,
+        enabled,
+      } = req.body;
 
-    const report = reportRepo.create({
-      orgId,
-      name: name.trim(),
-      description: description?.trim() || null,
-      schedule: schedule || 'manual',
-      scheduleDay: scheduleDay || null,
-      scheduleHour: scheduleHour ?? 9,
-      format: format || 'summary',
-      config: config || {},
-      deliveryConfig: deliveryConfig || {},
-      enabled: enabled ?? true,
-      createdBy: user.id,
-    });
+      const report = reportRepo.create({
+        orgId,
+        name: name.trim(),
+        description: description?.trim() || null,
+        schedule: schedule || 'manual',
+        scheduleDay: scheduleDay || null,
+        scheduleHour: scheduleHour ?? 9,
+        format: format || 'summary',
+        config: config || {},
+        deliveryConfig: deliveryConfig || {},
+        enabled: enabled ?? true,
+        createdBy: user.id,
+      });
 
-    // Calculate next run time if scheduled
-    if (report.isScheduled()) {
-      report.nextRunAt = report.calculateNextRun();
-    }
+      // Calculate next run time if scheduled
+      if (report.isScheduled()) {
+        report.nextRunAt = report.calculateNextRun();
+      }
 
-    await reportRepo.save(report);
+      await reportRepo.save(report);
 
-    logger.info('Report created', {
-      reportId: report.id,
-      name: report.name,
-      schedule: report.schedule,
-      createdBy: user.id,
-    });
-
-    return res.status(201).json({
-      report: {
-        id: report.id,
+      logger.info('Report created', {
+        reportId: report.id,
         name: report.name,
-        description: report.description,
         schedule: report.schedule,
-        scheduleDescription: report.getScheduleDescription(),
-        format: report.format,
-        enabled: report.enabled,
-        nextRunAt: report.nextRunAt,
-        config: report.config,
-        deliveryConfig: report.deliveryConfig,
-        createdAt: report.createdAt,
-      },
-    });
-  } catch (error: any) {
-    logger.error('Error creating report:', error);
-    return res.status(500).json({ error: 'Failed to create report' });
+        createdBy: user.id,
+      });
+
+      return res.status(201).json({
+        report: {
+          id: report.id,
+          name: report.name,
+          description: report.description,
+          schedule: report.schedule,
+          scheduleDescription: report.getScheduleDescription(),
+          format: report.format,
+          enabled: report.enabled,
+          nextRunAt: report.nextRunAt,
+          config: report.config,
+          deliveryConfig: report.deliveryConfig,
+          createdAt: report.createdAt,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error creating report:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * PUT /api/v1/reports/:id
  * Update a report
  */
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const orgId = req.orgId!;
-    const dataSource = await getDataSource();
-    const reportRepo = dataSource.getRepository(IncidentReport);
+router.put(
+  '/:id',
+  [
+    body('name').optional().isString().trim().notEmpty(),
+    body('description').optional().isString(),
+    body('schedule').optional().isIn(['manual', 'daily', 'weekly', 'monthly']),
+    body('scheduleDay').optional().isInt({ min: 0, max: 6 }),
+    body('scheduleHour').optional().isInt({ min: 0, max: 23 }),
+    body('format').optional().isIn(['summary', 'detailed', 'csv']),
+    body('config').optional().isObject(),
+    body('deliveryConfig').optional().isObject(),
+    body('enabled').optional().isBoolean(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const report = await reportRepo.findOne({
-      where: { id, orgId },
-    });
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const dataSource = await getDataSource();
+      const reportRepo = dataSource.getRepository(IncidentReport);
 
-    if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
+      const report = await reportRepo.findOne({
+        where: { id, orgId },
+      });
 
-    const {
-      name,
-      description,
-      schedule,
-      scheduleDay,
-      scheduleHour,
-      format,
-      config,
-      deliveryConfig,
-      enabled,
-    } = req.body;
+      if (!report) {
+        return notFound(res, 'Report', id);
+      }
 
-    // Update fields
-    if (name !== undefined) report.name = name.trim();
-    if (description !== undefined) report.description = description?.trim() || null;
-    if (schedule !== undefined) report.schedule = schedule;
-    if (scheduleDay !== undefined) report.scheduleDay = scheduleDay;
-    if (scheduleHour !== undefined) report.scheduleHour = scheduleHour;
-    if (format !== undefined) report.format = format;
-    if (config !== undefined) report.config = config;
-    if (deliveryConfig !== undefined) report.deliveryConfig = deliveryConfig;
-    if (enabled !== undefined) report.enabled = enabled;
+      const {
+        name,
+        description,
+        schedule,
+        scheduleDay,
+        scheduleHour,
+        format,
+        config,
+        deliveryConfig,
+        enabled,
+      } = req.body;
 
-    // Recalculate next run if schedule changed
-    if (schedule !== undefined || scheduleDay !== undefined || scheduleHour !== undefined) {
-      report.nextRunAt = report.calculateNextRun();
-    }
+      // Update fields
+      if (name !== undefined) report.name = name.trim();
+      if (description !== undefined) report.description = description?.trim() || null;
+      if (schedule !== undefined) report.schedule = schedule;
+      if (scheduleDay !== undefined) report.scheduleDay = scheduleDay;
+      if (scheduleHour !== undefined) report.scheduleHour = scheduleHour;
+      if (format !== undefined) report.format = format;
+      if (config !== undefined) report.config = config;
+      if (deliveryConfig !== undefined) report.deliveryConfig = deliveryConfig;
+      if (enabled !== undefined) report.enabled = enabled;
 
-    await reportRepo.save(report);
+      // Recalculate next run if schedule changed
+      if (schedule !== undefined || scheduleDay !== undefined || scheduleHour !== undefined) {
+        report.nextRunAt = report.calculateNextRun();
+      }
 
-    logger.info('Report updated', {
-      reportId: report.id,
-      name: report.name,
-    });
+      await reportRepo.save(report);
 
-    return res.json({
-      report: {
-        id: report.id,
+      logger.info('Report updated', {
+        reportId: report.id,
         name: report.name,
-        description: report.description,
-        schedule: report.schedule,
-        scheduleDescription: report.getScheduleDescription(),
-        format: report.format,
-        enabled: report.enabled,
-        nextRunAt: report.nextRunAt,
-        config: report.config,
-        deliveryConfig: report.deliveryConfig,
-        updatedAt: report.updatedAt,
-      },
-    });
-  } catch (error: any) {
-    logger.error('Error updating report:', error);
-    return res.status(500).json({ error: 'Failed to update report' });
+      });
+
+      return res.json({
+        report: {
+          id: report.id,
+          name: report.name,
+          description: report.description,
+          schedule: report.schedule,
+          scheduleDescription: report.getScheduleDescription(),
+          format: report.format,
+          enabled: report.enabled,
+          nextRunAt: report.nextRunAt,
+          config: report.config,
+          deliveryConfig: report.deliveryConfig,
+          updatedAt: report.updatedAt,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error updating report:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * DELETE /api/v1/reports/:id
@@ -218,7 +306,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
+      return notFound(res, 'Report', id);
     }
 
     await reportRepo.remove(report);
@@ -231,7 +319,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.json({ message: 'Report deleted successfully' });
   } catch (error: any) {
     logger.error('Error deleting report:', error);
-    return res.status(500).json({ error: 'Failed to delete report' });
+    return internalError(res);
   }
 });
 
@@ -254,7 +342,7 @@ router.post('/:id/run', async (req: Request, res: Response) => {
     });
 
     if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
+      return notFound(res, 'Report', id);
     }
 
     // Parse dates or use defaults (last 7 days)
@@ -288,7 +376,7 @@ router.post('/:id/run', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error('Error running report:', error);
-    return res.status(500).json({ error: 'Failed to run report' });
+    return internalError(res);
   }
 });
 
@@ -296,34 +384,42 @@ router.post('/:id/run', async (req: Request, res: Response) => {
  * GET /api/v1/reports/:id/executions
  * Get execution history for a report
  */
-router.get('/:id/executions', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const orgId = req.orgId!;
-    const limit = parseInt(req.query.limit as string) || 20;
+router.get(
+  '/:id/executions',
+  [...paginationValidators],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const dataSource = await getDataSource();
-    const executionRepo = dataSource.getRepository(ReportExecution);
+      const { id } = req.params;
+      const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
 
-    // Verify report exists and belongs to org
-    const reportRepo = dataSource.getRepository(IncidentReport);
-    const report = await reportRepo.findOne({
-      where: { id, orgId },
-    });
+      const dataSource = await getDataSource();
+      const executionRepo = dataSource.getRepository(ReportExecution);
 
-    if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
+      // Verify report exists and belongs to org
+      const reportRepo = dataSource.getRepository(IncidentReport);
+      const report = await reportRepo.findOne({
+        where: { id, orgId },
+      });
 
-    const executions = await executionRepo.find({
-      where: { reportId: id },
-      relations: ['triggeredByUser'],
-      order: { createdAt: 'DESC' },
-      take: limit,
-    });
+      if (!report) {
+        return notFound(res, 'Report', id);
+      }
 
-    return res.json({
-      executions: executions.map(exec => ({
+      const [executions, total] = await executionRepo.findAndCount({
+        where: { reportId: id },
+        relations: ['triggeredByUser'],
+        order: { createdAt: 'DESC' },
+        take: pagination.limit,
+        skip: pagination.offset,
+      });
+
+      const formattedExecutions = executions.map(exec => ({
         id: exec.id,
         status: exec.status,
         periodStart: exec.periodStart,
@@ -337,13 +433,22 @@ router.get('/:id/executions', async (req: Request, res: Response) => {
         createdAt: exec.createdAt,
         completedAt: exec.completedAt,
         durationSeconds: exec.getDurationSeconds(),
-      })),
-    });
-  } catch (error: any) {
-    logger.error('Error listing executions:', error);
-    return res.status(500).json({ error: 'Failed to list executions' });
+      }));
+
+      const lastItem = executions[executions.length - 1];
+      return res.json(paginatedResponse(
+        formattedExecutions,
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'executions'
+      ));
+    } catch (error: any) {
+      logger.error('Error listing executions:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * POST /api/v1/reports/executions/:id/deliver
@@ -363,7 +468,7 @@ router.post('/executions/:executionId/deliver', async (req: Request, res: Respon
     });
 
     if (!execution) {
-      return res.status(404).json({ error: 'Report execution not found' });
+      return notFound(res, 'Report Execution', executionId);
     }
 
     const report = await reportRepo.findOne({
@@ -371,11 +476,11 @@ router.post('/executions/:executionId/deliver', async (req: Request, res: Respon
     });
 
     if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
+      return notFound(res, 'Report', execution.reportId);
     }
 
     if (execution.status !== 'completed') {
-      return res.status(400).json({ error: 'Can only deliver completed reports' });
+      return badRequest(res, 'Can only deliver completed reports');
     }
 
     // Deliver the report
@@ -394,7 +499,7 @@ router.post('/executions/:executionId/deliver', async (req: Request, res: Respon
     });
   } catch (error: any) {
     logger.error('Error delivering report:', error);
-    return res.status(500).json({ error: 'Failed to deliver report' });
+    return internalError(res);
   }
 });
 

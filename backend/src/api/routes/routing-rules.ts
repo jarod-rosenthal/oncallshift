@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { body, validationResult } from 'express-validator';
+import { body, query as queryValidator, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { AlertRoutingRule, Service } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators, searchFilterValidator, uuidFilterValidator } from '../../shared/validators/pagination';
+import { notFound, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -14,21 +17,69 @@ router.use(authenticateUser);
  * GET /api/v1/routing-rules
  * List all routing rules for the organization
  */
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
+router.get(
+  '/',
+  [
+    ...paginationValidators,
+    searchFilterValidator,
+    queryValidator('enabled').optional().isIn(['true', 'false']).withMessage('enabled must be true or false'),
+    uuidFilterValidator('target_service_id'),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const dataSource = await getDataSource();
-    const ruleRepo = dataSource.getRepository(AlertRoutingRule);
+      const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('routingRules', pagination.sort, 'ruleOrder');
+      const sortOrder = pagination.order?.toUpperCase() as 'ASC' | 'DESC' || 'ASC';
 
-    const rules = await ruleRepo.find({
-      where: { orgId },
-      relations: ['targetService', 'createdByUser'],
-      order: { ruleOrder: 'ASC' },
-    });
+      // Parse filters
+      const { search, enabled, target_service_id } = req.query;
 
-    return res.json({
-      rules: rules.map(r => ({
+      const dataSource = await getDataSource();
+      const ruleRepo = dataSource.getRepository(AlertRoutingRule);
+
+      // Build query
+      const queryBuilder = ruleRepo
+        .createQueryBuilder('rule')
+        .leftJoinAndSelect('rule.targetService', 'targetService')
+        .leftJoinAndSelect('rule.createdByUser', 'createdByUser')
+        .where('rule.orgId = :orgId', { orgId });
+
+      // Apply filters
+      if (search) {
+        queryBuilder.andWhere(
+          '(rule.name ILIKE :search OR rule.description ILIKE :search)',
+          { search: `%${search}%` }
+        );
+      }
+
+      if (enabled !== undefined) {
+        queryBuilder.andWhere('rule.enabled = :enabled', { enabled: enabled === 'true' });
+      }
+
+      if (target_service_id) {
+        queryBuilder.andWhere('rule.targetServiceId = :targetServiceId', { targetServiceId: target_service_id });
+      }
+
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting and pagination
+      // Use ruleOrder as default sort to preserve rule ordering
+      const dbSortField = sortField === 'priority' ? 'ruleOrder' : sortField;
+      queryBuilder
+        .orderBy(`rule.${dbSortField}`, sortOrder)
+        .skip(pagination.offset)
+        .take(pagination.limit);
+
+      const rules = await queryBuilder.getMany();
+
+      const mappedRules = rules.map(r => ({
         id: r.id,
         name: r.name,
         description: r.description,
@@ -48,13 +99,22 @@ router.get('/', async (req: Request, res: Response) => {
         } : null,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
-      })),
-    });
-  } catch (error) {
-    logger.error('Error fetching routing rules:', error);
-    return res.status(500).json({ error: 'Failed to fetch routing rules' });
+      }));
+
+      const lastItem = rules[rules.length - 1];
+      return res.json(paginatedResponse(
+        mappedRules,
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'rules'
+      ));
+    } catch (error) {
+      logger.error('Error fetching routing rules:', error);
+      return internalError(res);
+    }
   }
-});
+);
 
 /**
  * POST /api/v1/routing-rules
@@ -80,7 +140,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -103,7 +163,7 @@ router.post(
       if (targetServiceId) {
         const service = await serviceRepo.findOne({ where: { id: targetServiceId, orgId } });
         if (!service) {
-          return res.status(404).json({ error: 'Target service not found' });
+          return notFound(res, 'Target service', targetServiceId);
         }
       }
 
@@ -159,7 +219,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating routing rule:', error);
-      return res.status(500).json({ error: 'Failed to create routing rule' });
+      return internalError(res);
     }
   }
 );
@@ -182,7 +242,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!rule) {
-      return res.status(404).json({ error: 'Routing rule not found' });
+      return notFound(res, 'Routing rule', id);
     }
 
     return res.json({
@@ -210,7 +270,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching routing rule:', error);
-    return res.status(500).json({ error: 'Failed to fetch routing rule' });
+    return internalError(res);
   }
 });
 
@@ -234,7 +294,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { id } = req.params;
@@ -260,14 +320,14 @@ router.put(
       });
 
       if (!rule) {
-        return res.status(404).json({ error: 'Routing rule not found' });
+        return notFound(res, 'Routing rule', id);
       }
 
       // Verify target service if changing
       if (targetServiceId !== undefined && targetServiceId !== null) {
         const service = await serviceRepo.findOne({ where: { id: targetServiceId, orgId } });
         if (!service) {
-          return res.status(404).json({ error: 'Target service not found' });
+          return notFound(res, 'Target service', targetServiceId);
         }
       }
 
@@ -312,7 +372,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating routing rule:', error);
-      return res.status(500).json({ error: 'Failed to update routing rule' });
+      return internalError(res);
     }
   }
 );
@@ -331,17 +391,17 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     const rule = await ruleRepo.findOne({ where: { id, orgId } });
     if (!rule) {
-      return res.status(404).json({ error: 'Routing rule not found' });
+      return notFound(res, 'Routing rule', id);
     }
 
     await ruleRepo.remove(rule);
 
     logger.info('Routing rule deleted', { ruleId: id, orgId });
 
-    return res.json({ message: 'Routing rule deleted successfully' });
+    return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting routing rule:', error);
-    return res.status(500).json({ error: 'Failed to delete routing rule' });
+    return internalError(res);
   }
 });
 
@@ -359,7 +419,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -381,7 +441,7 @@ router.put(
       return res.json({ message: 'Rules reordered successfully' });
     } catch (error) {
       logger.error('Error reordering routing rules:', error);
-      return res.status(500).json({ error: 'Failed to reorder rules' });
+      return internalError(res);
     }
   }
 );
@@ -399,7 +459,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { id } = req.params;
@@ -415,7 +475,7 @@ router.post(
       });
 
       if (!rule) {
-        return res.status(404).json({ error: 'Routing rule not found' });
+        return notFound(res, 'Routing rule', id);
       }
 
       const matches = rule.evaluate(payload);
@@ -437,7 +497,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error testing routing rule:', error);
-      return res.status(500).json({ error: 'Failed to test rule' });
+      return internalError(res);
     }
   }
 );

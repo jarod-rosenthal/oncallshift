@@ -3,7 +3,9 @@ import { body, param, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { BusinessService, ServiceDependency, Service, Team, User } from '../../shared/models';
-import { notFound, internalError, badRequest } from '../../shared/utils/problem-details';
+import { notFound, internalError, badRequest, validationError, conflict, fromExpressValidator } from '../../shared/utils/problem-details';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators, searchFilterValidator, uuidFilterValidator } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -14,18 +16,26 @@ router.use(authenticateUser);
  * Get all business services for the organization
  */
 router.get('/',
-  query('status').optional().isIn(['operational', 'degraded', 'major_outage', 'maintenance', 'unknown']),
-  query('impactTier').optional().isIn(['tier_1', 'tier_2', 'tier_3', 'tier_4']),
-  query('teamId').optional().isUUID(),
+  [
+    ...paginationValidators,
+    searchFilterValidator,
+    query('status').optional().isIn(['operational', 'degraded', 'major_outage', 'maintenance', 'unknown']).withMessage('Invalid status'),
+    query('impactTier').optional().isIn(['tier_1', 'tier_2', 'tier_3', 'tier_4']).withMessage('Invalid impact tier'),
+    uuidFilterValidator('teamId'),
+  ],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
-      const { status, impactTier, teamId } = req.query;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('businessServices', pagination.sort, 'name');
+      const sortOrder = pagination.order?.toUpperCase() as 'ASC' | 'DESC' || 'ASC';
+      const { search, status, impactTier, teamId } = req.query;
+
       const dataSource = await getDataSource();
       const repo = dataSource.getRepository(BusinessService);
 
@@ -35,6 +45,13 @@ router.get('/',
         .leftJoinAndSelect('bs.services', 'services')
         .where('bs.orgId = :orgId', { orgId });
 
+      // Apply filters
+      if (search) {
+        queryBuilder.andWhere(
+          '(bs.name ILIKE :search OR bs.description ILIKE :search)',
+          { search: `%${search}%` }
+        );
+      }
       if (status) {
         queryBuilder.andWhere('bs.status = :status', { status });
       }
@@ -45,11 +62,25 @@ router.get('/',
         queryBuilder.andWhere('bs.ownerTeamId = :teamId', { teamId });
       }
 
-      queryBuilder.orderBy('bs.impactTier', 'ASC').addOrderBy('bs.name', 'ASC');
+      // Get total count
+      const total = await queryBuilder.getCount();
+
+      // Apply sorting and pagination
+      queryBuilder
+        .orderBy(`bs.${sortField}`, sortOrder)
+        .skip(pagination.offset)
+        .take(pagination.limit);
 
       const businessServices = await queryBuilder.getMany();
 
-      return res.json(businessServices);
+      const lastItem = businessServices[businessServices.length - 1];
+      return res.json(paginatedResponse(
+        businessServices,
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'businessServices'
+      ));
     } catch (error) {
       console.error('Error fetching business services:', error);
       return internalError(res);
@@ -61,12 +92,12 @@ router.get('/',
  * Get a single business service by ID
  */
 router.get('/:id',
-  param('id').isUUID(),
+  param('id').isUUID().withMessage('Invalid business service ID'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -107,7 +138,7 @@ router.post('/',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -119,7 +150,7 @@ router.post('/',
         where: { orgId, name: req.body.name },
       });
       if (existing) {
-        return res.status(409).json({ error: 'A business service with this name already exists' });
+        return conflict(res, 'A business service with this name already exists');
       }
 
       // Validate ownerTeamId if provided
@@ -185,7 +216,7 @@ router.put('/:id',
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -204,7 +235,7 @@ router.put('/:id',
           where: { orgId, name: req.body.name },
         });
         if (existing) {
-          return res.status(409).json({ error: 'A business service with this name already exists' });
+          return conflict(res, 'A business service with this name already exists');
         }
       }
 
@@ -256,12 +287,12 @@ router.put('/:id',
  * Delete a business service
  */
 router.delete('/:id',
-  param('id').isUUID(),
+  param('id').isUUID().withMessage('Invalid business service ID'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -288,14 +319,14 @@ router.delete('/:id',
  * Add/update services linked to a business service
  */
 router.put('/:id/services',
-  param('id').isUUID(),
-  body('serviceIds').isArray(),
-  body('serviceIds.*').isUUID(),
+  param('id').isUUID().withMessage('Invalid business service ID'),
+  body('serviceIds').isArray().withMessage('Service IDs must be an array'),
+  body('serviceIds.*').isUUID().withMessage('All service IDs must be valid UUIDs'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -346,13 +377,13 @@ router.put('/:id/services',
  * Get all dependencies for a service
  */
 router.get('/services/:serviceId/dependencies',
-  param('serviceId').isUUID(),
-  query('direction').optional().isIn(['upstream', 'downstream', 'both']),
+  param('serviceId').isUUID().withMessage('Invalid service ID'),
+  query('direction').optional().isIn(['upstream', 'downstream', 'both']).withMessage('Direction must be upstream, downstream, or both'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -401,16 +432,16 @@ router.get('/services/:serviceId/dependencies',
  * Add a service dependency
  */
 router.post('/dependencies',
-  body('dependentServiceId').isUUID(),
-  body('supportingServiceId').isUUID(),
-  body('dependencyType').optional().isIn(['required', 'optional', 'runtime', 'development']),
-  body('impactLevel').optional().isIn(['critical', 'high', 'medium', 'low']),
-  body('description').optional({ nullable: true }).isString(),
+  body('dependentServiceId').isUUID().withMessage('Dependent service ID must be a valid UUID'),
+  body('supportingServiceId').isUUID().withMessage('Supporting service ID must be a valid UUID'),
+  body('dependencyType').optional().isIn(['required', 'optional', 'runtime', 'development']).withMessage('Invalid dependency type'),
+  body('impactLevel').optional().isIn(['critical', 'high', 'medium', 'low']).withMessage('Invalid impact level'),
+  body('description').optional({ nullable: true }).isString().withMessage('Description must be a string'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -426,10 +457,10 @@ router.post('/dependencies',
       ]);
 
       if (!dependentService) {
-        return badRequest(res, 'Dependent service not found');
+        return notFound(res, 'Dependent service', dependentServiceId);
       }
       if (!supportingService) {
-        return badRequest(res, 'Supporting service not found');
+        return notFound(res, 'Supporting service', supportingServiceId);
       }
 
       // Check for self-dependency
@@ -442,7 +473,7 @@ router.post('/dependencies',
         where: { dependentServiceId, supportingServiceId },
       });
       if (existing) {
-        return res.status(409).json({ error: 'This dependency already exists' });
+        return conflict(res, 'This dependency already exists');
       }
 
       const dependency = depRepo.create({
@@ -474,15 +505,15 @@ router.post('/dependencies',
  * Update a service dependency
  */
 router.put('/dependencies/:id',
-  param('id').isUUID(),
-  body('dependencyType').optional().isIn(['required', 'optional', 'runtime', 'development']),
-  body('impactLevel').optional().isIn(['critical', 'high', 'medium', 'low']),
-  body('description').optional({ nullable: true }).isString(),
+  param('id').isUUID().withMessage('Invalid dependency ID'),
+  body('dependencyType').optional().isIn(['required', 'optional', 'runtime', 'development']).withMessage('Invalid dependency type'),
+  body('impactLevel').optional().isIn(['critical', 'high', 'medium', 'low']).withMessage('Invalid impact level'),
+  body('description').optional({ nullable: true }).isString().withMessage('Description must be a string'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;
@@ -519,12 +550,12 @@ router.put('/dependencies/:id',
  * Delete a service dependency
  */
 router.delete('/dependencies/:id',
-  param('id').isUUID(),
+  param('id').isUUID().withMessage('Invalid dependency ID'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.user!.orgId;

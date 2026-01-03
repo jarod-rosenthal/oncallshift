@@ -7,6 +7,12 @@ import { getDataSource } from '../../shared/db/data-source';
 import { WebhookSubscription, Service, Team } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 import { deliverWebhookEvent } from '../../shared/services/webhook-delivery';
+import { parsePaginationParams, paginatedResponse, validateSortField, VALID_SORT_FIELDS } from '../../shared/utils/pagination';
+import { paginationValidators, searchFilterValidator, uuidFilterValidator } from '../../shared/validators/pagination';
+import { badRequest, notFound, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
+
+// Add webhook subscriptions to valid sort fields
+VALID_SORT_FIELDS.webhookSubscriptions = ['createdAt', 'updatedAt', 'url', 'scope'];
 
 const router = Router();
 
@@ -16,51 +22,108 @@ router.use(authenticateUser);
 /**
  * GET /api/v1/webhook-subscriptions
  * List webhook subscriptions with optional scope filtering
+ * Supports pagination, filtering by scope, service_id, team_id, enabled, and search
  */
 router.get(
   '/',
   [
+    ...paginationValidators,
     query('scope').optional().isIn(['organization', 'service', 'team']),
-    query('serviceId').optional().isUUID(),
-    query('teamId').optional().isUUID(),
+    uuidFilterValidator('service_id'),
+    uuidFilterValidator('team_id'),
+    query('enabled').optional().isBoolean().withMessage('enabled must be a boolean'),
+    searchFilterValidator,
   ],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
-      const { scope, serviceId, teamId } = req.query;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = validateSortField('webhookSubscriptions', pagination.sort, 'createdAt');
+      const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
+      const { scope, service_id, team_id, enabled, search } = req.query;
 
       const dataSource = await getDataSource();
       const subscriptionRepo = dataSource.getRepository(WebhookSubscription);
 
+      // Build where conditions
       const whereConditions: any = { orgId };
 
       if (scope) {
         whereConditions.scope = scope;
       }
-      if (serviceId) {
-        whereConditions.serviceId = serviceId;
+      if (service_id) {
+        whereConditions.serviceId = service_id;
       }
-      if (teamId) {
-        whereConditions.teamId = teamId;
+      if (team_id) {
+        whereConditions.teamId = team_id;
+      }
+      if (enabled !== undefined) {
+        whereConditions.enabled = String(enabled) === 'true';
       }
 
-      const subscriptions = await subscriptionRepo.find({
-        where: whereConditions,
-        relations: ['service', 'team'],
-        order: { createdAt: 'DESC' },
-      });
+      // For search, we need to use QueryBuilder for ILIKE support
+      let subscriptions: WebhookSubscription[];
+      let total: number;
 
-      return res.json({
-        webhook_subscriptions: subscriptions.map(formatWebhookSubscription),
-      });
+      if (search) {
+        const queryBuilder = subscriptionRepo.createQueryBuilder('subscription')
+          .leftJoinAndSelect('subscription.service', 'service')
+          .leftJoinAndSelect('subscription.team', 'team')
+          .where('subscription.orgId = :orgId', { orgId });
+
+        if (scope) {
+          queryBuilder.andWhere('subscription.scope = :scope', { scope });
+        }
+
+        if (service_id) {
+          queryBuilder.andWhere('subscription.serviceId = :serviceId', { serviceId: service_id });
+        }
+
+        if (team_id) {
+          queryBuilder.andWhere('subscription.teamId = :teamId', { teamId: team_id });
+        }
+
+        if (enabled !== undefined) {
+          queryBuilder.andWhere('subscription.enabled = :enabled', { enabled: String(enabled) === 'true' });
+        }
+
+        queryBuilder.andWhere('(subscription.url ILIKE :search OR subscription.description ILIKE :search)', {
+          search: `%${search}%`,
+        });
+
+        queryBuilder
+          .orderBy(`subscription.${sortField}`, sortOrder)
+          .skip(pagination.offset)
+          .take(pagination.limit);
+
+        [subscriptions, total] = await queryBuilder.getManyAndCount();
+      } else {
+        [subscriptions, total] = await subscriptionRepo.findAndCount({
+          where: whereConditions,
+          relations: ['service', 'team'],
+          order: { [sortField]: sortOrder },
+          skip: pagination.offset,
+          take: pagination.limit,
+        });
+      }
+
+      const lastItem = subscriptions[subscriptions.length - 1];
+      return res.json(paginatedResponse(
+        subscriptions.map(formatWebhookSubscription),
+        total,
+        pagination,
+        lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+        'webhook_subscriptions'
+      ));
     } catch (error) {
       logger.error('Error fetching webhook subscriptions:', error);
-      return res.status(500).json({ error: 'Failed to fetch webhook subscriptions' });
+      return internalError(res);
     }
   }
 );
@@ -83,13 +146,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!subscription) {
-      return res.status(404).json({ error: 'Webhook subscription not found' });
+      return notFound(res, 'Webhook subscription', id);
     }
 
     return res.json({ webhook_subscription: formatWebhookSubscription(subscription) });
   } catch (error) {
     logger.error('Error fetching webhook subscription:', error);
-    return res.status(500).json({ error: 'Failed to fetch webhook subscription' });
+    return internalError(res);
   }
 });
 
@@ -115,7 +178,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const orgId = req.orgId!;
@@ -133,13 +196,13 @@ router.post(
 
       // Validate scope-specific requirements
       if (scope === 'service' && !serviceId) {
-        return res.status(400).json({ error: 'serviceId is required for service scope' });
+        return badRequest(res, 'serviceId is required for service scope');
       }
       if (scope === 'team' && !teamId) {
-        return res.status(400).json({ error: 'teamId is required for team scope' });
+        return badRequest(res, 'teamId is required for team scope');
       }
       if (scope === 'organization' && (serviceId || teamId)) {
-        return res.status(400).json({ error: 'serviceId and teamId must be null for organization scope' });
+        return badRequest(res, 'serviceId and teamId must be null for organization scope');
       }
 
       const dataSource = await getDataSource();
@@ -150,7 +213,7 @@ router.post(
         const serviceRepo = dataSource.getRepository(Service);
         const service = await serviceRepo.findOne({ where: { id: serviceId, orgId } });
         if (!service) {
-          return res.status(400).json({ error: 'Service not found or does not belong to your organization' });
+          return notFound(res, 'Service', serviceId);
         }
       }
 
@@ -158,7 +221,7 @@ router.post(
         const teamRepo = dataSource.getRepository(Team);
         const team = await teamRepo.findOne({ where: { id: teamId, orgId } });
         if (!team) {
-          return res.status(400).json({ error: 'Team not found or does not belong to your organization' });
+          return notFound(res, 'Team', teamId);
         }
       }
 
@@ -195,7 +258,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating webhook subscription:', error);
-      return res.status(500).json({ error: 'Failed to create webhook subscription' });
+      return internalError(res);
     }
   }
 );
@@ -219,7 +282,7 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { id } = req.params;
@@ -234,7 +297,7 @@ router.put(
       });
 
       if (!subscription) {
-        return res.status(404).json({ error: 'Webhook subscription not found' });
+        return notFound(res, 'Webhook subscription', id);
       }
 
       // Update fields
@@ -260,7 +323,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating webhook subscription:', error);
-      return res.status(500).json({ error: 'Failed to update webhook subscription' });
+      return internalError(res);
     }
   }
 );
@@ -282,7 +345,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     if (!subscription) {
-      return res.status(404).json({ error: 'Webhook subscription not found' });
+      return notFound(res, 'Webhook subscription', id);
     }
 
     await subscriptionRepo.remove(subscription);
@@ -292,7 +355,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting webhook subscription:', error);
-    return res.status(500).json({ error: 'Failed to delete webhook subscription' });
+    return internalError(res);
   }
 });
 
@@ -314,7 +377,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     });
 
     if (!subscription) {
-      return res.status(404).json({ error: 'Webhook subscription not found' });
+      return notFound(res, 'Webhook subscription', id);
     }
 
     // Create a test event payload
@@ -358,7 +421,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     }
   } catch (error) {
     logger.error('Error sending test webhook:', error);
-    return res.status(500).json({ error: 'Failed to send test webhook' });
+    return internalError(res);
   }
 });
 

@@ -4,6 +4,9 @@ import { getDataSource } from '../../shared/db/data-source';
 import { Notification, Incident } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 import { IsNull } from 'typeorm';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { notificationFilterValidators } from '../../shared/validators/pagination';
+import { notFound, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -75,11 +78,12 @@ function getNotificationTitle(type: string, incident?: Incident): string {
  * GET /api/v1/notifications
  * Get notification history for the authenticated user
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...notificationFilterValidators], async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-    const offset = parseInt(req.query.offset as string) || 0;
+    const pagination = parsePaginationParams(req.query);
+    const sortField = validateSortField('notifications', pagination.sort, 'createdAt');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
     const unreadOnly = req.query.unread === 'true';
 
     const dataSource = await getDataSource();
@@ -90,9 +94,9 @@ router.get('/', async (req: Request, res: Response) => {
       .leftJoinAndSelect('notification.incident', 'incident')
       .leftJoinAndSelect('incident.service', 'service')
       .where('notification.userId = :userId', { userId: user.id })
-      .orderBy('notification.createdAt', 'DESC')
-      .skip(offset)
-      .take(limit);
+      .orderBy(`notification.${sortField}`, sortOrder)
+      .skip(pagination.offset)
+      .take(pagination.limit);
 
     if (unreadOnly) {
       queryBuilder.andWhere('notification.openedAt IS NULL');
@@ -109,20 +113,23 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     const mappedNotifications = notifications.map(mapNotificationToResponse);
+    const lastItem = notifications[notifications.length - 1];
+
+    const response = paginatedResponse(
+      mappedNotifications,
+      total,
+      pagination,
+      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+      'notifications'
+    );
 
     return res.json({
-      notifications: mappedNotifications,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + notifications.length < total,
-      },
+      ...response,
       unreadCount,
     });
   } catch (error) {
     logger.error('Error fetching notifications:', error);
-    return res.status(500).json({ error: 'Failed to fetch notifications' });
+    return internalError(res, req.requestId);
   }
 });
 
@@ -143,7 +150,7 @@ router.put('/:id/read', async (req: Request, res: Response) => {
     });
 
     if (!notification) {
-      return res.status(404).json({ error: 'Notification not found' });
+      return notFound(res, 'Notification', id);
     }
 
     if (!notification.openedAt) {
@@ -160,7 +167,7 @@ router.put('/:id/read', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error marking notification as read:', error);
-    return res.status(500).json({ error: 'Failed to mark notification as read' });
+    return internalError(res, req.requestId);
   }
 });
 
@@ -189,7 +196,7 @@ router.put('/read-all', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error marking all notifications as read:', error);
-    return res.status(500).json({ error: 'Failed to mark notifications as read' });
+    return internalError(res, req.requestId);
   }
 });
 
@@ -214,7 +221,7 @@ router.get('/unread-count', async (req: Request, res: Response) => {
     return res.json({ count });
   } catch (error) {
     logger.error('Error getting unread count:', error);
-    return res.status(500).json({ error: 'Failed to get unread count' });
+    return internalError(res, req.requestId);
   }
 });
 
