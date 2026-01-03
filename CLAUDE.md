@@ -347,6 +347,8 @@ terraform apply
 - **mobile/src/screens/**: React Native screens (32 screens)
 - **mobile/src/services/**: API client, auth, push notifications, runbooks
 - **mobile/src/components/**: Shared mobile components
+- **packages/oncallshift-mcp/**: MCP server for AI assistant integration
+- **packages/terraform-provider-oncallshift/**: Terraform provider (Go)
 
 ### Key Features Implemented
 - **Escalation Timer**: `backend/src/workers/escalation-timer.ts` - Auto-advances escalation steps every 30s
@@ -428,6 +430,26 @@ React Navigation with bottom tabs + stack navigation. Deep linking for push noti
 
 ### MCP Server
 The `packages/oncallshift-mcp/` package provides an MCP (Model Context Protocol) server for AI assistant integration, enabling programmatic access to OnCallShift features.
+
+```bash
+cd packages/oncallshift-mcp
+npm install
+npm run build        # Build TypeScript
+npm run dev          # Development mode
+npm run typecheck    # Type checking
+```
+
+### Terraform Provider
+The `packages/terraform-provider-oncallshift/` provides a Terraform provider for managing OnCallShift resources as infrastructure-as-code.
+
+```bash
+cd packages/terraform-provider-oncallshift
+make build           # Build the provider
+make test            # Run unit tests
+make testacc         # Acceptance tests (requires ONCALLSHIFT_API_KEY)
+make docs            # Generate documentation
+make install         # Install locally for testing
+```
 
 ## Infrastructure Rules
 

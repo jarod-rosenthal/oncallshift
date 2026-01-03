@@ -9,6 +9,29 @@
     <meta property="og:description" content="Modern incident management platform for DevOps teams" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OnCallShift - Streamlined On-Call Management</title>
+    <script>
+      // Prevent flash of wrong theme by applying theme before CSS loads
+      (function() {
+        var STORAGE_KEY = 'oncallshift-theme';
+        var theme = localStorage.getItem(STORAGE_KEY);
+        // Check legacy key for backwards compatibility
+        if (!theme) {
+          var legacy = localStorage.getItem('theme');
+          if (legacy === 'light' || legacy === 'dark') theme = legacy;
+        }
+        // Default to dark mode if no preference
+        if (!theme) theme = 'dark';
+        // Resolve system preference
+        var resolved = theme;
+        if (theme === 'system') {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        // Apply dark class
+        if (resolved === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

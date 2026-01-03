@@ -22,6 +22,7 @@ const Availability = lazy(() => import('./pages/Availability').then(m => ({ defa
 const NotificationPreferences = lazy(() => import('./pages/NotificationPreferences').then(m => ({ default: m.NotificationPreferences })));
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })));
+const StatusDashboard = lazy(() => import('./pages/StatusDashboard').then(m => ({ default: m.StatusDashboard })));
 
 // Lazy loaded pages - Admin functionality
 const AdminUsers = lazy(() => import('./pages/AdminUsers').then(m => ({ default: m.AdminUsers })));
@@ -84,6 +85,7 @@ const BlogBuildingMcpServers = lazy(() => import('./pages/blog/BuildingMcpServer
 const DocsHome = lazy(() => import('./pages/docs/DocsHome').then(m => ({ default: m.DocsHome })));
 const DocsQuickStart = lazy(() => import('./pages/docs/DocsQuickStart').then(m => ({ default: m.DocsQuickStart })));
 const DocsMcpServer = lazy(() => import('./pages/docs/DocsMcpServer').then(m => ({ default: m.DocsMcpServer })));
+const DocsTerraformProvider = lazy(() => import('./pages/docs/DocsTerraformProvider').then(m => ({ default: m.DocsTerraformProvider })));
 const DocsComingSoon = lazy(() => import('./pages/docs/DocsComingSoon').then(m => ({ default: m.DocsComingSoon })));
 const HelpHome = lazy(() => import('./pages/help/HelpHome').then(m => ({ default: m.HelpHome })));
 const HelpFirstSteps = lazy(() => import('./pages/help/HelpFirstSteps').then(m => ({ default: m.HelpFirstSteps })));
@@ -162,6 +164,7 @@ function App() {
         <Route path="/docs" element={<DocsHome />} />
         <Route path="/docs/getting-started/quick-start" element={<DocsQuickStart />} />
         <Route path="/docs/ai/mcp" element={<DocsMcpServer />} />
+        <Route path="/docs/iac/terraform" element={<DocsTerraformProvider />} />
         <Route path="/docs/*" element={<DocsComingSoon />} />
 
         {/* Help Center routes */}
@@ -270,6 +273,14 @@ function App() {
           element={
             <ProtectedWithLayout>
               <Analytics />
+            </ProtectedWithLayout>
+          }
+        />
+        <Route
+          path="/status-dashboard"
+          element={
+            <ProtectedWithLayout>
+              <StatusDashboard />
             </ProtectedWithLayout>
           }
         />

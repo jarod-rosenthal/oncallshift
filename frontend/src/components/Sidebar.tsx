@@ -1,8 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth-store';
-import { authAPI } from '../lib/api-client';
-import { UserAvatar } from './UserAvatar';
 
 interface NavItem {
   path: string;
@@ -165,44 +163,12 @@ const Icons = {
 };
 
 export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps) {
-  const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
-  const clearAuth = useAuthStore((state) => state.clearAuth);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['People', 'Settings']));
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('theme');
-      // Default to dark mode if no preference stored
-      return stored ? stored === 'dark' : true;
-    }
-    return true;
-  });
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['People']));
+  const [showQuickActions, setShowQuickActions] = useState(true);
 
   const isAdmin = user?.role === 'admin';
-
-  // Apply theme on mount and when changed
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDarkMode) {
-      root.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDarkMode]);
-
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-  };
-
-  const handleLogout = () => {
-    authAPI.logout();
-    clearAuth();
-    navigate('/');
-  };
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
@@ -226,6 +192,7 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
       items: [
         { path: '/dashboard', label: 'Dashboard', icon: <Icons.Home /> },
         { path: '/incidents', label: 'Incidents', icon: <Icons.Bell />, badge: incidentCount },
+        { path: '/status-dashboard', label: 'Status Dashboard', icon: <Icons.Globe /> },
       ],
     },
     {
@@ -256,16 +223,6 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         { path: '/analytics', label: 'Analytics', icon: <Icons.Chart /> },
         { path: '/reports', label: 'Reports', icon: <Icons.Book />, adminOnly: true },
         { path: '/postmortems', label: 'Postmortems', icon: <Icons.FileText /> },
-      ],
-    },
-    {
-      title: 'Settings',
-      adminOnly: true,
-      items: [
-        { path: '/integrations', label: 'Integrations', icon: <Icons.Link /> },
-        { path: '/settings/cloud-credentials', label: 'Cloud Credentials', icon: <Icons.Cloud /> },
-        { path: '/import', label: 'Import Data', icon: <Icons.Import /> },
-        { path: '/settings/semantic-import', label: 'AI Import', icon: <Icons.Import /> },
       ],
     },
   ];
@@ -307,7 +264,7 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
     if (visibleItems.length === 0) return null;
 
     const isExpanded = expandedSections.has(section.title);
-    const hasSubItems = section.title === 'People' || section.title === 'Settings';
+    const hasSubItems = section.title === 'People';
 
     return (
       <div key={section.title} className="mb-2">
@@ -358,112 +315,63 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {navSections.map(renderSection)}
-      </nav>
-
-      {/* Theme Toggle */}
-      <div className="px-2 py-2 border-t border-border">
-        <button
-          onClick={toggleTheme}
-          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
-          title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {isDarkMode ? <Icons.Sun /> : <Icons.Moon />}
-          {!collapsed && <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>}
-        </button>
-      </div>
-
-      {/* User Menu */}
-      <div className="border-t border-border p-2">
-        <div className="relative">
-          <button
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted transition-colors ${
-              collapsed ? 'justify-center' : ''
-            }`}
-          >
-            <UserAvatar
-              src={user?.profilePictureUrl}
-              name={user?.fullName}
-              size="sm"
-            />
-            {!collapsed && (
-              <>
-                <div className="flex-1 text-left">
-                  <div className="text-sm font-medium text-foreground truncate">
-                    {user?.fullName || 'User'}
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {user?.email || ''}
-                  </div>
-                </div>
-                <Icons.ChevronDown />
-              </>
-            )}
-          </button>
-
-          {/* Dropdown Menu */}
-          {userMenuOpen && (
-            <div className={`absolute bottom-full mb-2 ${collapsed ? 'left-full ml-2' : 'left-0 right-0'} bg-popover border border-border rounded-lg shadow-lg py-1 z-50`}>
-              <Link
-                to="/profile"
-                onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
-              >
-                <Icons.User />
-                <span>My Profile</span>
-              </Link>
-              <Link
-                to="/availability"
-                onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
-              >
-                <Icons.Clock />
-                <span>My Availability</span>
-              </Link>
-              <Link
-                to="/notification-preferences"
-                onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
-              >
-                <Icons.Bell />
-                <span>Notification Preferences</span>
-              </Link>
-              {isAdmin && (
-                <>
-                  <hr className="my-1 border-border" />
-                  <Link
-                    to="/settings/api-keys"
-                    onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
-                  >
-                    <Icons.Key />
-                    <span>API Keys</span>
-                  </Link>
-                  <Link
-                    to="/settings/account"
-                    onClick={() => setUserMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
-                  >
-                    <Icons.Settings />
-                    <span>Account Settings</span>
-                  </Link>
-                </>
-              )}
-              <hr className="my-1 border-border" />
+        {/* Quick Actions Panel - for admins */}
+        {isAdmin && !collapsed && showQuickActions && (
+          <div className="mb-4 mx-1 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-primary uppercase tracking-wider">Quick Setup</span>
               <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-destructive hover:bg-destructive/10"
+                onClick={() => setShowQuickActions(false)}
+                className="text-muted-foreground hover:text-foreground p-0.5"
+                title="Hide quick actions"
               >
-                <Icons.Logout />
-                <span>Log Out</span>
+                <Icons.ChevronDown />
               </button>
             </div>
-          )}
-        </div>
-      </div>
+            <div className="space-y-1.5">
+              <Link
+                to="/people/teams"
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">1</span>
+                Create Team
+              </Link>
+              <Link
+                to="/schedules"
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">2</span>
+                Create Schedule
+              </Link>
+              <Link
+                to="/escalation-policies"
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">3</span>
+                Create Escalation Policy
+              </Link>
+              <Link
+                to="/services"
+                className="flex items-center gap-2 px-2 py-1.5 text-xs rounded hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">4</span>
+                Create Service
+              </Link>
+            </div>
+          </div>
+        )}
+        {isAdmin && !collapsed && !showQuickActions && (
+          <button
+            onClick={() => setShowQuickActions(true)}
+            className="mb-4 mx-1 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg flex items-center gap-2 w-full transition-colors"
+          >
+            <Icons.ChevronRight />
+            Show Quick Setup
+          </button>
+        )}
+
+        {navSections.map(renderSection)}
+      </nav>
     </aside>
   );
 }

@@ -1217,6 +1217,37 @@ export const teamsAPI = {
   },
 };
 
+// Escalation Policies API
+export interface EscalationPolicy {
+  id: string;
+  name: string;
+  description?: string;
+  repeatEnabled: boolean;
+  repeatCount: number;
+  steps: Array<{
+    id: string;
+    stepOrder: number;
+    targetType: 'schedule' | 'users';
+    scheduleId?: string;
+    userIds?: string[];
+    timeoutSeconds: number;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const escalationPoliciesAPI = {
+  list: async (): Promise<{ policies: EscalationPolicy[] }> => {
+    const response = await apiClient.get<{ policies: EscalationPolicy[] }>('/escalation-policies');
+    return response.data;
+  },
+
+  get: async (id: string): Promise<{ policy: EscalationPolicy }> => {
+    const response = await apiClient.get<{ policy: EscalationPolicy }>(`/escalation-policies/${id}`);
+    return response.data;
+  },
+};
+
 // Runbooks API
 export const runbooksAPI = {
   list: async (): Promise<{ runbooks: Runbook[] }> => {

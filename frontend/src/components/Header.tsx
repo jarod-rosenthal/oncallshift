@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth-store';
 import { authAPI } from '../lib/api-client';
+import { ThemeSwitcher } from './ui/theme-switcher';
+import { UserAvatar } from './UserAvatar';
 
 interface HeaderProps {
   sidebarCollapsed: boolean;
@@ -24,8 +26,49 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
+  ChevronDown: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  ),
+  User: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  ),
+  Clock: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  Settings: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+  Key: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+    </svg>
+  ),
+  Link: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+  ),
+  Cloud: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+    </svg>
+  ),
+  Import: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+    </svg>
+  ),
   Logout: () => (
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
     </svg>
   ),
@@ -35,8 +78,12 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+
+  const isAdmin = user?.role === 'admin';
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,6 +190,9 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
           )}
         </div>
 
+        {/* Theme Toggle */}
+        <ThemeSwitcher />
+
         {/* Notifications */}
         <Link
           to="/incidents"
@@ -152,14 +202,139 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
           <Icons.Bell />
         </Link>
 
-        {/* Logout */}
-        <button
-          onClick={handleLogout}
-          className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-          title="Log Out"
-        >
-          <Icons.Logout />
-        </button>
+        {/* User Profile Menu */}
+        <div className="relative ml-2">
+          <button
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+            className={`flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg hover:bg-muted transition-colors ${userMenuOpen ? 'bg-muted' : ''}`}
+          >
+            <UserAvatar
+              src={user?.profilePictureUrl}
+              name={user?.fullName}
+              size="sm"
+            />
+            <span className="text-sm font-medium text-foreground hidden sm:block">
+              {user?.fullName?.split(' ')[0] || 'User'}
+            </span>
+            <Icons.ChevronDown />
+          </button>
+
+          {/* User Dropdown */}
+          {userMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setUserMenuOpen(false)}
+              />
+              <div className="absolute right-0 top-full mt-2 w-64 bg-popover border border-border rounded-lg shadow-lg py-1 z-50">
+                {/* User Info Header */}
+                <div className="px-4 py-3 border-b border-border">
+                  <div className="text-sm font-medium text-foreground">{user?.fullName || 'User'}</div>
+                  <div className="text-xs text-muted-foreground">{user?.email || ''}</div>
+                </div>
+
+                {/* Profile Links */}
+                <div className="py-1">
+                  <Link
+                    to="/profile"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                  >
+                    <Icons.User />
+                    <span>My Profile</span>
+                  </Link>
+                  <Link
+                    to="/availability"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                  >
+                    <Icons.Clock />
+                    <span>My Availability</span>
+                  </Link>
+                  <Link
+                    to="/notification-preferences"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                  >
+                    <Icons.Bell />
+                    <span>Notification Preferences</span>
+                  </Link>
+                </div>
+
+                {/* Admin Settings */}
+                {isAdmin && (
+                  <>
+                    <hr className="my-1 border-border" />
+                    <div className="px-4 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Settings
+                    </div>
+                    <Link
+                      to="/integrations"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                    >
+                      <Icons.Link />
+                      <span>Integrations</span>
+                    </Link>
+                    <Link
+                      to="/settings/cloud-credentials"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                    >
+                      <Icons.Cloud />
+                      <span>Cloud Credentials</span>
+                    </Link>
+                    <Link
+                      to="/import"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                    >
+                      <Icons.Import />
+                      <span>Import Data</span>
+                    </Link>
+                    <Link
+                      to="/settings/semantic-import"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                    >
+                      <Icons.Import />
+                      <span>AI Import</span>
+                    </Link>
+                    <Link
+                      to="/settings/api-keys"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                    >
+                      <Icons.Key />
+                      <span>API Keys</span>
+                    </Link>
+                    <Link
+                      to="/settings/account"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-popover-foreground hover:bg-muted"
+                    >
+                      <Icons.Settings />
+                      <span>Account Settings</span>
+                    </Link>
+                  </>
+                )}
+
+                {/* Logout */}
+                <hr className="my-1 border-border" />
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-destructive hover:bg-destructive/10"
+                >
+                  <Icons.Logout />
+                  <span>Log Out</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

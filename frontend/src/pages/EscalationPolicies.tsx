@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -55,13 +55,265 @@ interface User {
   email: string;
 }
 
+interface Service {
+  id: string;
+  name: string;
+  escalationPolicyId?: string;
+}
+
+type SortOption = 'name-asc' | 'name-desc' | 'created-desc' | 'created-asc';
+
+// Step Flow Preview Component - Horizontal visualization for list view
+function StepFlowPreview({ steps }: { steps: EscalationStep[] }) {
+  const getStepTargetSummary = (step: EscalationStep): string => {
+    if (step.targets && step.targets.length > 0) {
+      const names = step.targets.map(target => {
+        if (target.targetType === 'user') {
+          return target.user?.fullName || 'User';
+        }
+        return target.schedule?.name || 'Schedule';
+      });
+      return names.length > 2 ? `${names[0]} +${names.length - 1}` : names.join(', ');
+    }
+
+    if (step.targetType === 'schedule') {
+      if (step.resolvedOncallUser) {
+        return step.resolvedOncallUser.fullName;
+      }
+      return step.schedule?.name || 'On-call';
+    }
+
+    if (step.resolvedUsers && step.resolvedUsers.length > 0) {
+      const names = step.resolvedUsers.map(u => u.fullName);
+      return names.length > 2 ? `${names[0]} +${names.length - 1}` : names.join(', ');
+    }
+
+    return 'Users';
+  };
+
+  const formatTimeout = (seconds: number): string => {
+    const minutes = Math.round(seconds / 60);
+    return `${minutes} min`;
+  };
+
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto pb-2">
+      {steps.map((step, idx) => (
+        <div key={step.id || idx} className="flex items-center">
+          {/* Step Box */}
+          <div className="flex flex-col items-center min-w-[80px]">
+            <div className="bg-primary/10 border border-primary/30 rounded-md px-3 py-2 text-center">
+              <div className="text-xs font-semibold text-primary">Step {step.stepOrder}</div>
+              <div className="text-xs text-muted-foreground">
+                {idx < steps.length - 1 ? formatTimeout(step.timeoutSeconds) : 'Final'}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 max-w-[100px] truncate text-center">
+              {getStepTargetSummary(step)}
+            </div>
+          </div>
+          {/* Arrow between steps */}
+          {idx < steps.length - 1 && (
+            <div className="flex items-center px-1 text-muted-foreground">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Step Editor Card - Vertical visualization for edit view
+function StepEditorCard({
+  step,
+  index,
+  isLast,
+  schedules,
+  users,
+  onUpdate,
+  onRemove,
+  canRemove,
+}: {
+  step: {
+    stepOrder: number;
+    targetType: 'schedule' | 'users';
+    scheduleId?: string;
+    userIds?: string[];
+    timeoutSeconds: number;
+  };
+  index: number;
+  isLast: boolean;
+  schedules: Schedule[];
+  users: User[];
+  onUpdate: (field: string, value: any) => void;
+  onRemove: () => void;
+  canRemove: boolean;
+}) {
+  const selectedSchedule = schedules.find(s => s.id === step.scheduleId);
+
+  return (
+    <div className="relative">
+      {/* Step Card */}
+      <Card className="border-l-4 border-l-primary">
+        <CardHeader className="pb-3">
+          <div className="flex justify-between items-start">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary text-primary-foreground text-sm font-bold px-3 py-1 rounded-md">
+                STEP {index + 1}
+              </div>
+              {isLast && (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                  Final Step
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {!isLast && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Timeout:</Label>
+                  <select
+                    className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                    value={step.timeoutSeconds}
+                    onChange={(e) => onUpdate('timeoutSeconds', parseInt(e.target.value))}
+                  >
+                    <option value={60}>1 min</option>
+                    <option value={120}>2 min</option>
+                    <option value={300}>5 min</option>
+                    <option value={600}>10 min</option>
+                    <option value={900}>15 min</option>
+                    <option value={1800}>30 min</option>
+                    <option value={3600}>1 hour</option>
+                  </select>
+                </div>
+              )}
+              {canRemove && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={onRemove}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="border-t pt-4">
+            <Label className="text-sm font-medium">Notify:</Label>
+            <select
+              className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={step.targetType}
+              onChange={(e) => onUpdate('targetType', e.target.value as 'schedule' | 'users')}
+            >
+              <option value="schedule">On-Call Schedule</option>
+              <option value="users">Specific User(s)</option>
+            </select>
+          </div>
+
+          {step.targetType === 'schedule' && (
+            <div>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={step.scheduleId || ''}
+                onChange={(e) => onUpdate('scheduleId', e.target.value)}
+              >
+                <option value="">Select a schedule</option>
+                {schedules.map((schedule) => (
+                  <option key={schedule.id} value={schedule.id}>
+                    {schedule.name}
+                  </option>
+                ))}
+              </select>
+              {/* Currently on-call preview */}
+              {selectedSchedule?.currentOncallUser && (
+                <div className="mt-3 flex items-center gap-2 text-sm bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md px-3 py-2">
+                  <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-medium">
+                    {selectedSchedule.currentOncallUser.fullName.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-green-800 dark:text-green-200">
+                    Currently on-call: <strong>{selectedSchedule.currentOncallUser.fullName}</strong>
+                  </span>
+                </div>
+              )}
+              {selectedSchedule && !selectedSchedule.currentOncallUser && (
+                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                  No one currently on-call for this schedule
+                </p>
+              )}
+            </div>
+          )}
+
+          {step.targetType === 'users' && (
+            <div>
+              {users.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">Loading users...</p>
+              ) : (
+                <>
+                  <select
+                    multiple
+                    size={5}
+                    className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={step.userIds || []}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      onUpdate('userIds', selected);
+                    }}
+                  >
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.fullName} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Hold Ctrl (Windows) or Cmd (Mac) to select multiple users
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {!isLast && (
+            <p className="text-xs text-muted-foreground italic">
+              If not acknowledged after {Math.round(step.timeoutSeconds / 60)} minutes, escalate to Step {index + 2}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Connector to next step */}
+      {!isLast && (
+        <div className="flex justify-center py-2">
+          <div className="flex flex-col items-center text-muted-foreground">
+            <div className="w-0.5 h-4 bg-border"></div>
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EscalationPolicies() {
   const [policies, setPolicies] = useState<EscalationPolicy[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<EscalationPolicy | null>(null);
+
+  // Search and sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState<SortOption>('name-asc');
 
   const [formData, setFormData] = useState<{
     name: string;
@@ -88,22 +340,56 @@ export function EscalationPolicies() {
   const tokens = useAuthStore((state) => state.tokens);
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+  // Count services using each policy
+  const getServiceCount = (policyId: string): number => {
+    return services.filter(s => s.escalationPolicyId === policyId).length;
+  };
+
+  const getServicesUsingPolicy = (policyId: string): Service[] => {
+    return services.filter(s => s.escalationPolicyId === policyId);
+  };
+
+  // Filter and sort policies
+  const filteredAndSortedPolicies = useMemo(() => {
+    let result = [...policies];
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(policy =>
+        policy.name.toLowerCase().includes(query) ||
+        policy.description?.toLowerCase().includes(query)
+      );
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      switch (sortOption) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'created-desc':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case 'created-asc':
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [policies, searchQuery, sortOption]);
+
   useEffect(() => {
     const fetchData = async () => {
-      console.log('EscalationPolicies useEffect triggered');
-      console.log('API_BASE:', API_BASE);
-      console.log('tokens:', tokens);
-      console.log('accessToken:', tokens?.accessToken);
-
       if (!tokens?.accessToken) {
-        console.log('No access token found, skipping fetch');
         setLoading(false);
         return;
       }
 
-      console.log('Fetching escalation policies, schedules, and users...');
       try {
-        const [policiesRes, schedulesRes, usersRes] = await Promise.all([
+        const [policiesRes, schedulesRes, usersRes, servicesRes] = await Promise.all([
           fetch(`${API_BASE}/api/v1/escalation-policies`, {
             headers: { Authorization: `Bearer ${tokens.accessToken}` },
           }),
@@ -113,25 +399,22 @@ export function EscalationPolicies() {
           fetch(`${API_BASE}/api/v1/users`, {
             headers: { Authorization: `Bearer ${tokens.accessToken}` },
           }),
+          fetch(`${API_BASE}/api/v1/services`, {
+            headers: { Authorization: `Bearer ${tokens.accessToken}` },
+          }),
         ]);
 
-        console.log('Policies response status:', policiesRes.status);
-        console.log('Schedules response status:', schedulesRes.status);
-        console.log('Users response status:', usersRes.status);
-
-        const [policiesData, schedulesData, usersData] = await Promise.all([
+        const [policiesData, schedulesData, usersData, servicesData] = await Promise.all([
           policiesRes.json(),
           schedulesRes.json(),
           usersRes.json(),
+          servicesRes.json(),
         ]);
-
-        console.log('Policies data:', policiesData);
-        console.log('Schedules data:', schedulesData);
-        console.log('Users data:', usersData);
 
         setPolicies(policiesData.policies || []);
         setSchedules(schedulesData.schedules || []);
         setUsers(usersData.users || []);
+        setServices(servicesData.services || []);
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -157,7 +440,6 @@ export function EscalationPolicies() {
     }
   };
 
-
   const handleStartEdit = (policy: EscalationPolicy) => {
     setEditingPolicy(policy);
     setFormData({
@@ -174,9 +456,32 @@ export function EscalationPolicies() {
       })),
     });
     setShowCreateForm(true);
-
-    // Scroll to top to show the form
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleStartCreate = () => {
+    setEditingPolicy(null);
+    setFormData({
+      name: '',
+      description: '',
+      repeatEnabled: false,
+      repeatCount: 0,
+      steps: [{ stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 }],
+    });
+    setShowCreateForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancel = () => {
+    setShowCreateForm(false);
+    setEditingPolicy(null);
+    setFormData({
+      name: '',
+      description: '',
+      repeatEnabled: false,
+      repeatCount: 0,
+      steps: [{ stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 }],
+    });
   };
 
   const handleSavePolicy = async (e: React.FormEvent) => {
@@ -187,7 +492,6 @@ export function EscalationPolicies() {
       return;
     }
 
-    // Validate form data
     if (!formData.name.trim()) {
       alert('Policy name is required');
       return;
@@ -196,11 +500,11 @@ export function EscalationPolicies() {
     for (let i = 0; i < formData.steps.length; i++) {
       const step = formData.steps[i] as EscalationStep;
       if (step.targetType === 'schedule' && !step.scheduleId) {
-        alert(`Rule ${i + 1}: Please select a schedule`);
+        alert(`Step ${i + 1}: Please select a schedule`);
         return;
       }
       if (step.targetType === 'users' && (!step.userIds || step.userIds.length === 0)) {
-        alert(`Rule ${i + 1}: Please select at least one user`);
+        alert(`Step ${i + 1}: Please select at least one user`);
         return;
       }
     }
@@ -210,9 +514,6 @@ export function EscalationPolicies() {
         ? `${API_BASE}/api/v1/escalation-policies/${editingPolicy.id}`
         : `${API_BASE}/api/v1/escalation-policies`;
       const method = editingPolicy ? 'PUT' : 'POST';
-
-      console.log('Saving policy:', method, url);
-      console.log('Form data:', JSON.stringify(formData, null, 2));
 
       const response = await fetch(url, {
         method,
@@ -224,26 +525,10 @@ export function EscalationPolicies() {
       });
 
       if (response.ok) {
-        setShowCreateForm(false);
-        setEditingPolicy(null);
-        setFormData({
-          name: '',
-          description: '',
-          repeatEnabled: false,
-          repeatCount: 0,
-          steps: [{ stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 }],
-        });
+        handleCancel();
         fetchPolicies();
       } else {
         const error = await response.json();
-        console.error('Save error:', error);
-        console.error('Full error details:', JSON.stringify(error, null, 2));
-        if (error.errors && Array.isArray(error.errors)) {
-          console.error('Validation errors:', error.errors);
-          error.errors.forEach((err: any, idx: number) => {
-            console.error(`Error ${idx + 1}:`, JSON.stringify(err, null, 2));
-          });
-        }
         alert(`Error: ${error.error || error.message || JSON.stringify(error) || 'Failed to save policy'}`);
       }
     } catch (error) {
@@ -291,17 +576,18 @@ export function EscalationPolicies() {
   };
 
   const removeStep = (index: number) => {
-    setFormData({
-      ...formData,
-      steps: formData.steps.filter((_, i) => i !== index),
+    const newSteps = formData.steps.filter((_, i) => i !== index);
+    // Reorder remaining steps
+    newSteps.forEach((step, i) => {
+      step.stepOrder = i + 1;
     });
+    setFormData({ ...formData, steps: newSteps });
   };
 
   const updateStep = (index: number, field: string, value: any) => {
     const newSteps = [...formData.steps];
     const updatedStep = { ...newSteps[index], [field]: value };
 
-    // When changing target type, initialize the appropriate fields
     if (field === 'targetType') {
       if (value === 'users') {
         updatedStep.userIds = updatedStep.userIds || [];
@@ -314,338 +600,339 @@ export function EscalationPolicies() {
 
     newSteps[index] = updatedStep;
     setFormData({ ...formData, steps: newSteps });
-    console.log('Updated step:', updatedStep);
-  };
-
-  const getUserNamesByIds = (userIds: string[]) => {
-    return userIds
-      .map(id => users.find(u => u.id === id)?.fullName || 'Unknown User')
-      .join(', ');
-  };
-
-  const getTargetDescription = (step: EscalationStep) => {
-    // Check for new multi-target format first
-    if (step.targets && step.targets.length > 0) {
-      const descriptions = step.targets.map(target => {
-        if (target.targetType === 'user') {
-          return target.user?.fullName || 'Unknown User';
-        } else {
-          return `on-call from ${target.schedule?.name || 'Unknown Schedule'}`;
-        }
-      });
-      return descriptions.join(', ');
-    }
-
-    // Use resolved user info from backend
-    if (step.targetType === 'schedule') {
-      if (step.resolvedOncallUser) {
-        return `${step.resolvedOncallUser.fullName} (on-call)`;
-      }
-      return `on-call from ${step.schedule?.name || 'Unknown Schedule'}`;
-    } else {
-      // Use resolved users if available
-      if (step.resolvedUsers && step.resolvedUsers.length > 0) {
-        return step.resolvedUsers.map(u => u.fullName).join(', ');
-      }
-      return step.userIds && step.userIds.length > 0 ? getUserNamesByIds(step.userIds) : 'no users';
-    }
   };
 
   if (loading) {
     return (
-      <div>
-        <div className="container mx-auto">
-          <p>Loading escalation policies...</p>
+      <div className="container mx-auto max-w-6xl py-8">
+        <div className="flex items-center justify-center">
+          <div className="text-muted-foreground">Loading escalation policies...</div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div>
-      <div className="container mx-auto max-w-6xl">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold">Escalation Policies</h1>
-            <p className="text-muted-foreground">Manage multi-level escalation workflows</p>
+  // Detail/Edit View
+  if (showCreateForm) {
+    return (
+      <div className="container mx-auto max-w-4xl py-6">
+        {/* Header with back button */}
+        <div className="mb-6">
+          <button
+            onClick={handleCancel}
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Policies
+          </button>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold">
+                {editingPolicy ? 'Edit Escalation Policy' : 'Create Escalation Policy'}
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Define who gets notified and when if an incident isn't acknowledged
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleSavePolicy}>
+                {editingPolicy ? 'Save Changes' : 'Create Policy'}
+              </Button>
+            </div>
           </div>
-          <Button onClick={() => setShowCreateForm(true)}>Create Policy</Button>
         </div>
 
-        {showCreateForm && (
-          <Card className="mb-6">
+        <form onSubmit={handleSavePolicy} className="space-y-6">
+          {/* Policy Details Card */}
+          <Card>
             <CardHeader>
-              <CardTitle>{editingPolicy ? 'Edit' : 'Create'} Escalation Policy</CardTitle>
-              <CardDescription>Define who gets notified and when if an incident isn't acknowledged</CardDescription>
+              <CardTitle className="text-lg">Policy Details</CardTitle>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSavePolicy} className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Policy Name</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="description">Description</Label>
-                  <textarea
-                    id="description"
-                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  />
-                </div>
-
-                {/* Repeat Settings Section */}
-                <div className="border rounded-md p-4 bg-muted/30">
-                  <p className="text-sm font-medium mb-3">Repeat Settings</p>
-                  <div className="space-y-3">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="repeatMode"
-                        checked={!formData.repeatEnabled}
-                        onChange={() => setFormData({ ...formData, repeatEnabled: false, repeatCount: 0 })}
-                        className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <div>
-                        <span className="font-medium">Stop escalating</span>
-                        <p className="text-xs text-muted-foreground">Incident remains triggered after all rules exhausted</p>
-                      </div>
-                    </label>
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="repeatMode"
-                        checked={formData.repeatEnabled && formData.repeatCount > 0}
-                        onChange={() => setFormData({ ...formData, repeatEnabled: true, repeatCount: formData.repeatCount || 2 })}
-                        className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <div className="flex-1">
-                        <span className="font-medium">Repeat the policy</span>
-                        {formData.repeatEnabled && formData.repeatCount > 0 && (
-                          <span className="ml-2">
-                            <Input
-                              type="number"
-                              min={1}
-                              value={formData.repeatCount}
-                              onChange={(e) => setFormData({ ...formData, repeatCount: parseInt(e.target.value) || 1 })}
-                              className="w-16 h-7 inline-block mx-1 text-center"
-                            />
-                            <span className="text-sm">times, then stop</span>
-                          </span>
-                        )}
-                        <p className="text-xs text-muted-foreground">Restart from Rule 1 after all rules exhausted</p>
-                      </div>
-                    </label>
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="repeatMode"
-                        checked={formData.repeatEnabled && formData.repeatCount === 0}
-                        onChange={() => setFormData({ ...formData, repeatEnabled: true, repeatCount: 0 })}
-                        className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <div>
-                        <span className="font-medium">Repeat until acknowledged</span>
-                        <p className="text-xs text-muted-foreground">Keep escalating indefinitely until someone responds</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-base font-semibold">Escalation Rules</Label>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Rules define who gets notified and when. If the incident isn't acknowledged, it escalates through these rules in order.
-                  </p>
-                  {formData.steps.map((step, index) => (
-                    <Card key={index} className="mb-4 mt-2 border-l-4 border-l-blue-500">
-                      <CardHeader className="pb-2">
-                        <div className="flex justify-between items-center">
-                          <CardTitle className="text-sm font-semibold">Rule {index + 1}</CardTitle>
-                          {formData.steps.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => removeStep(index)}
-                            >
-                              Remove
-                            </Button>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {index === 0
-                            ? 'Notify immediately, then wait before escalating to the next rule.'
-                            : 'If still unacknowledged, notify these targets.'}
-                        </p>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div>
-                          <Label>Notify</Label>
-                          <select
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            value={step.targetType}
-                            onChange={(e) =>
-                              updateStep(index, 'targetType', e.target.value as 'schedule' | 'users')
-                            }
-                          >
-                            <option value="schedule">On-Call Schedule</option>
-                            <option value="users">Specific User(s)</option>
-                          </select>
-                        </div>
-
-                        {step.targetType === 'schedule' && (
-                          <div>
-                            <Label>Schedule</Label>
-                            <select
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                              value={step.scheduleId}
-                              onChange={(e) => updateStep(index, 'scheduleId', e.target.value)}
-                            >
-                              <option value="">Select a schedule</option>
-                              {schedules.map((schedule) => (
-                                <option key={schedule.id} value={schedule.id}>
-                                  {schedule.name}
-                                </option>
-                              ))}
-                            </select>
-                            {/* Currently on-call preview */}
-                            {step.scheduleId && (() => {
-                              const selectedSchedule = schedules.find(s => s.id === step.scheduleId);
-                              if (selectedSchedule?.currentOncallUser) {
-                                return (
-                                  <div className="mt-2 flex items-center gap-2 text-sm bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md px-3 py-2">
-                                    <div className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-800 flex items-center justify-center text-green-600 dark:text-green-400 text-xs font-medium">
-                                      {selectedSchedule.currentOncallUser.fullName.charAt(0).toUpperCase()}
-                                    </div>
-                                    <span className="text-green-800 dark:text-green-200">
-                                      Currently on-call: <strong>{selectedSchedule.currentOncallUser.fullName}</strong>
-                                    </span>
-                                  </div>
-                                );
-                              } else if (selectedSchedule) {
-                                return (
-                                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                    No one currently on-call for this schedule
-                                  </p>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </div>
-                        )}
-
-                        {step.targetType === 'users' && (
-                          <div>
-                            <Label>Users</Label>
-                            {users.length === 0 ? (
-                              <p className="text-sm text-muted-foreground py-2">Loading users...</p>
-                            ) : (
-                              <>
-                                <select
-                                  multiple
-                                  size={5}
-                                  className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                  value={step.userIds || []}
-                                  onChange={(e) => {
-                                    const selected = Array.from(e.target.selectedOptions, option => option.value);
-                                    updateStep(index, 'userIds', selected);
-                                  }}
-                                >
-                                  {users.map((user) => (
-                                    <option key={user.id} value={user.id}>
-                                      {user.fullName} ({user.email})
-                                    </option>
-                                  ))}
-                                </select>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Hold Ctrl (Windows) or Cmd (Mac) to select multiple users
-                                </p>
-                              </>
-                            )}
-                          </div>
-                        )}
-
-                        <div>
-                          <Label>Wait before next rule (minutes)</Label>
-                          <Input
-                            type="number"
-                            value={Math.round(step.timeoutSeconds / 60)}
-                            onChange={(e) =>
-                              updateStep(index, 'timeoutSeconds', parseInt(e.target.value) * 60)
-                            }
-                            min={1}
-                          />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Time to wait for acknowledgment before escalating to the next rule
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-
-                  <Button type="button" variant="outline" onClick={addStep} className="mt-2">
-                    + Add Escalation Rule
-                  </Button>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button type="submit">{editingPolicy ? 'Save Changes' : 'Create Policy'}</Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setShowCreateForm(false);
-                      setEditingPolicy(null);
-                      setFormData({
-                        name: '',
-                        description: '',
-                        repeatEnabled: false,
-                        repeatCount: 0,
-                        steps: [
-                          { stepOrder: 1, targetType: 'schedule', scheduleId: '', timeoutSeconds: 300 },
-                        ],
-                      });
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="name">Policy Name</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Infrastructure Escalation"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <textarea
+                  id="description"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe when this policy should be used..."
+                />
+              </div>
             </CardContent>
           </Card>
-        )}
 
-        <div className="space-y-4">
-          {policies.length === 0 ? (
+          {/* Escalation Steps */}
+          <div>
+            <h2 className="text-lg font-semibold mb-4">Escalation Steps</h2>
+            <div className="space-y-0">
+              {formData.steps.map((step, index) => (
+                <StepEditorCard
+                  key={index}
+                  step={step}
+                  index={index}
+                  isLast={index === formData.steps.length - 1}
+                  schedules={schedules}
+                  users={users}
+                  onUpdate={(field, value) => updateStep(index, field, value)}
+                  onRemove={() => removeStep(index)}
+                  canRemove={formData.steps.length > 1}
+                />
+              ))}
+            </div>
+
+            <div className="flex justify-center mt-4">
+              <Button type="button" variant="outline" onClick={addStep} className="gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Escalation Step
+              </Button>
+            </div>
+          </div>
+
+          {/* Services Using This Policy */}
+          {editingPolicy && (
             <Card>
-              <CardContent className="py-8 text-center">
-                <p className="text-muted-foreground">
-                  No escalation policies yet. Create one to get started.
-                </p>
+              <CardHeader>
+                <CardTitle className="text-lg">
+                  Services Using This Policy ({getServiceCount(editingPolicy.id)})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {getServiceCount(editingPolicy.id) > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {getServicesUsingPolicy(editingPolicy.id).map(service => (
+                      <span
+                        key={service.id}
+                        className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-muted"
+                      >
+                        {service.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No services are currently using this policy.
+                  </p>
+                )}
               </CardContent>
             </Card>
-          ) : (
-            policies
-              .filter((policy) => !editingPolicy || policy.id !== editingPolicy.id)
-              .map((policy) => (
-              <Card key={policy.id}>
-                <CardHeader>
+          )}
+
+          {/* Repeat Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Repeat Settings</CardTitle>
+              <CardDescription>
+                What happens after all escalation steps have been exhausted
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="repeatMode"
+                    checked={!formData.repeatEnabled}
+                    onChange={() => setFormData({ ...formData, repeatEnabled: false, repeatCount: 0 })}
+                    className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <div>
+                    <span className="font-medium">Stop escalating after all steps</span>
+                    <p className="text-sm text-muted-foreground">
+                      Incident remains triggered after all rules exhausted
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="repeatMode"
+                    checked={formData.repeatEnabled && formData.repeatCount > 0}
+                    onChange={() => setFormData({ ...formData, repeatEnabled: true, repeatCount: formData.repeatCount || 2 })}
+                    className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <div className="flex-1">
+                    <span className="font-medium">Repeat</span>
+                    {formData.repeatEnabled && formData.repeatCount > 0 && (
+                      <span className="ml-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          value={formData.repeatCount}
+                          onChange={(e) => setFormData({ ...formData, repeatCount: parseInt(e.target.value) || 1 })}
+                          className="w-16 h-7 inline-block mx-1 text-center"
+                        />
+                        <span className="text-sm">times, then stop</span>
+                      </span>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Restart from Step 1 after all rules exhausted
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="repeatMode"
+                    checked={formData.repeatEnabled && formData.repeatCount === 0}
+                    onChange={() => setFormData({ ...formData, repeatEnabled: true, repeatCount: 0 })}
+                    className="mt-1 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <div>
+                    <span className="font-medium">Repeat until acknowledged</span>
+                    <p className="text-sm text-muted-foreground">
+                      Keep escalating indefinitely until someone responds
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Action Buttons (bottom) */}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            {editingPolicy && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  if (confirm('Are you sure you want to delete this policy?')) {
+                    handleDeletePolicy(editingPolicy.id);
+                    handleCancel();
+                  }
+                }}
+                className="mr-auto"
+              >
+                Delete Policy
+              </Button>
+            )}
+            <Button type="button" variant="outline" onClick={handleCancel}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingPolicy ? 'Save Changes' : 'Create Policy'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // List View
+  return (
+    <div className="container mx-auto max-w-6xl py-6">
+      {/* Header */}
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-3xl font-bold">Escalation Policies</h1>
+          <p className="text-muted-foreground mt-1">
+            Define how incidents escalate through your team
+          </p>
+        </div>
+        <Button onClick={handleStartCreate} className="gap-2">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Create Policy
+        </Button>
+      </div>
+
+      {/* Search and Sort Bar */}
+      <div className="flex gap-4 mb-6">
+        <div className="flex-1 relative">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <Input
+            placeholder="Search policies..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <select
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[160px]"
+          value={sortOption}
+          onChange={(e) => setSortOption(e.target.value as SortOption)}
+        >
+          <option value="name-asc">Name A-Z</option>
+          <option value="name-desc">Name Z-A</option>
+          <option value="created-desc">Newest First</option>
+          <option value="created-asc">Oldest First</option>
+        </select>
+      </div>
+
+      {/* Policy Cards */}
+      <div className="space-y-4">
+        {filteredAndSortedPolicies.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              {searchQuery ? (
+                <div>
+                  <p className="text-muted-foreground mb-2">
+                    No policies found matching "{searchQuery}"
+                  </p>
+                  <Button variant="link" onClick={() => setSearchQuery('')}>
+                    Clear search
+                  </Button>
+                </div>
+              ) : (
+                <div>
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                  </div>
+                  <p className="text-lg font-medium mb-1">No escalation policies yet</p>
+                  <p className="text-muted-foreground mb-4">
+                    Create your first policy to define how incidents escalate through your team.
+                  </p>
+                  <Button onClick={handleStartCreate}>Create Policy</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          filteredAndSortedPolicies
+            .filter((policy) => !editingPolicy || policy.id !== editingPolicy.id)
+            .map((policy) => (
+              <Card key={policy.id} className="hover:shadow-md transition-shadow">
+                <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle>{policy.name}</CardTitle>
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-xl">{policy.name}</CardTitle>
                       {policy.description && (
-                        <CardDescription>{policy.description}</CardDescription>
+                        <CardDescription className="mt-1">{policy.description}</CardDescription>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 ml-4">
                       <Button
                         variant="outline"
                         size="sm"
@@ -653,44 +940,55 @@ export function EscalationPolicies() {
                       >
                         Edit
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeletePolicy(policy.id)}
-                      >
-                        Delete
-                      </Button>
+                      <div className="relative group">
+                        <Button variant="ghost" size="sm" className="px-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                          </svg>
+                        </Button>
+                        <div className="absolute right-0 top-full mt-1 bg-popover border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                          <button
+                            onClick={() => handleDeletePolicy(policy.id)}
+                            className="px-4 py-2 text-sm text-destructive hover:bg-muted w-full text-left whitespace-nowrap"
+                          >
+                            Delete Policy
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Summary line */}
-                  <div className="text-sm text-muted-foreground mb-3">
-                    {policy.steps.length} rule{policy.steps.length !== 1 ? 's' : ''} •{' '}
-                    {policy.repeatEnabled
-                      ? policy.repeatCount === 0
-                        ? 'Repeats indefinitely'
-                        : `Repeats ${policy.repeatCount}×`
-                      : 'No repeat'}
+                  {/* Step Flow Preview */}
+                  <div className="mb-4">
+                    <StepFlowPreview steps={policy.steps} />
                   </div>
-                  <div className="space-y-2">
-                    {policy.steps.map((step, idx) => (
-                      <div key={step.id} className="flex items-center gap-2 text-sm border-l-2 border-blue-500 pl-3 py-1">
-                        <span className="font-medium text-blue-700">Rule {step.stepOrder}:</span>
-                        <span>
-                          <strong>{getTargetDescription(step)}</strong>
-                        </span>
-                        <span className="text-muted-foreground">
-                          → {idx < policy.steps.length - 1 ? `${Math.round(step.timeoutSeconds / 60)} min` : 'end'}
-                        </span>
-                      </div>
-                    ))}
+
+                  {/* Footer info */}
+                  <div className="flex items-center justify-between text-sm text-muted-foreground pt-3 border-t">
+                    <div className="flex items-center gap-4">
+                      <span>
+                        {policy.steps.length} step{policy.steps.length !== 1 ? 's' : ''}
+                      </span>
+                      <span>
+                        {policy.repeatEnabled
+                          ? policy.repeatCount === 0
+                            ? 'Repeats indefinitely'
+                            : `Repeats ${policy.repeatCount}x`
+                          : 'No repeat'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                      <span>Used by {getServiceCount(policy.id)} service{getServiceCount(policy.id) !== 1 ? 's' : ''}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             ))
-          )}
-        </div>
+        )}
       </div>
     </div>
   );
