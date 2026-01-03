@@ -9,6 +9,7 @@ import { createSlackIntegration } from '../../shared/services/slack-integration'
 import { logger } from '../../shared/utils/logger';
 import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
 import { paginationValidators } from '../../shared/validators/pagination';
+import { notFound, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -124,7 +125,7 @@ router.post('/slack/interactions', async (req: Request, res: Response) => {
     return res.json({ ok: true });
   } catch (error) {
     logger.error('Error handling Slack interaction:', error);
-    return res.status(500).json({ error: 'Failed to handle interaction' });
+    return internalError(res);
   }
 });
 
@@ -168,7 +169,7 @@ router.get('/', [...paginationValidators], async (req: Request, res: Response) =
     ));
   } catch (error) {
     logger.error('Error fetching integrations:', error);
-    return res.status(500).json({ error: 'Failed to fetch integrations' });
+    return internalError(res);
   }
 });
 
@@ -187,13 +188,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     const integration = await integrationService.getIntegration(id, orgId);
 
     if (!integration) {
-      return res.status(404).json({ error: 'Integration not found' });
+      return notFound(res, 'Integration', id);
     }
 
     return res.json({ integration: formatIntegration(integration) });
   } catch (error) {
     logger.error('Error fetching integration:', error);
-    return res.status(500).json({ error: 'Failed to fetch integration' });
+    return internalError(res);
   }
 });
 
@@ -240,7 +241,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating integration:', error);
-      return res.status(500).json({ error: 'Failed to create integration' });
+      return internalError(res);
     }
   }
 );
@@ -279,7 +280,7 @@ router.put(
       });
 
       if (!integration) {
-        return res.status(404).json({ error: 'Integration not found' });
+        return notFound(res, 'Integration', id);
       }
 
       logger.info('Integration updated', { integrationId: id, orgId });
@@ -290,7 +291,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating integration:', error);
-      return res.status(500).json({ error: 'Failed to update integration' });
+      return internalError(res);
     }
   }
 );
@@ -310,7 +311,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const deleted = await integrationService.deleteIntegration(id, orgId);
 
     if (!deleted) {
-      return res.status(404).json({ error: 'Integration not found' });
+      return notFound(res, 'Integration', id);
     }
 
     logger.info('Integration deleted', { integrationId: id, orgId });
@@ -318,7 +319,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.json({ message: 'Integration deleted successfully' });
   } catch (error) {
     logger.error('Error deleting integration:', error);
-    return res.status(500).json({ error: 'Failed to delete integration' });
+    return internalError(res);
   }
 });
 
@@ -338,7 +339,7 @@ router.get('/:id/events', async (req: Request, res: Response) => {
     // Verify integration belongs to org
     const integration = await integrationService.getIntegration(id, orgId);
     if (!integration) {
-      return res.status(404).json({ error: 'Integration not found' });
+      return notFound(res, 'Integration', id);
     }
 
     const events = await integrationService.getRecentEvents(id, limit);
@@ -358,7 +359,7 @@ router.get('/:id/events', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching integration events:', error);
-    return res.status(500).json({ error: 'Failed to fetch events' });
+    return internalError(res);
   }
 });
 
@@ -383,7 +384,7 @@ router.get('/:id/slack/oauth-url', async (req: Request, res: Response) => {
 
     const integration = await integrationService.getIntegration(id, orgId);
     if (!integration || integration.type !== 'slack') {
-      return res.status(404).json({ error: 'Slack integration not found' });
+      return notFound(res, 'Slack integration', id);
     }
 
     const slackIntegration = createSlackIntegration(dataSource);
@@ -392,7 +393,7 @@ router.get('/:id/slack/oauth-url', async (req: Request, res: Response) => {
     return res.json({ oauthUrl });
   } catch (error) {
     logger.error('Error getting Slack OAuth URL:', error);
-    return res.status(500).json({ error: 'Failed to generate OAuth URL' });
+    return internalError(res);
   }
 });
 
@@ -423,7 +424,7 @@ router.post(
       // Verify integration belongs to org
       const existing = await integrationService.getIntegration(id, orgId);
       if (!existing || existing.type !== 'slack') {
-        return res.status(404).json({ error: 'Slack integration not found' });
+        return notFound(res, 'Slack integration', id);
       }
 
       const slackIntegration = createSlackIntegration(dataSource);
@@ -460,7 +461,7 @@ router.get('/:id/slack/channels', async (req: Request, res: Response) => {
 
     const integration = await integrationService.getIntegration(id, orgId);
     if (!integration || integration.type !== 'slack' || integration.status !== 'active') {
-      return res.status(404).json({ error: 'Active Slack integration not found' });
+      return notFound(res, 'Active Slack integration', id);
     }
 
     const slackIntegration = createSlackIntegration(dataSource);
@@ -469,7 +470,7 @@ router.get('/:id/slack/channels', async (req: Request, res: Response) => {
     return res.json({ channels });
   } catch (error) {
     logger.error('Error listing Slack channels:', error);
-    return res.status(500).json({ error: 'Failed to list channels' });
+    return internalError(res);
   }
 });
 
@@ -496,7 +497,7 @@ router.post(
 
       const integration = await integrationService.getIntegration(id, orgId);
       if (!integration || integration.type !== 'slack' || integration.status !== 'active') {
-        return res.status(404).json({ error: 'Active Slack integration not found' });
+        return notFound(res, 'Active Slack integration', id);
       }
 
       // Create a mock incident for testing
@@ -531,7 +532,7 @@ router.post(
       }
     } catch (error) {
       logger.error('Error sending Slack test:', error);
-      return res.status(500).json({ error: 'Failed to send test message' });
+      return internalError(res);
     }
   }
 );
@@ -552,7 +553,7 @@ router.get('/:id/services', async (req: Request, res: Response) => {
 
     const integration = await integrationService.getIntegration(id, orgId);
     if (!integration) {
-      return res.status(404).json({ error: 'Integration not found' });
+      return notFound(res, 'Integration', id);
     }
 
     const serviceRepo = dataSource.getRepository(Service);
@@ -572,7 +573,7 @@ router.get('/:id/services', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching integration services:', error);
-    return res.status(500).json({ error: 'Failed to fetch services' });
+    return internalError(res);
   }
 });
 
@@ -596,13 +597,13 @@ router.post(
       // Verify integration belongs to org
       const integration = await integrationService.getIntegration(id, orgId);
       if (!integration) {
-        return res.status(404).json({ error: 'Integration not found' });
+        return notFound(res, 'Integration', id);
       }
 
       // Verify service belongs to org
       const service = await serviceRepo.findOne({ where: { id: serviceId, orgId } });
       if (!service) {
-        return res.status(404).json({ error: 'Service not found' });
+        return notFound(res, 'Service', serviceId);
       }
 
       await integrationService.linkServiceToIntegration(serviceId, id, config_overrides);
@@ -612,7 +613,7 @@ router.post(
       return res.json({ message: 'Service linked successfully' });
     } catch (error) {
       logger.error('Error linking service:', error);
-      return res.status(500).json({ error: 'Failed to link service' });
+      return internalError(res);
     }
   }
 );
@@ -632,7 +633,7 @@ router.delete('/:id/services/:serviceId', async (req: Request, res: Response) =>
     // Verify integration belongs to org
     const integration = await integrationService.getIntegration(id, orgId);
     if (!integration) {
-      return res.status(404).json({ error: 'Integration not found' });
+      return notFound(res, 'Integration', id);
     }
 
     await integrationService.unlinkServiceFromIntegration(serviceId, id);
@@ -642,7 +643,7 @@ router.delete('/:id/services/:serviceId', async (req: Request, res: Response) =>
     return res.json({ message: 'Service unlinked successfully' });
   } catch (error) {
     logger.error('Error unlinking service:', error);
-    return res.status(500).json({ error: 'Failed to unlink service' });
+    return internalError(res);
   }
 });
 

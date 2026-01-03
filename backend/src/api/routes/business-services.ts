@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { BusinessService, ServiceDependency, Service, Team, User } from '../../shared/models';
+import { notFound, internalError, badRequest } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.get('/',
       return res.json(businessServices);
     } catch (error) {
       console.error('Error fetching business services:', error);
-      return res.status(500).json({ error: 'Failed to fetch business services' });
+      return internalError(res);
     }
   }
 );
@@ -79,13 +80,13 @@ router.get('/:id',
       });
 
       if (!businessService) {
-        return res.status(404).json({ error: 'Business service not found' });
+        return notFound(res, 'Business service', id);
       }
 
       return res.json(businessService);
     } catch (error) {
       console.error('Error fetching business service:', error);
-      return res.status(500).json({ error: 'Failed to fetch business service' });
+      return internalError(res);
     }
   }
 );
@@ -126,7 +127,7 @@ router.post('/',
         const teamRepo = dataSource.getRepository(Team);
         const team = await teamRepo.findOne({ where: { id: req.body.ownerTeamId, orgId } });
         if (!team) {
-          return res.status(400).json({ error: 'Owner team not found' });
+          return badRequest(res, 'Owner team not found');
         }
       }
 
@@ -135,7 +136,7 @@ router.post('/',
         const userRepo = dataSource.getRepository(User);
         const user = await userRepo.findOne({ where: { id: req.body.pointOfContactId, orgId } });
         if (!user) {
-          return res.status(400).json({ error: 'Point of contact user not found' });
+          return badRequest(res, 'Point of contact user not found');
         }
       }
 
@@ -162,7 +163,7 @@ router.post('/',
       return res.status(201).json(created);
     } catch (error) {
       console.error('Error creating business service:', error);
-      return res.status(500).json({ error: 'Failed to create business service' });
+      return internalError(res);
     }
   }
 );
@@ -194,7 +195,7 @@ router.put('/:id',
 
       const businessService = await repo.findOne({ where: { id, orgId } });
       if (!businessService) {
-        return res.status(404).json({ error: 'Business service not found' });
+        return notFound(res, 'Business service', id);
       }
 
       // Check for duplicate name if changing
@@ -212,7 +213,7 @@ router.put('/:id',
         const teamRepo = dataSource.getRepository(Team);
         const team = await teamRepo.findOne({ where: { id: req.body.ownerTeamId, orgId } });
         if (!team) {
-          return res.status(400).json({ error: 'Owner team not found' });
+          return badRequest(res, 'Owner team not found');
         }
       }
 
@@ -221,7 +222,7 @@ router.put('/:id',
         const userRepo = dataSource.getRepository(User);
         const user = await userRepo.findOne({ where: { id: req.body.pointOfContactId, orgId } });
         if (!user) {
-          return res.status(400).json({ error: 'Point of contact user not found' });
+          return badRequest(res, 'Point of contact user not found');
         }
       }
 
@@ -246,7 +247,7 @@ router.put('/:id',
       return res.json(updated);
     } catch (error) {
       console.error('Error updating business service:', error);
-      return res.status(500).json({ error: 'Failed to update business service' });
+      return internalError(res);
     }
   }
 );
@@ -270,7 +271,7 @@ router.delete('/:id',
 
       const businessService = await repo.findOne({ where: { id, orgId } });
       if (!businessService) {
-        return res.status(404).json({ error: 'Business service not found' });
+        return notFound(res, 'Business service', id);
       }
 
       await repo.remove(businessService);
@@ -278,7 +279,7 @@ router.delete('/:id',
       return res.status(204).send();
     } catch (error) {
       console.error('Error deleting business service:', error);
-      return res.status(500).json({ error: 'Failed to delete business service' });
+      return internalError(res);
     }
   }
 );
@@ -306,7 +307,7 @@ router.put('/:id/services',
 
       const businessService = await bsRepo.findOne({ where: { id, orgId } });
       if (!businessService) {
-        return res.status(404).json({ error: 'Business service not found' });
+        return notFound(res, 'Business service', id);
       }
 
       // Clear existing associations and set new ones
@@ -334,7 +335,7 @@ router.put('/:id/services',
       return res.json(updated);
     } catch (error) {
       console.error('Error updating business service services:', error);
-      return res.status(500).json({ error: 'Failed to update business service services' });
+      return internalError(res);
     }
   }
 );
@@ -364,7 +365,7 @@ router.get('/services/:serviceId/dependencies',
       // Verify service exists
       const service = await serviceRepo.findOne({ where: { id: serviceId, orgId } });
       if (!service) {
-        return res.status(404).json({ error: 'Service not found' });
+        return notFound(res, 'Service', serviceId);
       }
 
       const result: { upstream: ServiceDependency[]; downstream: ServiceDependency[] } = {
@@ -391,7 +392,7 @@ router.get('/services/:serviceId/dependencies',
       return res.json(result);
     } catch (error) {
       console.error('Error fetching service dependencies:', error);
-      return res.status(500).json({ error: 'Failed to fetch service dependencies' });
+      return internalError(res);
     }
   }
 );
@@ -425,15 +426,15 @@ router.post('/dependencies',
       ]);
 
       if (!dependentService) {
-        return res.status(400).json({ error: 'Dependent service not found' });
+        return badRequest(res, 'Dependent service not found');
       }
       if (!supportingService) {
-        return res.status(400).json({ error: 'Supporting service not found' });
+        return badRequest(res, 'Supporting service not found');
       }
 
       // Check for self-dependency
       if (dependentServiceId === supportingServiceId) {
-        return res.status(400).json({ error: 'A service cannot depend on itself' });
+        return badRequest(res, 'A service cannot depend on itself');
       }
 
       // Check for existing dependency
@@ -464,7 +465,7 @@ router.post('/dependencies',
       return res.status(201).json(created);
     } catch (error) {
       console.error('Error creating service dependency:', error);
-      return res.status(500).json({ error: 'Failed to create service dependency' });
+      return internalError(res);
     }
   }
 );
@@ -491,7 +492,7 @@ router.put('/dependencies/:id',
 
       const dependency = await depRepo.findOne({ where: { id, orgId } });
       if (!dependency) {
-        return res.status(404).json({ error: 'Service dependency not found' });
+        return notFound(res, 'Service dependency', id);
       }
 
       if (req.body.dependencyType !== undefined) dependency.dependencyType = req.body.dependencyType;
@@ -509,7 +510,7 @@ router.put('/dependencies/:id',
       return res.json(updated);
     } catch (error) {
       console.error('Error updating service dependency:', error);
-      return res.status(500).json({ error: 'Failed to update service dependency' });
+      return internalError(res);
     }
   }
 );
@@ -533,7 +534,7 @@ router.delete('/dependencies/:id',
 
       const dependency = await depRepo.findOne({ where: { id, orgId } });
       if (!dependency) {
-        return res.status(404).json({ error: 'Service dependency not found' });
+        return notFound(res, 'Service dependency', id);
       }
 
       await depRepo.remove(dependency);
@@ -541,7 +542,7 @@ router.delete('/dependencies/:id',
       return res.status(204).send();
     } catch (error) {
       console.error('Error deleting service dependency:', error);
-      return res.status(500).json({ error: 'Failed to delete service dependency' });
+      return internalError(res);
     }
   }
 );
@@ -588,7 +589,7 @@ router.get('/dependency-graph',
       return res.json({ nodes, edges });
     } catch (error) {
       console.error('Error fetching dependency graph:', error);
-      return res.status(500).json({ error: 'Failed to fetch dependency graph' });
+      return internalError(res);
     }
   }
 );
