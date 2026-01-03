@@ -7,6 +7,9 @@ import { logger } from '../../shared/utils/logger';
 import { generateEntityETag } from '../../shared/utils/etag';
 import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { parseBaseFilters, applyBaseFilters } from '../../shared/utils/filtering';
+import { paginationValidators, searchFilterValidator } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -23,6 +26,38 @@ router.use(authenticateRequest);
  *     security:
  *       - BearerAuth: []
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 25
+ *         description: Maximum number of teams to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of teams to skip for pagination
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [name, createdAt]
+ *         description: Field to sort by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         description: Sort order
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search teams by name
  *     responses:
  *       200:
  *         description: List of teams retrieved successfully
@@ -31,7 +66,7 @@ router.use(authenticateRequest);
  *             schema:
  *               type: object
  *               properties:
- *                 teams:
+ *                 data:
  *                   type: array
  *                   items:
  *                     allOf:
@@ -45,6 +80,8 @@ router.use(authenticateRequest);
  *                             type: array
  *                             items:
  *                               $ref: '#/components/schemas/TeamMember'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       500:
@@ -54,40 +91,60 @@ router.use(authenticateRequest);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...paginationValidators, searchFilterValidator], async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const filters = parseBaseFilters(req.query);
 
     const dataSource = await getDataSource();
     const teamRepo = dataSource.getRepository(Team);
 
-    const teams = await teamRepo.find({
-      where: { orgId },
-      relations: ['memberships', 'memberships.user'],
-      order: { name: 'ASC' },
-    });
+    // Build query with filters
+    const queryBuilder = teamRepo
+      .createQueryBuilder('team')
+      .leftJoinAndSelect('team.memberships', 'memberships')
+      .leftJoinAndSelect('memberships.user', 'user')
+      .where('team.org_id = :orgId', { orgId });
 
-    return res.json({
-      teams: teams.map(team => ({
-        id: team.id,
-        name: team.name,
-        description: team.description,
-        slug: team.slug,
-        memberCount: team.memberships?.length || 0,
-        members: team.memberships?.map(m => ({
-          id: m.id,
-          userId: m.userId,
-          role: m.role,
-          user: m.user ? {
-            id: m.user.id,
-            fullName: m.user.fullName,
-            email: m.user.email,
-          } : null,
-        })) || [],
-        createdAt: team.createdAt,
-        updatedAt: team.updatedAt,
-      })),
-    });
+    // Apply search filter
+    applyBaseFilters(queryBuilder, filters, 'team', ['name']);
+
+    // Get valid sort field and apply sorting
+    const sortField = validateSortField('teams', pagination.sort, 'name');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+    queryBuilder.orderBy(`team.${sortField}`, sortOrder);
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const teams = await queryBuilder.getMany();
+
+    const formattedTeams = teams.map(team => ({
+      id: team.id,
+      name: team.name,
+      description: team.description,
+      slug: team.slug,
+      memberCount: team.memberships?.length || 0,
+      members: team.memberships?.map(m => ({
+        id: m.id,
+        userId: m.userId,
+        role: m.role,
+        user: m.user ? {
+          id: m.user.id,
+          fullName: m.user.fullName,
+          email: m.user.email,
+        } : null,
+      })) || [],
+      createdAt: team.createdAt,
+      updatedAt: team.updatedAt,
+    }));
+
+    const lastItem = teams[teams.length - 1];
+    return res.json(paginatedResponse(formattedTeams, total, pagination, lastItem, 'teams'));
   } catch (error) {
     logger.error('Error listing teams:', error);
     return res.status(500).json({ error: 'Failed to list teams' });

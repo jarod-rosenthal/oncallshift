@@ -24,7 +24,7 @@ describe('Auth - Token Refresh', () => {
     // Get a valid refresh token by logging in
     try {
       const loginResult = await login(validEmail, validPassword);
-      validRefreshToken = loginResult.tokens.refreshToken;
+      validRefreshToken = loginResult.refreshToken;
     } catch (error) {
       console.error('Failed to obtain refresh token during test setup:', error);
     }
@@ -223,7 +223,7 @@ describe('Auth - Token Refresh', () => {
       const responses = await Promise.all(requests);
 
       // All requests should succeed
-      responses.forEach(response => {
+      responses.forEach((response: { status: number; data: { tokens: { accessToken: string } } }) => {
         expect(response.status).toBe(200);
         expect(response.data.tokens).toHaveProperty('accessToken');
       });

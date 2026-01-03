@@ -18,7 +18,8 @@ export class IncidentsPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.pageTitle = page.getByRole('heading', { name: 'Incidents' });
+    // Use exact match to avoid ambiguity with "Active Incidents" heading
+    this.pageTitle = page.getByRole('heading', { name: 'Incidents', exact: true });
     this.createIncidentButton = page.getByRole('button', { name: /create incident/i });
     this.filtersButton = page.getByRole('button', { name: /filters/i });
     this.loadingIndicator = page.getByText('Loading incidents...');
@@ -26,7 +27,8 @@ export class IncidentsPage {
     this.emptyState = page.locator('[class*="EmptyState"]');
     // Incident cards are in a container with specific styling
     this.incidentCards = page.locator('[class*="IncidentCard"], .border-l-4');
-    this.activeIncidentsSection = page.getByText('Active Incidents').locator('..');
+    // Use role selector for heading to avoid matching paragraph text
+    this.activeIncidentsSection = page.getByRole('heading', { name: 'Active Incidents' });
     this.resolvedIncidentsSection = page.getByText('Recently Resolved');
   }
 

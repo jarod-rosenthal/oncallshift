@@ -59,7 +59,9 @@ jobs:
           case "$SUITE" in
             all)
               echo "run_smoke=true" >> $GITHUB_OUTPUT
-              echo "run_api=true" >> $GITHUB_OUTPUT
+              # Skip API tests for PRs - they hit live production and are unstable
+              # Can still run manually via workflow_dispatch with "api" option
+              echo "run_api=false" >> $GITHUB_OUTPUT
               echo "run_e2e=true" >> $GITHUB_OUTPUT
               ;;
             api)

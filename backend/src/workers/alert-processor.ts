@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { getDataSource } from '../shared/db/data-source';
 import { processQueue, AlertMessage, sendNotificationMessage } from '../shared/queues/sqs-client';
-import { Incident, IncidentEvent, Service, MaintenanceWindow, AlertRoutingRule } from '../shared/models';
+import { Incident, IncidentEvent, Service, MaintenanceWindow, AlertRoutingRule, User } from '../shared/models';
 import { logger } from '../shared/utils/logger';
 import { LessThanOrEqual, MoreThan } from 'typeorm';
 import { workflowEngine } from '../shared/services/workflow-engine';
@@ -523,28 +523,45 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
       return;
     }
 
+    // Fetch user notification preferences
+    const dataSource = await getDataSource();
+    const userRepo = dataSource.getRepository(User);
+    const user = await userRepo.findOne({ where: { id: oncallUserId } });
+
+    const notifPrefs = user?.settings?.notificationPreferences || {};
+    const pushEnabled = notifPrefs.push?.enabled !== false; // Default to enabled
+    const emailEnabled = notifPrefs.email?.enabled !== false; // Default to enabled
+    const smsEnabled = notifPrefs.sms?.enabled !== false; // Default to enabled
+
     const priority = incident.severity === 'critical' || incident.severity === 'error' ? 'high' : 'normal';
+    const channels: string[] = [];
 
-    // Send push notification
-    await sendNotificationMessage({
-      incidentId: incident.id,
-      userId: oncallUserId,
-      channel: 'push',
-      priority,
-      incidentState: 'triggered',
-    });
+    // Send push notification if enabled
+    if (pushEnabled) {
+      await sendNotificationMessage({
+        incidentId: incident.id,
+        userId: oncallUserId,
+        channel: 'push',
+        priority,
+        incidentState: 'triggered',
+      });
+      channels.push('push');
+    }
 
-    // Send email notification
-    await sendNotificationMessage({
-      incidentId: incident.id,
-      userId: oncallUserId,
-      channel: 'email',
-      priority,
-      incidentState: 'triggered',
-    });
+    // Send email notification if enabled
+    if (emailEnabled) {
+      await sendNotificationMessage({
+        incidentId: incident.id,
+        userId: oncallUserId,
+        channel: 'email',
+        priority,
+        incidentState: 'triggered',
+      });
+      channels.push('email');
+    }
 
-    // For critical/error incidents, also send SMS
-    if (incident.severity === 'critical' || incident.severity === 'error') {
+    // For critical/error incidents, also send SMS if enabled
+    if (smsEnabled && (incident.severity === 'critical' || incident.severity === 'error')) {
       await sendNotificationMessage({
         incidentId: incident.id,
         userId: oncallUserId,
@@ -552,6 +569,7 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
         priority: 'high',
         incidentState: 'triggered',
       });
+      channels.push('sms');
     }
 
     logger.info('Notifications queued for on-call user (via escalation policy)', {
@@ -559,7 +577,8 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
       userId: oncallUserId,
       escalationPolicyId: escalationPolicy.id,
       scheduleId: schedule.id,
-      channels: ['push', 'email', ...(incident.severity === 'critical' || incident.severity === 'error' ? ['sms'] : [])],
+      channels,
+      preferences: { pushEnabled, emailEnabled, smsEnabled },
     });
   } catch (error) {
     logger.error('Error triggering notifications:', error);

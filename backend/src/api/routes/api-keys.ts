@@ -7,6 +7,8 @@ import { getDataSource } from '../../shared/db/data-source';
 import { OrganizationApiKey } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse } from '../../shared/utils/pagination';
+import { paginationValidators } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -237,7 +239,7 @@ router.post(
  *       403:
  *         description: Admin access required
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...paginationValidators], async (req: Request, res: Response) => {
   try {
     // Only admins can list API keys
     if (req.user?.role !== 'admin' && req.user?.baseRole !== 'admin' && req.user?.baseRole !== 'owner') {
@@ -245,19 +247,28 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
     const dataSource = await getDataSource();
     const apiKeyRepo = dataSource.getRepository(OrganizationApiKey);
 
-    const apiKeys = await apiKeyRepo.find({
+    const [apiKeys, total] = await apiKeyRepo.findAndCount({
       where: { orgId },
       relations: ['createdBy'],
-      order: { createdAt: 'DESC' },
+      order: { createdAt: sortOrder },
+      skip: pagination.offset,
+      take: pagination.limit,
     });
 
-    return res.json({
-      api_keys: apiKeys.map(formatApiKey),
-    });
+    const lastItem = apiKeys[apiKeys.length - 1];
+    return res.json(paginatedResponse(
+      apiKeys.map(formatApiKey),
+      total,
+      pagination,
+      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+      'apiKeys'
+    ));
   } catch (error) {
     logger.error('Error listing API keys:', error);
     return res.status(500).json({ error: 'Failed to list API keys' });

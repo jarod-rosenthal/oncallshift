@@ -191,7 +191,8 @@ test.describe('Login', () => {
 
       // Should be able to access protected route
       await expect(page).toHaveURL(/\/incidents/);
-      await expect(page.getByRole('heading', { name: 'Incidents' })).toBeVisible();
+      // Use exact match to avoid ambiguity with "Active Incidents"
+      await expect(page.getByRole('heading', { name: 'Incidents', exact: true })).toBeVisible();
     });
   });
 

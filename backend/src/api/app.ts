@@ -9,6 +9,7 @@ import { logger } from '../shared/utils/logger';
 // Import routes
 import authRoutes from './routes/auth';
 import alertRoutes from './routes/alerts';
+import alertsCompatRoutes from './routes/alerts-compat';
 import incidentRoutes from './routes/incidents';
 import scheduleRoutes from './routes/schedules';
 import escalationPoliciesRoutes from './routes/escalation-policies';
@@ -48,6 +49,8 @@ import apiKeysRoutes from './routes/api-keys';
 import onboardingRoutes from './routes/onboarding';
 import { captureRawBody, etagMiddleware } from '../shared/middleware';
 import { idempotencyMiddleware } from '../shared/middleware/idempotency';
+import { requestIdMiddleware } from '../shared/middleware/request-id';
+import { methodBasedRateLimiter, expensiveRateLimiter, bulkRateLimiter } from '../shared/middleware/rate-limiter';
 
 export function createApp(): Express {
   const app = express();
@@ -75,6 +78,9 @@ export function createApp(): Express {
   // Body parsing - capture raw body for webhook signature verification
   app.use(express.json({ limit: '10mb', verify: captureRawBody }));
   app.use(express.urlencoded({ extended: true }));
+
+  // Request ID middleware - adds unique ID to each request for tracing
+  app.use(requestIdMiddleware);
 
   // Request logging
   app.use((req, _res, next) => {
@@ -256,9 +262,25 @@ export function createApp(): Express {
 </html>`);
   });
 
+  // Rate limiting - tiered approach based on endpoint type
+  // Base rate limiter for all API routes (method-based: stricter for writes)
+  app.use('/api/v1', methodBasedRateLimiter());
+
+  // Expensive rate limiter for AI endpoints (lower limits due to cost/compute)
+  app.use('/api/v1/ai-assistant', expensiveRateLimiter);
+  app.use('/api/v1/ai-diagnosis', expensiveRateLimiter);
+  app.use('/api/v1/ai-configuration', expensiveRateLimiter);
+  app.use('/api/v1/analytics', expensiveRateLimiter);
+
+  // Bulk rate limiter for import/export endpoints
+  app.use('/api/v1/import', bulkRateLimiter);
+  app.use('/api/v1/export', bulkRateLimiter);
+  app.use('/api/v1/semantic-import', bulkRateLimiter);
+
   // API routes
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/alerts', alertRoutes);
+  app.use('/api/v1/alerts', alertsCompatRoutes); // PagerDuty & OpsGenie compatible endpoints
   app.use('/api/v1/incidents', idempotencyMiddleware, incidentRoutes);
   app.use('/api/v1/schedules', idempotencyMiddleware, scheduleRoutes);
   app.use('/api/v1/escalation-policies', idempotencyMiddleware, escalationPoliciesRoutes);

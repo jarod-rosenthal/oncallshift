@@ -125,10 +125,6 @@ export async function createTestIncident(options: CreateTestIncidentOptions = {}
     urgency: options.urgency || 'low',
   };
 
-  // First get the service to find its API key
-  const serviceResponse = await axios.get(`${apiBaseUrl}/v1/services/${serviceId}`, { headers });
-  const service = serviceResponse.data;
-
   // Create incident via the authenticated API
   const response = await axios.post(
     `${apiBaseUrl}/v1/incidents`,

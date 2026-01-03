@@ -34,10 +34,24 @@ on:
         default: true
         type: boolean
       deploy_mobile:
-        description: 'Deploy Mobile (Expo EAS)'
+        description: 'Deploy Mobile (Expo EAS Build - slow, creates new APK)'
         required: false
         default: false
         type: boolean
+      deploy_mobile_ota:
+        description: 'Deploy Mobile OTA (Fast JavaScript-only update)'
+        required: false
+        default: false
+        type: boolean
+      mobile_ota_channel:
+        description: 'Mobile OTA channel (if OTA enabled)'
+        required: false
+        default: 'preview'
+        type: choice
+        options:
+          - development
+          - preview
+          - production
       dry_run:
         description: 'Dry Run - show what would happen without deploying'
         required: false
@@ -62,6 +76,8 @@ jobs:
       deploy_backend: ${{ steps.set-flags.outputs.deploy_backend }}
       deploy_frontend: ${{ steps.set-flags.outputs.deploy_frontend }}
       deploy_mobile: ${{ steps.set-flags.outputs.deploy_mobile }}
+      deploy_mobile_ota: ${{ steps.set-flags.outputs.deploy_mobile_ota }}
+      mobile_ota_channel: ${{ steps.set-flags.outputs.mobile_ota_channel }}
       dry_run: ${{ steps.set-flags.outputs.dry_run }}
     steps:
       - name: Determine environment
@@ -77,6 +93,8 @@ jobs:
           echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
           echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
           echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
+          echo "deploy_mobile_ota=${{ inputs.deploy_mobile_ota }}" >> $GITHUB_OUTPUT
+          echo "mobile_ota_channel=${{ inputs.mobile_ota_channel }}" >> $GITHUB_OUTPUT
           echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
 
       - name: Display configuration
@@ -87,7 +105,11 @@ jobs:
           echo "Deploy Infra: ${{ steps.set-flags.outputs.deploy_infra }}"
           echo "Deploy Backend: ${{ steps.set-flags.outputs.deploy_backend }}"
           echo "Deploy Frontend: ${{ steps.set-flags.outputs.deploy_frontend }}"
-          echo "Deploy Mobile: ${{ steps.set-flags.outputs.deploy_mobile }}"
+          echo "Deploy Mobile (Full Build): ${{ steps.set-flags.outputs.deploy_mobile }}"
+          echo "Deploy Mobile (OTA): ${{ steps.set-flags.outputs.deploy_mobile_ota }}"
+          if [ "${{ steps.set-flags.outputs.deploy_mobile_ota }}" = "true" ]; then
+            echo "  OTA Channel: ${{ steps.set-flags.outputs.mobile_ota_channel }}"
+          fi
           if [ "${{ steps.set-flags.outputs.dry_run }}" = "true" ]; then
             echo ""
             echo "⚠️  DRY RUN MODE - No actual deployments will occur"
@@ -133,9 +155,9 @@ jobs:
       dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
-  # Stage 4: Mobile (Expo EAS)
+  # Stage 4a: Mobile Full Build (Expo EAS)
   mobile:
-    name: Mobile
+    name: Mobile (Full Build)
     needs: [setup, frontend]
     if: |
       always() &&
@@ -147,10 +169,25 @@ jobs:
       dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
+  # Stage 4b: Mobile OTA Update (Fast deployment)
+  mobile-ota:
+    name: Mobile (OTA Update)
+    needs: [setup, frontend]
+    if: |
+      always() &&
+      needs.setup.outputs.deploy_mobile_ota == 'true' &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+    uses: ./.github/workflows/_mobile-ota.yml
+    with:
+      environment: ${{ needs.setup.outputs.environment }}
+      channel: ${{ needs.setup.outputs.mobile_ota_channel }}
+      message: 'Deploy from GitHub Actions'
+    secrets: inherit
+
   # Summary
   summary:
     name: Deployment Summary
-    needs: [setup, infrastructure, backend, frontend, mobile]
+    needs: [setup, infrastructure, backend, frontend, mobile, mobile-ota]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -164,14 +201,16 @@ jobs:
           echo "  Infrastructure: ${{ needs.infrastructure.result || 'skipped' }}"
           echo "  Backend: ${{ needs.backend.result || 'skipped' }}"
           echo "  Frontend: ${{ needs.frontend.result || 'skipped' }}"
-          echo "  Mobile: ${{ needs.mobile.result || 'skipped' }}"
+          echo "  Mobile (Full Build): ${{ needs.mobile.result || 'skipped' }}"
+          echo "  Mobile (OTA): ${{ needs.mobile-ota.result || 'skipped' }}"
 
       - name: Check for failures
         if: |
           needs.infrastructure.result == 'failure' ||
           needs.backend.result == 'failure' ||
           needs.frontend.result == 'failure' ||
-          needs.mobile.result == 'failure'
+          needs.mobile.result == 'failure' ||
+          needs.mobile-ota.result == 'failure'
         run: |
           echo "❌ One or more stages failed!"
           exit 1

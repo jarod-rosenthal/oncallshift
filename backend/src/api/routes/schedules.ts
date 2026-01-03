@@ -8,6 +8,8 @@ import { logger } from '../../shared/utils/logger';
 import { generateEntityETag } from '../../shared/utils/etag';
 import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -66,17 +68,22 @@ router.use(authenticateRequest);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...paginationValidators], async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const sortField = validateSortField('schedules', pagination.sort, 'name');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
     const dataSource = await getDataSource();
     const scheduleRepo = dataSource.getRepository(Schedule);
     const userRepo = dataSource.getRepository(User);
 
-    const schedules = await scheduleRepo.find({
+    const [schedules, total] = await scheduleRepo.findAndCount({
       where: { orgId },
-      order: { name: 'ASC' },
+      order: { [sortField]: sortOrder },
+      skip: pagination.offset,
+      take: pagination.limit,
     });
 
     // Get user names for all on-call users
@@ -102,9 +109,14 @@ router.get('/', async (req: Request, res: Response) => {
       })
     );
 
-    return res.json({
-      schedules: schedulesWithUsers,
-    });
+    const lastItem = schedules[schedules.length - 1];
+    return res.json(paginatedResponse(
+      schedulesWithUsers,
+      total,
+      pagination,
+      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+      'schedules'
+    ));
   } catch (error) {
     logger.error('Error fetching schedules:', error);
     return res.status(500).json({ error: 'Failed to fetch schedules' });
