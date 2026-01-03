@@ -43,6 +43,7 @@ const Postmortems = lazy(() => import('./pages/Postmortems').then(m => ({ defaul
 const Tags = lazy(() => import('./pages/Tags').then(m => ({ default: m.Tags })));
 const CloudCredentials = lazy(() => import('./pages/CloudCredentials').then(m => ({ default: m.CloudCredentials })));
 const Account = lazy(() => import('./pages/Account').then(m => ({ default: m.Account })));
+const ApiKeys = lazy(() => import('./pages/ApiKeys').then(m => ({ default: m.ApiKeys })));
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ default: m.SetupWizard })));
 const ImportWizard = lazy(() => import('./pages/ImportWizard').then(m => ({ default: m.ImportWizard })));
 const SemanticImportPage = lazy(() => import('./features/semanticImport/SemanticImportPage').then(m => ({ default: m.SemanticImportPage })));
@@ -401,6 +402,14 @@ function App() {
           element={
             <AdminWithLayout>
               <Account />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/settings/api-keys"
+          element={
+            <AdminWithLayout>
+              <ApiKeys />
             </AdminWithLayout>
           }
         />

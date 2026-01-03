@@ -1770,9 +1770,11 @@ export default function AlertDetailScreen({ route, navigation }: any) {
                 onPress={() => setShowNotifications(!showNotifications)}
                 style={themedStyles.notificationHeader}
               >
-                <View style={themedStyles.sectionHeader}>
-                  <MaterialCommunityIcons name="bell-ring-outline" size={20} color={theme.colors.primary} />
-                  <Text variant="titleMedium" style={themedStyles.sectionTitle}>Notification Status</Text>
+                <View style={themedStyles.notificationHeaderLeft}>
+                  <View style={[themedStyles.sectionHeader, { marginBottom: 0 }]}>
+                    <MaterialCommunityIcons name="bell-ring-outline" size={20} color={theme.colors.primary} />
+                    <Text variant="titleMedium" style={themedStyles.sectionTitle}>Notification Status</Text>
+                  </View>
                 </View>
                 <View style={themedStyles.notificationHeaderRight}>
                   {notificationSummary && (
@@ -3170,18 +3172,27 @@ const styles = (colors: any) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  notificationHeaderLeft: {
+    flex: 1,
+    flexShrink: 1,
+  },
   notificationHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   notificationSummaryChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 4,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   summaryChip: {
-    height: 24,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    marginVertical: 0,
   },
   summaryChipText: {
     fontSize: 10,

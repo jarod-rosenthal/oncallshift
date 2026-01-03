@@ -63,3 +63,4 @@ export * from './OrganizationApiKey';
 export * from './OnboardingSession';
 export * from './IdempotencyKey';
 export * from './ImportHistory';
+export * from './AIRecommendation';

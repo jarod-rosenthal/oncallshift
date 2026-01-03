@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { LessThanOrEqual, MoreThan } from 'typeorm';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Schedule, ScheduleMember, ScheduleOverride, ScheduleLayer, ScheduleLayerMember, Service, User, ShiftHandoffNote } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
@@ -11,8 +11,8 @@ import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticateUser);
+// All routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * @swagger

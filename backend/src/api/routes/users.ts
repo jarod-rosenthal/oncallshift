@@ -3,7 +3,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminDisableUserCommand, AdminEnableUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { User, UserContactMethod, UserNotificationRule, ScheduleMember, TeamMembership } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
@@ -30,8 +30,8 @@ const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET || 'REDACTED_S3_UPLOADS_BUCKET
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticateUser);
+// All routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * GET /api/v1/users/me

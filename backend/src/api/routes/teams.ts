@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { authenticateUser, requireAdmin } from '../../shared/auth/middleware';
+import { authenticateRequest, requireAdmin } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Team, TeamMembership, User, Schedule, EscalationPolicy, Service } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
@@ -10,8 +10,8 @@ import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticateUser);
+// All routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * @swagger
