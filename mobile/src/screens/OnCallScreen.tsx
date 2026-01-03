@@ -836,6 +836,7 @@ const styles = (colors: any) => StyleSheet.create({
   },
   currentOnCallInfo: {
     flex: 1,
+    justifyContent: 'center',
   },
   currentServiceName: {
     color: colors.textPrimary,

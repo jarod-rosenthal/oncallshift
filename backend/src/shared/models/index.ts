@@ -62,3 +62,4 @@ export * from './AIConversation';
 export * from './OrganizationApiKey';
 export * from './OnboardingSession';
 export * from './IdempotencyKey';
+export * from './ImportHistory';

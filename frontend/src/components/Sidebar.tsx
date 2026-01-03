@@ -260,6 +260,7 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         { path: '/integrations', label: 'Integrations', icon: <Icons.Link /> },
         { path: '/settings/cloud-credentials', label: 'Cloud Credentials', icon: <Icons.Cloud /> },
         { path: '/import', label: 'Import Data', icon: <Icons.Import /> },
+        { path: '/settings/semantic-import', label: 'AI Import', icon: <Icons.Import /> },
         { path: '/settings/account', label: 'Account', icon: <Icons.Settings /> },
       ],
     },

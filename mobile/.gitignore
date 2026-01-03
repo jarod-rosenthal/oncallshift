@@ -1,1 +1,24 @@
 *.apk
+
+# Native folders - EAS generates these fresh (CNG mode)
+/android
+/ios
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Dependencies
+node_modules/
+
+# Secrets
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+google-services.json
+
+# macOS
+.DS_Store

@@ -45,6 +45,7 @@ const CloudCredentials = lazy(() => import('./pages/CloudCredentials').then(m =>
 const Account = lazy(() => import('./pages/Account').then(m => ({ default: m.Account })));
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ default: m.SetupWizard })));
 const ImportWizard = lazy(() => import('./pages/ImportWizard').then(m => ({ default: m.ImportWizard })));
+const SemanticImportPage = lazy(() => import('./features/semanticImport/SemanticImportPage').then(m => ({ default: m.SemanticImportPage })));
 
 // Lazy loaded pages - Marketing/public pages
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
@@ -66,6 +67,14 @@ const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Pri
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })));
 const Blog = lazy(() => import('./pages/Blog').then(m => ({ default: m.Blog })));
 const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.Security })));
+
+// Documentation and Help pages
+const DocsHome = lazy(() => import('./pages/docs/DocsHome').then(m => ({ default: m.DocsHome })));
+const DocsQuickStart = lazy(() => import('./pages/docs/DocsQuickStart').then(m => ({ default: m.DocsQuickStart })));
+const DocsComingSoon = lazy(() => import('./pages/docs/DocsComingSoon').then(m => ({ default: m.DocsComingSoon })));
+const HelpHome = lazy(() => import('./pages/help/HelpHome').then(m => ({ default: m.HelpHome })));
+const HelpFirstSteps = lazy(() => import('./pages/help/HelpFirstSteps').then(m => ({ default: m.HelpFirstSteps })));
+const HelpComingSoon = lazy(() => import('./pages/help/HelpComingSoon').then(m => ({ default: m.HelpComingSoon })));
 
 // Loading fallback component for lazy-loaded pages
 const PageLoader = () => (
@@ -126,6 +135,16 @@ function App() {
         <Route path="/legal/terms" element={<Terms />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/company/security" element={<Security />} />
+
+        {/* Documentation routes */}
+        <Route path="/docs" element={<DocsHome />} />
+        <Route path="/docs/getting-started/quick-start" element={<DocsQuickStart />} />
+        <Route path="/docs/*" element={<DocsComingSoon />} />
+
+        {/* Help Center routes */}
+        <Route path="/help" element={<HelpHome />} />
+        <Route path="/help/getting-started/first-steps" element={<HelpFirstSteps />} />
+        <Route path="/help/*" element={<HelpComingSoon />} />
 
         {/* Public status pages */}
         <Route path="/status/:slug" element={<PublicStatusPage />} />
@@ -326,6 +345,14 @@ function App() {
           element={
             <AdminWithLayout>
               <CloudCredentials />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/settings/semantic-import"
+          element={
+            <AdminWithLayout>
+              <SemanticImportPage />
             </AdminWithLayout>
           }
         />

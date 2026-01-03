@@ -9,6 +9,7 @@ import {
   TextInput,
   Linking,
 } from 'react-native';
+import * as Updates from 'expo-updates';
 import {
   Text,
   Switch,
@@ -110,6 +111,9 @@ export default function SettingsScreen() {
     deviceRegistered: boolean;
     checking: boolean;
   }>({ token: null, tokenError: null, deviceRegistered: false, checking: false });
+
+  // Update check state
+  const [checkingForUpdate, setCheckingForUpdate] = useState(false);
 
   // Dynamic styles based on current theme
   const dynamicStyles = {
@@ -420,6 +424,65 @@ export default function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const handleCheckForUpdate = async () => {
+    try {
+      setCheckingForUpdate(true);
+      await hapticService.lightTap();
+
+      // Check if updates are available
+      const update = await Updates.checkForUpdateAsync();
+
+      if (update.isAvailable) {
+        Alert.alert(
+          'Update Available',
+          'A new version is available. Would you like to update now?',
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Update Now',
+              onPress: async () => {
+                try {
+                  showSuccess('Downloading update...');
+                  await Updates.fetchUpdateAsync();
+                  Alert.alert(
+                    'Update Ready',
+                    'The update has been downloaded. Restart the app to apply it.',
+                    [
+                      { text: 'Later', style: 'cancel' },
+                      {
+                        text: 'Restart Now',
+                        onPress: async () => {
+                          await Updates.reloadAsync();
+                        },
+                      },
+                    ]
+                  );
+                } catch (fetchError) {
+                  showError('Failed to download update');
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        await hapticService.success();
+        showSuccess('You\'re on the latest version!');
+      }
+    } catch (error: any) {
+      // Updates.checkForUpdateAsync throws in development mode
+      if (__DEV__) {
+        Alert.alert(
+          'Development Mode',
+          'Update checking is disabled in development. Updates work in production builds.'
+        );
+      } else {
+        showError(error.message || 'Failed to check for updates');
+      }
+    } finally {
+      setCheckingForUpdate(false);
+    }
   };
 
   const handleTestCriticalAlert = async () => {
@@ -926,6 +989,21 @@ export default function SettingsScreen() {
         </View>
 
         <View style={dynamicStyles.settingCard}>
+          <List.Item
+            title="Check for Updates"
+            description="Check if a new version is available"
+            left={props => <List.Icon {...props} icon="download" color={colors.primary} />}
+            onPress={handleCheckForUpdate}
+            right={() =>
+              checkingForUpdate ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <List.Icon icon="chevron-right" color={colors.textMuted} />
+              )
+            }
+          />
+          <Divider />
+
           <List.Item
             title="Clear Cache"
             description="Remove cached data to free up space"

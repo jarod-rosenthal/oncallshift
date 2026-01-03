@@ -68,7 +68,7 @@ export function SimilarIncidentHint({ currentIncident, onViewIncident }: Similar
   };
 
   return (
-    <Surface style={[styles.container, { backgroundColor: colors.info + '15', borderColor: colors.info + '40' }]} elevation={0}>
+    <Surface style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]} elevation={1}>
       <View style={styles.header}>
         <View style={[styles.iconContainer, { backgroundColor: colors.info + '20' }]}>
           <MaterialCommunityIcons name="lightbulb-on" size={20} color={colors.info} />

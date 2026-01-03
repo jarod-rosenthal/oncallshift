@@ -1,0 +1,153 @@
+name: Test Pipeline
+
+on:
+  # Trigger on PRs to main
+  pull_request:
+    branches:
+      - main
+
+  # Trigger on push to main
+  push:
+    branches:
+      - main
+
+  # Manual trigger with test suite selection
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - api
+          - e2e
+          - smoke
+
+  # Trigger after deploy workflow completes
+  workflow_run:
+    workflows: ["Deploy Pipeline"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  # Determine which tests to run
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      run_smoke: ${{ steps.determine-tests.outputs.run_smoke }}
+      run_api: ${{ steps.determine-tests.outputs.run_api }}
+      run_e2e: ${{ steps.determine-tests.outputs.run_e2e }}
+    steps:
+      - name: Determine tests to run
+        id: determine-tests
+        run: |
+          SUITE="${{ github.event.inputs.test_suite || 'all' }}"
+
+          # For workflow_run events (after deploy), run smoke tests
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SUITE="smoke"
+          fi
+
+          echo "Test suite: $SUITE"
+
+          case "$SUITE" in
+            all)
+              echo "run_smoke=true" >> $GITHUB_OUTPUT
+              echo "run_api=true" >> $GITHUB_OUTPUT
+              echo "run_e2e=true" >> $GITHUB_OUTPUT
+              ;;
+            api)
+              echo "run_smoke=false" >> $GITHUB_OUTPUT
+              echo "run_api=true" >> $GITHUB_OUTPUT
+              echo "run_e2e=false" >> $GITHUB_OUTPUT
+              ;;
+            e2e)
+              echo "run_smoke=false" >> $GITHUB_OUTPUT
+              echo "run_api=false" >> $GITHUB_OUTPUT
+              echo "run_e2e=true" >> $GITHUB_OUTPUT
+              ;;
+            smoke)
+              echo "run_smoke=true" >> $GITHUB_OUTPUT
+              echo "run_api=false" >> $GITHUB_OUTPUT
+              echo "run_e2e=false" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+  # Quick smoke test - just verify the API is responding
+  smoke:
+    name: Smoke Test
+    needs: setup
+    if: needs.setup.outputs.run_smoke == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check API health endpoint
+        run: |
+          echo "Checking API health..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/api/health)
+
+          if [ "$response" = "200" ]; then
+            echo "API health check passed (HTTP $response)"
+          else
+            echo "API health check failed (HTTP $response)"
+            exit 1
+          fi
+
+      - name: Check frontend availability
+        run: |
+          echo "Checking frontend..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com)
+
+          if [ "$response" = "200" ]; then
+            echo "Frontend check passed (HTTP $response)"
+          else
+            echo "Frontend check failed (HTTP $response)"
+            exit 1
+          fi
+
+  # API integration tests
+  api-tests:
+    name: API Tests
+    needs: setup
+    if: needs.setup.outputs.run_api == 'true'
+    uses: ./.github/workflows/_test-api.yml
+    secrets: inherit
+
+  # E2E tests with Playwright
+  e2e-tests:
+    name: E2E Tests
+    needs: setup
+    if: needs.setup.outputs.run_e2e == 'true'
+    uses: ./.github/workflows/_test-e2e.yml
+    secrets: inherit
+
+  # Summary
+  summary:
+    name: Test Summary
+    needs: [setup, smoke, api-tests, e2e-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Summary
+        run: |
+          echo "Test Pipeline Complete"
+          echo "======================"
+          echo ""
+          echo "Test Results:"
+          echo "  Smoke Tests: ${{ needs.smoke.result || 'skipped' }}"
+          echo "  API Tests: ${{ needs.api-tests.result || 'skipped' }}"
+          echo "  E2E Tests: ${{ needs.e2e-tests.result || 'skipped' }}"
+
+      - name: Check for failures
+        if: |
+          needs.smoke.result == 'failure' ||
+          needs.api-tests.result == 'failure' ||
+          needs.e2e-tests.result == 'failure'
+        run: |
+          echo "One or more test suites failed!"
+          exit 1

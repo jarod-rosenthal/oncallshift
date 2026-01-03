@@ -34,6 +34,7 @@ const Icons = {
 export function Header({ sidebarCollapsed }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false);
   const navigate = useNavigate();
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
@@ -75,13 +76,72 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
 
       {/* Right Side Actions */}
       <div className="flex items-center gap-2 ml-4">
-        {/* Help */}
-        <button
-          className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
-          title="Help & Documentation"
-        >
-          <Icons.Question />
-        </button>
+        {/* Help Menu */}
+        <div className="relative">
+          <button
+            onClick={() => setHelpMenuOpen(!helpMenuOpen)}
+            className={`p-2 rounded-lg hover:bg-muted text-muted-foreground transition-colors ${helpMenuOpen ? 'bg-muted' : ''}`}
+            title="Help & Documentation"
+          >
+            <Icons.Question />
+          </button>
+
+          {/* Help Dropdown */}
+          {helpMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setHelpMenuOpen(false)}
+              />
+              <div className="absolute right-0 top-full mt-2 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-50">
+                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">
+                  Resources
+                </div>
+                <Link
+                  to="/help"
+                  onClick={() => setHelpMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2 text-sm text-popover-foreground hover:bg-muted"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  Help Center
+                </Link>
+                <Link
+                  to="/docs"
+                  onClick={() => setHelpMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2 text-sm text-popover-foreground hover:bg-muted"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  Documentation
+                </Link>
+                <a
+                  href="/api-docs"
+                  onClick={() => setHelpMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2 text-sm text-popover-foreground hover:bg-muted"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                  </svg>
+                  API Reference
+                </a>
+                <hr className="my-1 border-border" />
+                <Link
+                  to="/help/contact"
+                  onClick={() => setHelpMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2 text-sm text-popover-foreground hover:bg-muted"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  Contact Support
+                </Link>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Notifications */}
         <Link

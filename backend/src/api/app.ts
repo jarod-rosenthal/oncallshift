@@ -30,6 +30,7 @@ import tagsRoutes from './routes/tags';
 import webhooksRoutes from './routes/webhooks';
 import importRoutes from './routes/import';
 import exportRoutes from './routes/export';
+import semanticImportRoutes from './routes/semantic-import';
 import heartbeatsRoutes from './routes/heartbeats';
 import statusPagesRoutes from './routes/status-pages';
 import workflowsRoutes from './routes/workflows';
@@ -280,6 +281,7 @@ export function createApp(): Express {
   app.use('/api/v1/webhooks', webhooksRoutes);
   app.use('/api/v1/import', importRoutes);
   app.use('/api/v1/export', exportRoutes);
+  app.use('/api/v1/semantic-import', idempotencyMiddleware, semanticImportRoutes);
   app.use('/api/v1/heartbeats', idempotencyMiddleware, heartbeatsRoutes);
   app.use('/api/v1/status-pages', idempotencyMiddleware, statusPagesRoutes);
   app.use('/api/v1/workflows', idempotencyMiddleware, workflowsRoutes);
