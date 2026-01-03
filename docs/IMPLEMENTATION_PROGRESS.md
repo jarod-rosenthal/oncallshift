@@ -195,7 +195,7 @@ This file tracks the implementation progress for Terraform Provider Prerequisite
 ### Phase 6: Cursor Pagination ✅ COMPLETE
 - [x] Convert incidents to cursor-based pagination (keyset pattern)
 - [x] Convert timeline/events to cursor-based pagination
-- [ ] Convert audit logs to cursor-based pagination (lower priority)
+- [~] Audit logs - N/A (no audit logs feature exists yet; would need model + API first)
 
 ### Phase 7: PagerDuty/OpsGenie Compatibility ✅ COMPLETE
 - [x] PagerDuty Events API v2 compatibility endpoint (`POST /api/v1/alerts/pagerduty`)
