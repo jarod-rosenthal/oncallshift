@@ -2224,4 +2224,132 @@ export const aiAssistantAPI = {
   },
 };
 
+// AI Workers API
+export const aiWorkersAPI = {
+  list: async (params?: { persona?: string; status?: string; limit?: number; offset?: number }) => {
+    const response = await apiClient.get<{ workers: any[]; total: number }>('/ai-workers', { params });
+    return response.data;
+  },
+
+  get: async (id: string) => {
+    const response = await apiClient.get<any>(`/ai-workers/${id}`);
+    return response.data;
+  },
+
+  create: async (data: { persona: string; displayName: string; description?: string; config?: object }) => {
+    const response = await apiClient.post<any>('/ai-workers', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: { displayName?: string; description?: string; config?: object }) => {
+    const response = await apiClient.put<any>(`/ai-workers/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string) => {
+    await apiClient.delete(`/ai-workers/${id}`);
+  },
+
+  pause: async (id: string) => {
+    const response = await apiClient.put<any>(`/ai-workers/${id}/pause`);
+    return response.data;
+  },
+
+  resume: async (id: string) => {
+    const response = await apiClient.put<any>(`/ai-workers/${id}/resume`);
+    return response.data;
+  },
+
+  disable: async (id: string) => {
+    const response = await apiClient.put<any>(`/ai-workers/${id}/disable`);
+    return response.data;
+  },
+
+  enable: async (id: string) => {
+    const response = await apiClient.put<any>(`/ai-workers/${id}/enable`);
+    return response.data;
+  },
+
+  getStats: async (id: string) => {
+    const response = await apiClient.get<any>(`/ai-workers/${id}/stats`);
+    return response.data;
+  },
+};
+
+// AI Worker Tasks API
+export const aiWorkerTasksAPI = {
+  list: async (params?: { status?: string; persona?: string; limit?: number; offset?: number }) => {
+    const response = await apiClient.get<{ tasks: any[]; total: number }>('/ai-worker-tasks', { params });
+    return response.data;
+  },
+
+  get: async (id: string) => {
+    const response = await apiClient.get<any>(`/ai-worker-tasks/${id}`);
+    return response.data;
+  },
+
+  getLogs: async (id: string, params?: { type?: string; limit?: number; offset?: number }) => {
+    const response = await apiClient.get<{ logs: any[]; total: number }>(`/ai-worker-tasks/${id}/logs`, { params });
+    return response.data;
+  },
+
+  getConversation: async (id: string) => {
+    const response = await apiClient.get<any>(`/ai-worker-tasks/${id}/conversation`);
+    return response.data;
+  },
+
+  cancel: async (id: string, reason?: string) => {
+    const response = await apiClient.post<any>(`/ai-worker-tasks/${id}/cancel`, { reason });
+    return response.data;
+  },
+
+  retry: async (id: string) => {
+    const response = await apiClient.post<any>(`/ai-worker-tasks/${id}/retry`);
+    return response.data;
+  },
+
+  getSummary: async () => {
+    const response = await apiClient.get<{
+      activeTaskCount: number;
+      completedToday: number;
+      totalCostToday: number;
+      pendingApprovals: number;
+    }>('/ai-worker-tasks/summary');
+    return response.data;
+  },
+};
+
+// AI Worker Approvals API
+export const aiWorkerApprovalsAPI = {
+  list: async (params?: { status?: string; type?: string; limit?: number; offset?: number }) => {
+    const response = await apiClient.get<{ approvals: any[]; total: number }>('/ai-worker-approvals', { params });
+    return response.data;
+  },
+
+  getPending: async () => {
+    const response = await apiClient.get<{ count: number; approvals: any[] }>('/ai-worker-approvals/pending');
+    return response.data;
+  },
+
+  get: async (id: string) => {
+    const response = await apiClient.get<any>(`/ai-worker-approvals/${id}`);
+    return response.data;
+  },
+
+  approve: async (id: string, notes?: string) => {
+    const response = await apiClient.post<any>(`/ai-worker-approvals/${id}/approve`, { notes });
+    return response.data;
+  },
+
+  reject: async (id: string, notes: string) => {
+    const response = await apiClient.post<any>(`/ai-worker-approvals/${id}/reject`, { notes });
+    return response.data;
+  },
+
+  expire: async (id: string) => {
+    const response = await apiClient.post<any>(`/ai-worker-approvals/${id}/expire`);
+    return response.data;
+  },
+};
+
 export default apiClient;

@@ -48,6 +48,7 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys').then(m => ({ default: m.Api
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ default: m.SetupWizard })));
 const ImportWizard = lazy(() => import('./pages/ImportWizard').then(m => ({ default: m.ImportWizard })));
 const SemanticImportPage = lazy(() => import('./features/semanticImport/SemanticImportPage').then(m => ({ default: m.SemanticImportPage })));
+const AIWorkers = lazy(() => import('./pages/AIWorkers').then(m => ({ default: m.AIWorkers })));
 
 // Lazy loaded pages - Marketing/public pages
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
@@ -387,6 +388,14 @@ function App() {
           element={
             <AdminWithLayout>
               <SemanticImportPage />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/ai-workers"
+          element={
+            <AdminWithLayout>
+              <AIWorkers />
             </AdminWithLayout>
           }
         />
