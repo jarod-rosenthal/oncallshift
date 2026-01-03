@@ -1,4 +1,9 @@
 import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry for this worker
+initSentry({ workerName: 'notification-worker' });
+
 import { getDataSource } from '../shared/db/data-source';
 import { processQueue, NotificationMessage } from '../shared/queues/sqs-client';
 import { sendPushNotification } from '../shared/notifications/push-service';

@@ -10,6 +10,7 @@ import { setLocationHeader } from '../../shared/utils/location-header';
 import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
 import { parseBaseFilters, applyBaseFilters } from '../../shared/utils/filtering';
 import { paginationValidators, searchFilterValidator } from '../../shared/validators/pagination';
+import { notFound, conflict, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -147,7 +148,7 @@ router.get('/', [...paginationValidators, searchFilterValidator], async (req: Re
     return res.json(paginatedResponse(formattedTeams, total, pagination, lastItem, 'teams'));
   } catch (error) {
     logger.error('Error listing teams:', error);
-    return res.status(500).json({ error: 'Failed to list teams' });
+    return internalError(res, 'Failed to list teams');
   }
 });
 
@@ -254,7 +255,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
+      return notFound(res, 'Team', id);
     }
 
     // Generate ETag from team ID and updatedAt timestamp
@@ -302,7 +303,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching team:', error);
-    return res.status(500).json({ error: 'Failed to fetch team' });
+    return internalError(res, 'Failed to fetch team');
   }
 });
 
@@ -399,7 +400,7 @@ router.post(
       });
 
       if (existing) {
-        return res.status(409).json({ error: 'A team with this name or slug already exists' });
+        return conflict(res, 'A team with this name or slug already exists');
       }
 
       const team = teamRepo.create({
@@ -428,7 +429,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating team:', error);
-      return res.status(500).json({ error: 'Failed to create team' });
+      return internalError(res, 'Failed to create team');
     }
   }
 );
@@ -533,14 +534,14 @@ router.put(
       const team = await teamRepo.findOne({ where: { id, orgId } });
 
       if (!team) {
-        return res.status(404).json({ error: 'Team not found' });
+        return notFound(res, 'Team', id);
       }
 
       // Check for duplicate name or slug if changing
       if (name && name !== team.name) {
         const existingName = await teamRepo.findOne({ where: { orgId, name } });
         if (existingName) {
-          return res.status(409).json({ error: 'A team with this name already exists' });
+          return conflict(res, 'A team with this name already exists');
         }
         team.name = name;
       }
@@ -548,7 +549,7 @@ router.put(
       if (slug !== undefined && slug !== team.slug) {
         const existingSlug = await teamRepo.findOne({ where: { orgId, slug } });
         if (existingSlug) {
-          return res.status(409).json({ error: 'A team with this slug already exists' });
+          return conflict(res, 'A team with this slug already exists');
         }
         team.slug = slug;
       }
@@ -578,7 +579,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating team:', error);
-      return res.status(500).json({ error: 'Failed to update team' });
+      return internalError(res, 'Failed to update team');
     }
   }
 );
@@ -644,7 +645,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     const team = await teamRepo.findOne({ where: { id, orgId } });
 
     if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
+      return notFound(res, 'Team', id);
     }
 
     await teamRepo.remove(team);
@@ -654,7 +655,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     return res.json({ message: 'Team deleted successfully' });
   } catch (error) {
     logger.error('Error deleting team:', error);
-    return res.status(500).json({ error: 'Failed to delete team' });
+    return internalError(res, 'Failed to delete team');
   }
 });
 
@@ -665,7 +666,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
  * /api/v1/teams/{id}/members:
  *   get:
  *     summary: List team members
- *     description: Retrieves all members of a specific team.
+ *     description: Retrieves all members of a specific team with pagination.
  *     tags: [Teams]
  *     security:
  *       - BearerAuth: []
@@ -678,6 +679,32 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
  *           type: string
  *           format: uuid
  *         description: Team ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 25
+ *         description: Maximum number of members to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of members to skip for pagination
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, role]
+ *         description: Field to sort by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         description: Sort order
  *     responses:
  *       200:
  *         description: Team members retrieved successfully
@@ -691,10 +718,17 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
  *                   format: uuid
  *                 teamName:
  *                   type: string
- *                 members:
+ *                 data:
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/TeamMember'
+ *                 members:
+ *                   type: array
+ *                   description: Legacy key (alias for data)
+ *                   items:
+ *                     $ref: '#/components/schemas/TeamMember'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       404:
@@ -710,10 +744,11 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/:id/members', async (req: Request, res: Response) => {
+router.get('/:id/members', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
 
     const dataSource = await getDataSource();
     const teamRepo = dataSource.getRepository(Team);
@@ -721,33 +756,51 @@ router.get('/:id/members', async (req: Request, res: Response) => {
 
     const team = await teamRepo.findOne({ where: { id, orgId } });
     if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
+      return notFound(res, 'Team', id);
     }
 
-    const memberships = await membershipRepo.find({
-      where: { teamId: id },
-      relations: ['user'],
-      order: { createdAt: 'ASC' },
-    });
+    // Build query with pagination
+    const queryBuilder = membershipRepo
+      .createQueryBuilder('membership')
+      .leftJoinAndSelect('membership.user', 'user')
+      .where('membership.team_id = :teamId', { teamId: id });
+
+    // Apply sorting - default to createdAt ASC
+    const sortField = pagination.sort === 'role' ? 'role' : 'created_at';
+    const sortOrder = pagination.order === 'desc' ? 'DESC' : 'ASC';
+    queryBuilder.orderBy(`membership.${sortField}`, sortOrder);
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const memberships = await queryBuilder.getMany();
+
+    const formattedMembers = memberships.map(m => ({
+      id: m.id,
+      userId: m.userId,
+      role: m.role,
+      user: m.user ? {
+        id: m.user.id,
+        fullName: m.user.fullName,
+        email: m.user.email,
+      } : null,
+      createdAt: m.createdAt,
+    }));
+
+    const lastItem = memberships[memberships.length - 1];
+    const response = paginatedResponse(formattedMembers, total, pagination, lastItem, 'members');
 
     return res.json({
       teamId: id,
       teamName: team.name,
-      members: memberships.map(m => ({
-        id: m.id,
-        userId: m.userId,
-        role: m.role,
-        user: m.user ? {
-          id: m.user.id,
-          fullName: m.user.fullName,
-          email: m.user.email,
-        } : null,
-        createdAt: m.createdAt,
-      })),
+      ...response,
     });
   } catch (error) {
     logger.error('Error listing team members:', error);
-    return res.status(500).json({ error: 'Failed to list team members' });
+    return internalError(res, 'Failed to list team members');
   }
 });
 
@@ -862,12 +915,12 @@ router.post(
 
       const team = await teamRepo.findOne({ where: { id, orgId } });
       if (!team) {
-        return res.status(404).json({ error: 'Team not found' });
+        return notFound(res, 'Team', id);
       }
 
       const user = await userRepo.findOne({ where: { id: userId, orgId } });
       if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return notFound(res, 'User', userId);
       }
 
       // Check if already a member
@@ -875,7 +928,7 @@ router.post(
         where: { teamId: id, userId },
       });
       if (existing) {
-        return res.status(409).json({ error: 'User is already a member of this team' });
+        return conflict(res, 'User is already a member of this team');
       }
 
       const membership = membershipRepo.create({
@@ -905,7 +958,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error adding team member:', error);
-      return res.status(500).json({ error: 'Failed to add team member' });
+      return internalError(res, 'Failed to add team member');
     }
   }
 );
@@ -1011,7 +1064,7 @@ router.put(
 
       const team = await teamRepo.findOne({ where: { id, orgId } });
       if (!team) {
-        return res.status(404).json({ error: 'Team not found' });
+        return notFound(res, 'Team', id);
       }
 
       const membership = await membershipRepo.findOne({
@@ -1019,7 +1072,7 @@ router.put(
         relations: ['user'],
       });
       if (!membership) {
-        return res.status(404).json({ error: 'Member not found in this team' });
+        return notFound(res, 'Team member', `${id}/${userId}`);
       }
 
       membership.role = role;
@@ -1042,7 +1095,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating team member:', error);
-      return res.status(500).json({ error: 'Failed to update team member' });
+      return internalError(res, 'Failed to update team member');
     }
   }
 );
@@ -1115,14 +1168,14 @@ router.delete('/:id/members/:userId', requireAdmin, async (req: Request, res: Re
 
     const team = await teamRepo.findOne({ where: { id, orgId } });
     if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
+      return notFound(res, 'Team', id);
     }
 
     const membership = await membershipRepo.findOne({
       where: { teamId: id, userId },
     });
     if (!membership) {
-      return res.status(404).json({ error: 'Member not found in this team' });
+      return notFound(res, 'Team member', `${id}/${userId}`);
     }
 
     await membershipRepo.remove(membership);
@@ -1132,7 +1185,7 @@ router.delete('/:id/members/:userId', requireAdmin, async (req: Request, res: Re
     return res.json({ message: 'Member removed successfully' });
   } catch (error) {
     logger.error('Error removing team member:', error);
-    return res.status(500).json({ error: 'Failed to remove team member' });
+    return internalError(res, 'Failed to remove team member');
   }
 });
 

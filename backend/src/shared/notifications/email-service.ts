@@ -72,6 +72,7 @@ export async function sendEmailNotification(payload: EmailNotificationPayload): 
 
     // Create notification record
     const notification = notificationRepo.create({
+      orgId: incident.orgId,
       incidentId,
       userId,
       channel: 'email',

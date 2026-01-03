@@ -1,4 +1,9 @@
 import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry for this worker
+initSentry({ workerName: 'snooze-expiry' });
+
 import { getDataSource } from '../shared/db/data-source';
 import { sendNotificationMessage } from '../shared/queues/sqs-client';
 import { Incident, IncidentEvent, Service, Schedule, User, EscalationTarget } from '../shared/models';

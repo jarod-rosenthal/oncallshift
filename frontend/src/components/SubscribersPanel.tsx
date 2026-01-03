@@ -245,7 +245,7 @@ export function SubscribersPanel({
                 onClick={() => setShowUpdateDialog(true)}
               >
                 <Send className="w-4 h-4 mr-2" />
-                Post Status Update to Subscribers
+                Post Status Update
               </Button>
             </div>
           )}

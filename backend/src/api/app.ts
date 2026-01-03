@@ -5,6 +5,7 @@ import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger';
 import { logger } from '../shared/utils/logger';
+import { Sentry, isSentryEnabled } from '../shared/config/sentry';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -341,6 +342,11 @@ export function createApp(): Express {
       next();
     }
   });
+
+  // Sentry error handler (must be before other error handlers)
+  if (isSentryEnabled()) {
+    Sentry.setupExpressErrorHandler(app);
+  }
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

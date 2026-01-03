@@ -12,6 +12,7 @@ import { setLocationHeader } from '../../shared/utils/location-header';
 import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
 import { parseServiceFilters, applyServiceFilters } from '../../shared/utils/filtering';
 import { serviceFilterValidators } from '../../shared/validators/pagination';
+import { notFound, badRequest, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -136,7 +137,7 @@ router.get('/', [...serviceFilterValidators], async (req: Request, res: Response
     return res.json(paginatedResponse(formattedServices, total, pagination, lastItem, 'services'));
   } catch (error) {
     logger.error('Error fetching services:', error);
-    return res.status(500).json({ error: 'Failed to fetch services' });
+    return internalError(res, 'Failed to fetch services');
   }
 });
 
@@ -197,7 +198,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!service) {
-      return res.status(404).json({ error: 'Service not found' });
+      return notFound(res, 'Service', id);
     }
 
     // Generate ETag from service ID and updatedAt timestamp
@@ -211,7 +212,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     return res.json({ service: formatService(service) });
   } catch (error) {
     logger.error('Error fetching service:', error);
-    return res.status(500).json({ error: 'Failed to fetch service' });
+    return internalError(res, 'Failed to fetch service');
   }
 });
 
@@ -320,7 +321,7 @@ router.put(
       });
 
       if (!service) {
-        return res.status(404).json({ error: 'Service not found' });
+        return notFound(res, 'Service', id);
       }
 
       // Verify schedule belongs to same org if provided
@@ -329,7 +330,7 @@ router.put(
           where: { id: scheduleId, orgId },
         });
         if (!schedule) {
-          return res.status(400).json({ error: 'Schedule not found or does not belong to your organization' });
+          return badRequest(res, 'Schedule not found or does not belong to your organization');
         }
       }
 
@@ -356,7 +357,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating service:', error);
-      return res.status(500).json({ error: 'Failed to update service' });
+      return internalError(res, 'Failed to update service');
     }
   }
 );

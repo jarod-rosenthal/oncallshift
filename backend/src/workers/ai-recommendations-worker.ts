@@ -1,4 +1,9 @@
 import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry for this worker
+initSentry({ workerName: 'ai-recommendations-worker' });
+
 import { getDataSource } from '../shared/db/data-source';
 import {
   Organization,
