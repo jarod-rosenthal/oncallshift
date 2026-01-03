@@ -64,3 +64,8 @@ export * from './OnboardingSession';
 export * from './IdempotencyKey';
 export * from './ImportHistory';
 export * from './AIRecommendation';
+export * from './AIWorkerTask';
+export * from './AIWorkerInstance';
+export * from './AIWorkerTaskLog';
+export * from './AIWorkerConversation';
+export * from './AIWorkerApproval';

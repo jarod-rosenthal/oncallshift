@@ -160,6 +160,13 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
     </svg>
   ),
+  Robot: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      <circle cx="9" cy="9" r="1" fill="currentColor" />
+      <circle cx="15" cy="9" r="1" fill="currentColor" />
+    </svg>
+  ),
 };
 
 export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps) {
@@ -206,6 +213,7 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         { path: '/runbooks', label: 'Runbooks', icon: <Icons.Book />, adminOnly: true },
         { path: '/routing-rules', label: 'Routing Rules', icon: <Icons.ArrowUp />, adminOnly: true },
         { path: '/workflows', label: 'Workflows', icon: <Icons.Settings />, adminOnly: true },
+        { path: '/ai-workers', label: 'AI Workers', icon: <Icons.Robot />, adminOnly: true },
       ],
     },
     {

@@ -66,6 +66,12 @@ import { AIConversation, AIConversationMessage } from '../models/AIConversation'
 import { OrganizationApiKey } from '../models/OrganizationApiKey';
 import { IdempotencyKey } from '../models/IdempotencyKey';
 import { ImportHistory } from '../models/ImportHistory';
+import { AIRecommendation } from '../models/AIRecommendation';
+import { AIWorkerTask } from '../models/AIWorkerTask';
+import { AIWorkerInstance } from '../models/AIWorkerInstance';
+import { AIWorkerTaskLog } from '../models/AIWorkerTaskLog';
+import { AIWorkerConversation } from '../models/AIWorkerConversation';
+import { AIWorkerApproval } from '../models/AIWorkerApproval';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -147,6 +153,12 @@ export async function createDataSource(): Promise<DataSource> {
       OrganizationApiKey,
       IdempotencyKey,
       ImportHistory,
+      AIRecommendation,
+      AIWorkerTask,
+      AIWorkerInstance,
+      AIWorkerTaskLog,
+      AIWorkerConversation,
+      AIWorkerApproval,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],
