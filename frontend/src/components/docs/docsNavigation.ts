@@ -55,6 +55,12 @@ export const docsNav: NavSection[] = [
     ],
   },
   {
+    title: 'Infrastructure as Code',
+    items: [
+      { title: 'Terraform Provider', href: '/docs/iac/terraform' },
+    ],
+  },
+  {
     title: 'Migration',
     items: [
       { title: 'From Opsgenie', href: '/docs/migration/opsgenie' },

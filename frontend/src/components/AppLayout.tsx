@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { incidentsAPI } from '../lib/api-client';
+import { ThemeProvider } from '../contexts/ThemeContext';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -11,17 +12,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [openIncidentCount, setOpenIncidentCount] = useState(0);
 
-  // Initialize theme on mount
-  useEffect(() => {
-    const stored = localStorage.getItem('theme');
-    // Default to dark mode if no preference stored
-    const isDark = stored ? stored === 'dark' : true;
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, []);
+  // Theme initialization is now handled by ThemeProvider and the inline script in index.html
 
   useEffect(() => {
     const fetchIncidentCount = async () => {
@@ -47,21 +38,23 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={handleToggleSidebar}
-        incidentCount={openIncidentCount}
-      />
-      <Header sidebarCollapsed={sidebarCollapsed} />
-      <main
-        className={`pt-16 transition-all duration-300 ${
-          sidebarCollapsed ? 'ml-16' : 'ml-64'
-        }`}
-      >
-        <div className="p-6">{children}</div>
-      </main>
-    </div>
+    <ThemeProvider>
+      <div className="min-h-screen bg-background">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggle={handleToggleSidebar}
+          incidentCount={openIncidentCount}
+        />
+        <Header sidebarCollapsed={sidebarCollapsed} />
+        <main
+          className={`pt-16 transition-all duration-300 ${
+            sidebarCollapsed ? 'ml-16' : 'ml-64'
+          }`}
+        >
+          <div className="p-6">{children}</div>
+        </main>
+      </div>
+    </ThemeProvider>
   );
 }
 
