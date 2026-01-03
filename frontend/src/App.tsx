@@ -72,6 +72,7 @@ const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.S
 // Documentation and Help pages
 const DocsHome = lazy(() => import('./pages/docs/DocsHome').then(m => ({ default: m.DocsHome })));
 const DocsQuickStart = lazy(() => import('./pages/docs/DocsQuickStart').then(m => ({ default: m.DocsQuickStart })));
+const DocsMcpServer = lazy(() => import('./pages/docs/DocsMcpServer').then(m => ({ default: m.DocsMcpServer })));
 const DocsComingSoon = lazy(() => import('./pages/docs/DocsComingSoon').then(m => ({ default: m.DocsComingSoon })));
 const HelpHome = lazy(() => import('./pages/help/HelpHome').then(m => ({ default: m.HelpHome })));
 const HelpFirstSteps = lazy(() => import('./pages/help/HelpFirstSteps').then(m => ({ default: m.HelpFirstSteps })));
@@ -140,6 +141,7 @@ function App() {
         {/* Documentation routes */}
         <Route path="/docs" element={<DocsHome />} />
         <Route path="/docs/getting-started/quick-start" element={<DocsQuickStart />} />
+        <Route path="/docs/ai/mcp" element={<DocsMcpServer />} />
         <Route path="/docs/*" element={<DocsComingSoon />} />
 
         {/* Help Center routes */}

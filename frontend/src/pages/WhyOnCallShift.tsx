@@ -32,11 +32,16 @@ export function WhyOnCallShift() {
       {/* Hero */}
       <section className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 bg-purple-50 text-purple-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
+            <span>🤖</span>
+            The only incident platform with MCP server integration
+          </div>
           <h1 className="text-4xl md:text-5xl font-bold mb-6">
             Why Choose OnCallShift?
           </h1>
           <p className="text-xl text-slate-600 max-w-2xl mx-auto">
-            An honest comparison with PagerDuty and OpsGenie—built by engineers who've used them all.
+            Built by DevOps veterans with 15+ years of on-call experience.
+            An honest comparison with PagerDuty and OpsGenie—from people who've used them all.
           </p>
         </div>
       </section>
@@ -56,35 +61,15 @@ export function WhyOnCallShift() {
                 </tr>
               </thead>
               <tbody className="text-sm">
+                <tr className="border-b bg-purple-50">
+                  <td className="py-3 px-4 font-medium">MCP Server (AI Assistants)</td>
+                  <td className="py-3 px-4 text-green-600">✓ Full integration (Claude, Cursor)</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
+                </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Built By</td>
-                  <td className="py-3 px-4 text-green-600">DevOps Engineers</td>
+                  <td className="py-3 px-4 text-green-600">DevOps Veterans (15+ years)</td>
                   <td className="py-3 px-4 text-slate-500">Enterprise Company</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">AI Diagnosis</td>
-                  <td className="py-3 px-4 text-green-600">✓ Included (Free tier+)</td>
-                  <td className="py-3 px-4 text-slate-500">$$$ Enterprise Add-on</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">AI Execution</td>
-                  <td className="py-3 px-4 text-green-600">✓ Restart services, scale pods</td>
-                  <td className="py-3 px-4 text-slate-500">✗ Suggestions only</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Mobile AI</td>
-                  <td className="py-3 px-4 text-green-600">✓ Full AI capabilities</td>
-                  <td className="py-3 px-4 text-slate-500">✗ Limited/Desktop only</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Setup Time</td>
-                  <td className="py-3 px-4 text-green-600">5 minutes</td>
-                  <td className="py-3 px-4 text-slate-500">Days (CSM required)</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Starting Price</td>
-                  <td className="py-3 px-4 text-green-600">$0/month (10 users free)</td>
-                  <td className="py-3 px-4 text-slate-500">$25/user/month</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Cloud Investigation</td>
@@ -92,9 +77,29 @@ export function WhyOnCallShift() {
                   <td className="py-3 px-4 text-slate-500">Via Slack/Integrations</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">BYOK Option</td>
-                  <td className="py-3 px-4 text-green-600">✓ $29/month flat</td>
+                  <td className="py-3 px-4 font-medium">AI Diagnosis + Execution</td>
+                  <td className="py-3 px-4 text-green-600">✓ Included (restart services, scale pods)</td>
+                  <td className="py-3 px-4 text-slate-500">$$$ Enterprise Add-on</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Mobile AI + Runbooks</td>
+                  <td className="py-3 px-4 text-green-600">✓ Full capabilities</td>
+                  <td className="py-3 px-4 text-slate-500">✗ Limited/Desktop only</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">BYOK (Bring Your Own Key)</td>
+                  <td className="py-3 px-4 text-green-600">✓ Use your Anthropic API key</td>
                   <td className="py-3 px-4 text-slate-500">✗ Not available</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Setup Time</td>
+                  <td className="py-3 px-4 text-green-600">5 minutes (or via AI assistant)</td>
+                  <td className="py-3 px-4 text-slate-500">Days (CSM required)</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Starting Price</td>
+                  <td className="py-3 px-4 text-green-600">$0/month (10 users free)</td>
+                  <td className="py-3 px-4 text-slate-500">$21/user/month</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Sales Process</td>
@@ -107,20 +112,22 @@ export function WhyOnCallShift() {
 
           <div className="grid md:grid-cols-2 gap-6 mb-8">
             <div className="bg-green-50 border border-green-200 rounded-lg p-6">
-              <h3 className="font-bold text-green-900 mb-3">✅ Where We Win</h3>
+              <h3 className="font-bold text-green-900 mb-3">Where We Win</h3>
               <ul className="space-y-2 text-sm text-green-800">
-                <li><strong>AI That Actually Helps:</strong> Executes fixes, not just suggestions</li>
-                <li><strong>Mobile Experience:</strong> Full AI + runbooks on mobile</li>
-                <li><strong>Transparent Pricing:</strong> $0 free tier, $9 starter, no sales calls</li>
-                <li><strong>Setup Time:</strong> 5-minute wizard vs. days of config</li>
+                <li><strong>MCP Server:</strong> Configure your org from Claude Code or Cursor</li>
+                <li><strong>Cloud Investigation:</strong> AI queries your AWS/GCP/Azure directly</li>
+                <li><strong>AI That Executes:</strong> Restart services, scale pods—not just suggestions</li>
+                <li><strong>Mobile Experience:</strong> Full AI + runbooks on your phone at 3am</li>
+                <li><strong>BYOK:</strong> Use your own Anthropic API key for enterprise compliance</li>
+                <li><strong>Transparent Pricing:</strong> Self-serve, no sales calls required</li>
               </ul>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-              <h3 className="font-bold text-red-900 mb-3">Where They Win</h3>
-              <ul className="space-y-2 text-sm text-red-800">
-                <li>Enterprise sales team (we're working on it)</li>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
+              <h3 className="font-bold text-slate-900 mb-3">Where They Have an Edge</h3>
+              <ul className="space-y-2 text-sm text-slate-700">
                 <li>15+ years of brand recognition</li>
-                <li>More third-party integrations (for now)</li>
+                <li>Larger third-party integration ecosystem</li>
+                <li>Enterprise sales team (some buyers prefer this)</li>
               </ul>
             </div>
           </div>

@@ -32,10 +32,11 @@ export function About() {
       {/* Hero */}
       <section className="container mx-auto px-4 py-16 text-center">
         <h1 className="text-4xl md:text-5xl font-bold mb-6">
-          Why We Built OnCallShift
+          Built by People Who Carry Pagers
         </h1>
         <p className="text-xl text-slate-600 max-w-2xl mx-auto">
-          We were tired of waking up at 3am with no answers.
+          15+ years of on-call experience. We've seen every failure mode.
+          Now we're building the platform we always wanted.
         </p>
       </section>
 
@@ -45,42 +46,49 @@ export function About() {
           <div className="bg-slate-50 border-2 border-slate-200 rounded-lg p-8 md:p-12">
             <div className="prose prose-lg max-w-none">
               <p className="text-lg leading-relaxed mb-6">
-                We were SREs at a fast-growing startup.
+                We've been doing this for a long time.
               </p>
 
               <p className="text-slate-700 mb-6">
-                3am pages. Laptop scrambles. No context in the alert. Digging through CloudWatch
-                half-asleep. Restarting services manually. Writing the same runbook for the 10th time.
+                Production outages at 3am. Cascading failures across regions. Memory leaks that only appear under load.
+                The monitoring tool that cries wolf. The runbook that's three versions out of date.
+                We've seen it all—and we've been the one holding the pager.
               </p>
 
               <p className="text-slate-700 mb-6">
-                Then the bill came: <strong className="text-slate-900">$2,400/month for PagerDuty.</strong> For 8 people.
+                After 15+ years managing production systems at startups and enterprises,
+                we knew exactly what an incident management platform <em>should</em> be.
+                And we couldn't find one that matched our expectations.
               </p>
 
               <p className="text-slate-700 mb-6">
-                We thought: <em>"This should be easier. And way cheaper."</em>
+                Enterprise tools with enterprise prices. Clunky mobile apps. AI features locked behind
+                five-figure contracts. "Contact sales" for basic functionality.
+                <strong className="text-slate-900"> We got tired of settling.</strong>
               </p>
 
               <p className="text-lg font-semibold text-slate-900 mb-6">
-                So we built OnCallShift.
+                So we built OnCallShift—the platform we always wanted.
               </p>
 
               <div className="bg-blue-50 border-l-4 border-blue-600 p-6 my-8">
-                <p className="font-semibold text-blue-900 mb-3">The tool we wish we had:</p>
+                <p className="font-semibold text-blue-900 mb-3">What 15 years of on-call taught us:</p>
                 <ul className="space-y-2 text-blue-800">
-                  <li>• AI that actually investigates (not just suggests generic fixes)</li>
-                  <li>• Mobile-first (your laptop stays in your bag)</li>
-                  <li>• Transparent pricing (because we hate "contact sales" too)</li>
-                  <li>• No BS features that look good in demos but suck in production</li>
+                  <li>• AI should investigate, not just suggest—and it should work on your phone at 3am</li>
+                  <li>• Cloud investigation means querying your infrastructure directly, not reading stale dashboards</li>
+                  <li>• The best incident tool is the one you never have to think about configuring</li>
+                  <li>• If your AI assistant can't set it up, it's too complicated</li>
+                  <li>• Transparent pricing isn't a feature—it's basic respect</li>
                 </ul>
               </div>
 
               <p className="text-slate-700 mb-6">
-                We're still a small team. We still get paged. <strong>We use OnCallShift every day.</strong>
+                We're still a small team. We still get paged. <strong>We run OnCallShift on OnCallShift.</strong>
+                Every feature gets tested at 3am before it ships.
               </p>
 
               <p className="text-xl font-bold text-slate-900">
-                If it doesn't work for us at 3am, we don't ship it.
+                We're not building enterprise software. We're building tools for the people who actually get paged.
               </p>
             </div>
           </div>
@@ -93,16 +101,31 @@ export function About() {
           <h2 className="text-3xl font-bold text-center mb-12">Meet the Team</h2>
           <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-lg p-8 shadow-sm border">
-              <div className="flex items-start gap-6">
-                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
+              <div className="flex flex-col md:flex-row items-start gap-6">
+                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-3xl font-bold flex-shrink-0">
                   JR
                 </div>
                 <div className="flex-1">
                   <h3 className="text-2xl font-bold mb-2">Jarod Rosenthal</h3>
                   <p className="text-slate-600 mb-4">Founder & CEO</p>
                   <p className="text-slate-700 mb-4">
-                    Former SRE, tired of enterprise tools that don't work. Builds what he'd want to use.
+                    15+ years in DevOps, SRE, and infrastructure engineering. Built and scaled production systems
+                    handling millions of requests. Managed on-call rotations, wrote runbooks, debugged
+                    cascading failures at 3am. Knows exactly how frustrating enterprise incident tools are
+                    because he's been on the receiving end.
                   </p>
+                  <p className="text-slate-700 mb-4">
+                    Previously led infrastructure at high-growth startups and Fortune 500 companies.
+                    Built OnCallShift because the tools that existed weren't built by people who understand
+                    what it's like to carry the pager.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">AWS</span>
+                    <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">Kubernetes</span>
+                    <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">Terraform</span>
+                    <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">SRE</span>
+                    <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full text-sm">Platform Engineering</span>
+                  </div>
                   <a
                     href="mailto:jarod@oncallshift.com"
                     className="text-blue-600 hover:text-blue-700 font-medium"

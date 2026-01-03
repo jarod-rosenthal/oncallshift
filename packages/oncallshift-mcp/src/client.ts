@@ -305,6 +305,33 @@ export class OnCallShiftClient {
     return this.request('POST', `/incidents/${incidentId}/notes`, { content });
   }
 
+  /**
+   * Create a new incident
+   */
+  async createIncident(incident: {
+    title: string;
+    service_id: string;
+    severity?: 'critical' | 'error' | 'warning' | 'info';
+    description?: string;
+  }): Promise<ApiResponse> {
+    return this.request('POST', '/incidents', {
+      summary: incident.title,
+      serviceId: incident.service_id,
+      severity: incident.severity || 'error',
+      details: incident.description,
+    });
+  }
+
+  /**
+   * Add responders to an incident
+   */
+  async addResponders(incidentId: string, userIds: string[], message?: string): Promise<ApiResponse> {
+    return this.request('POST', `/incidents/${incidentId}/responders`, {
+      user_ids: userIds,
+      message,
+    });
+  }
+
   // ============================================
   // Services
   // ============================================
@@ -370,6 +397,20 @@ export class OnCallShiftClient {
     return this.request('POST', '/teams', team);
   }
 
+  /**
+   * Add a user to a team
+   */
+  async addTeamMember(teamId: string, userId: string, role: 'manager' | 'member' = 'member'): Promise<ApiResponse> {
+    return this.request('POST', `/teams/${teamId}/members`, { user_id: userId, role });
+  }
+
+  /**
+   * Remove a user from a team
+   */
+  async removeTeamMember(teamId: string, userId: string): Promise<ApiResponse> {
+    return this.request('DELETE', `/teams/${teamId}/members/${userId}`);
+  }
+
   // ============================================
   // Schedules
   // ============================================
@@ -410,6 +451,17 @@ export class OnCallShiftClient {
     return this.request('GET', `/schedules/${scheduleId}/oncall`);
   }
 
+  /**
+   * Create a schedule override (temporary assignment)
+   */
+  async createScheduleOverride(scheduleId: string, override: {
+    user_id: string;
+    start_time: string;
+    end_time: string;
+  }): Promise<ApiResponse> {
+    return this.request('POST', `/schedules/${scheduleId}/overrides`, override);
+  }
+
   // ============================================
   // On-Call
   // ============================================
@@ -445,6 +497,13 @@ export class OnCallShiftClient {
    */
   async getCurrentUser(): Promise<ApiResponse> {
     return this.request('GET', '/users/me');
+  }
+
+  /**
+   * Get a specific user by ID
+   */
+  async getUser(userId: string): Promise<ApiResponse> {
+    return this.request('GET', `/users/${userId}`);
   }
 
   // ============================================
