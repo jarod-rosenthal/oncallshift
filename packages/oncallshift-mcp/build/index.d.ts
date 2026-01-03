@@ -23,7 +23,8 @@
  * ```
  */
 export { OnCallShiftClient } from './client.js';
-export type { OnCallShiftClientConfig, ApiResponse, Incident, Service, Team, Schedule, OnCallUser, User, } from './client.js';
+export type { OnCallShiftClientConfig, ApiResponse, ListIncidentsParams, ListServicesParams, ListTeamsParams, ListSchedulesParams, ListUsersParams, CreateTeamPayload, CreateServicePayload, CreateSchedulePayload, ScheduleLayer, CreateEscalationPolicyPayload, EscalationStep, EscalationTarget, InviteUserPayload, CreateRunbookPayload, RunbookStep, ImportOptions, CreateIntegrationPayload, } from './client.js';
 export { TOOL_DEFINITIONS, TOOL_HANDLERS } from './tools/index.js';
-export type { ToolDefinition, ToolHandler } from './tools/index.js';
+export type { ToolContent, ToolResponse, ToolHandler } from './tools/index.js';
+export { ANALYTICS_TOOL_DEFINITIONS, ANALYTICS_TOOL_HANDLERS } from './tools/analytics.js';
 //# sourceMappingURL=index.d.ts.map

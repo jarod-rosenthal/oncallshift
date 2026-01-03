@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification, Runbook, IncidentResponder, IncidentSubscriber, IncidentStatusUpdate, Postmortem } from '../../shared/models';
 import { sendNotificationMessage } from '../../shared/queues/sqs-client';
@@ -13,8 +13,8 @@ import { setLocationHeader } from '../../shared/utils/location-header';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticateUser);
+// All routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * GET /api/v1/incidents
@@ -271,13 +271,22 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
-    const user = req.user!;
+
+    // Support both JWT auth (req.user) and org API key auth (req.organizationApiKey)
+    const user = req.user;
+    const apiKey = req.organizationApiKey;
+
+    // Determine actor info for logging and events
+    // For API key auth, use the key creator's ID if available, otherwise null
+    const actorId: string | null = user?.id ?? apiKey?.createdById ?? null;
+    const actorName = user?.fullName || user?.email || (apiKey?.name ? `API Key: ${apiKey.name}` : 'API');
+    const actorType: 'user' | 'api_key' = user ? 'user' : 'api_key';
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
     const eventRepo = dataSource.getRepository(IncidentEvent);
 
-    const incident = await incidentRepo.findOne({
+    let incident = await incidentRepo.findOne({
       where: { id, orgId },
       relations: ['service'],
     });
@@ -293,27 +302,28 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
     // Update incident
     incident.state = 'acknowledged';
     incident.acknowledgedAt = new Date();
-    incident.acknowledgedBy = user.id;
+    incident.acknowledgedBy = actorId;
     await incidentRepo.save(incident);
 
     // Create event
     const event = eventRepo.create({
       incidentId: incident.id,
       type: 'acknowledge',
-      actorId: user.id,
-      message: `Incident acknowledged by ${user.fullName || user.email}`,
+      actorId: actorId,
+      message: `Incident acknowledged by ${actorName}`,
     });
     await eventRepo.save(event);
 
     logger.info('Incident acknowledged', {
       incidentId: incident.id,
-      userId: user.id,
+      actorId,
+      actorType,
       incidentNumber: incident.incidentNumber,
     });
 
     // Trigger automatic workflows
     try {
-      await workflowEngine.processEvent(orgId, incident.id, 'incident.acknowledged', user.id);
+      await workflowEngine.processEvent(orgId, incident.id, 'incident.acknowledged', actorId || undefined);
     } catch (workflowError) {
       logger.error('Error triggering workflows on acknowledge', workflowError);
       // Don't fail the request if workflows fail
@@ -331,8 +341,8 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
             resource_type: 'incident',
             occurred_at: new Date().toISOString(),
             agent: {
-              id: user.id,
-              type: 'user',
+              id: actorId || 'api',
+              type: actorType,
             },
             data: {
               id: incident.id,
@@ -342,10 +352,14 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
               service_id: incident.serviceId,
               state: incident.state,
               acknowledged_at: incident.acknowledgedAt?.toISOString(),
-              acknowledged_by: {
+              acknowledged_by: user ? {
                 id: user.id,
                 email: user.email,
                 full_name: user.fullName,
+              } : {
+                id: 'api',
+                type: 'api_key',
+                name: apiKey?.name,
               },
             },
           },
@@ -357,8 +371,14 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
       // Don't fail the request if webhooks fail
     }
 
+    // Reload incident with full relations for response
+    const updatedIncident = await incidentRepo.findOne({
+      where: { id, orgId },
+      relations: ['service', 'acknowledgedByUser', 'resolvedByUser', 'assignedToUser'],
+    });
+
     return res.json({
-      incident: formatIncident(incident),
+      incident: formatIncident(updatedIncident || incident),
       message: 'Incident acknowledged successfully',
     });
   } catch (error) {
@@ -376,13 +396,22 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { note } = req.body || {};
     const orgId = req.orgId!;
-    const user = req.user!;
+
+    // Support both JWT auth (req.user) and org API key auth (req.organizationApiKey)
+    const user = req.user;
+    const apiKey = req.organizationApiKey;
+
+    // Determine actor info for logging and events
+    // For API key auth, use the key creator's ID if available, otherwise null
+    const actorId: string | null = user?.id ?? apiKey?.createdById ?? null;
+    const actorName = user?.fullName || user?.email || (apiKey?.name ? `API Key: ${apiKey.name}` : 'API');
+    const actorType: 'user' | 'api_key' = user ? 'user' : 'api_key';
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
     const eventRepo = dataSource.getRepository(IncidentEvent);
 
-    const incident = await incidentRepo.findOne({
+    let incident = await incidentRepo.findOne({
       where: { id, orgId },
       relations: ['service'],
     });
@@ -398,15 +427,15 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
     // Update incident
     incident.state = 'resolved';
     incident.resolvedAt = new Date();
-    incident.resolvedBy = user.id;
+    incident.resolvedBy = actorId;
     await incidentRepo.save(incident);
 
     // Create resolve event
     const event = eventRepo.create({
       incidentId: incident.id,
       type: 'resolve',
-      actorId: user.id,
-      message: `Incident resolved by ${user.fullName || user.email}`,
+      actorId: actorId,
+      message: `Incident resolved by ${actorName}`,
     });
     await eventRepo.save(event);
 
@@ -415,7 +444,7 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
       const noteEvent = eventRepo.create({
         incidentId: incident.id,
         type: 'note',
-        actorId: user.id,
+        actorId: actorId,
         message: `[Resolution Note] ${note.trim()}`,
       });
       await eventRepo.save(noteEvent);
@@ -423,7 +452,8 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
 
     logger.info('Incident resolved', {
       incidentId: incident.id,
-      userId: user.id,
+      actorId,
+      actorType,
       incidentNumber: incident.incidentNumber,
       hasNote: !!note,
     });
@@ -440,8 +470,8 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
             resource_type: 'incident',
             occurred_at: new Date().toISOString(),
             agent: {
-              id: user.id,
-              type: 'user',
+              id: actorId || 'api',
+              type: actorType,
             },
             data: {
               id: incident.id,
@@ -451,10 +481,14 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
               service_id: incident.serviceId,
               state: incident.state,
               resolved_at: incident.resolvedAt?.toISOString(),
-              resolved_by: {
+              resolved_by: user ? {
                 id: user.id,
                 email: user.email,
                 full_name: user.fullName,
+              } : {
+                id: 'api',
+                type: 'api_key',
+                name: apiKey?.name,
               },
             },
           },
@@ -466,8 +500,14 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
       // Don't fail the request if webhooks fail
     }
 
+    // Reload incident with full relations for response
+    const updatedIncident = await incidentRepo.findOne({
+      where: { id, orgId },
+      relations: ['service', 'acknowledgedByUser', 'resolvedByUser', 'assignedToUser'],
+    });
+
     return res.json({
-      incident: formatIncident(incident),
+      incident: formatIncident(updatedIncident || incident),
       message: 'Incident resolved successfully',
     });
   } catch (error) {

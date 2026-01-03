@@ -239,5 +239,219 @@ export class OnCallShiftClient {
     async getCurrentUser() {
         return this.request('GET', '/users/me');
     }
+    // ============================================
+    // Escalation Policies
+    // ============================================
+    /**
+     * List all escalation policies
+     */
+    async listEscalationPolicies(params) {
+        const queryParams = new URLSearchParams();
+        if (params?.limit)
+            queryParams.set('limit', params.limit.toString());
+        if (params?.offset)
+            queryParams.set('offset', params.offset.toString());
+        const query = queryParams.toString();
+        const endpoint = `/escalation-policies${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Create a new escalation policy
+     */
+    async createEscalationPolicy(policy) {
+        return this.request('POST', '/escalation-policies', policy);
+    }
+    /**
+     * Get a single escalation policy by ID
+     */
+    async getEscalationPolicy(policyId) {
+        return this.request('GET', `/escalation-policies/${policyId}`);
+    }
+    // ============================================
+    // User Management
+    // ============================================
+    /**
+     * Invite a new user to the organization
+     */
+    async inviteUser(invitation) {
+        return this.request('POST', '/users/invite', invitation);
+    }
+    /**
+     * Add user to teams
+     */
+    async addUserToTeams(userId, teamIds) {
+        return this.request('POST', `/users/${userId}/teams`, { team_ids: teamIds });
+    }
+    // ============================================
+    // Runbooks
+    // ============================================
+    /**
+     * List all runbooks
+     */
+    async listRunbooks(params) {
+        const queryParams = new URLSearchParams();
+        if (params?.service_id)
+            queryParams.set('service_id', params.service_id);
+        if (params?.limit)
+            queryParams.set('limit', params.limit.toString());
+        if (params?.offset)
+            queryParams.set('offset', params.offset.toString());
+        const query = queryParams.toString();
+        const endpoint = `/runbooks${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Create a new runbook
+     */
+    async createRunbook(runbook) {
+        return this.request('POST', '/runbooks', runbook);
+    }
+    /**
+     * Get a single runbook by ID
+     */
+    async getRunbook(runbookId) {
+        return this.request('GET', `/runbooks/${runbookId}`);
+    }
+    // ============================================
+    // Import/Export
+    // ============================================
+    /**
+     * Import data from another platform (PagerDuty, Opsgenie)
+     */
+    async importFromPlatform(platform, data, options) {
+        const endpoint = platform === 'pagerduty' ? '/import/pagerduty' : '/import/opsgenie';
+        return this.request('POST', endpoint, {
+            data,
+            ...options,
+        });
+    }
+    /**
+     * Validate import data before importing (dry-run)
+     */
+    async validateImport(platform, data) {
+        const endpoint = platform === 'pagerduty' ? '/import/pagerduty/validate' : '/import/opsgenie/validate';
+        return this.request('POST', endpoint, { data });
+    }
+    // ============================================
+    // Integrations
+    // ============================================
+    /**
+     * List all integrations
+     */
+    async listIntegrations(params) {
+        const queryParams = new URLSearchParams();
+        if (params?.type)
+            queryParams.set('type', params.type);
+        if (params?.limit)
+            queryParams.set('limit', params.limit.toString());
+        const query = queryParams.toString();
+        const endpoint = `/integrations${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Create a new integration
+     */
+    async createIntegration(integration) {
+        return this.request('POST', '/integrations', integration);
+    }
+    /**
+     * Get a single integration by ID
+     */
+    async getIntegration(integrationId) {
+        return this.request('GET', `/integrations/${integrationId}`);
+    }
+    /**
+     * Link a service to an integration
+     */
+    async linkServiceToIntegration(integrationId, serviceId, configOverrides) {
+        return this.request('POST', `/integrations/${integrationId}/services/${serviceId}`, {
+            config_overrides: configOverrides,
+        });
+    }
+    // ============================================
+    // Analytics
+    // ============================================
+    /**
+     * Get analytics overview with incident metrics
+     */
+    async getAnalyticsOverview(params) {
+        const queryParams = new URLSearchParams();
+        if (params?.startDate)
+            queryParams.set('startDate', params.startDate);
+        if (params?.endDate)
+            queryParams.set('endDate', params.endDate);
+        const query = queryParams.toString();
+        const endpoint = `/analytics/overview${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Get analytics for a specific team
+     */
+    async getTeamAnalytics(teamId, params) {
+        const queryParams = new URLSearchParams();
+        if (params?.startDate)
+            queryParams.set('startDate', params.startDate);
+        if (params?.endDate)
+            queryParams.set('endDate', params.endDate);
+        const query = queryParams.toString();
+        const endpoint = `/analytics/teams/${teamId}${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Get analytics for a specific user
+     */
+    async getUserAnalytics(userId, params) {
+        const queryParams = new URLSearchParams();
+        if (params?.startDate)
+            queryParams.set('startDate', params.startDate);
+        if (params?.endDate)
+            queryParams.set('endDate', params.endDate);
+        const query = queryParams.toString();
+        const endpoint = `/analytics/users/${userId}${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Get top responders analytics
+     */
+    async getTopResponders(params) {
+        const queryParams = new URLSearchParams();
+        if (params?.startDate)
+            queryParams.set('startDate', params.startDate);
+        if (params?.endDate)
+            queryParams.set('endDate', params.endDate);
+        if (params?.limit)
+            queryParams.set('limit', params.limit.toString());
+        const query = queryParams.toString();
+        const endpoint = `/analytics/top-responders${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Get SLA compliance analytics
+     */
+    async getSlaAnalytics(params) {
+        const queryParams = new URLSearchParams();
+        if (params?.startDate)
+            queryParams.set('startDate', params.startDate);
+        if (params?.endDate)
+            queryParams.set('endDate', params.endDate);
+        if (params?.ackTargetMinutes)
+            queryParams.set('ackTargetMinutes', params.ackTargetMinutes.toString());
+        if (params?.resolveTargetMinutes)
+            queryParams.set('resolveTargetMinutes', params.resolveTargetMinutes.toString());
+        const query = queryParams.toString();
+        const endpoint = `/analytics/sla${query ? `?${query}` : ''}`;
+        return this.request('GET', endpoint);
+    }
+    /**
+     * Get incident metrics (alias for getAnalyticsOverview with grouping support)
+     */
+    async getIncidentMetrics(params) {
+        // For now, use analytics overview and transform on client side
+        // The backend could be extended to support groupBy in the future
+        return this.getAnalyticsOverview({
+            startDate: params?.startDate,
+            endDate: params?.endDate,
+        });
+    }
 }
 //# sourceMappingURL=client.js.map

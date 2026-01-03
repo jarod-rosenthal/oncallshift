@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query, validationResult } from 'express-validator';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Incident, User, Team, Service, ScheduleLayerMember } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
@@ -8,8 +8,8 @@ import { Between, In } from 'typeorm';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticateUser);
+// All routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * Helper to get date range from query params

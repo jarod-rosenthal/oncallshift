@@ -43,6 +43,7 @@ import cloudCredentialsRoutes from './routes/cloud-credentials';
 import aiAssistantRoutes from './routes/ai-assistant';
 import runbookAutomationRoutes from './routes/runbook-automation';
 import aiConfigurationRoutes from './routes/ai-configuration';
+import aiRecommendationsRoutes from './routes/ai-recommendations';
 import apiKeysRoutes from './routes/api-keys';
 import onboardingRoutes from './routes/onboarding';
 import { captureRawBody, etagMiddleware } from '../shared/middleware';
@@ -292,6 +293,7 @@ export function createApp(): Express {
   app.use('/api/v1/postmortems', idempotencyMiddleware, postmortemsRoutes);
   app.use('/api/v1/cloud-credentials', idempotencyMiddleware, cloudCredentialsRoutes);
   app.use('/api/v1/ai', aiConfigurationRoutes); // AI-powered natural language configuration
+  app.use('/api/v1/ai', aiRecommendationsRoutes); // AI-powered proactive recommendations
   app.use('/api/v1/api-keys', idempotencyMiddleware, apiKeysRoutes); // Organization API key management
   app.use('/api/v1/onboarding', onboardingRoutes); // AI-powered conversational onboarding
 

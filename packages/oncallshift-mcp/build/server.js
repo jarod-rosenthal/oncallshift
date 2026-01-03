@@ -13,6 +13,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ListPromptsRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
 import { OnCallShiftClient } from './client.js';
 import { TOOL_DEFINITIONS, TOOL_HANDLERS } from './tools/index.js';
+import { ANALYTICS_TOOL_DEFINITIONS, ANALYTICS_TOOL_HANDLERS } from './tools/analytics.js';
+// Combine all tool definitions and handlers
+const ALL_TOOL_DEFINITIONS = [...TOOL_DEFINITIONS, ...ANALYTICS_TOOL_DEFINITIONS];
+const ALL_TOOL_HANDLERS = { ...TOOL_HANDLERS, ...ANALYTICS_TOOL_HANDLERS };
 // Server configuration from environment variables
 const API_KEY = process.env.ONCALLSHIFT_API_KEY;
 const BASE_URL = process.env.ONCALLSHIFT_BASE_URL || 'https://oncallshift.com/api/v1';
@@ -54,27 +58,30 @@ function registerToolHandlers(server, client) {
     // Handle tool listing
     server.setRequestHandler(ListToolsRequestSchema, async () => {
         return {
-            tools: TOOL_DEFINITIONS,
+            tools: ALL_TOOL_DEFINITIONS,
         };
     });
     // Handle tool execution
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
-        const handler = TOOL_HANDLERS[name];
+        const handler = ALL_TOOL_HANDLERS[name];
         if (!handler) {
             return {
                 isError: true,
                 content: [
                     {
                         type: 'text',
-                        text: `Unknown tool: ${name}. Available tools: ${TOOL_DEFINITIONS.map((t) => t.name).join(', ')}`,
+                        text: `Unknown tool: ${name}. Available tools: ${ALL_TOOL_DEFINITIONS.map((t) => t.name).join(', ')}`,
                     },
                 ],
             };
         }
         try {
             const result = await handler(client, args || {});
-            return result;
+            return {
+                isError: result.isError,
+                content: result.content.map(c => ({ type: 'text', text: c.text })),
+            };
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

@@ -23,13 +23,13 @@ import {
 } from '../../shared/models';
 import { EntityType } from '../../shared/models/EntityTag';
 import { RoutingCondition, ConditionOperator, MatchType } from '../../shared/models/AlertRoutingRule';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { logger } from '../../shared/utils/logger';
 
 const router = Router();
 
-// All import routes require authentication
-router.use(authenticateUser);
+// All import routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 // ============================================================================
 // PagerDuty Import API

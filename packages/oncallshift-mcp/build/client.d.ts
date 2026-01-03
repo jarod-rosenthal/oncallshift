@@ -3,134 +3,164 @@
  *
  * A wrapper around the OnCallShift REST API for use by the MCP server.
  */
+/**
+ * Configuration options for the OnCallShift client
+ */
 export interface OnCallShiftClientConfig {
     apiKey: string;
     baseUrl?: string;
 }
-export interface ApiResponse<T> {
+/**
+ * Standard API response wrapper
+ */
+export interface ApiResponse<T = unknown> {
     success: boolean;
     data?: T;
     error?: string;
 }
-export interface Incident {
-    id: string;
-    incidentNumber: number;
-    summary: string;
-    details?: string;
-    severity: 'critical' | 'error' | 'warning' | 'info';
-    state: 'triggered' | 'acknowledged' | 'resolved';
-    urgency: 'high' | 'low';
-    service: {
-        id: string;
-        name: string;
-    };
-    triggeredAt: string;
-    acknowledgedAt?: string | null;
-    acknowledgedBy?: {
-        id: string;
-        fullName: string | null;
-        email: string;
-    } | null;
-    resolvedAt?: string | null;
-    resolvedBy?: {
-        id: string;
-        fullName: string | null;
-        email: string;
-    } | null;
-    assignedTo?: {
-        id: string;
-        fullName: string | null;
-        email: string;
-    } | null;
-    currentEscalationStep: number;
-    createdAt: string;
-    updatedAt: string;
-}
-export interface Service {
-    id: string;
-    name: string;
-    description?: string | null;
-    apiKey?: string;
-    status: 'active' | 'maintenance' | 'disabled';
-    schedule?: {
-        id: string;
-        name: string;
-    } | null;
-    escalationPolicy?: {
-        id: string;
-        name: string;
-    } | null;
-    createdAt: string;
-    updatedAt: string;
-}
-export interface Team {
-    id: string;
-    name: string;
-    description?: string | null;
-    slug?: string;
-    memberCount?: number;
-    members?: Array<{
-        id: string;
-        userId: string;
-        role: string;
-        user: {
-            id: string;
-            fullName: string | null;
-            email: string;
-        } | null;
-    }>;
-    createdAt: string;
-    updatedAt: string;
-}
-export interface Schedule {
-    id: string;
-    name: string;
-    description?: string | null;
-    type: 'manual' | 'daily' | 'weekly';
-    timezone: string;
-    currentOncallUserId?: string | null;
-    isOverride?: boolean;
-    overrideUntil?: string | null;
-    createdAt: string;
-    updatedAt: string;
-}
-export interface OnCallUser {
-    id: string;
-    name: string;
-    email: string;
-    phone?: string;
-    schedule_id: string;
-    schedule_name: string;
-    start_time: string;
-    end_time: string;
+/**
+ * Incident filters for listing
+ */
+export interface ListIncidentsParams {
+    status?: 'triggered' | 'acknowledged' | 'resolved';
+    service_id?: string;
+    limit?: number;
+    offset?: number;
 }
 /**
- * On-call data returned from the schedules/oncall endpoint
+ * Service filters for listing
  */
-export interface OnCallData {
-    service: {
-        id: string;
-        name: string;
-    };
-    schedule: {
-        id: string;
-        name: string;
-    };
-    oncallUser: {
-        id: string;
-        fullName: string;
-        email: string;
-        profilePictureUrl?: string | null;
-    } | null;
-    isOverride: boolean;
-    overrideUntil: string | null;
+export interface ListServicesParams {
+    team_id?: string;
+    limit?: number;
+    offset?: number;
 }
-export interface User {
-    id: string;
+/**
+ * Team filters for listing
+ */
+export interface ListTeamsParams {
+    limit?: number;
+    offset?: number;
+}
+/**
+ * Schedule filters for listing
+ */
+export interface ListSchedulesParams {
+    team_id?: string;
+    limit?: number;
+    offset?: number;
+}
+/**
+ * User filters for listing
+ */
+export interface ListUsersParams {
+    team_id?: string;
+    limit?: number;
+    offset?: number;
+}
+/**
+ * Team creation payload
+ */
+export interface CreateTeamPayload {
     name: string;
+    description?: string;
+}
+/**
+ * Service creation payload
+ */
+export interface CreateServicePayload {
+    name: string;
+    description?: string;
+    team_id?: string;
+    escalation_policy_id?: string;
+    schedule_id?: string;
+}
+/**
+ * Schedule creation payload
+ */
+export interface CreateSchedulePayload {
+    name: string;
+    description?: string;
+    timezone?: string;
+    team_id?: string;
+    layers?: ScheduleLayer[];
+}
+/**
+ * Schedule layer configuration
+ */
+export interface ScheduleLayer {
+    name: string;
+    rotation_type: 'daily' | 'weekly';
+    users: string[];
+    start_time: string;
+}
+/**
+ * Escalation policy creation payload
+ */
+export interface CreateEscalationPolicyPayload {
+    name: string;
+    description?: string;
+    steps: EscalationStep[];
+    repeat_count?: number;
+}
+/**
+ * Escalation step configuration
+ */
+export interface EscalationStep {
+    delay_minutes: number;
+    targets: EscalationTarget[];
+}
+/**
+ * Escalation target (user or schedule)
+ */
+export interface EscalationTarget {
+    type: 'user' | 'schedule';
+    id: string;
+}
+/**
+ * User invitation payload
+ */
+export interface InviteUserPayload {
     email: string;
-    role: string;
-    created_at: string;
+    full_name: string;
+    role?: 'admin' | 'user';
+    team_ids?: string[];
+}
+/**
+ * Runbook creation payload
+ */
+export interface CreateRunbookPayload {
+    name: string;
+    description?: string;
+    service_id?: string;
+    steps: RunbookStep[];
+}
+/**
+ * Runbook step configuration
+ */
+export interface RunbookStep {
+    order: number;
+    title: string;
+    description?: string;
+    type: 'manual' | 'command' | 'api_call' | 'conditional';
+    content?: string;
+    expected_duration_minutes?: number;
+}
+/**
+ * Import options for platform migration
+ */
+export interface ImportOptions {
+    preserve_keys?: boolean;
+    dry_run?: boolean;
+}
+/**
+ * Integration creation payload
+ */
+export interface CreateIntegrationPayload {
+    type: 'slack' | 'teams' | 'jira' | 'servicenow' | 'webhook' | 'datadog' | 'cloudwatch' | 'prometheus' | 'github';
+    name: string;
+    config?: Record<string, unknown>;
+    features?: Record<string, boolean>;
 }
 export declare class OnCallShiftClient {
     private apiKey;
@@ -143,145 +173,194 @@ export declare class OnCallShiftClient {
     /**
      * List incidents with optional filters
      */
-    listIncidents(params?: {
-        status?: 'triggered' | 'acknowledged' | 'resolved';
-        service_id?: string;
-        limit?: number;
-        offset?: number;
-    }): Promise<ApiResponse<{
-        incidents: Incident[];
-        pagination: {
-            total: number;
-            limit: number;
-            offset: number;
-        };
-    }>>;
+    listIncidents(params?: ListIncidentsParams): Promise<ApiResponse>;
     /**
      * Get a single incident by ID
      */
-    getIncident(incidentId: string): Promise<ApiResponse<Incident>>;
+    getIncident(incidentId: string): Promise<ApiResponse>;
     /**
      * Acknowledge an incident
      */
-    acknowledgeIncident(incidentId: string): Promise<ApiResponse<Incident>>;
+    acknowledgeIncident(incidentId: string): Promise<ApiResponse>;
     /**
      * Resolve an incident
      */
-    resolveIncident(incidentId: string): Promise<ApiResponse<Incident>>;
+    resolveIncident(incidentId: string): Promise<ApiResponse>;
     /**
      * Reassign an incident to different users
      */
-    reassignIncident(incidentId: string, userIds: string[]): Promise<ApiResponse<Incident>>;
+    reassignIncident(incidentId: string, userIds: string[]): Promise<ApiResponse>;
     /**
      * Escalate an incident to the next level
      */
-    escalateIncident(incidentId: string): Promise<ApiResponse<Incident>>;
+    escalateIncident(incidentId: string): Promise<ApiResponse>;
     /**
      * Add a note to an incident
      */
-    addIncidentNote(incidentId: string, content: string): Promise<ApiResponse<{
-        id: string;
-        content: string;
-        created_at: string;
-    }>>;
+    addIncidentNote(incidentId: string, content: string): Promise<ApiResponse>;
     /**
      * List all services
      */
-    listServices(params?: {
-        team_id?: string;
-        limit?: number;
-        offset?: number;
-    }): Promise<ApiResponse<{
-        services: Service[];
-    }>>;
+    listServices(params?: ListServicesParams): Promise<ApiResponse>;
     /**
      * Get a single service by ID
      */
-    getService(serviceId: string): Promise<ApiResponse<Service>>;
+    getService(serviceId: string): Promise<ApiResponse>;
     /**
      * Create a new service
      */
-    createService(service: {
-        name: string;
-        description?: string;
-        escalation_policy_id?: string;
-        team_id?: string;
-    }): Promise<ApiResponse<Service>>;
+    createService(service: CreateServicePayload): Promise<ApiResponse>;
     /**
      * List all teams
      */
-    listTeams(params?: {
-        limit?: number;
-        offset?: number;
-    }): Promise<ApiResponse<{
-        teams: Team[];
-    }>>;
+    listTeams(params?: ListTeamsParams): Promise<ApiResponse>;
     /**
      * Get a single team by ID
      */
-    getTeam(teamId: string): Promise<ApiResponse<Team>>;
+    getTeam(teamId: string): Promise<ApiResponse>;
     /**
      * Create a new team
      */
-    createTeam(team: {
-        name: string;
-        description?: string;
-    }): Promise<ApiResponse<Team>>;
+    createTeam(team: CreateTeamPayload): Promise<ApiResponse>;
     /**
      * List all schedules
      */
-    listSchedules(params?: {
-        team_id?: string;
-        limit?: number;
-        offset?: number;
-    }): Promise<ApiResponse<{
-        schedules: Schedule[];
-    }>>;
+    listSchedules(params?: ListSchedulesParams): Promise<ApiResponse>;
     /**
      * Get a single schedule by ID
      */
-    getSchedule(scheduleId: string): Promise<ApiResponse<Schedule>>;
+    getSchedule(scheduleId: string): Promise<ApiResponse>;
     /**
      * Create a new schedule
      */
-    createSchedule(schedule: {
-        name: string;
-        description?: string;
-        timezone: string;
-        team_id?: string;
-        layers?: Array<{
-            name: string;
-            rotation_type: 'daily' | 'weekly' | 'custom';
-            rotation_interval?: number;
-            users: string[];
-            start_time: string;
-            end_time?: string;
-        }>;
-    }): Promise<ApiResponse<Schedule>>;
+    createSchedule(schedule: CreateSchedulePayload): Promise<ApiResponse>;
     /**
      * Get current on-call users for a schedule
      */
-    getOnCallForSchedule(scheduleId: string): Promise<ApiResponse<OnCallUser[]>>;
+    getOnCallForSchedule(scheduleId: string): Promise<ApiResponse>;
     /**
      * Get all currently on-call users across all schedules/services
      */
-    getOnCallNow(): Promise<ApiResponse<{
-        oncall: OnCallData[];
-    }>>;
+    getOnCallNow(): Promise<ApiResponse>;
     /**
      * List all users
      */
-    listUsers(params?: {
-        team_id?: string;
-        limit?: number;
-        offset?: number;
-    }): Promise<ApiResponse<{
-        users: User[];
-        total: number;
-    }>>;
+    listUsers(params?: ListUsersParams): Promise<ApiResponse>;
     /**
      * Get current authenticated user
      */
-    getCurrentUser(): Promise<ApiResponse<User>>;
+    getCurrentUser(): Promise<ApiResponse>;
+    /**
+     * List all escalation policies
+     */
+    listEscalationPolicies(params?: {
+        limit?: number;
+        offset?: number;
+    }): Promise<ApiResponse>;
+    /**
+     * Create a new escalation policy
+     */
+    createEscalationPolicy(policy: CreateEscalationPolicyPayload): Promise<ApiResponse>;
+    /**
+     * Get a single escalation policy by ID
+     */
+    getEscalationPolicy(policyId: string): Promise<ApiResponse>;
+    /**
+     * Invite a new user to the organization
+     */
+    inviteUser(invitation: InviteUserPayload): Promise<ApiResponse>;
+    /**
+     * Add user to teams
+     */
+    addUserToTeams(userId: string, teamIds: string[]): Promise<ApiResponse>;
+    /**
+     * List all runbooks
+     */
+    listRunbooks(params?: {
+        service_id?: string;
+        limit?: number;
+        offset?: number;
+    }): Promise<ApiResponse>;
+    /**
+     * Create a new runbook
+     */
+    createRunbook(runbook: CreateRunbookPayload): Promise<ApiResponse>;
+    /**
+     * Get a single runbook by ID
+     */
+    getRunbook(runbookId: string): Promise<ApiResponse>;
+    /**
+     * Import data from another platform (PagerDuty, Opsgenie)
+     */
+    importFromPlatform(platform: 'pagerduty' | 'opsgenie', data: unknown, options?: ImportOptions): Promise<ApiResponse>;
+    /**
+     * Validate import data before importing (dry-run)
+     */
+    validateImport(platform: 'pagerduty' | 'opsgenie', data: unknown): Promise<ApiResponse>;
+    /**
+     * List all integrations
+     */
+    listIntegrations(params?: {
+        type?: string;
+        limit?: number;
+    }): Promise<ApiResponse>;
+    /**
+     * Create a new integration
+     */
+    createIntegration(integration: CreateIntegrationPayload): Promise<ApiResponse>;
+    /**
+     * Get a single integration by ID
+     */
+    getIntegration(integrationId: string): Promise<ApiResponse>;
+    /**
+     * Link a service to an integration
+     */
+    linkServiceToIntegration(integrationId: string, serviceId: string, configOverrides?: Record<string, unknown>): Promise<ApiResponse>;
+    /**
+     * Get analytics overview with incident metrics
+     */
+    getAnalyticsOverview(params?: {
+        startDate?: string;
+        endDate?: string;
+    }): Promise<ApiResponse>;
+    /**
+     * Get analytics for a specific team
+     */
+    getTeamAnalytics(teamId: string, params?: {
+        startDate?: string;
+        endDate?: string;
+    }): Promise<ApiResponse>;
+    /**
+     * Get analytics for a specific user
+     */
+    getUserAnalytics(userId: string, params?: {
+        startDate?: string;
+        endDate?: string;
+    }): Promise<ApiResponse>;
+    /**
+     * Get top responders analytics
+     */
+    getTopResponders(params?: {
+        startDate?: string;
+        endDate?: string;
+        limit?: number;
+    }): Promise<ApiResponse>;
+    /**
+     * Get SLA compliance analytics
+     */
+    getSlaAnalytics(params?: {
+        startDate?: string;
+        endDate?: string;
+        ackTargetMinutes?: number;
+        resolveTargetMinutes?: number;
+    }): Promise<ApiResponse>;
+    /**
+     * Get incident metrics (alias for getAnalyticsOverview with grouping support)
+     */
+    getIncidentMetrics(params?: {
+        startDate?: string;
+        endDate?: string;
+        groupBy?: 'service' | 'team' | 'severity' | 'user';
+    }): Promise<ApiResponse>;
 }
 //# sourceMappingURL=client.d.ts.map

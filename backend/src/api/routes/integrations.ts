@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import crypto from 'crypto';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Integration, IntegrationType, Service } from '../../shared/models';
 import { getIntegrationService } from '../../shared/services/integration-service';
@@ -126,8 +126,8 @@ router.post('/slack/interactions', async (req: Request, res: Response) => {
   }
 });
 
-// All routes below require authentication
-router.use(authenticateUser);
+// All routes below require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * GET /api/v1/integrations

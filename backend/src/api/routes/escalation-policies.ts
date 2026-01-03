@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { EscalationPolicy, EscalationStep, EscalationTarget, Schedule, User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
@@ -15,8 +15,8 @@ const isValidUUID = (value: any) => {
   return UUID_REGEX.test(value);
 };
 
-// All routes require authentication
-router.use(authenticateUser);
+// All routes require authentication (supports JWT, service API key, and org API key)
+router.use(authenticateRequest);
 
 /**
  * @swagger

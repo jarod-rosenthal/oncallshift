@@ -22,10 +22,34 @@
  * const incidents = await client.listIncidents({ status: 'triggered' });
  * ```
  */
+
 // Export the API client for programmatic use
 export { OnCallShiftClient } from './client.js';
+export type {
+  OnCallShiftClientConfig,
+  ApiResponse,
+  ListIncidentsParams,
+  ListServicesParams,
+  ListTeamsParams,
+  ListSchedulesParams,
+  ListUsersParams,
+  CreateTeamPayload,
+  CreateServicePayload,
+  CreateSchedulePayload,
+  ScheduleLayer,
+  CreateEscalationPolicyPayload,
+  EscalationStep,
+  EscalationTarget,
+  InviteUserPayload,
+  CreateRunbookPayload,
+  RunbookStep,
+  ImportOptions,
+  CreateIntegrationPayload,
+} from './client.js';
+
 // Export tool definitions for inspection
 export { TOOL_DEFINITIONS, TOOL_HANDLERS } from './tools/index.js';
+export type { ToolContent, ToolResponse, ToolHandler } from './tools/index.js';
+
 // Export analytics tools
 export { ANALYTICS_TOOL_DEFINITIONS, ANALYTICS_TOOL_HANDLERS } from './tools/analytics.js';
-//# sourceMappingURL=index.js.map

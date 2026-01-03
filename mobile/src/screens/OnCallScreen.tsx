@@ -825,7 +825,8 @@ const styles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingTop: 2,
+    paddingBottom: 8,
   },
   currentOnCallLeft: {
     flexDirection: 'row',
@@ -836,7 +837,7 @@ const styles = (colors: any) => StyleSheet.create({
   },
   currentOnCallInfo: {
     flex: 1,
-    justifyContent: 'center',
+    alignItems: 'flex-start',
   },
   currentServiceName: {
     color: colors.textPrimary,
