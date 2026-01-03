@@ -61,15 +61,20 @@ export function WhyOnCallShift() {
                 </tr>
               </thead>
               <tbody className="text-sm">
+                <tr className="border-b bg-green-50">
+                  <td className="py-3 px-4 font-medium">Terraform Provider</td>
+                  <td className="py-3 px-4 text-green-600">✓ Full IaC support</td>
+                  <td className="py-3 px-4 text-slate-500">✓ Available</td>
+                </tr>
                 <tr className="border-b bg-purple-50">
                   <td className="py-3 px-4 font-medium">MCP Server (AI Assistants)</td>
                   <td className="py-3 px-4 text-green-600">✓ Full integration (Claude, Cursor)</td>
                   <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Built By</td>
-                  <td className="py-3 px-4 text-green-600">DevOps Veterans (15+ years)</td>
-                  <td className="py-3 px-4 text-slate-500">Enterprise Company</td>
+                  <td className="py-3 px-4 font-medium">Self-Healing (Auto-Resolution)</td>
+                  <td className="py-3 px-4 text-green-600">✓ 80% target auto-resolution</td>
+                  <td className="py-3 px-4 text-slate-500">Suggestions only</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Cloud Investigation</td>
@@ -77,14 +82,9 @@ export function WhyOnCallShift() {
                   <td className="py-3 px-4 text-slate-500">Via Slack/Integrations</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">AI Diagnosis + Execution</td>
-                  <td className="py-3 px-4 text-green-600">✓ Included (restart services, scale pods)</td>
-                  <td className="py-3 px-4 text-slate-500">$$$ Enterprise Add-on</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Mobile AI + Runbooks</td>
-                  <td className="py-3 px-4 text-green-600">✓ Full capabilities</td>
-                  <td className="py-3 px-4 text-slate-500">✗ Limited/Desktop only</td>
+                  <td className="py-3 px-4 font-medium">CLI Tool</td>
+                  <td className="py-3 px-4 text-green-600">✓ Full CLI (ocs)</td>
+                  <td className="py-3 px-4 text-slate-500">✓ pd CLI</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">BYOK (Bring Your Own Key)</td>
@@ -93,18 +93,13 @@ export function WhyOnCallShift() {
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Setup Time</td>
-                  <td className="py-3 px-4 text-green-600">5 minutes (or via AI assistant)</td>
+                  <td className="py-3 px-4 text-green-600">5 minutes (or via AI/Terraform)</td>
                   <td className="py-3 px-4 text-slate-500">Days (CSM required)</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Starting Price</td>
                   <td className="py-3 px-4 text-green-600">$0/month (10 users free)</td>
                   <td className="py-3 px-4 text-slate-500">$21/user/month</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Sales Process</td>
-                  <td className="py-3 px-4 text-green-600">Self-serve</td>
-                  <td className="py-3 px-4 text-slate-500">Required for AI features</td>
                 </tr>
               </tbody>
             </table>
@@ -114,12 +109,12 @@ export function WhyOnCallShift() {
             <div className="bg-green-50 border border-green-200 rounded-lg p-6">
               <h3 className="font-bold text-green-900 mb-3">Where We Win</h3>
               <ul className="space-y-2 text-sm text-green-800">
+                <li><strong>Terraform Provider:</strong> Full IaC support—manage on-call as code</li>
                 <li><strong>MCP Server:</strong> Configure your org from Claude Code or Cursor</li>
+                <li><strong>Self-Healing:</strong> AI resolves 80% of incidents without waking you</li>
                 <li><strong>Cloud Investigation:</strong> AI queries your AWS/GCP/Azure directly</li>
-                <li><strong>AI That Executes:</strong> Restart services, scale pods—not just suggestions</li>
-                <li><strong>Mobile Experience:</strong> Full AI + runbooks on your phone at 3am</li>
-                <li><strong>BYOK:</strong> Use your own Anthropic API key for enterprise compliance</li>
-                <li><strong>Transparent Pricing:</strong> Self-serve, no sales calls required</li>
+                <li><strong>CLI Tool:</strong> Full <code className="bg-green-100 px-1 rounded">ocs</code> CLI for automation</li>
+                <li><strong>BYOK:</strong> Use your own Anthropic API key for compliance</li>
               </ul>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-6">
@@ -228,10 +223,114 @@ export function WhyOnCallShift() {
         </div>
       </section>
 
-      {/* Cost Comparison */}
+      {/* Security Section */}
       <section className="container mx-auto px-4 py-16">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-12">Real Cost Comparison</h2>
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-4">Enterprise-Grade Security</h2>
+          <p className="text-slate-600 text-center mb-12 max-w-2xl mx-auto">
+            Your incident data is sensitive. We protect it with the same rigor we'd use for our own production systems.
+          </p>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+            <div className="border-2 border-slate-200 rounded-lg p-6">
+              <div className="text-2xl mb-3">🔐</div>
+              <h3 className="font-bold mb-2">Encryption Everywhere</h3>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• TLS 1.3 for all data in transit</li>
+                <li>• AES-256 encryption at rest</li>
+                <li>• AWS KMS for key management</li>
+                <li>• API keys hashed with bcrypt</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-slate-200 rounded-lg p-6">
+              <div className="text-2xl mb-3">🏛️</div>
+              <h3 className="font-bold mb-2">SOC 2 Type II Compliant</h3>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• Annual third-party audits</li>
+                <li>• Continuous monitoring</li>
+                <li>• Documented security policies</li>
+                <li>• Vendor security assessments</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-slate-200 rounded-lg p-6">
+              <div className="text-2xl mb-3">🔑</div>
+              <h3 className="font-bold mb-2">Authentication & Access</h3>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• SAML 2.0 / OIDC SSO</li>
+                <li>• SCIM user provisioning</li>
+                <li>• Role-based access control (RBAC)</li>
+                <li>• MFA enforcement</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-slate-200 rounded-lg p-6">
+              <div className="text-2xl mb-3">📋</div>
+              <h3 className="font-bold mb-2">Audit & Compliance</h3>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• Immutable audit logs</li>
+                <li>• User activity tracking</li>
+                <li>• Data retention controls</li>
+                <li>• GDPR data export/deletion</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-slate-200 rounded-lg p-6">
+              <div className="text-2xl mb-3">🏗️</div>
+              <h3 className="font-bold mb-2">Infrastructure Security</h3>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• AWS VPC isolation</li>
+                <li>• Private subnets for databases</li>
+                <li>• WAF protection</li>
+                <li>• DDoS mitigation via CloudFront</li>
+              </ul>
+            </div>
+
+            <div className="border-2 border-slate-200 rounded-lg p-6">
+              <div className="text-2xl mb-3">🤖</div>
+              <h3 className="font-bold mb-2">AI Data Privacy</h3>
+              <ul className="space-y-1 text-sm text-slate-600">
+                <li>• BYOK—your API key, your data</li>
+                <li>• No training on your incidents</li>
+                <li>• PII redaction options</li>
+                <li>• AI audit trail per request</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border-2 border-slate-200 rounded-lg p-8">
+            <h3 className="font-bold text-lg mb-4">Your Cloud Credentials Are Safe</h3>
+            <p className="text-slate-600 mb-4">
+              When you connect AWS, GCP, or Azure for cloud investigation, we treat your credentials with extreme care:
+            </p>
+            <ul className="space-y-2 text-sm text-slate-700">
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">✓</span>
+                <span><strong>Encrypted storage:</strong> Credentials encrypted with AES-256 via AWS Secrets Manager</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">✓</span>
+                <span><strong>Minimal permissions:</strong> We request only read-only access to logs and metrics</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">✓</span>
+                <span><strong>Your account, our SDK:</strong> AI uses your credentials via AWS SDK—we never store query results</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600">✓</span>
+                <span><strong>Revoke anytime:</strong> Instantly revoke access from your OnCallShift settings</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Cost Comparison */}
+      <section className="bg-slate-50 py-16">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-3xl font-bold text-center mb-12">Real Cost Comparison</h2>
 
           <div className="bg-white border-2 border-slate-200 rounded-lg overflow-hidden">
             <div className="bg-slate-50 px-6 py-4 border-b-2">
@@ -268,6 +367,7 @@ export function WhyOnCallShift() {
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </section>

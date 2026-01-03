@@ -1,10 +1,14 @@
 import { Router, Request, Response } from 'express';
-import { body, param, query, validationResult } from 'express-validator';
+import { body, param, validationResult } from 'express-validator';
 import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { EscalationPolicy, EscalationStep, EscalationTarget, Schedule, User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { parseGenericFilters, applyBaseFilters } from '../../shared/utils/filtering';
+import { paginationValidators, searchFilterValidator, uuidFilterValidator } from '../../shared/validators/pagination';
+import { notFound, badRequest, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -35,7 +39,7 @@ router.use(authenticateRequest);
  *           type: integer
  *           minimum: 1
  *           maximum: 100
- *           default: 50
+ *           default: 25
  *         description: Maximum number of policies to return
  *       - in: query
  *         name: offset
@@ -44,6 +48,29 @@ router.use(authenticateRequest);
  *           minimum: 0
  *           default: 0
  *         description: Number of policies to skip for pagination
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [name, createdAt]
+ *         description: Field to sort by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         description: Sort order
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search policies by name
+ *       - in: query
+ *         name: team_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by team ID (policies used by services belonging to the team)
  *     responses:
  *       200:
  *         description: List of escalation policies with pagination
@@ -52,12 +79,17 @@ router.use(authenticateRequest);
  *             schema:
  *               type: object
  *               properties:
- *                 policies:
+ *                 data:
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/EscalationPolicy'
+ *                 policies:
+ *                   type: array
+ *                   description: Alias for data (backwards compatibility)
+ *                   items:
+ *                     $ref: '#/components/schemas/EscalationPolicy'
  *                 pagination:
- *                   $ref: '#/components/schemas/Pagination'
+ *                   $ref: '#/components/schemas/PaginationMeta'
  *       401:
  *         description: Unauthorized
  *         content:
@@ -69,35 +101,64 @@ router.use(authenticateRequest);
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/schemas/ProblemDetails'
  */
 router.get(
   '/',
   [
-    query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-    query('offset').optional().isInt({ min: 0 }).toInt(),
+    ...paginationValidators,
+    searchFilterValidator,
+    uuidFilterValidator('team_id'),
   ],
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
       const orgId = req.orgId!;
-      const limit = parseInt(req.query.limit as string) || 50;
-      const offset = parseInt(req.query.offset as string) || 0;
+      const pagination = parsePaginationParams(req.query);
+      const filters = parseGenericFilters(req.query);
 
       const dataSource = await getDataSource();
       const policyRepo = dataSource.getRepository(EscalationPolicy);
 
-      const [policies, total] = await policyRepo.findAndCount({
-        where: { orgId },
-        relations: ['steps', 'steps.schedule', 'steps.targets', 'steps.targets.user', 'steps.targets.schedule'],
-        order: { createdAt: 'DESC' },
-        take: limit,
-        skip: offset,
-      });
+      // Build query with QueryBuilder for filtering support
+      const queryBuilder = policyRepo
+        .createQueryBuilder('policy')
+        .leftJoinAndSelect('policy.steps', 'steps')
+        .leftJoinAndSelect('steps.schedule', 'stepSchedule')
+        .leftJoinAndSelect('steps.targets', 'targets')
+        .leftJoinAndSelect('targets.user', 'targetUser')
+        .leftJoinAndSelect('targets.schedule', 'targetSchedule')
+        .where('policy.org_id = :orgId', { orgId });
+
+      // Apply search filter on name field
+      applyBaseFilters(queryBuilder, filters, 'policy', ['name']);
+
+      // Apply team_id filter - filter policies used by services belonging to the team
+      if (filters.teamId) {
+        queryBuilder
+          .innerJoin('policy.services', 'service')
+          .andWhere('service.team_id = :teamId', { teamId: filters.teamId });
+      }
+
+      // Get valid sort field and apply sorting
+      const sortField = validateSortField('escalationPolicies', pagination.sort, 'createdAt');
+      const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
+      // Map camelCase to snake_case for sorting
+      const snakeCaseSortField = sortField === 'createdAt' ? 'created_at' : sortField;
+      queryBuilder.orderBy(`policy.${snakeCaseSortField}`, sortOrder);
+
+      // Get total count before pagination
+      const total = await queryBuilder.getCount();
+
+      // Apply pagination
+      queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+      const policies = await queryBuilder.getMany();
 
       // Sort steps by order
       policies.forEach(policy => {
@@ -113,18 +174,11 @@ router.get(
         policies.map(policy => formatPolicyWithResolvedUsers(policy, scheduleRepo, userRepo))
       );
 
-      return res.json({
-        policies: formattedPolicies,
-        pagination: {
-          total,
-          limit,
-          offset,
-          hasMore: offset + policies.length < total,
-        },
-      });
+      const lastItem = policies[policies.length - 1];
+      return res.json(paginatedResponse(formattedPolicies, total, pagination, lastItem, 'policies'));
     } catch (error) {
       logger.error('Error fetching escalation policies:', error);
-      return res.status(500).json({ error: 'Failed to fetch escalation policies' });
+      return internalError(res);
     }
   }
 );
@@ -179,7 +233,7 @@ router.get(
 router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return validationError(res, fromExpressValidator(errors.array()));
   }
 
   try {
@@ -195,7 +249,7 @@ router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) =
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Escalation policy not found' });
+      return notFound(res, 'Escalation policy', id);
     }
 
     // Sort steps by order
@@ -211,7 +265,7 @@ router.get('/:id', [param('id').isUUID()], async (req: Request, res: Response) =
     return res.json({ policy: formattedPolicy });
   } catch (error) {
     logger.error('Error fetching escalation policy:', error);
-    return res.status(500).json({ error: 'Failed to fetch escalation policy' });
+    return internalError(res);
   }
 });
 
@@ -286,7 +340,7 @@ router.post(
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
@@ -301,10 +355,10 @@ router.post(
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         if (step.targetType === 'schedule' && !step.scheduleId) {
-          return res.status(400).json({ error: `Step ${i + 1}: Schedule ID required when target type is "schedule"` });
+          return badRequest(res, `Step ${i + 1}: Schedule ID required when target type is "schedule"`);
         }
         if (step.targetType === 'users' && (!step.userIds || step.userIds.length === 0)) {
-          return res.status(400).json({ error: `Step ${i + 1}: At least one user ID required when target type is "users"` });
+          return badRequest(res, `Step ${i + 1}: At least one user ID required when target type is "users"`);
         }
       }
 
@@ -335,7 +389,7 @@ router.post(
 
         const validation = step.validate();
         if (!validation.valid) {
-          return res.status(400).json({ error: `Step ${i + 1}: ${validation.errors.join(', ')}` });
+          return badRequest(res, `Step ${i + 1}: ${validation.errors.join(', ')}`);
         }
 
         await stepRepo.save(step);
@@ -371,7 +425,7 @@ router.post(
       return res.status(201).json({ policy: formatPolicy(policy) });
     } catch (error) {
       logger.error('Error creating escalation policy:', error);
-      return res.status(500).json({ error: 'Failed to create escalation policy' });
+      return internalError(res);
     }
   }
 );
@@ -463,7 +517,7 @@ router.put(
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       logger.error('PUT validation errors', { errors: errors.array() });
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
@@ -483,7 +537,7 @@ router.put(
       });
 
       if (!policy) {
-        return res.status(404).json({ error: 'Escalation policy not found' });
+        return notFound(res, 'Escalation policy', id);
       }
 
       // Update metadata
@@ -503,10 +557,10 @@ router.put(
         for (let i = 0; i < steps.length; i++) {
           const step = steps[i];
           if (step.targetType === 'schedule' && !step.scheduleId) {
-            return res.status(400).json({ error: `Step ${i + 1}: Schedule ID required when target type is "schedule"` });
+            return badRequest(res, `Step ${i + 1}: Schedule ID required when target type is "schedule"`);
           }
           if (step.targetType === 'users' && (!step.userIds || step.userIds.length === 0)) {
-            return res.status(400).json({ error: `Step ${i + 1}: At least one user ID required when target type is "users"` });
+            return badRequest(res, `Step ${i + 1}: At least one user ID required when target type is "users"`);
           }
         }
 
@@ -527,7 +581,7 @@ router.put(
 
           const validation = step.validate();
           if (!validation.valid) {
-            return res.status(400).json({ error: `Step ${i + 1}: ${validation.errors.join(', ')}` });
+            return badRequest(res, `Step ${i + 1}: ${validation.errors.join(', ')}`);
           }
 
           await stepRepo.save(step);
@@ -568,7 +622,7 @@ router.put(
       return res.json({ policy: formatPolicy(updatedPolicy!) });
     } catch (error) {
       logger.error('Error updating escalation policy:', error);
-      return res.status(500).json({ error: 'Failed to update escalation policy' });
+      return internalError(res);
     }
   }
 );
@@ -637,7 +691,7 @@ router.put(
 router.delete('/:id', [param('id').isUUID()], async (req: Request, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return validationError(res, fromExpressValidator(errors.array()));
   }
 
   try {
@@ -653,13 +707,12 @@ router.delete('/:id', [param('id').isUUID()], async (req: Request, res: Response
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Escalation policy not found' });
+      return notFound(res, 'Escalation policy', id);
     }
 
     // Check if policy is in use
     if (policy.services && policy.services.length > 0) {
-      return res.status(400).json({
-        error: 'Cannot delete escalation policy that is in use by services',
+      return badRequest(res, 'Cannot delete escalation policy that is in use by services', {
         servicesCount: policy.services.length,
       });
     }
@@ -671,7 +724,7 @@ router.delete('/:id', [param('id').isUUID()], async (req: Request, res: Response
     return res.json({ message: 'Escalation policy deleted successfully' });
   } catch (error) {
     logger.error('Error deleting escalation policy:', error);
-    return res.status(500).json({ error: 'Failed to delete escalation policy' });
+    return internalError(res);
   }
 });
 
@@ -748,7 +801,7 @@ router.post(
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
@@ -766,7 +819,7 @@ router.post(
       });
 
       if (!policy) {
-        return res.status(404).json({ error: 'Escalation policy not found' });
+        return notFound(res, 'Escalation policy', id);
       }
 
       // Determine step order
@@ -795,7 +848,7 @@ router.post(
 
       const validation = step.validate();
       if (!validation.valid) {
-        return res.status(400).json({ error: validation.errors.join(', ') });
+        return badRequest(res, validation.errors.join(', '));
       }
 
       await stepRepo.save(step);
@@ -810,7 +863,7 @@ router.post(
       return res.status(201).json({ step: formatStep(step) });
     } catch (error) {
       logger.error('Error adding escalation step:', error);
-      return res.status(500).json({ error: 'Failed to add escalation step' });
+      return internalError(res);
     }
   }
 );
@@ -916,7 +969,7 @@ router.put(
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
@@ -930,7 +983,7 @@ router.put(
 
       const policy = await policyRepo.findOne({ where: { id: policyId, orgId } });
       if (!policy) {
-        return res.status(404).json({ error: 'Escalation policy not found' });
+        return notFound(res, 'Escalation policy', policyId);
       }
 
       const step = await stepRepo.findOne({
@@ -938,7 +991,7 @@ router.put(
       });
 
       if (!step) {
-        return res.status(404).json({ error: 'Escalation step not found' });
+        return notFound(res, 'Escalation step', stepId);
       }
 
       if (targetType !== undefined) step.targetType = targetType;
@@ -948,7 +1001,7 @@ router.put(
 
       const validation = step.validate();
       if (!validation.valid) {
-        return res.status(400).json({ error: validation.errors.join(', ') });
+        return badRequest(res, validation.errors.join(', '));
       }
 
       await stepRepo.save(step);
@@ -958,7 +1011,7 @@ router.put(
       return res.json({ step: formatStep(step) });
     } catch (error) {
       logger.error('Error updating escalation step:', error);
-      return res.status(500).json({ error: 'Failed to update escalation step' });
+      return internalError(res);
     }
   }
 );
@@ -1034,7 +1087,7 @@ router.delete(
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
@@ -1051,7 +1104,7 @@ router.delete(
       });
 
       if (!policy) {
-        return res.status(404).json({ error: 'Escalation policy not found' });
+        return notFound(res, 'Escalation policy', policyId);
       }
 
       const step = await stepRepo.findOne({
@@ -1059,12 +1112,12 @@ router.delete(
       });
 
       if (!step) {
-        return res.status(404).json({ error: 'Escalation step not found' });
+        return notFound(res, 'Escalation step', stepId);
       }
 
       // Check if this is the last step
       if (policy.steps.length === 1) {
-        return res.status(400).json({ error: 'Cannot delete the last escalation step. Policy must have at least one step.' });
+        return badRequest(res, 'Cannot delete the last escalation step. Policy must have at least one step.');
       }
 
       const deletedStepOrder = step.stepOrder;
@@ -1088,7 +1141,7 @@ router.delete(
       return res.json({ message: 'Escalation step deleted successfully' });
     } catch (error) {
       logger.error('Error deleting escalation step:', error);
-      return res.status(500).json({ error: 'Failed to delete escalation step' });
+      return internalError(res);
     }
   }
 );
@@ -1173,7 +1226,7 @@ router.put(
   async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return validationError(res, fromExpressValidator(errors.array()));
     }
 
     try {
@@ -1191,18 +1244,18 @@ router.put(
       });
 
       if (!policy) {
-        return res.status(404).json({ error: 'Escalation policy not found' });
+        return notFound(res, 'Escalation policy', id);
       }
 
       // Verify all step IDs belong to this policy
       const existingStepIds = policy.steps.map(s => s.id);
       if (stepIds.length !== existingStepIds.length) {
-        return res.status(400).json({ error: 'Step count mismatch' });
+        return badRequest(res, 'Step count mismatch');
       }
 
       for (const stepId of stepIds) {
         if (!existingStepIds.includes(stepId)) {
-          return res.status(400).json({ error: `Step ${stepId} does not belong to this policy` });
+          return badRequest(res, `Step ${stepId} does not belong to this policy`);
         }
       }
 
@@ -1220,7 +1273,7 @@ router.put(
       return res.json({ message: 'Steps reordered successfully' });
     } catch (error) {
       logger.error('Error reordering escalation steps:', error);
-      return res.status(500).json({ error: 'Failed to reorder escalation steps' });
+      return internalError(res);
     }
   }
 );

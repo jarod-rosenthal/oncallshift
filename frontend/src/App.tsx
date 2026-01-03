@@ -69,6 +69,17 @@ const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms }
 const Blog = lazy(() => import('./pages/Blog').then(m => ({ default: m.Blog })));
 const Security = lazy(() => import('./pages/Security').then(m => ({ default: m.Security })));
 
+// Blog articles
+const BlogStopClickingAround = lazy(() => import('./pages/blog/StopClickingAround').then(m => ({ default: m.StopClickingAround })));
+const BlogTerraformMultiTeam = lazy(() => import('./pages/blog/TerraformMultiTeam').then(m => ({ default: m.TerraformMultiTeam })));
+const BlogTenThousandAlerts = lazy(() => import('./pages/blog/TenThousandAlerts').then(m => ({ default: m.TenThousandAlerts })));
+const BlogAlertFatigueSystemDesign = lazy(() => import('./pages/blog/AlertFatigueSystemDesign').then(m => ({ default: m.AlertFatigueSystemDesign })));
+const BlogWhenTeamsStopTrusting = lazy(() => import('./pages/blog/WhenTeamsStopTrusting').then(m => ({ default: m.WhenTeamsStopTrusting })));
+const BlogCliFirstWorkflow = lazy(() => import('./pages/blog/CliFirstWorkflow').then(m => ({ default: m.CliFirstWorkflow })));
+const BlogBuildingReflexes = lazy(() => import('./pages/blog/BuildingReflexes').then(m => ({ default: m.BuildingReflexes })));
+const BlogRunningLlmsLocally = lazy(() => import('./pages/blog/RunningLlmsLocally').then(m => ({ default: m.RunningLlmsLocally })));
+const BlogBuildingMcpServers = lazy(() => import('./pages/blog/BuildingMcpServers').then(m => ({ default: m.BuildingMcpServers })));
+
 // Documentation and Help pages
 const DocsHome = lazy(() => import('./pages/docs/DocsHome').then(m => ({ default: m.DocsHome })));
 const DocsQuickStart = lazy(() => import('./pages/docs/DocsQuickStart').then(m => ({ default: m.DocsQuickStart })));
@@ -136,6 +147,15 @@ function App() {
         <Route path="/legal/privacy" element={<Privacy />} />
         <Route path="/legal/terms" element={<Terms />} />
         <Route path="/blog" element={<Blog />} />
+        <Route path="/blog/stop-clicking-around" element={<BlogStopClickingAround />} />
+        <Route path="/blog/terraform-multi-team" element={<BlogTerraformMultiTeam />} />
+        <Route path="/blog/ten-thousand-alerts" element={<BlogTenThousandAlerts />} />
+        <Route path="/blog/alert-fatigue-system-design" element={<BlogAlertFatigueSystemDesign />} />
+        <Route path="/blog/when-teams-stop-trusting" element={<BlogWhenTeamsStopTrusting />} />
+        <Route path="/blog/cli-first-workflow" element={<BlogCliFirstWorkflow />} />
+        <Route path="/blog/building-reflexes" element={<BlogBuildingReflexes />} />
+        <Route path="/blog/running-llms-locally" element={<BlogRunningLlmsLocally />} />
+        <Route path="/blog/building-mcp-servers" element={<BlogBuildingMcpServers />} />
         <Route path="/company/security" element={<Security />} />
 
         {/* Documentation routes */}

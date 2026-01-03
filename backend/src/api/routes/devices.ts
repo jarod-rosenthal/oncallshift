@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { body, validationResult } from 'express-validator';
+import { body, param, validationResult } from 'express-validator';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { DeviceToken, User } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { notFound, internalError, validationError, fromExpressValidator } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -26,7 +27,7 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return validationError(res, fromExpressValidator(errors.array()));
       }
 
       const { token, platform, deviceName, appVersion } = req.body;
@@ -110,7 +111,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error registering device:', error);
-      return res.status(500).json({ error: 'Failed to register device' });
+      return internalError(res);
     }
   }
 );
@@ -143,7 +144,7 @@ router.get('/', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error fetching devices:', error);
-    return res.status(500).json({ error: 'Failed to fetch devices' });
+    return internalError(res);
   }
 });
 
@@ -197,7 +198,7 @@ router.delete('/cleanup', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error cleaning up devices:', error);
-    return res.status(500).json({ error: 'Failed to clean up devices' });
+    return internalError(res);
   }
 });
 
@@ -250,7 +251,7 @@ router.get('/debug', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error in debug endpoint:', error);
-    return res.status(500).json({ error: 'Failed to get debug info' });
+    return internalError(res);
   }
 });
 
@@ -259,38 +260,46 @@ router.get('/debug', async (req: Request, res: Response) => {
  * Unregister a device token
  * NOTE: This route must be defined AFTER /cleanup and /debug to avoid those paths being treated as IDs
  */
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const user = req.user!;
+router.delete('/:id',
+  param('id').isUUID().withMessage('Invalid device ID'),
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return validationError(res, fromExpressValidator(errors.array()));
+      }
 
-    const dataSource = await getDataSource();
-    const deviceRepo = dataSource.getRepository(DeviceToken);
+      const { id } = req.params;
+      const user = req.user!;
 
-    const device = await deviceRepo.findOne({
-      where: { id, userId: user.id },
-    });
+      const dataSource = await getDataSource();
+      const deviceRepo = dataSource.getRepository(DeviceToken);
 
-    if (!device) {
-      return res.status(404).json({ error: 'Device not found' });
+      const device = await deviceRepo.findOne({
+        where: { id, userId: user.id },
+      });
+
+      if (!device) {
+        return notFound(res, 'Device', id);
+      }
+
+      // Mark as inactive instead of deleting
+      device.isActive = false;
+      await deviceRepo.save(device);
+
+      logger.info('Device token unregistered', {
+        userId: user.id,
+        deviceId: device.id,
+      });
+
+      return res.json({
+        message: 'Device unregistered successfully',
+      });
+    } catch (error) {
+      logger.error('Error unregistering device:', error);
+      return internalError(res);
     }
-
-    // Mark as inactive instead of deleting
-    device.isActive = false;
-    await deviceRepo.save(device);
-
-    logger.info('Device token unregistered', {
-      userId: user.id,
-      deviceId: device.id,
-    });
-
-    return res.json({
-      message: 'Device unregistered successfully',
-    });
-  } catch (error) {
-    logger.error('Error unregistering device:', error);
-    return res.status(500).json({ error: 'Failed to unregister device' });
   }
-});
+);
 
 export default router;

@@ -263,6 +263,13 @@ export const VALID_SORT_FIELDS: Record<string, string[]> = {
   integrations: ['name', 'type', 'createdAt'],
   notifications: ['createdAt', 'status', 'channel'],
   incidentEvents: ['createdAt', 'type'],
+  postmortems: ['title', 'createdAt', 'updatedAt', 'status', 'publishedAt'],
+  reports: ['name', 'createdAt', 'updatedAt', 'lastRunAt', 'nextRunAt'],
+  workflows: ['name', 'createdAt', 'updatedAt', 'enabled', 'triggerType'],
+  routingRules: ['createdAt', 'updatedAt', 'priority', 'enabled'],
+  tags: ['name', 'createdAt', 'color'],
+  businessServices: ['name', 'createdAt', 'updatedAt', 'status', 'impactTier'],
+  statusPages: ['name', 'createdAt', 'updatedAt', 'slug'],
 };
 
 /**

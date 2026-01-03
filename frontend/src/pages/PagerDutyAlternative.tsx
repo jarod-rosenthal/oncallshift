@@ -4,21 +4,27 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 
 export function PagerDutyAlternative() {
   const comparisonFeatures = [
-    { feature: 'MCP Server (AI Assistants)', pagerduty: 'None', oncallshift: 'Full integration' },
-    { feature: 'Starting price', pagerduty: '$21/user/mo', oncallshift: '$0 (Free tier)' },
-    { feature: 'Professional tier', pagerduty: '$41/user/mo', oncallshift: '$15/user/mo' },
-    { feature: 'Cloud Investigation', pagerduty: 'Via integrations', oncallshift: 'Direct AWS/GCP/Azure' },
-    { feature: 'AI-powered diagnosis', pagerduty: 'AIOps add-on ($$$)', oncallshift: 'Included (BYOK)' },
-    { feature: 'AI Execution', pagerduty: 'Suggestions only', oncallshift: 'Full (restart, scale)' },
-    { feature: 'Setup time', pagerduty: 'Days to weeks', oncallshift: '5 min (or via AI)' },
-    { feature: 'Contract required', pagerduty: 'Annual (most plans)', oncallshift: 'Month-to-month' },
+    { feature: 'Terraform Provider', pagerduty: 'Available', oncallshift: 'Full IaC support', highlight: true },
+    { feature: 'MCP Server (AI Assistants)', pagerduty: 'None', oncallshift: 'Full integration', highlight: true },
+    { feature: 'Self-Healing (Auto-Resolution)', pagerduty: 'Suggestions only', oncallshift: '80% target', highlight: false },
+    { feature: 'CLI Tool', pagerduty: 'pd CLI', oncallshift: 'ocs CLI + GitHub Action', highlight: false },
+    { feature: 'Cloud Investigation', pagerduty: 'Via integrations', oncallshift: 'Direct AWS/GCP/Azure', highlight: false },
+    { feature: 'AI-powered diagnosis', pagerduty: 'AIOps add-on ($$$)', oncallshift: 'Included (BYOK)', highlight: false },
+    { feature: 'SSO (SAML/OIDC)', pagerduty: 'Business tier+', oncallshift: 'Professional tier', highlight: false },
+    { feature: 'Starting price', pagerduty: '$21/user/mo', oncallshift: '$0 (Free tier)', highlight: false },
+    { feature: 'Setup time', pagerduty: 'Days to weeks', oncallshift: '5 min (or via Terraform)', highlight: false },
   ];
 
   const painPoints = [
     {
+      title: 'Infrastructure as Code, Finally',
+      problem: "Managing on-call schedules through a UI doesn't scale. You can't version control it, review changes, or automate team onboarding. PagerDuty has a Terraform provider, but it's a second-class citizen.",
+      solution: 'OnCallShift is Terraform-native. Define schedules, escalation policies, and services in HCL. GitOps your on-call config. terraform apply to production.',
+    },
+    {
       title: 'AI-native from day one',
       problem: "PagerDuty bolted on AI features as expensive add-ons. They don't have an MCP server, can't integrate with your AI assistant, and charge enterprise prices for basic AI diagnosis.",
-      solution: 'OnCallShift was built for the AI era. Configure your org from Claude Code. Migrate with a conversation. AI diagnosis and execution included—not an upsell.',
+      solution: 'OnCallShift was built for the AI era. Configure your org from Claude Code. AI that actually resolves incidents—80% without waking you up.',
     },
     {
       title: 'Cloud investigation that actually works',
@@ -26,14 +32,9 @@ export function PagerDutyAlternative() {
       solution: 'Connect your AWS/GCP/Azure credentials. Our AI queries your infrastructure directly to find root causes in seconds—not hours.',
     },
     {
-      title: 'No nickel-and-diming',
-      problem: 'PagerDuty charges extra for Event Intelligence, AIOps, and advanced analytics. The base product often feels incomplete.',
-      solution: 'AI diagnosis included with BYOK (bring your own key). All core features work out of the box. No "contact sales" for basic functionality.',
-    },
-    {
-      title: 'Migrate without the pain',
-      problem: 'Switching incident management tools typically means exporting configs, re-configuring integrations, and weeks of manual work.',
-      solution: 'Just ask your AI assistant: "Migrate from PagerDuty." We preserve your integration keys for zero-downtime cutover.',
+      title: 'Developer experience matters',
+      problem: "PagerDuty was built for NOCs and enterprise ops teams. If you're an engineer who lives in the terminal, their web-first approach feels clunky.",
+      solution: 'Full CLI (ocs), GitHub Action for CI/CD, MCP server for AI assistants. Built by engineers who still get paged.',
     },
   ];
 
@@ -133,7 +134,7 @@ export function PagerDutyAlternative() {
               </thead>
               <tbody className="text-sm">
                 {comparisonFeatures.map((row, i) => (
-                  <tr key={i} className="border-b last:border-b-0">
+                  <tr key={i} className={`border-b last:border-b-0 ${row.highlight ? 'bg-green-50' : ''}`}>
                     <td className="py-4 px-6 font-medium">{row.feature}</td>
                     <td className="py-4 px-6 text-center text-slate-600">{row.pagerduty}</td>
                     <td className="py-4 px-6 text-center text-green-600 font-medium">{row.oncallshift}</td>
