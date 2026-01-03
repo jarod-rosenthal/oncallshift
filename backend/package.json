@@ -16,7 +16,8 @@
     "seed": "ts-node src/shared/db/seed.ts",
     "setup-contoso": "ts-node src/shared/db/setup-contoso-schedule.ts",
     "lint": "eslint src --ext .ts",
-    "test": "jest"
+    "test": "jest",
+    "test:integration": "jest --config jest.integration.config.js"
   },
   "keywords": [
     "incident-management",

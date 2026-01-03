@@ -65,6 +65,7 @@ import { CloudAccessLog } from '../models/CloudAccessLog';
 import { AIConversation, AIConversationMessage } from '../models/AIConversation';
 import { OrganizationApiKey } from '../models/OrganizationApiKey';
 import { IdempotencyKey } from '../models/IdempotencyKey';
+import { ImportHistory } from '../models/ImportHistory';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -145,6 +146,7 @@ export async function createDataSource(): Promise<DataSource> {
       AIConversationMessage,
       OrganizationApiKey,
       IdempotencyKey,
+      ImportHistory,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],

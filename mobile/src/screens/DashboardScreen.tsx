@@ -496,7 +496,7 @@ const styles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
   },
   sectionTitle: {
     color: colors.textPrimary,
@@ -508,7 +508,7 @@ const styles = (colors: any) => StyleSheet.create({
   statusRow: {
     flexDirection: 'row',
     gap: 24,
-    marginBottom: 16,
+    marginBottom: 10,
   },
   statusItem: {
     flexDirection: 'row',
@@ -530,13 +530,13 @@ const styles = (colors: any) => StyleSheet.create({
     color: colors.textPrimary,
   },
   divider: {
-    marginVertical: 12,
+    marginVertical: 8,
   },
   severityRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 10,
   },
   severityChip: {
     flexDirection: 'row',
@@ -569,7 +569,7 @@ const styles = (colors: any) => StyleSheet.create({
     marginTop: 4,
   },
   viewAllButton: {
-    marginTop: 8,
+    marginTop: 4,
     borderRadius: 8,
   },
   viewAllButtonContent: {
@@ -578,10 +578,10 @@ const styles = (colors: any) => StyleSheet.create({
   // Recent Incidents
   recentSection: {
     padding: 16,
-    paddingTop: 24,
+    paddingTop: 16,
   },
   incidentCard: {
-    marginTop: 12,
+    marginTop: 8,
     borderRadius: 12,
     backgroundColor: colors.surface,
     overflow: 'hidden',

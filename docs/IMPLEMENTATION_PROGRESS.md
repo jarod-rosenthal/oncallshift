@@ -1,7 +1,7 @@
 # Implementation Progress Tracker
 
-**Last Updated:** January 2, 2026 (Session 2)
-**Status:** Phase 4 Complete
+**Last Updated:** January 2, 2026 (Session 3)
+**Status:** Phase 4 Backend Complete, Frontend In Progress
 
 This file tracks the implementation progress for Terraform Provider Prerequisites and AI First-Class Citizen initiatives. Use this to resume work if interrupted.
 
@@ -12,7 +12,7 @@ This file tracks the implementation progress for Terraform Provider Prerequisite
 | Initiative | Progress | Current Phase |
 |------------|----------|---------------|
 | Terraform Provider Prerequisites | 100% | ✅ COMPLETE |
-| AI First-Class Citizen | 60% | Phase 4 (Semantic Import) |
+| AI First-Class Citizen | 80% | Phase 4 (Semantic Import Complete, Ready to Deploy) |
 | Documentation | 90% | ✅ Nearly Complete |
 
 ---
@@ -94,11 +94,21 @@ This file tracks the implementation progress for Terraform Provider Prerequisite
   - [x] GET /api/v1/onboarding/active
   - [x] POST /api/v1/onboarding/:sessionId/abandon
 
-### Phase 4: Semantic Import & Intelligence ⏳ NOT STARTED
-- [ ] Semantic import from natural language descriptions
-- [ ] Screenshot-based import using Claude Vision
+### Phase 4: Semantic Import & Intelligence ✅ MOSTLY COMPLETE
+- [x] Semantic import from natural language descriptions (backend)
+- [x] Screenshot-based import using Claude Vision (backend)
+- [x] Backend API endpoints (`backend/src/api/routes/semantic-import.ts`)
+- [x] Vision Import Service (`backend/src/shared/services/vision-import-service.ts`)
+- [x] Import Executor Service (`backend/src/shared/services/import-executor-service.ts`)
+- [x] ImportHistory model and migration 042
+- [x] Claude Vision prompts (`backend/src/shared/prompts/import-prompts.ts`)
+- [x] Frontend implementation (`frontend/src/features/semanticImport/`)
+- [x] Route integration (`/settings/semantic-import`)
+- [x] Sidebar navigation ("AI Import")
 - [ ] Proactive recommendations worker
 - [ ] Auto-fix capabilities
+
+**See `docs/SEMANTIC_IMPORT_PROGRESS.md` for detailed implementation status.**
 
 ### Phase 5: Ecosystem Integration ⏳ NOT STARTED
 - [ ] Slack AI app
@@ -198,9 +208,20 @@ backend/src/shared/models/IdempotencyKey.ts
 backend/src/shared/db/migrations/041_add_idempotency_keys.sql
 ```
 
+### New Backend Files (Session 3 - Semantic Import)
+```
+backend/src/api/routes/semantic-import.ts
+backend/src/shared/services/vision-import-service.ts
+backend/src/shared/services/import-executor-service.ts
+backend/src/shared/models/ImportHistory.ts
+backend/src/shared/prompts/import-prompts.ts
+backend/src/shared/db/migrations/042_add_import_history.sql
+docs/SEMANTIC_IMPORT_PROGRESS.md
+```
+
 ### Modified Files
 ```
-backend/src/api/app.ts - Added new routes, idempotency & etag middleware
+backend/src/api/app.ts - Added new routes, idempotency & etag middleware, semantic-import routes
 backend/src/api/swagger.ts - Added schemas
 backend/src/shared/auth/middleware.ts - Added org API key auth
 backend/src/shared/models/index.ts - Added new model exports
@@ -221,12 +242,11 @@ backend/src/api/routes/api-keys.ts - Added Location header
 ## Next Steps (Priority Order)
 
 1. **Deploy Changes** ⚠️ REQUIRED
-   - Run `./deploy.sh` to deploy new migrations and middleware
-   - Verify idempotency and ETag headers in production
+   - Run `./deploy.sh` to deploy Semantic Import (backend + frontend)
+   - Migration 042 (import_history) will run automatically
+   - Verify "AI Import" page works at `/settings/semantic-import`
 
-2. **AI Enhancements** (Phase 4: Semantic Import)
-   - Semantic import from natural language descriptions
-   - Screenshot-based import using Claude Vision
+2. **AI Enhancements** (Remaining Phase 4 work)
    - Proactive recommendations worker
    - Auto-fix capabilities
 

@@ -60,23 +60,17 @@
           "faceIDPermission": "Allow OnCallShift to use Face ID for quick authentication"
         }
       ],
-      [
-        "@sentry/react-native/expo",
-        {
-          "url": "https://sentry.io/",
-          "project": "oncallshift-mobile",
-          "organization": "oncallshift"
-        }
-      ],
       "@react-native-community/datetimepicker",
-      "@sentry/react-native",
       "expo-secure-store"
     ],
     "updates": {
-      "enabled": false
+      "enabled": true,
+      "url": "https://u.expo.dev/7311a48c-3b87-4bb8-8bba-549de8a578e7"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     },
     "extra": {
-      "sentryDsn": "https://your-sentry-dsn@o0.ingest.sentry.io/0",
       "eas": {
         "projectId": "7311a48c-3b87-4bb8-8bba-549de8a578e7"
       }

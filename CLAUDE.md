@@ -124,8 +124,10 @@ npm run preview      # Preview production build
 cd mobile
 npm install
 npm start            # Expo Metro bundler
+npx expo start --host lan    # For physical device testing
 npm run android      # Run on Android
 npm run ios          # Run on iOS
+npx tsc --noEmit     # Type check
 ```
 
 ### Mobile Development with Physical Device
@@ -164,6 +166,103 @@ npx tsc --noEmit    # Check for TypeScript errors before testing
 
 **Avoiding require cycles:** When adding new components to `mobile/src/components/`, import dependencies directly (e.g., `import { useToast } from './ActionToast'`) rather than from `./index` to avoid circular dependencies.
 
+### Mobile App Builds (EAS Build)
+
+The mobile app uses **EAS Build** for cloud-based builds and **EAS Update** for over-the-air (OTA) updates.
+
+**Key Configuration Files:**
+- `mobile/app.json` - Expo config with updates enabled
+- `mobile/eas.json` - Build profiles with channels configured
+- `mobile/.gitignore` - `/android` and `/ios` are ignored (CNG mode)
+
+**Build Profiles:**
+| Profile | Channel | Purpose |
+|---------|---------|---------|
+| `development` | `development` | Dev build with hot reload |
+| `preview` | `preview` | Test APK for testers |
+| `production` | `production` | App store release |
+
+**Building the App:**
+```bash
+cd mobile
+
+# Preview build (APK for testing)
+eas build --platform android --profile preview
+
+# Production build
+eas build --platform android --profile production
+```
+
+**Required for Android Builds:**
+- `mobile/google-services.json` - Firebase config (gitignored, stored as EAS secret)
+- Firebase project configured for push notifications
+
+**Note on Windows:** EAS CLI commands should be run from PowerShell, not WSL.
+
+**CRITICAL: CNG Mode (Continuous Native Generation)**
+
+The app uses CNG mode where EAS generates native folders fresh each build:
+- `/android` and `/ios` are in `.gitignore`
+- Never commit native folders - they're generated from `app.json` config
+- If you need to modify native code, use Expo config plugins instead
+
+**Sentry Configuration (Currently Disabled):**
+- Sentry plugins were removed from `app.json` due to Gradle build failures
+- The `@sentry/react-native` package is still installed but not configured as a plugin
+- To re-enable: add `"@sentry/react-native/expo"` to `app.json` plugins array
+- May require SDK version alignment - test thoroughly before enabling
+
+### Mobile OTA Updates
+
+OTA updates push JavaScript changes to installed apps without rebuilding.
+
+**Pushing an Update:**
+```bash
+cd mobile
+eas update --branch preview --message "Description of changes"
+```
+
+**How It Works:**
+1. Users install the APK once (from EAS Build)
+2. Push updates with `eas update`
+3. App downloads new JS bundle on next launch
+4. Users can also tap "Check for Updates" in Settings
+
+**Important Configurations (DO NOT CHANGE):**
+```json
+// app.json - updates must be enabled
+"updates": {
+  "enabled": true,
+  "url": "https://u.expo.dev/7311a48c-3b87-4bb8-8bba-549de8a578e7"
+},
+"runtimeVersion": {
+  "policy": "appVersion"
+}
+
+// eas.json - channels must match build profiles
+"preview": {
+  "channel": "preview",
+  ...
+}
+```
+
+**Required Package:**
+- `expo-updates` must be installed for OTA to work
+- Settings screen has "Check for Updates" button using `expo-updates` API
+
+**Limitations:**
+- OTA can only update JavaScript/assets
+- Native code changes (permissions, plugins) require a new build
+- Updates only work in production builds, not Expo Go
+
+**Development Workflow for UI Changes:**
+1. Make changes to mobile code
+2. Push OTA update: `eas update --branch preview --message "Description"`
+3. User taps "Check for Updates" in Settings or restarts app
+4. Changes appear without reinstalling APK
+
+This is much faster than rebuilding the entire APK for JavaScript-only changes.
+
 ### Deployment
 
 **ALWAYS use the `deploy.sh` script for ALL deployments.** Never manually build/push Docker images or upload frontend files.
@@ -179,6 +278,8 @@ The deploy script handles:
 4. Automatic rollback on failure
 
 **Never skip this step** - both frontend and backend must be deployed together to maintain consistency.
+
+**IMPORTANT: Always run `./deploy.sh` after making UI code changes** so the user can view them at https://oncallshift.com. The frontend is served from S3/CloudFront and changes are not visible until deployed.
 
 ### Infrastructure
 ```bash
@@ -197,7 +298,7 @@ terraform apply
 - **backend/src/shared/**: Middleware, utilities, database configuration
 - **frontend/src/pages/**: React page components
 - **frontend/src/components/**: Shared UI components
-- **mobile/src/screens/**: React Native screens (31 screens)
+- **mobile/src/screens/**: React Native screens (32 screens)
 - **mobile/src/services/**: API client, auth, push notifications, runbooks
 - **mobile/src/components/**: Shared mobile components
 
@@ -223,6 +324,31 @@ See `backend/src/shared/models/` for 60+ entity definitions. Core entities inclu
 
 ### Testing
 Backend tests are in `backend/src/**/__tests__/*.test.ts` using Jest with ts-jest. Test files are colocated near the code they test.
+
+```bash
+cd backend
+npm test                                    # Run all tests
+npm test -- --testPathPattern=webhooks      # Run single test file
+npm test -- --watch                         # Watch mode
+```
+
+### E2E Testing
+E2E tests use Playwright in `e2e/`. Tests run against the production site by default.
+
+```bash
+cd e2e
+npm install
+npx playwright test                         # Run all tests
+npx playwright test --project=chromium      # Single browser
+npx playwright test --ui                    # Interactive mode
+npx playwright show-report                  # View results
+```
+
+**Key files:**
+- `e2e/playwright.config.ts` - Test configuration
+- `e2e/page-objects/` - Page object pattern for reusable selectors
+- `e2e/fixtures/` - Shared test fixtures
+- `e2e/tests/` - Test specs organized by feature
 
 ## Key Patterns
 
@@ -253,6 +379,9 @@ React Navigation with bottom tabs + stack navigation. Deep linking for push noti
 - **Org-specific API keys**: Organizations can provide their own Anthropic API keys stored encrypted in the database
 - **Cloud Investigation**: AI can query AWS/GCP/Azure resources when credentials are configured
 - **Runbook Automation**: AI executes runbook steps in sandboxed environments with approval workflows
+
+### MCP Server
+The `packages/oncallshift-mcp/` package provides an MCP (Model Context Protocol) server for AI assistant integration, enabling programmatic access to OnCallShift features.
 
 ## Infrastructure Rules
 
@@ -387,6 +516,12 @@ aws ecs execute-command --cluster pagerduty-lite-dev \
 cd backend && npm run migrate:create
 ```
 
+## Work In Progress
+
+Active development features that may have incomplete code:
+- **Semantic Import Frontend**: Backend complete at `/api/v1/semantic-import`, frontend components in `frontend/src/features/semanticImport/` (in progress)
+- See `docs/SEMANTIC_IMPORT_PROGRESS.md` for implementation status
+
 ## Key API Endpoints
 
 Main API routes include:
@@ -401,3 +536,4 @@ Main API routes include:
 - `/api/v1/cloud-credentials` - Cloud provider credentials for investigation
 - `/api/v1/status-pages` - Public/private status pages
 - `/api/v1/import`, `/api/v1/export` - Platform migration tools
+- `/api/v1/semantic-import` - AI-powered screenshot/text import (Claude Vision)

@@ -74,7 +74,8 @@ export function Landing() {
                   </button>
                   <div className="absolute left-0 top-full pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
                     <div className="bg-white rounded-lg shadow-lg border p-4 w-56">
-                      <a href="/api-docs" className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">Documentation</a>
+                      <Link to="/docs" className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">Documentation</Link>
+                      <Link to="/help" className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">Help Center</Link>
                       <a href="/api-docs" className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">API Reference</a>
                       <Link to="/blog" className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">Blog</Link>
                     </div>
@@ -520,7 +521,8 @@ export function Landing() {
             <div>
               <h4 className="font-semibold text-white mb-4">Resources</h4>
               <ul className="space-y-2 text-sm">
-                <li><a href="/api-docs" className="hover:text-white">Documentation</a></li>
+                <li><Link to="/docs" className="hover:text-white">Documentation</Link></li>
+                <li><Link to="/help" className="hover:text-white">Help Center</Link></li>
                 <li><a href="/api-docs" className="hover:text-white">API Reference</a></li>
                 <li><Link to="/blog" className="hover:text-white">Blog</Link></li>
                 <li><Link to="/demo" className="hover:text-white">Live Demo</Link></li>
