@@ -130,25 +130,27 @@ export function Landing() {
       {/* Hero Section */}
       <section className="container mx-auto px-4 pt-16 pb-20">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
-            <span className="animate-pulse">🔔</span>
-            Opsgenie sunsetting April 2027?
-            <Link to="/migrate/from-opsgenie" className="underline hover:no-underline">
-              Migrate in minutes →
+          <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
+            <span>🤖</span>
+            The first incident platform with an MCP server
+            <Link to="/docs/ai/mcp" className="underline hover:no-underline">
+              Learn more →
             </Link>
           </div>
 
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-            Don't Just Get Alerted.
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"> Get Answers.</span>
+            The AI-Native
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"> Incident Platform</span>
           </h1>
 
-          <p className="text-xl text-slate-600 mb-6 max-w-2xl mx-auto">
-            OnCallShift uses AI to diagnose incidents, suggest fixes, and execute remediation—all from your phone.
+          <p className="text-xl text-slate-600 mb-4 max-w-2xl mx-auto">
+            Configure your org through Claude Code. Migrate from competitors with a conversation.
+            Let AI diagnose and fix incidents while you sleep.
           </p>
 
-          <p className="text-lg text-slate-500 mb-8 max-w-2xl mx-auto italic">
-            Built by DevOps engineers who got tired of waking up at 3am with no answers.
+          <p className="text-lg text-slate-500 mb-8 max-w-2xl mx-auto">
+            Built by DevOps veterans with 15+ years of on-call experience. We've carried the pager,
+            managed the escalations, and written the runbooks. Now we're building the platform we always wanted.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
@@ -232,13 +234,31 @@ export function Landing() {
       <section className="bg-slate-50 py-20">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Everything You Need. Nothing You Don't.</h2>
+            <h2 className="text-3xl font-bold mb-4">Built for the AI Era</h2>
             <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-              Enterprise-grade incident management without the enterprise complexity
+              The only incident platform your AI assistant can configure, migrate, and operate
             </p>
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <Card className="hover:shadow-lg transition-shadow border-2 border-purple-200 bg-purple-50">
+              <CardHeader>
+                <div className="text-3xl mb-2">🔌</div>
+                <CardTitle className="text-lg">MCP Server Integration</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-700">
+                <ul className="space-y-2">
+                  <li>• <strong>Configure</strong> your org from Claude Code</li>
+                  <li>• <strong>Migrate</strong> from PagerDuty with a conversation</li>
+                  <li>• Manage incidents from your IDE</li>
+                  <li>• Works with Cursor, VS Code, any MCP client</li>
+                </ul>
+                <Link to="/docs/ai/mcp" className="text-purple-700 font-medium text-sm mt-3 inline-block hover:underline">
+                  Set up MCP →
+                </Link>
+              </CardContent>
+            </Card>
+
             <Card className="hover:shadow-lg transition-shadow border-2 border-blue-200 bg-blue-50">
               <CardHeader>
                 <div className="text-3xl mb-2">🤖</div>
@@ -248,11 +268,29 @@ export function Landing() {
                 <ul className="space-y-2">
                   <li>• <strong>Auto-diagnoses</strong> every incident</li>
                   <li>• <strong>Executes</strong> remediation actions</li>
-                  <li>• Investigates your cloud (AWS/Azure/GCP)</li>
-                  <li>• Learns from every resolution</li>
+                  <li>• Queries your AWS/Azure/GCP directly</li>
+                  <li>• BYOK for enterprise compliance</li>
                 </ul>
-                <Link to="/product/ai-resolution" className="text-blue-700 font-medium text-sm mt-3 inline-block hover:underline">
+                <Link to="/product/ai-diagnosis" className="text-blue-700 font-medium text-sm mt-3 inline-block hover:underline">
                   See how it works →
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="text-3xl mb-2">☁️</div>
+                <CardTitle className="text-lg">Cloud Investigation</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-600">
+                <ul className="space-y-2">
+                  <li>• Connect your AWS/GCP/Azure credentials</li>
+                  <li>• AI queries CloudWatch, ECS, EC2 directly</li>
+                  <li>• Root cause analysis in seconds</li>
+                  <li>• Your credentials, your data, your control</li>
+                </ul>
+                <Link to="/product/cloud-investigation" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
+                  Learn more →
                 </Link>
               </CardContent>
             </Card>
@@ -285,10 +323,28 @@ export function Landing() {
                   <li>• Native iOS & Android apps</li>
                   <li>• One-tap incident actions</li>
                   <li>• Execute runbooks from phone</li>
-                  <li>• Works offline</li>
+                  <li>• AI chat on mobile</li>
                 </ul>
                 <Link to="/product/mobile-app" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
                   Learn more →
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardHeader>
+                <div className="text-3xl mb-2">🔄</div>
+                <CardTitle className="text-lg">Zero-Friction Migration</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-slate-600">
+                <ul className="space-y-2">
+                  <li>• Import from PagerDuty or Opsgenie</li>
+                  <li>• Preserves integration keys</li>
+                  <li>• Migrate via AI conversation</li>
+                  <li>• Zero downtime cutover</li>
+                </ul>
+                <Link to="/migrate/from-pagerduty" className="text-blue-600 text-sm mt-3 inline-block hover:underline">
+                  Migration guide →
                 </Link>
               </CardContent>
             </Card>
@@ -299,9 +355,13 @@ export function Landing() {
       {/* Differentiator Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-12">
-            Built by DevOps for DevOps
+          <h2 className="text-3xl font-bold text-center mb-4">
+            Built by DevOps Veterans, for DevOps Teams
           </h2>
+          <p className="text-slate-600 text-center mb-12 max-w-2xl mx-auto">
+            We've spent 15+ years managing production systems, carrying pagers, and building infrastructure at scale.
+            This isn't a side project—it's the platform we always needed.
+          </p>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -314,41 +374,47 @@ export function Landing() {
                 </tr>
               </thead>
               <tbody className="text-sm">
-                <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Built By</td>
-                  <td className="py-3 px-4 text-green-600 font-medium">DevOps Engineers</td>
-                  <td className="py-3 px-4 text-slate-500">Enterprise Co.</td>
-                  <td className="py-3 px-4 text-slate-500">Atlassian</td>
+                <tr className="border-b bg-purple-50">
+                  <td className="py-3 px-4 font-medium">MCP Server (AI Assistant)</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Full integration</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">AI Diagnosis</td>
+                  <td className="py-3 px-4 font-medium">Built By</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">DevOps Veterans (15+ yrs)</td>
+                  <td className="py-3 px-4 text-slate-500">Enterprise Co.</td>
+                  <td className="py-3 px-4 text-slate-500">Atlassian (sunsetting)</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">Cloud Investigation</td>
+                  <td className="py-3 px-4 text-green-600 font-medium">✓ Direct (AWS/Azure/GCP)</td>
+                  <td className="py-3 px-4 text-slate-500">Via integrations</td>
+                  <td className="py-3 px-4 text-slate-500">✗ None</td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 font-medium">AI Diagnosis + Execution</td>
                   <td className="py-3 px-4 text-green-600 font-medium">✓ Included</td>
                   <td className="py-3 px-4 text-slate-500">$$$ Add-on</td>
                   <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">AI Execution</td>
+                  <td className="py-3 px-4 font-medium">BYOK (Bring Your Own Key)</td>
                   <td className="py-3 px-4 text-green-600 font-medium">✓ Yes</td>
                   <td className="py-3 px-4 text-slate-500">✗ No</td>
                   <td className="py-3 px-4 text-slate-500">✗ No</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Mobile AI</td>
+                  <td className="py-3 px-4 font-medium">Mobile Runbooks + AI</td>
                   <td className="py-3 px-4 text-green-600 font-medium">✓ Full</td>
                   <td className="py-3 px-4 text-slate-500">✗ Limited</td>
                   <td className="py-3 px-4 text-slate-500">✗ None</td>
                 </tr>
                 <tr className="border-b">
-                  <td className="py-3 px-4 font-medium">Setup Time</td>
-                  <td className="py-3 px-4 text-green-600 font-medium">5 minutes</td>
-                  <td className="py-3 px-4 text-slate-500">Days</td>
-                  <td className="py-3 px-4 text-slate-500">Hours</td>
-                </tr>
-                <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Starting Price</td>
                   <td className="py-3 px-4 text-green-600 font-medium">$0/month</td>
-                  <td className="py-3 px-4 text-slate-500">$25/user</td>
-                  <td className="py-3 px-4 text-slate-500">$15/user</td>
+                  <td className="py-3 px-4 text-slate-500">$21/user</td>
+                  <td className="py-3 px-4 text-slate-500">Bundled w/ JSM</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 font-medium">Sales Process</td>
@@ -361,11 +427,12 @@ export function Landing() {
           </div>
 
           <div className="mt-8 text-center">
-            <p className="text-slate-600 italic">
-              "We built the tool we wish we had when we were getting paged at 3am."
+            <p className="text-slate-600 italic text-lg">
+              "We've carried the pager. We've written the runbooks at 3am. We've dealt with the enterprise vendors.
+              OnCallShift is the platform we built because we couldn't find one that actually worked."
             </p>
-            <Link to="/about" className="text-blue-600 hover:underline text-sm mt-2 inline-block">
-              Read our story →
+            <Link to="/company/about" className="text-blue-600 hover:underline text-sm mt-3 inline-block">
+              Meet the team →
             </Link>
           </div>
         </div>

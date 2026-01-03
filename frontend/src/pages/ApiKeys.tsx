@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -355,6 +356,12 @@ export function ApiKeys() {
           </div>
           <div>
             <h4 className="font-medium mb-2">MCP Server Configuration</h4>
+            <p className="text-sm text-muted-foreground mb-2">
+              Use your API key with the OnCallShift MCP server for AI assistants like Claude Code and Cursor.{' '}
+              <Link to="/docs/ai/mcp" className="text-blue-600 hover:underline">
+                Learn more →
+              </Link>
+            </p>
             <pre className="bg-muted p-3 rounded-lg text-sm overflow-x-auto">
               <code>{`{
   "mcpServers": {

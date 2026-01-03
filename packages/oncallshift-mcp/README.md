@@ -4,11 +4,14 @@ MCP (Model Context Protocol) server for the OnCallShift incident management plat
 
 ## Features
 
-- **Incident Management**: List, acknowledge, resolve, and escalate incidents
+- **Incident Management**: List, acknowledge, resolve, escalate, and create incidents
 - **On-Call Information**: Check who is currently on-call
-- **Service Management**: List and manage services
-- **Team Management**: Create and list teams
-- **Schedule Management**: Create and list on-call schedules
+- **Service Management**: Full CRUD for services
+- **Team Management**: Create teams, add/remove members
+- **Schedule Management**: Create schedules and overrides
+- **Platform Migration**: Migrate from PagerDuty or Opsgenie with one command
+- **Analytics**: Incident metrics, on-call fairness, improvement suggestions
+- **Guided Workflows**: Built-in prompts for common tasks
 
 ## Installation
 
@@ -120,10 +123,12 @@ Once connected, the following tools are available to the AI assistant:
 |------|-------------|
 | `list_incidents` | List incidents with optional status and service filters |
 | `get_incident` | Get detailed information about a specific incident |
+| `create_incident` | Create a new incident manually |
 | `acknowledge_incident` | Acknowledge an incident (stops escalations) |
 | `resolve_incident` | Mark an incident as resolved |
 | `escalate_incident` | Escalate an incident to the next level |
 | `add_incident_note` | Add a note to an incident |
+| `add_responders` | Add additional responders to an incident |
 
 ### On-Call Operations
 
@@ -131,11 +136,20 @@ Once connected, the following tools are available to the AI assistant:
 |------|-------------|
 | `get_oncall_now` | Get all currently on-call users |
 
+### User Operations
+
+| Tool | Description |
+|------|-------------|
+| `list_users` | List all users, optionally filtered by team |
+| `get_user` | Get detailed information about a specific user |
+| `invite_user` | Invite a new user to the organization |
+
 ### Service Operations
 
 | Tool | Description |
 |------|-------------|
 | `list_services` | List all services, optionally filtered by team |
+| `create_service` | Create a new service |
 
 ### Team Operations
 
@@ -143,6 +157,8 @@ Once connected, the following tools are available to the AI assistant:
 |------|-------------|
 | `list_teams` | List all teams in the organization |
 | `create_team` | Create a new team |
+| `add_team_member` | Add a user to a team |
+| `remove_team_member` | Remove a user from a team |
 
 ### Schedule Operations
 
@@ -150,10 +166,48 @@ Once connected, the following tools are available to the AI assistant:
 |------|-------------|
 | `list_schedules` | List all on-call schedules |
 | `setup_schedule` | Create a new on-call schedule with rotation |
+| `create_schedule_override` | Create a temporary schedule override |
+
+### Escalation Policy Operations
+
+| Tool | Description |
+|------|-------------|
+| `list_escalation_policies` | List all escalation policies |
+| `get_escalation_policy` | Get details of a specific escalation policy |
+| `create_escalation_policy` | Create a new escalation policy |
+
+### Analytics Operations
+
+| Tool | Description |
+|------|-------------|
+| `get_incident_metrics` | Get MTTR, MTTA, and incident trends |
+| `analyze_oncall_fairness` | Analyze on-call load distribution |
+| `suggest_improvements` | Get AI-powered improvement suggestions |
+| `get_service_health` | Get health status for services |
+
+### Migration Operations
+
+| Tool | Description |
+|------|-------------|
+| `test_pagerduty_connection` | Test connection to PagerDuty API |
+| `test_opsgenie_connection` | Test connection to Opsgenie API |
+| `fetch_pagerduty_config` | Fetch all configuration from PagerDuty |
+| `fetch_opsgenie_config` | Fetch all configuration from Opsgenie |
+| `migrate_from_mcp` | Import data from another platform's MCP tools |
+| `import_from_platform` | Import data from exported JSON |
+
+### Integration Operations
+
+| Tool | Description |
+|------|-------------|
+| `connect_integration` | Set up Slack, Datadog, or other integrations |
+| `create_runbook` | Create a new runbook for incident response |
 
 ## Example Conversations
 
 Once configured, you can interact with OnCallShift naturally:
+
+### Basic Incident Management
 
 ```
 User: Who is on call right now?
@@ -173,26 +227,43 @@ Assistant: [Uses acknowledge_incident tool]
 Incident #1234 has been acknowledged successfully.
 ```
 
-## Programmatic Usage
+### Platform Migration
 
-You can also use the client directly in your Node.js applications:
+Migrate from PagerDuty or Opsgenie with a simple conversation:
 
-```typescript
-import { OnCallShiftClient } from '@oncallshift/mcp-server';
+```
+User: I want to migrate from PagerDuty to OnCallShift
 
-const client = new OnCallShiftClient({
-  apiKey: process.env.ONCALLSHIFT_API_KEY,
-  baseUrl: 'https://oncallshift.com/api/v1'
-});
+Assistant: I can help with that\! First, let me test your PagerDuty connection.
+[Uses test_pagerduty_connection tool]
+Connection successful\! Found 15 users, 4 teams, 3 schedules.
 
-// List active incidents
-const incidents = await client.listIncidents({ status: 'triggered' });
+Assistant: [Uses fetch_pagerduty_config tool]
+Fetched complete configuration. Ready to migrate:
+- 15 users
+- 4 teams (Platform, Backend, Frontend, SRE)
+- 3 on-call schedules
+- 5 escalation policies
+- 12 services
 
-// Acknowledge an incident
-await client.acknowledgeIncident('incident-id');
+Shall I proceed with the migration?
 
-// Get on-call information
-const oncall = await client.getOnCallNow();
+User: Yes, do it
+
+Assistant: [Uses migrate_from_mcp tool]
+Migration completed successfully\!
+
+Created:
+- 4 teams
+- 3 schedules
+- 5 escalation policies
+- 12 services
+- 15 user invitations sent
+
+Next steps:
+1. Team members should check their email for invitations
+2. Verify schedules at oncallshift.com/schedules
+3. Set up webhook forwarding from PagerDuty
 ```
 
 ## Development

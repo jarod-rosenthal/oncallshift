@@ -42,6 +42,7 @@ export const docsNav: NavSection[] = [
       { title: 'AI Diagnosis', href: '/docs/ai/diagnosis' },
       { title: 'Runbooks', href: '/docs/ai/runbooks' },
       { title: 'Bring Your Own Key', href: '/docs/ai/byok' },
+      { title: 'MCP Server', href: '/docs/ai/mcp' },
     ],
   },
   {

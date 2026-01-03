@@ -4,36 +4,36 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 
 export function PagerDutyAlternative() {
   const comparisonFeatures = [
+    { feature: 'MCP Server (AI Assistants)', pagerduty: 'None', oncallshift: 'Full integration' },
     { feature: 'Starting price', pagerduty: '$21/user/mo', oncallshift: '$0 (Free tier)' },
     { feature: 'Professional tier', pagerduty: '$41/user/mo', oncallshift: '$15/user/mo' },
-    { feature: 'Unlimited schedules', pagerduty: 'Business plan ($59+)', oncallshift: 'Professional ($15)' },
+    { feature: 'Cloud Investigation', pagerduty: 'Via integrations', oncallshift: 'Direct AWS/GCP/Azure' },
     { feature: 'AI-powered diagnosis', pagerduty: 'AIOps add-on ($$$)', oncallshift: 'Included (BYOK)' },
-    { feature: 'Webhook API compatibility', pagerduty: 'Native', oncallshift: 'PagerDuty-compatible' },
-    { feature: 'Setup time', pagerduty: 'Days to weeks', oncallshift: '< 30 minutes' },
+    { feature: 'AI Execution', pagerduty: 'Suggestions only', oncallshift: 'Full (restart, scale)' },
+    { feature: 'Setup time', pagerduty: 'Days to weeks', oncallshift: '5 min (or via AI)' },
     { feature: 'Contract required', pagerduty: 'Annual (most plans)', oncallshift: 'Month-to-month' },
-    { feature: 'Free trial', pagerduty: '14 days', oncallshift: '14 days + free tier' },
   ];
 
   const painPoints = [
     {
-      title: 'Pricing that scales with you',
-      problem: "PagerDuty's pricing jumps dramatically as you grow. The gap between Professional ($41/user) and Business ($59/user) forces you to pay for features you don't need.",
-      solution: 'OnCallShift Professional at $15/user/mo includes unlimited schedules, escalation policies, and integrations. No forced upgrades.',
+      title: 'AI-native from day one',
+      problem: "PagerDuty bolted on AI features as expensive add-ons. They don't have an MCP server, can't integrate with your AI assistant, and charge enterprise prices for basic AI diagnosis.",
+      solution: 'OnCallShift was built for the AI era. Configure your org from Claude Code. Migrate with a conversation. AI diagnosis and execution included—not an upsell.',
+    },
+    {
+      title: 'Cloud investigation that actually works',
+      problem: "PagerDuty's AI can only suggest generic fixes. It can't actually query your CloudWatch logs, check your ECS services, or investigate what's happening in your infrastructure.",
+      solution: 'Connect your AWS/GCP/Azure credentials. Our AI queries your infrastructure directly to find root causes in seconds—not hours.',
     },
     {
       title: 'No nickel-and-diming',
       problem: 'PagerDuty charges extra for Event Intelligence, AIOps, and advanced analytics. The base product often feels incomplete.',
-      solution: 'AI diagnosis is included with BYOK (bring your own key). All core features work out of the box.',
+      solution: 'AI diagnosis included with BYOK (bring your own key). All core features work out of the box. No "contact sales" for basic functionality.',
     },
     {
-      title: 'Simpler migration',
-      problem: 'Switching incident management tools typically means reconfiguring every monitoring integration and retraining your team.',
-      solution: 'Our PagerDuty-compatible webhook API means you just change the URL. Your monitoring tools keep working.',
-    },
-    {
-      title: 'Actually talk to support',
-      problem: "Enterprise support at PagerDuty requires expensive plans. Getting help on lower tiers means waiting for email responses.",
-      solution: 'Priority email support on Professional. Direct access to engineers who built the product.',
+      title: 'Migrate without the pain',
+      problem: 'Switching incident management tools typically means exporting configs, re-configuring integrations, and weeks of manual work.',
+      solution: 'Just ask your AI assistant: "Migrate from PagerDuty." We preserve your integration keys for zero-downtime cutover.',
     },
   ];
 
@@ -79,18 +79,19 @@ export function PagerDutyAlternative() {
 
       {/* Hero */}
       <section className="container mx-auto px-4 py-16 text-center">
-        <div className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
-          <span>Save 60%+ vs PagerDuty</span>
+        <div className="inline-flex items-center gap-2 bg-purple-50 text-purple-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
+          <span>🤖</span>
+          <span>The AI-native PagerDuty alternative with MCP server integration</span>
         </div>
         <h1 className="text-4xl md:text-5xl font-bold mb-6">
-          The PagerDuty Alternative That<br />
+          PagerDuty, But Built for the<br />
           <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Won't Break the Bank
+            AI Era
           </span>
         </h1>
         <p className="text-xl text-slate-600 mb-8 max-w-3xl mx-auto">
-          Same reliability. Same integrations. Fraction of the cost. OnCallShift delivers
-          enterprise-grade incident management without the enterprise price tag.
+          Configure your org from Claude Code. Migrate with a conversation. Let AI diagnose and
+          fix incidents. Built by DevOps veterans who got tired of enterprise tools that don't work.
         </p>
         <div className="flex items-center justify-center gap-4 mb-8">
           <Link to="/register">
@@ -105,7 +106,7 @@ export function PagerDutyAlternative() {
           </Link>
         </div>
         <p className="text-sm text-slate-500">
-          No credit card required. PagerDuty-compatible webhooks.
+          No credit card required. PagerDuty-compatible webhooks. Migrate via AI conversation.
         </p>
       </section>
 
