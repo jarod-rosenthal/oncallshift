@@ -10,7 +10,7 @@ import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { workflowEngine } from '../../shared/services/workflow-engine';
 import { deliverToMatchingWebhooks } from '../../shared/services/webhook-delivery';
 import { setLocationHeader } from '../../shared/utils/location-header';
-import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { parsePaginationParams, paginatedResponse, validateSortField, decodeCursor, encodeCursor } from '../../shared/utils/pagination';
 import { parseIncidentFilters, applyIncidentFilters } from '../../shared/utils/filtering';
 import { incidentFilterValidators, paginationValidators } from '../../shared/validators/pagination';
 import { notFound, internalError } from '../../shared/utils/problem-details';
@@ -99,6 +99,11 @@ router.use(authenticateRequest);
  *           type: string
  *           format: date-time
  *         description: Filter incidents triggered before this date
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *         description: Cursor for cursor-based pagination (from nextCursor/prevCursor in response)
  *     responses:
  *       200:
  *         description: List of incidents retrieved successfully
@@ -128,6 +133,7 @@ router.get('/', incidentFilterValidators, async (req: Request, res: Response) =>
     const orgId = req.orgId!;
     const pagination = parsePaginationParams(req.query);
     const filters = parseIncidentFilters(req.query);
+    const useCursorPagination = !!pagination.cursor;
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -148,24 +154,93 @@ router.get('/', incidentFilterValidators, async (req: Request, res: Response) =>
     const sortField = validateSortField('incidents', pagination.sort, 'triggeredAt');
     const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
+    // Cursor-based pagination (keyset pattern)
+    if (useCursorPagination) {
+      const cursorData = decodeCursor(pagination.cursor!);
+      if (cursorData) {
+        const operator = sortOrder === 'DESC' ? '<' : '>';
+        // Use keyset pagination: (sortField < cursorValue) OR (sortField = cursorValue AND id < cursorId)
+        queryBuilder.andWhere(
+          `(incident.${sortField} ${operator} :cursorValue OR ` +
+          `(incident.${sortField} = :cursorValue AND incident.id ${operator} :cursorId))`,
+          { cursorValue: cursorData.sortValue, cursorId: cursorData.id }
+        );
+      }
+    }
+
     // TypeORM orderBy uses property names (camelCase), not column names
     queryBuilder.orderBy(`incident.${sortField}`, sortOrder);
+    queryBuilder.addOrderBy('incident.id', sortOrder); // Secondary sort for stable ordering
 
-    // Get total count before pagination
-    const total = await queryBuilder.getCount();
+    // Get total count (only for offset-based pagination or first page)
+    let total = 0;
+    if (!useCursorPagination) {
+      total = await queryBuilder.getCount();
+    }
 
-    // Apply pagination
-    queryBuilder.skip(pagination.offset).take(pagination.limit);
+    // Fetch one extra item to determine if there are more results
+    queryBuilder.take(pagination.limit + 1);
+    if (!useCursorPagination && pagination.offset) {
+      queryBuilder.skip(pagination.offset);
+    }
 
     const incidents = await queryBuilder.getMany();
 
+    // Determine if there are more results
+    const hasMore = incidents.length > pagination.limit;
+    if (hasMore) {
+      incidents.pop(); // Remove the extra item
+    }
+
     const formattedIncidents = incidents.map(incident => formatIncident(incident));
     const lastItem = incidents[incidents.length - 1];
+    const firstItem = incidents[0];
 
-    return res.json(paginatedResponse(formattedIncidents, total, pagination, lastItem, 'incidents'));
+    // Build cursor for next page
+    let nextCursor: string | undefined;
+    let prevCursor: string | undefined;
+
+    if (hasMore && lastItem) {
+      const sortValue = lastItem[sortField as keyof Incident];
+      const sortValueStr = sortValue instanceof Date ? sortValue.toISOString() : String(sortValue);
+      nextCursor = encodeCursor({
+        id: lastItem.id,
+        sortValue: sortValueStr,
+        offset: 0,
+      });
+    }
+
+    if (useCursorPagination && firstItem) {
+      const sortValue = firstItem[sortField as keyof Incident];
+      const sortValueStr = sortValue instanceof Date ? sortValue.toISOString() : String(sortValue);
+      prevCursor = encodeCursor({
+        id: firstItem.id,
+        sortValue: sortValueStr,
+        offset: 0,
+      });
+    }
+
+    // Build response with both offset and cursor pagination metadata
+    const response: Record<string, unknown> = {
+      data: formattedIncidents,
+      incidents: formattedIncidents, // Legacy key for backwards compatibility
+      pagination: {
+        limit: pagination.limit,
+        hasMore,
+        ...(nextCursor && { nextCursor }),
+        ...(prevCursor && { prevCursor }),
+        // Include offset-based metadata for backwards compatibility
+        ...(!useCursorPagination && {
+          total,
+          offset: pagination.offset || 0,
+        }),
+      },
+    };
+
+    return res.json(response);
   } catch (error) {
     logger.error('Error fetching incidents:', error);
-    return internalError(res, 'Failed to fetch incidents');
+    return internalError(res);
   }
 });
 
@@ -259,6 +334,11 @@ router.get('/:id', async (req: Request, res: Response) => {
  *           enum: [asc, desc]
  *           default: asc
  *         description: Sort order (asc = oldest first, desc = newest first)
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: string
+ *         description: Cursor for cursor-based pagination (from nextCursor/prevCursor in response)
  *     responses:
  *       200:
  *         description: Timeline events retrieved successfully
@@ -283,6 +363,7 @@ router.get('/:id/timeline', paginationValidators, async (req: Request, res: Resp
     const { id } = req.params;
     const orgId = req.orgId!;
     const pagination = parsePaginationParams(req.query);
+    const useCursorPagination = !!pagination.cursor;
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -303,17 +384,44 @@ router.get('/:id/timeline', paginationValidators, async (req: Request, res: Resp
       .leftJoinAndSelect('event.actor', 'actor')
       .where('event.incidentId = :incidentId', { incidentId: id });
 
-    // Get total count
-    const total = await queryBuilder.getCount();
-
     // Apply sorting (default ASC for timeline - oldest first)
     const sortOrder = pagination.order === 'desc' ? 'DESC' : 'ASC';
-    queryBuilder.orderBy('event.createdAt', sortOrder);
 
-    // Apply pagination
-    queryBuilder.skip(pagination.offset).take(pagination.limit);
+    // Cursor-based pagination (keyset pattern)
+    if (useCursorPagination) {
+      const cursorData = decodeCursor(pagination.cursor!);
+      if (cursorData) {
+        const operator = sortOrder === 'DESC' ? '<' : '>';
+        queryBuilder.andWhere(
+          `(event.createdAt ${operator} :cursorValue OR ` +
+          `(event.createdAt = :cursorValue AND event.id ${operator} :cursorId))`,
+          { cursorValue: cursorData.sortValue, cursorId: cursorData.id }
+        );
+      }
+    }
+
+    queryBuilder.orderBy('event.createdAt', sortOrder);
+    queryBuilder.addOrderBy('event.id', sortOrder); // Secondary sort for stable ordering
+
+    // Get total count (only for offset-based pagination)
+    let total = 0;
+    if (!useCursorPagination) {
+      total = await queryBuilder.getCount();
+    }
+
+    // Fetch one extra item to determine if there are more results
+    queryBuilder.take(pagination.limit + 1);
+    if (!useCursorPagination && pagination.offset) {
+      queryBuilder.skip(pagination.offset);
+    }
 
     const events = await queryBuilder.getMany();
+
+    // Determine if there are more results
+    const hasMore = events.length > pagination.limit;
+    if (hasMore) {
+      events.pop(); // Remove the extra item
+    }
 
     const formattedEvents = events.map(event => ({
       id: event.id,
@@ -330,10 +438,48 @@ router.get('/:id/timeline', paginationValidators, async (req: Request, res: Resp
     }));
 
     const lastItem = events[events.length - 1];
-    return res.json(paginatedResponse(formattedEvents, total, pagination, lastItem, 'events'));
+    const firstItem = events[0];
+
+    // Build cursors
+    let nextCursor: string | undefined;
+    let prevCursor: string | undefined;
+
+    if (hasMore && lastItem) {
+      nextCursor = encodeCursor({
+        id: lastItem.id,
+        sortValue: lastItem.createdAt.toISOString(),
+        offset: 0,
+      });
+    }
+
+    if (useCursorPagination && firstItem) {
+      prevCursor = encodeCursor({
+        id: firstItem.id,
+        sortValue: firstItem.createdAt.toISOString(),
+        offset: 0,
+      });
+    }
+
+    // Build response with both offset and cursor pagination metadata
+    const response: Record<string, unknown> = {
+      data: formattedEvents,
+      events: formattedEvents, // Legacy key for backwards compatibility
+      pagination: {
+        limit: pagination.limit,
+        hasMore,
+        ...(nextCursor && { nextCursor }),
+        ...(prevCursor && { prevCursor }),
+        ...(!useCursorPagination && {
+          total,
+          offset: pagination.offset || 0,
+        }),
+      },
+    };
+
+    return res.json(response);
   } catch (error) {
     logger.error('Error fetching incident timeline:', error);
-    return internalError(res, 'Failed to fetch incident timeline');
+    return internalError(res);
   }
 });
 
@@ -1821,10 +1967,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
  * GET /api/v1/incidents/:id/responders
  * List responders for an incident
  */
-router.get('/:id/responders', async (req: Request, res: Response) => {
+router.get('/:id/responders', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -1836,38 +1983,52 @@ router.get('/:id/responders', async (req: Request, res: Response) => {
     });
 
     if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
+      return notFound(res, 'Incident', id);
     }
 
-    const responders = await responderRepo.find({
-      where: { incidentId: id },
-      relations: ['user', 'requestedBy'],
-      order: { createdAt: 'ASC' },
-    });
+    // Build query with pagination
+    const queryBuilder = responderRepo
+      .createQueryBuilder('responder')
+      .leftJoinAndSelect('responder.user', 'user')
+      .leftJoinAndSelect('responder.requestedBy', 'requestedBy')
+      .where('responder.incidentId = :incidentId', { incidentId: id });
 
-    return res.json({
-      responders: responders.map(r => ({
-        id: r.id,
-        user: {
-          id: r.user.id,
-          fullName: r.user.fullName,
-          email: r.user.email,
-          profilePictureUrl: r.user.profilePictureUrl,
-        },
-        requestedBy: {
-          id: r.requestedBy.id,
-          fullName: r.requestedBy.fullName,
-          email: r.requestedBy.email,
-        },
-        status: r.status,
-        message: r.message,
-        respondedAt: r.respondedAt,
-        createdAt: r.createdAt,
-      })),
-    });
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Apply sorting (default ASC for timeline order)
+    const sortOrder = pagination.order === 'desc' ? 'DESC' : 'ASC';
+    queryBuilder.orderBy('responder.createdAt', sortOrder);
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const responders = await queryBuilder.getMany();
+
+    const formattedResponders = responders.map(r => ({
+      id: r.id,
+      user: r.user ? {
+        id: r.user.id,
+        fullName: r.user.fullName,
+        email: r.user.email,
+        profilePictureUrl: r.user.profilePictureUrl,
+      } : null,
+      requestedBy: r.requestedBy ? {
+        id: r.requestedBy.id,
+        fullName: r.requestedBy.fullName,
+        email: r.requestedBy.email,
+      } : null,
+      status: r.status,
+      message: r.message,
+      respondedAt: r.respondedAt,
+      createdAt: r.createdAt,
+    }));
+
+    const lastItem = responders[responders.length - 1];
+    return res.json(paginatedResponse(formattedResponders, total, pagination, lastItem, 'responders'));
   } catch (error) {
     logger.error('Error fetching responders:', error);
-    return res.status(500).json({ error: 'Failed to fetch responders' });
+    return internalError(res, 'Failed to fetch responders');
   }
 });
 
@@ -2466,10 +2627,11 @@ router.post(
  * GET /api/v1/incidents/:id/subscribers
  * List all subscribers for an incident
  */
-router.get('/:id/subscribers', async (req: Request, res: Response) => {
+router.get('/:id/subscribers', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -2481,42 +2643,57 @@ router.get('/:id/subscribers', async (req: Request, res: Response) => {
     });
 
     if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
+      return notFound(res, 'Incident', id);
     }
 
-    const subscribers = await subscriberRepo.find({
-      where: { incidentId: id, active: true },
-      relations: ['user', 'addedByUser'],
-      order: { createdAt: 'DESC' },
-    });
+    // Build query with pagination
+    const queryBuilder = subscriberRepo
+      .createQueryBuilder('subscriber')
+      .leftJoinAndSelect('subscriber.user', 'user')
+      .leftJoinAndSelect('subscriber.addedByUser', 'addedByUser')
+      .where('subscriber.incidentId = :incidentId', { incidentId: id })
+      .andWhere('subscriber.active = :active', { active: true });
 
-    return res.json({
-      subscribers: subscribers.map(sub => ({
-        id: sub.id,
-        email: sub.email,
-        displayName: sub.getDisplayName(),
-        role: sub.role,
-        channel: sub.channel,
-        isInternal: sub.isInternal(),
-        confirmed: sub.confirmed,
-        notifyOnStatusUpdate: sub.notifyOnStatusUpdate,
-        notifyOnResolution: sub.notifyOnResolution,
-        notifyOnEscalation: sub.notifyOnEscalation,
-        user: sub.user ? {
-          id: sub.user.id,
-          fullName: sub.user.fullName,
-          email: sub.user.email,
-        } : null,
-        addedBy: sub.addedByUser ? {
-          id: sub.addedByUser.id,
-          fullName: sub.addedByUser.fullName,
-        } : null,
-        createdAt: sub.createdAt,
-      })),
-    });
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Apply sorting (default DESC - newest first)
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+    queryBuilder.orderBy('subscriber.createdAt', sortOrder);
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const subscribers = await queryBuilder.getMany();
+
+    const formattedSubscribers = subscribers.map(sub => ({
+      id: sub.id,
+      email: sub.email,
+      displayName: sub.getDisplayName(),
+      role: sub.role,
+      channel: sub.channel,
+      isInternal: sub.isInternal(),
+      confirmed: sub.confirmed,
+      notifyOnStatusUpdate: sub.notifyOnStatusUpdate,
+      notifyOnResolution: sub.notifyOnResolution,
+      notifyOnEscalation: sub.notifyOnEscalation,
+      user: sub.user ? {
+        id: sub.user.id,
+        fullName: sub.user.fullName,
+        email: sub.user.email,
+      } : null,
+      addedBy: sub.addedByUser ? {
+        id: sub.addedByUser.id,
+        fullName: sub.addedByUser.fullName,
+      } : null,
+      createdAt: sub.createdAt,
+    }));
+
+    const lastItem = subscribers[subscribers.length - 1];
+    return res.json(paginatedResponse(formattedSubscribers, total, pagination, lastItem, 'subscribers'));
   } catch (error) {
     logger.error('Error fetching incident subscribers:', error);
-    return res.status(500).json({ error: 'Failed to fetch subscribers' });
+    return internalError(res, 'Failed to fetch subscribers');
   }
 });
 
@@ -2698,10 +2875,11 @@ router.delete('/:id/subscribers/:subscriberId', async (req: Request, res: Respon
  * GET /api/v1/incidents/:id/status-updates
  * List all status updates for an incident
  */
-router.get('/:id/status-updates', async (req: Request, res: Response) => {
+router.get('/:id/status-updates', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -2713,37 +2891,50 @@ router.get('/:id/status-updates', async (req: Request, res: Response) => {
     });
 
     if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
+      return notFound(res, 'Incident', id);
     }
 
-    const updates = await updateRepo.find({
-      where: { incidentId: id },
-      relations: ['postedByUser'],
-      order: { createdAt: 'DESC' },
-    });
+    // Build query with pagination
+    const queryBuilder = updateRepo
+      .createQueryBuilder('update')
+      .leftJoinAndSelect('update.postedByUser', 'postedByUser')
+      .where('update.incidentId = :incidentId', { incidentId: id });
 
-    return res.json({
-      statusUpdates: updates.map(update => ({
-        id: update.id,
-        updateType: update.updateType,
-        typeLabel: update.getTypeLabel(),
-        typeColor: update.getTypeColor(),
-        message: update.message,
-        isPublic: update.isPublic,
-        notificationsSent: update.notificationsSent,
-        notificationsSentAt: update.notificationsSentAt,
-        subscriberCount: update.subscriberCount,
-        postedBy: update.postedByUser ? {
-          id: update.postedByUser.id,
-          fullName: update.postedByUser.fullName,
-          email: update.postedByUser.email,
-        } : null,
-        createdAt: update.createdAt,
-      })),
-    });
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Apply sorting (default DESC - newest first)
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+    queryBuilder.orderBy('update.createdAt', sortOrder);
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const updates = await queryBuilder.getMany();
+
+    const formattedUpdates = updates.map(update => ({
+      id: update.id,
+      updateType: update.updateType,
+      typeLabel: update.getTypeLabel(),
+      typeColor: update.getTypeColor(),
+      message: update.message,
+      isPublic: update.isPublic,
+      notificationsSent: update.notificationsSent,
+      notificationsSentAt: update.notificationsSentAt,
+      subscriberCount: update.subscriberCount,
+      postedBy: update.postedByUser ? {
+        id: update.postedByUser.id,
+        fullName: update.postedByUser.fullName,
+        email: update.postedByUser.email,
+      } : null,
+      createdAt: update.createdAt,
+    }));
+
+    const lastItem = updates[updates.length - 1];
+    return res.json(paginatedResponse(formattedUpdates, total, pagination, lastItem, 'statusUpdates'));
   } catch (error) {
     logger.error('Error fetching status updates:', error);
-    return res.status(500).json({ error: 'Failed to fetch status updates' });
+    return internalError(res, 'Failed to fetch status updates');
   }
 });
 

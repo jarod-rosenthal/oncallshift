@@ -10,6 +10,7 @@ import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { setLocationHeader } from '../../shared/utils/location-header';
 import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
 import { paginationValidators } from '../../shared/validators/pagination';
+import { notFound, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -1533,53 +1534,61 @@ function calculateCurrentOncallUser(
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/:id/members', async (req: Request, res: Response) => {
+router.get('/:id/members', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
 
     const dataSource = await getDataSource();
     const scheduleRepo = dataSource.getRepository(Schedule);
     const memberRepo = dataSource.getRepository(ScheduleMember);
-    const userRepo = dataSource.getRepository(User);
 
     const schedule = await scheduleRepo.findOne({
       where: { id, orgId },
     });
 
     if (!schedule) {
-      return res.status(404).json({ error: 'Schedule not found' });
+      return notFound(res, 'Schedule', id);
     }
 
-    const members = await memberRepo.find({
-      where: { scheduleId: id },
-      order: { position: 'ASC' },
-    });
+    // Build query with pagination
+    const queryBuilder = memberRepo
+      .createQueryBuilder('member')
+      .leftJoinAndSelect('member.user', 'user')
+      .where('member.scheduleId = :scheduleId', { scheduleId: id });
 
-    const membersWithUsers = await Promise.all(
-      members.map(async (member) => {
-        const user = await userRepo.findOne({ where: { id: member.userId } });
-        return {
-          id: member.id,
-          userId: member.userId,
-          position: member.position,
-          user: user ? {
-            id: user.id,
-            email: user.email,
-            fullName: user.fullName,
-            hasAvailability: user.settings?.availability !== null && user.settings?.availability !== undefined,
-          } : null,
-          createdAt: member.createdAt,
-        };
-      })
-    );
+    // Get total count
+    const total = await queryBuilder.getCount();
 
-    return res.json({
-      members: membersWithUsers,
-    });
+    // Apply sorting (default by position ASC)
+    const sortField = pagination.sort === 'createdAt' ? 'createdAt' : 'position';
+    const sortOrder = pagination.order === 'desc' ? 'DESC' : 'ASC';
+    queryBuilder.orderBy(`member.${sortField}`, sortOrder);
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const members = await queryBuilder.getMany();
+
+    const formattedMembers = members.map(member => ({
+      id: member.id,
+      userId: member.userId,
+      position: member.position,
+      user: member.user ? {
+        id: member.user.id,
+        email: member.user.email,
+        fullName: member.user.fullName,
+        hasAvailability: member.user.settings?.availability !== null && member.user.settings?.availability !== undefined,
+      } : null,
+      createdAt: member.createdAt,
+    }));
+
+    const lastItem = members[members.length - 1];
+    return res.json(paginatedResponse(formattedMembers, total, pagination, lastItem, 'members'));
   } catch (error) {
     logger.error('Error fetching schedule members:', error);
-    return res.status(500).json({ error: 'Failed to fetch schedule members' });
+    return internalError(res, 'Failed to fetch schedule members');
   }
 });
 

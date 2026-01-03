@@ -9,6 +9,7 @@ import { logger } from '../../shared/utils/logger';
 import { setLocationHeader } from '../../shared/utils/location-header';
 import { parsePaginationParams, paginatedResponse } from '../../shared/utils/pagination';
 import { paginationValidators } from '../../shared/validators/pagination';
+import { notFound, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -191,7 +192,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating API key:', error);
-      return res.status(500).json({ error: 'Failed to create API key' });
+      return internalError(res);
     }
   }
 );
@@ -271,7 +272,7 @@ router.get('/', [...paginationValidators], async (req: Request, res: Response) =
     ));
   } catch (error) {
     logger.error('Error listing API keys:', error);
-    return res.status(500).json({ error: 'Failed to list API keys' });
+    return internalError(res);
   }
 });
 
@@ -326,7 +327,7 @@ router.delete(
       });
 
       if (!apiKey) {
-        return res.status(404).json({ error: 'API key not found' });
+        return notFound(res, 'API key', id);
       }
 
       await apiKeyRepo.remove(apiKey);
@@ -342,7 +343,7 @@ router.delete(
       return res.status(204).send();
     } catch (error) {
       logger.error('Error revoking API key:', error);
-      return res.status(500).json({ error: 'Failed to revoke API key' });
+      return internalError(res);
     }
   }
 );
@@ -410,7 +411,7 @@ router.post(
       });
 
       if (!apiKey) {
-        return res.status(404).json({ error: 'API key not found' });
+        return notFound(res, 'API key', id);
       }
 
       // Generate new token
@@ -443,7 +444,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error rotating API key:', error);
-      return res.status(500).json({ error: 'Failed to rotate API key' });
+      return internalError(res);
     }
   }
 );

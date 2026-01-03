@@ -6,6 +6,7 @@ import { CloudCredential, CloudAccessLog } from '../../shared/models';
 import { encryptCredentials, decryptCredentials } from '../../shared/services/credential-encryption';
 import { runCloudInvestigation } from '../../shared/services/cloud-investigation';
 import { logger } from '../../shared/utils/logger';
+import { notFound, internalError, badRequest } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -133,7 +134,7 @@ router.get(
       });
     } catch (error) {
       logger.error('Error listing cloud credentials:', error);
-      return res.status(500).json({ error: 'Failed to list cloud credentials' });
+      return internalError(res);
     }
   }
 );
@@ -193,7 +194,7 @@ router.get(
       });
     } catch (error) {
       logger.error('Error listing cloud access logs:', error);
-      return res.status(500).json({ error: 'Failed to list access logs' });
+      return internalError(res);
     }
   }
 );
@@ -216,13 +217,13 @@ router.get('/access-logs/:logId', async (req: Request, res: Response) => {
     });
 
     if (!log) {
-      return res.status(404).json({ error: 'Access log not found' });
+      return notFound(res, 'Access log', logId);
     }
 
     return res.json({ access_log: formatAccessLog(log) });
   } catch (error) {
     logger.error('Error fetching cloud access log:', error);
-    return res.status(500).json({ error: 'Failed to fetch access log' });
+    return internalError(res);
   }
 });
 
@@ -248,13 +249,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!credential) {
-      return res.status(404).json({ error: 'Cloud credential not found' });
+      return notFound(res, 'Cloud credential', id);
     }
 
     return res.json({ credential: formatCredential(credential) });
   } catch (error) {
     logger.error('Error fetching cloud credential:', error);
-    return res.status(500).json({ error: 'Failed to fetch cloud credential' });
+    return internalError(res);
   }
 });
 
@@ -385,7 +386,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating cloud credential:', error);
-      return res.status(500).json({ error: 'Failed to create cloud credential' });
+      return internalError(res);
     }
   }
 );
@@ -428,7 +429,7 @@ router.put(
       });
 
       if (!credential) {
-        return res.status(404).json({ error: 'Cloud credential not found' });
+        return notFound(res, 'Cloud credential', id);
       }
 
       const {
@@ -474,7 +475,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating cloud credential:', error);
-      return res.status(500).json({ error: 'Failed to update cloud credential' });
+      return internalError(res);
     }
   }
 );
@@ -501,7 +502,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     if (!credential) {
-      return res.status(404).json({ error: 'Cloud credential not found' });
+      return notFound(res, 'Cloud credential', id);
     }
 
     await credentialRepo.remove(credential);
@@ -517,7 +518,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     logger.error('Error deleting cloud credential:', error);
-    return res.status(500).json({ error: 'Failed to delete cloud credential' });
+    return internalError(res);
   }
 });
 
@@ -538,7 +539,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     });
 
     if (!credential) {
-      return res.status(404).json({ error: 'Cloud credential not found' });
+      return notFound(res, 'Cloud credential', id);
     }
 
     // Decrypt credentials
@@ -630,11 +631,11 @@ router.post(
       });
 
       if (!credential) {
-        return res.status(404).json({ error: 'Cloud credential not found' });
+        return notFound(res, 'Cloud credential', id);
       }
 
       if (!credential.enabled) {
-        return res.status(400).json({ error: 'Cloud credential is disabled' });
+        return badRequest(res, 'Cloud credential is disabled');
       }
 
       // Run unified investigation with AI analysis
@@ -692,7 +693,7 @@ router.post(
       const userId = req.user!.id;
 
       if (!confirmed) {
-        return res.status(400).json({ error: 'Remediation must be confirmed before execution' });
+        return badRequest(res, 'Remediation must be confirmed before execution');
       }
 
       const dataSource = await getDataSource();
@@ -705,11 +706,11 @@ router.post(
       });
 
       if (!credential) {
-        return res.status(404).json({ error: 'Cloud credential not found' });
+        return notFound(res, 'Cloud credential', id);
       }
 
       if (!credential.enabled) {
-        return res.status(400).json({ error: 'Cloud credential is disabled' });
+        return badRequest(res, 'Cloud credential is disabled');
       }
 
       // Check permission level
@@ -724,12 +725,12 @@ router.post(
       });
 
       if (!accessLog) {
-        return res.status(404).json({ error: 'No investigation found for this incident' });
+        return notFound(res, 'Investigation for incident', incident_id);
       }
 
       const recommendations = accessLog.recommendations || [];
       if (recommendation_index >= recommendations.length) {
-        return res.status(400).json({ error: 'Invalid recommendation index' });
+        return badRequest(res, 'Invalid recommendation index');
       }
 
       const recommendation = recommendations[recommendation_index];
