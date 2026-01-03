@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Incident } from './Incident';
 import { User } from './User';
+import { Organization } from './Organization';
 
 export type NotificationChannel = 'push' | 'sms' | 'voice' | 'email';
 export type NotificationStatus = 'pending' | 'sent' | 'delivered' | 'failed' | 'opened';
@@ -9,6 +10,9 @@ export type NotificationStatus = 'pending' | 'sent' | 'delivered' | 'failed' | '
 export class Notification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ name: 'org_id', type: 'uuid' })
+  orgId: string;
 
   @Column({ name: 'incident_id', type: 'uuid' })
   incidentId: string;
@@ -50,6 +54,10 @@ export class Notification {
   updatedAt: Date;
 
   // Relations
+  @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'org_id' })
+  organization: Organization;
+
   @ManyToOne(() => Incident, incident => incident.notifications, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'incident_id' })
   incident: Incident;

@@ -7,6 +7,8 @@ import { Integration, IntegrationType, Service } from '../../shared/models';
 import { getIntegrationService } from '../../shared/services/integration-service';
 import { createSlackIntegration } from '../../shared/services/slack-integration';
 import { logger } from '../../shared/utils/logger';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -133,19 +135,37 @@ router.use(authenticateRequest);
  * GET /api/v1/integrations
  * List all integrations for the org
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...paginationValidators], async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
     const type = req.query.type as IntegrationType | undefined;
+    const pagination = parsePaginationParams(req.query);
+    const sortField = validateSortField('integrations', pagination.sort, 'createdAt');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
     const dataSource = await getDataSource();
-    const integrationService = getIntegrationService(dataSource);
+    const integrationRepo = dataSource.getRepository(Integration);
 
-    const integrations = await integrationService.getIntegrationsByOrg(orgId, type);
+    const where: any = { orgId };
+    if (type) {
+      where.type = type;
+    }
 
-    return res.json({
-      integrations: integrations.map(formatIntegration),
+    const [integrations, total] = await integrationRepo.findAndCount({
+      where,
+      order: { [sortField]: sortOrder },
+      skip: pagination.offset,
+      take: pagination.limit,
     });
+
+    const lastItem = integrations[integrations.length - 1];
+    return res.json(paginatedResponse(
+      integrations.map(formatIntegration),
+      total,
+      pagination,
+      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+      'integrations'
+    ));
   } catch (error) {
     logger.error('Error fetching integrations:', error);
     return res.status(500).json({ error: 'Failed to fetch integrations' });

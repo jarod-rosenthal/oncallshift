@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { usersAPI } from '../lib/api-client';
-import { Bell, Moon, Clock } from 'lucide-react';
+import { Bell, Moon, Clock, Smartphone, Mail, MessageSquare } from 'lucide-react';
+import { useAuthStore } from '../store/auth-store';
 
 const TIMEZONES = [
   'America/New_York',
@@ -25,10 +26,16 @@ const TIMEZONES = [
 ];
 
 export function NotificationPreferences() {
+  const { setUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Channel preferences
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [smsEnabled, setSmsEnabled] = useState(true);
 
   // Do Not Disturb settings
   const [dndEnabled, setDndEnabled] = useState(false);
@@ -43,14 +50,32 @@ export function NotificationPreferences() {
   const loadPreferences = async () => {
     try {
       setIsLoading(true);
-      const response = await usersAPI.getDNDSettings();
-      const dnd = response.dnd;
+
+      // Fetch fresh user data and DND settings in parallel
+      const [dndResponse, userResponse] = await Promise.all([
+        usersAPI.getDNDSettings(),
+        usersAPI.getMe(),
+      ]);
+
+      const dnd = dndResponse.dnd;
+      const freshUser = userResponse.user;
 
       // Load DND settings
       setDndEnabled(dnd.enabled || false);
       setDndStartTime(dnd.startTime || '22:00');
       setDndEndTime(dnd.endTime || '08:00');
       setDndTimezone(dnd.timezone || 'America/New_York');
+
+      // Load channel preferences from fresh user settings
+      if (freshUser?.settings?.notificationPreferences) {
+        const prefs = freshUser.settings.notificationPreferences;
+        setPushEnabled(prefs.push?.enabled !== false);
+        setEmailEnabled(prefs.email?.enabled !== false);
+        setSmsEnabled(prefs.sms?.enabled !== false);
+      }
+
+      // Update auth store with fresh user data
+      setUser(freshUser);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load preferences');
     } finally {
@@ -63,12 +88,26 @@ export function NotificationPreferences() {
       setIsSaving(true);
       setError(null);
 
+      // Save DND settings
       await usersAPI.updateDNDSettings({
         enabled: dndEnabled,
         startTime: dndEnabled ? dndStartTime : null,
         endTime: dndEnabled ? dndEndTime : null,
         timezone: dndEnabled ? dndTimezone : null,
       });
+
+      // Save channel preferences
+      await usersAPI.updateProfile({
+        notificationPreferences: {
+          push: { enabled: pushEnabled, types: ['triggered', 'acknowledged'] },
+          email: { enabled: emailEnabled, types: ['triggered', 'acknowledged'] },
+          sms: { enabled: smsEnabled, types: ['triggered', 'acknowledged'] },
+        },
+      });
+
+      // Refresh user data to get updated settings
+      const { user: updatedUser } = await usersAPI.getMe();
+      setUser(updatedUser);
 
       setSuccess('Notification preferences updated successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -113,6 +152,95 @@ export function NotificationPreferences() {
           {success}
         </div>
       )}
+
+      {/* Notification Channels */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="w-5 h-5" />
+            Notification Channels
+          </CardTitle>
+          <CardDescription>
+            Choose which channels you want to receive incident notifications on
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Push Notifications */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <Label htmlFor="push-enabled" className="text-base font-medium">
+                  Push Notifications
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Receive alerts on your mobile device
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                id="push-enabled"
+                type="checkbox"
+                checked={pushEnabled}
+                onChange={(e) => setPushEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* Email Notifications */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Mail className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <Label htmlFor="email-enabled" className="text-base font-medium">
+                  Email Notifications
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Receive alerts via email
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                id="email-enabled"
+                type="checkbox"
+                checked={emailEnabled}
+                onChange={(e) => setEmailEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* SMS Notifications */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <MessageSquare className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <Label htmlFor="sms-enabled" className="text-base font-medium">
+                  SMS Notifications
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Receive text messages for critical/error incidents
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                id="sms-enabled"
+                type="checkbox"
+                checked={smsEnabled}
+                onChange={(e) => setSmsEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Do Not Disturb Settings */}
       <Card className="mb-6">

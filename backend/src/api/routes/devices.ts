@@ -116,44 +116,6 @@ router.post(
 );
 
 /**
- * DELETE /api/v1/devices/:id
- * Unregister a device token
- */
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const user = req.user!;
-
-    const dataSource = await getDataSource();
-    const deviceRepo = dataSource.getRepository(DeviceToken);
-
-    const device = await deviceRepo.findOne({
-      where: { id, userId: user.id },
-    });
-
-    if (!device) {
-      return res.status(404).json({ error: 'Device not found' });
-    }
-
-    // Mark as inactive instead of deleting
-    device.isActive = false;
-    await deviceRepo.save(device);
-
-    logger.info('Device token unregistered', {
-      userId: user.id,
-      deviceId: device.id,
-    });
-
-    return res.json({
-      message: 'Device unregistered successfully',
-    });
-  } catch (error) {
-    logger.error('Error unregistering device:', error);
-    return res.status(500).json({ error: 'Failed to unregister device' });
-  }
-});
-
-/**
  * GET /api/v1/devices
  * List user's registered devices
  */
@@ -188,6 +150,7 @@ router.get('/', async (req: Request, res: Response) => {
 /**
  * DELETE /api/v1/devices/cleanup
  * Remove all non-Expo device tokens (old FCM tokens that won't work with Expo)
+ * NOTE: This route must be defined BEFORE /:id to avoid "cleanup" being treated as an id
  */
 router.delete('/cleanup', async (req: Request, res: Response) => {
   try {
@@ -288,6 +251,45 @@ router.get('/debug', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error in debug endpoint:', error);
     return res.status(500).json({ error: 'Failed to get debug info' });
+  }
+});
+
+/**
+ * DELETE /api/v1/devices/:id
+ * Unregister a device token
+ * NOTE: This route must be defined AFTER /cleanup and /debug to avoid those paths being treated as IDs
+ */
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+
+    const dataSource = await getDataSource();
+    const deviceRepo = dataSource.getRepository(DeviceToken);
+
+    const device = await deviceRepo.findOne({
+      where: { id, userId: user.id },
+    });
+
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    // Mark as inactive instead of deleting
+    device.isActive = false;
+    await deviceRepo.save(device);
+
+    logger.info('Device token unregistered', {
+      userId: user.id,
+      deviceId: device.id,
+    });
+
+    return res.json({
+      message: 'Device unregistered successfully',
+    });
+  } catch (error) {
+    logger.error('Error unregistering device:', error);
+    return res.status(500).json({ error: 'Failed to unregister device' });
   }
 });
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { body, param, query, validationResult } from 'express-validator';
+import { body, param, query as queryValidator, validationResult } from 'express-validator';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminDisableUserCommand, AdminEnableUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -17,6 +17,9 @@ import {
   generateCredentialHint,
   validateCredential,
 } from '../../shared/services/credential-encryption-service';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { parseUserFilters, applyUserFilters } from '../../shared/utils/filtering';
+import { userFilterValidators } from '../../shared/validators/pagination';
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -283,14 +286,96 @@ router.put(
 );
 
 /**
- * GET /api/v1/users
- * List users in the organization (with optional filters)
- * Admin-only route
+ * @swagger
+ * /api/v1/users:
+ *   get:
+ *     summary: List users in the organization
+ *     description: Retrieves paginated list of users with optional filters. Admin-only.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 25
+ *         description: Maximum number of users to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of users to skip for pagination
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [fullName, email, createdAt, status]
+ *         description: Field to sort by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         description: Sort order
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search users by name or email
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, pending]
+ *         description: Filter by user status
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [owner, admin, member, viewer]
+ *         description: Filter by user role
+ *       - in: query
+ *         name: hasAvailability
+ *         schema:
+ *           type: boolean
+ *         description: Filter users who have availability configured
+ *       - in: query
+ *         name: includeInactive
+ *         schema:
+ *           type: boolean
+ *         description: Include inactive users in results
+ *     responses:
+ *       200:
+ *         description: List of users retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Admin access required
+ *       500:
+ *         description: Internal server error
  */
 router.get(
   '/',
   [
-    query('hasAvailability').optional().isBoolean().withMessage('hasAvailability must be a boolean'),
+    ...userFilterValidators,
+    queryValidator('hasAvailability').optional().isBoolean().withMessage('hasAvailability must be a boolean'),
+    queryValidator('includeInactive').optional().isBoolean().withMessage('includeInactive must be a boolean'),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -302,36 +387,65 @@ router.get(
       }
 
       const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
+      const filters = parseUserFilters(req.query);
       const hasAvailabilityFilter = req.query.hasAvailability === 'true';
+      const includeInactive = req.query.includeInactive === 'true';
 
       const dataSource = await getDataSource();
       const userRepo = dataSource.getRepository(User);
 
-      const includeInactive = req.query.includeInactive === 'true';
+      // Build query with filters
+      const queryBuilder = userRepo
+        .createQueryBuilder('user')
+        .where('user.org_id = :orgId', { orgId });
 
-      let users = await userRepo.find({
-        where: includeInactive ? { orgId } : { orgId, status: 'active' },
-        order: { fullName: 'ASC', email: 'ASC' },
-      });
+      // Apply status filter: if not filtering by specific status and not including inactive, default to active
+      if (!filters.status && !includeInactive) {
+        queryBuilder.andWhere('user.status = :defaultStatus', { defaultStatus: 'active' });
+      }
 
-      // Filter users with availability if requested
+      // Apply user filters (search, status, role, teamId)
+      applyUserFilters(queryBuilder, filters, 'user');
+
+      // Get valid sort field and apply sorting
+      const sortField = validateSortField('users', pagination.sort, 'fullName');
+      const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
+      // Map camelCase to snake_case for sorting
+      const snakeCaseSortField = sortField === 'fullName' ? 'full_name' : sortField === 'createdAt' ? 'created_at' : sortField;
+      queryBuilder.orderBy(`user.${snakeCaseSortField}`, sortOrder);
+      if (sortField === 'fullName') {
+        queryBuilder.addOrderBy('user.email', 'ASC');
+      }
+
+      // Get total count before pagination
+      const total = await queryBuilder.getCount();
+
+      // Apply pagination
+      queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+      let users = await queryBuilder.getMany();
+
+      // Filter users with availability if requested (post-query filter since it's in JSONB)
       if (hasAvailabilityFilter) {
         users = users.filter(u => u.settings?.availability !== null && u.settings?.availability !== undefined);
       }
 
-      return res.json({
-        users: users.map(u => ({
-          id: u.id,
-          email: u.email,
-          fullName: u.fullName,
-          role: u.role,
-          status: u.status,
-          phoneNumber: u.phoneNumber,
-          hasAvailability: u.settings?.availability !== null && u.settings?.availability !== undefined,
-          availability: u.settings?.availability || null,
-          createdAt: u.createdAt,
-        })),
-      });
+      const formattedUsers = users.map(u => ({
+        id: u.id,
+        email: u.email,
+        fullName: u.fullName,
+        role: u.role,
+        status: u.status,
+        phoneNumber: u.phoneNumber,
+        hasAvailability: u.settings?.availability !== null && u.settings?.availability !== undefined,
+        availability: u.settings?.availability || null,
+        createdAt: u.createdAt,
+      }));
+
+      const lastItem = users[users.length - 1];
+      return res.json(paginatedResponse(formattedUsers, total, pagination, lastItem, 'users'));
     } catch (error) {
       logger.error('Error listing users:', error);
       return res.status(500).json({ error: 'Failed to list users' });

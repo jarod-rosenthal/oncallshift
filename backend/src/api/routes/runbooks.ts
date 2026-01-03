@@ -6,6 +6,8 @@ import { Runbook, Service, StepType, AutomationMode, ScriptLanguage } from '../.
 import { logger } from '../../shared/utils/logger';
 import { In } from 'typeorm';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { paginationValidators } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -16,21 +18,32 @@ router.use(authenticateRequest);
  * GET /api/v1/runbooks
  * Get all runbooks for the organization
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...paginationValidators], async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const sortField = validateSortField('runbooks', pagination.sort, 'createdAt');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
     const dataSource = await getDataSource();
     const runbookRepo = dataSource.getRepository(Runbook);
 
-    const runbooks = await runbookRepo.find({
+    const [runbooks, total] = await runbookRepo.findAndCount({
       where: { orgId, isActive: true },
       relations: ['service', 'createdBy'],
-      order: { createdAt: 'DESC' },
+      order: { [sortField]: sortOrder },
+      skip: pagination.offset,
+      take: pagination.limit,
     });
 
-    return res.json({
-      runbooks: runbooks.map(formatRunbook),
-    });
+    const lastItem = runbooks[runbooks.length - 1];
+    return res.json(paginatedResponse(
+      runbooks.map(formatRunbook),
+      total,
+      pagination,
+      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+      'runbooks'
+    ));
   } catch (error) {
     logger.error('Error fetching runbooks:', error);
     return res.status(500).json({ error: 'Failed to fetch runbooks' });
@@ -41,10 +54,14 @@ router.get('/', async (req: Request, res: Response) => {
  * GET /api/v1/services/:serviceId/runbooks
  * Get runbooks for a specific service
  */
-router.get('/service/:serviceId', async (req: Request, res: Response) => {
+router.get('/service/:serviceId', [...paginationValidators], async (req: Request, res: Response) => {
   try {
     const { serviceId } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const sortField = validateSortField('runbooks', pagination.sort, 'createdAt');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
     const dataSource = await getDataSource();
     const runbookRepo = dataSource.getRepository(Runbook);
     const serviceRepo = dataSource.getRepository(Service);
@@ -58,15 +75,22 @@ router.get('/service/:serviceId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Service not found' });
     }
 
-    const runbooks = await runbookRepo.find({
+    const [runbooks, total] = await runbookRepo.findAndCount({
       where: { serviceId, orgId, isActive: true },
       relations: ['service', 'createdBy'],
-      order: { createdAt: 'DESC' },
+      order: { [sortField]: sortOrder },
+      skip: pagination.offset,
+      take: pagination.limit,
     });
 
-    return res.json({
-      runbooks: runbooks.map(formatRunbook),
-    });
+    const lastItem = runbooks[runbooks.length - 1];
+    return res.json(paginatedResponse(
+      runbooks.map(formatRunbook),
+      total,
+      pagination,
+      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
+      'runbooks'
+    ));
   } catch (error) {
     logger.error('Error fetching runbooks for service:', error);
     return res.status(500).json({ error: 'Failed to fetch runbooks' });

@@ -5,7 +5,7 @@
  * Automatically handles authentication and provides meaningful error messages.
  */
 
-import axios, { AxiosInstance, AxiosError, AxiosResponse, AxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance, AxiosResponse, AxiosRequestConfig } from 'axios';
 
 // Get environment configuration
 function getApiBaseUrl(): string {
@@ -29,22 +29,6 @@ export interface ApiError {
   response?: any;
 }
 
-/**
- * Format an error for better debugging in CI environments
- */
-function formatError(error: AxiosError): ApiError {
-  const result: ApiError = {
-    message: error.message,
-    status: error.response?.status,
-    code: error.code,
-  };
-
-  if (error.response?.data) {
-    result.response = error.response.data;
-  }
-
-  return result;
-}
 
 /**
  * Create an Axios instance configured for integration tests
@@ -68,21 +52,8 @@ function createClient(): AxiosInstance {
     return config;
   });
 
-  // Add response interceptor for better error messages
-  client.interceptors.response.use(
-    (response) => response,
-    (error: AxiosError) => {
-      const formattedError = formatError(error);
-      const enrichedError = new Error(
-        `API Error: ${formattedError.status || 'unknown'} - ${formattedError.message}\n` +
-        `URL: ${error.config?.method?.toUpperCase()} ${error.config?.url}\n` +
-        `Response: ${JSON.stringify(formattedError.response, null, 2)}`
-      );
-      (enrichedError as any).apiError = formattedError;
-      (enrichedError as any).originalError = error;
-      throw enrichedError;
-    }
-  );
+  // Don't intercept errors - let axios throw native errors
+  // This preserves error.response for tests that expect it
 
   return client;
 }

@@ -24,6 +24,9 @@ export {
 // Also export api client as default object
 export { default as api } from './api-client';
 
+// Export apiClient as alias for backwards compatibility
+export { default as apiClient } from './api-client';
+
 // Authentication helpers
 export {
   login,

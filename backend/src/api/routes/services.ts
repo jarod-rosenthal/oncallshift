@@ -9,6 +9,9 @@ import { generateEntityETag } from '../../shared/utils/etag';
 import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { LessThanOrEqual, MoreThan } from 'typeorm';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { parseServiceFilters, applyServiceFilters } from '../../shared/utils/filtering';
+import { serviceFilterValidators } from '../../shared/validators/pagination';
 
 const router = Router();
 
@@ -20,11 +23,55 @@ router.use(authenticateRequest);
  * /api/v1/services:
  *   get:
  *     summary: List all services
- *     description: Retrieves all services in the authenticated user's organization.
+ *     description: Retrieves all services in the authenticated user's organization with pagination and filtering.
  *     tags: [Services]
  *     security:
  *       - BearerAuth: []
  *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 25
+ *         description: Maximum number of services to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of services to skip for pagination
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [name, createdAt, status]
+ *         description: Field to sort by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         description: Sort order
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search services by name or description
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, warning, critical, maintenance]
+ *         description: Filter by service status
+ *       - in: query
+ *         name: team_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by team ID
  *     responses:
  *       200:
  *         description: List of services retrieved successfully
@@ -33,10 +80,12 @@ router.use(authenticateRequest);
  *             schema:
  *               type: object
  *               properties:
- *                 services:
+ *                 data:
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Service'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       500:
@@ -46,21 +95,45 @@ router.use(authenticateRequest);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', [...serviceFilterValidators], async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const filters = parseServiceFilters(req.query);
+
     const dataSource = await getDataSource();
     const serviceRepo = dataSource.getRepository(Service);
 
-    const services = await serviceRepo.find({
-      where: { orgId },
-      relations: ['schedule', 'escalationPolicy'],
-      order: { name: 'ASC' },
-    });
+    // Build query with filters
+    const queryBuilder = serviceRepo
+      .createQueryBuilder('service')
+      .leftJoinAndSelect('service.schedule', 'schedule')
+      .leftJoinAndSelect('service.escalationPolicy', 'escalationPolicy')
+      .where('service.org_id = :orgId', { orgId });
 
-    return res.json({
-      services: services.map(formatService),
-    });
+    // Apply service filters (search, status, teamId)
+    applyServiceFilters(queryBuilder, filters, 'service');
+
+    // Get valid sort field and apply sorting
+    const sortField = validateSortField('services', pagination.sort, 'name');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
+    // Map camelCase to snake_case for sorting
+    const snakeCaseSortField = sortField === 'createdAt' ? 'created_at' : sortField;
+    queryBuilder.orderBy(`service.${snakeCaseSortField}`, sortOrder);
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const services = await queryBuilder.getMany();
+
+    const formattedServices = services.map(formatService);
+
+    const lastItem = services[services.length - 1];
+    return res.json(paginatedResponse(formattedServices, total, pagination, lastItem, 'services'));
   } catch (error) {
     logger.error('Error fetching services:', error);
     return res.status(500).json({ error: 'Failed to fetch services' });

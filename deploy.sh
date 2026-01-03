@@ -54,7 +54,7 @@ aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --
 
 # 2. Build frontend separately (for S3 upload)
 echo "🔨 Building frontend..."
-cd frontend && npm run build && cd ..
+cd frontend && npm install && npx tsc -b && npx vite build && cd ..
 
 # 3. Upload frontend to S3
 echo "📤 Uploading frontend to S3..."
@@ -78,7 +78,8 @@ aws ecs update-service \
   --service $ECS_SERVICE \
   --force-new-deployment \
   --region $AWS_REGION \
-  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+  --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
+  --output table
 
 echo "🔄 Triggering ECS deployment for notification-worker..."
 aws ecs update-service \
@@ -86,7 +87,8 @@ aws ecs update-service \
   --service pagerduty-lite-dev-notification-worker \
   --force-new-deployment \
   --region $AWS_REGION \
-  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+  --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
+  --output table
 
 echo "🔄 Triggering ECS deployment for alert-processor..."
 aws ecs update-service \
@@ -94,7 +96,8 @@ aws ecs update-service \
   --service pagerduty-lite-dev-alert-processor \
   --force-new-deployment \
   --region $AWS_REGION \
-  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+  --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
+  --output table
 
 echo "🔄 Triggering ECS deployment for escalation-timer..."
 aws ecs update-service \
@@ -102,7 +105,8 @@ aws ecs update-service \
   --service pagerduty-lite-dev-escalation-timer \
   --force-new-deployment \
   --region $AWS_REGION \
-  --output json | jq '.service.deployments[] | {status: .status, desiredCount: .desiredCount}'
+  --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
+  --output table
 
 # 7. Wait for new task to be running and run migrations
 echo "⏳ Waiting for new ECS task to start (up to 3 minutes)..."

@@ -15,9 +15,10 @@ test.describe('Logout', () => {
 
       // Find and click the logout button/link
       // Common locations: user menu, header, or sidebar
-      const userMenuButton = page.getByRole('button', { name: /account|profile|user|menu/i });
-      const logoutLink = page.getByRole('link', { name: /logout|log out|sign out/i });
-      const logoutButton = page.getByRole('button', { name: /logout|log out|sign out/i });
+      // Use .first() to avoid strict mode violations when multiple logout buttons exist
+      const userMenuButton = page.getByRole('button', { name: /account|profile|user|menu/i }).first();
+      const logoutLink = page.getByRole('link', { name: /logout|log out|sign out/i }).first();
+      const logoutButton = page.getByRole('button', { name: /logout|log out|sign out/i }).first();
 
       // Try to find logout in a user menu first
       if (await userMenuButton.isVisible()) {
@@ -33,7 +34,7 @@ test.describe('Logout', () => {
         await logoutLink.click();
       } else {
         // Try looking for it in the navigation
-        const navLogout = page.locator('nav').getByText(/logout|log out|sign out/i);
+        const navLogout = page.locator('nav').getByText(/logout|log out|sign out/i).first();
         if (await navLogout.isVisible()) {
           await navLogout.click();
         } else {
@@ -65,9 +66,10 @@ test.describe('Logout', () => {
       });
 
       // Find and click logout
-      const userMenuButton = page.getByRole('button', { name: /account|profile|user|menu/i });
-      const logoutButton = page.getByRole('button', { name: /logout|log out|sign out/i });
-      const logoutLink = page.getByRole('link', { name: /logout|log out|sign out/i });
+      // Use .first() to avoid strict mode violations when multiple logout buttons exist
+      const userMenuButton = page.getByRole('button', { name: /account|profile|user|menu/i }).first();
+      const logoutButton = page.getByRole('button', { name: /logout|log out|sign out/i }).first();
+      const logoutLink = page.getByRole('link', { name: /logout|log out|sign out/i }).first();
 
       if (await userMenuButton.isVisible()) {
         await userMenuButton.click();
@@ -79,7 +81,7 @@ test.describe('Logout', () => {
       } else if (await logoutLink.isVisible()) {
         await logoutLink.click();
       } else {
-        const navLogout = page.locator('nav').getByText(/logout|log out|sign out/i);
+        const navLogout = page.locator('nav').getByText(/logout|log out|sign out/i).first();
         if (await navLogout.isVisible()) {
           await navLogout.click();
         } else {
@@ -125,9 +127,10 @@ test.describe('Logout', () => {
       await expect(dashboardPage.pageTitle).toBeVisible();
 
       // Find and click logout
-      const userMenuButton = page.getByRole('button', { name: /account|profile|user|menu/i });
-      const logoutButton = page.getByRole('button', { name: /logout|log out|sign out/i });
-      const logoutLink = page.getByRole('link', { name: /logout|log out|sign out/i });
+      // Use .first() to avoid strict mode violations when multiple logout buttons exist
+      const userMenuButton = page.getByRole('button', { name: /account|profile|user|menu/i }).first();
+      const logoutButton = page.getByRole('button', { name: /logout|log out|sign out/i }).first();
+      const logoutLink = page.getByRole('link', { name: /logout|log out|sign out/i }).first();
 
       if (await userMenuButton.isVisible()) {
         await userMenuButton.click();
@@ -139,7 +142,7 @@ test.describe('Logout', () => {
       } else if (await logoutLink.isVisible()) {
         await logoutLink.click();
       } else {
-        const navLogout = page.locator('nav').getByText(/logout|log out|sign out/i);
+        const navLogout = page.locator('nav').getByText(/logout|log out|sign out/i).first();
         if (await navLogout.isVisible()) {
           await navLogout.click();
         } else {
@@ -217,9 +220,10 @@ test.describe('Logout', () => {
       await expect(dashboardPage2.pageTitle).toBeVisible();
 
       // Logout from first tab
-      const userMenuButton = page1.getByRole('button', { name: /account|profile|user|menu/i });
-      const logoutButton = page1.getByRole('button', { name: /logout|log out|sign out/i });
-      const logoutLink = page1.getByRole('link', { name: /logout|log out|sign out/i });
+      // Use .first() to avoid strict mode violations when multiple logout buttons exist
+      const userMenuButton = page1.getByRole('button', { name: /account|profile|user|menu/i }).first();
+      const logoutButton = page1.getByRole('button', { name: /logout|log out|sign out/i }).first();
+      const logoutLink = page1.getByRole('link', { name: /logout|log out|sign out/i }).first();
 
       if (await userMenuButton.isVisible()) {
         await userMenuButton.click();
@@ -231,7 +235,7 @@ test.describe('Logout', () => {
       } else if (await logoutLink.isVisible()) {
         await logoutLink.click();
       } else {
-        const navLogout = page1.locator('nav').getByText(/logout|log out|sign out/i);
+        const navLogout = page1.locator('nav').getByText(/logout|log out|sign out/i).first();
         if (await navLogout.isVisible()) {
           await navLogout.click();
         } else {

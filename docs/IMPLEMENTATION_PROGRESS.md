@@ -1,9 +1,9 @@
 # Implementation Progress Tracker
 
-**Last Updated:** January 2, 2026 (Session 3)
-**Status:** Phase 4 Backend Complete, Frontend In Progress
+**Last Updated:** January 2, 2026 (Session 5)
+**Status:** API Scalability Phases 0-4 + 7 Complete
 
-This file tracks the implementation progress for Terraform Provider Prerequisites and AI First-Class Citizen initiatives. Use this to resume work if interrupted.
+This file tracks the implementation progress for Terraform Provider Prerequisites, AI First-Class Citizen, and API Scalability initiatives. Use this to resume work if interrupted.
 
 ---
 
@@ -14,6 +14,7 @@ This file tracks the implementation progress for Terraform Provider Prerequisite
 | Terraform Provider Prerequisites | 100% | ✅ COMPLETE |
 | AI First-Class Citizen | 80% | Phase 4 (Semantic Import Complete, Ready to Deploy) |
 | Documentation | 90% | ✅ Nearly Complete |
+| **API Scalability** | 70% | Phases 0-4 + 7 Complete (Pagination, Rate Limiting, Compatibility) |
 
 ---
 
@@ -114,6 +115,86 @@ This file tracks the implementation progress for Terraform Provider Prerequisite
 - [ ] Slack AI app
 - [ ] Microsoft Copilot connector
 - [ ] ChatGPT plugin / GPT Action
+
+---
+
+## API Scalability Initiative
+
+**Goal:** Scale OnCallShift API to 100,000+ users with industry-leading standards (Stripe/PagerDuty pattern)
+
+**See `docs/API_SCALABILITY_PLAN.md` for full implementation plan.**
+
+### Phase 0: Database Foundations ✅ COMPLETE
+- [x] Migration 044: Add org_id to notifications table
+- [x] Migration 045: Add org_id to incident_events table
+- [x] Migration 046: Add cursor pagination indexes
+- [x] Migration 047: Add scalability indexes for common queries
+- [x] TypeORM model updates (Notification, IncidentEvent)
+
+### Phase 1: Core Utilities ✅ COMPLETE
+- [x] Pagination utility (`backend/src/shared/utils/pagination.ts`)
+  - Offset-based pagination with limits
+  - Cursor-based pagination (keyset pattern)
+  - Pagination metadata builder
+- [x] Pagination validators (`backend/src/shared/validators/pagination.ts`)
+  - Standard pagination validators
+  - Entity-specific filter validators (incidents, users, services, notifications)
+- [x] Filtering utility (`backend/src/shared/utils/filtering.ts`)
+  - Filter parsers for each entity type
+  - Query builder appliers
+- [x] RFC 9457 Problem Details (`backend/src/shared/utils/problem-details.ts`)
+  - Industry-standard error responses
+  - Backwards-compatible with existing clients
+  - Convenience functions for common errors
+- [x] Request ID middleware (`backend/src/shared/middleware/request-id.ts`)
+  - X-Request-Id header support
+  - Request tracing and correlation
+  - Error handler with request ID
+- [x] Tiered rate limiting (`backend/src/shared/middleware/rate-limiter.ts`)
+  - Read tier: 1000 req/min
+  - Write tier: 300 req/min
+  - Expensive tier: 60 req/min
+  - Auth tier: 100 req/15min
+  - Search tier: 120 req/min
+  - Bulk tier: 10 req/min
+
+### Phase 2: Apply Pagination to Endpoints ✅ COMPLETE
+- [x] GET /api/v1/teams - Add pagination
+- [x] GET /api/v1/users - Add pagination with filtering (status, role, search)
+- [x] GET /api/v1/services - Add pagination with filtering (status, team_id, search)
+- [x] GET /api/v1/schedules - Add pagination
+- [x] GET /api/v1/runbooks - Add pagination (both org-wide and service-specific)
+- [x] GET /api/v1/integrations - Add pagination
+- [x] GET /api/v1/api-keys - Add pagination
+- [ ] All nested list endpoints (members, notifications, timeline)
+
+### Phase 3: Filtering & Sorting ✅ MOSTLY COMPLETE
+- [ ] Apply filters to incidents endpoint
+- [x] Apply filters to users endpoint (status, role, team_id, search)
+- [x] Apply filters to services endpoint (status, team_id, search)
+- [ ] Apply filters to nested endpoints
+
+### Phase 4: Rate Limiting Application ✅ COMPLETE
+- [x] Apply method-based rate limiting to all endpoints (`backend/src/api/app.ts`)
+- [x] Apply expensive rate limiter to AI endpoints (ai-assistant, ai-diagnosis, semantic-import)
+- [x] Apply bulk rate limiter to import/export
+- [x] Request ID middleware added to all requests (X-Request-Id header)
+
+### Phase 5: Error Response Migration ⏳ NOT STARTED
+- [ ] Migrate error responses to RFC 9457 format
+- [ ] Update error handling middleware
+- [ ] Update validation error responses
+
+### Phase 6: Cursor Pagination ⏳ NOT STARTED
+- [ ] Convert incidents to cursor-based pagination
+- [ ] Convert timeline/events to cursor-based pagination
+- [ ] Convert audit logs to cursor-based pagination
+
+### Phase 7: PagerDuty/OpsGenie Compatibility ✅ COMPLETE
+- [x] PagerDuty Events API v2 compatibility endpoint (`POST /api/v1/alerts/pagerduty`)
+- [x] OpsGenie Alert API compatibility endpoint (`POST /api/v1/alerts/opsgenie`)
+- [x] Severity mapping (P1-P5 → critical/warning/info)
+- [x] Action support (trigger/acknowledge/resolve for PD, create/acknowledge/close for OG)
 
 ---
 
@@ -219,14 +300,48 @@ backend/src/shared/db/migrations/042_add_import_history.sql
 docs/SEMANTIC_IMPORT_PROGRESS.md
 ```
 
-### Modified Files
+### New Backend Files (Session 4 - API Scalability)
+```
+backend/src/shared/db/migrations/044_add_org_id_to_notifications.sql
+backend/src/shared/db/migrations/045_add_org_id_to_incident_events.sql
+backend/src/shared/db/migrations/046_add_cursor_pagination_indexes.sql
+backend/src/shared/db/migrations/047_add_scalability_indexes.sql
+backend/src/shared/utils/pagination.ts
+backend/src/shared/utils/filtering.ts
+backend/src/shared/utils/problem-details.ts
+backend/src/shared/validators/pagination.ts
+backend/src/shared/middleware/request-id.ts
+docs/API_SCALABILITY_PLAN.md
+```
+
+### New Backend Files (Session 5 - API Scalability Phases 2-4, 7)
+```
+backend/src/api/routes/alerts-compat.ts - PagerDuty/OpsGenie compatibility endpoints
+```
+
+### Modified Files (Session 5)
+```
+backend/src/api/app.ts - Added requestIdMiddleware, methodBasedRateLimiter, expensiveRateLimiter, alerts-compat routes
+backend/src/api/routes/teams.ts - Added pagination with filtering and search
+backend/src/api/routes/users.ts - Added pagination with filtering (status, role, team_id, search)
+backend/src/api/routes/services.ts - Added pagination with filtering (status, team_id, search)
+backend/src/api/routes/schedules.ts - Added pagination with sorting
+backend/src/api/routes/runbooks.ts - Added pagination to list endpoints
+backend/src/api/routes/integrations.ts - Added pagination with type filter
+backend/src/api/routes/api-keys.ts - Added pagination
+```
+
+### Modified Files (Previous Sessions)
 ```
 backend/src/api/app.ts - Added new routes, idempotency & etag middleware, semantic-import routes
 backend/src/api/swagger.ts - Added schemas
 backend/src/shared/auth/middleware.ts - Added org API key auth
 backend/src/shared/models/index.ts - Added new model exports
+backend/src/shared/models/Notification.ts - Added org_id column
+backend/src/shared/models/IncidentEvent.ts - Added org_id column
 backend/src/shared/db/data-source.ts - Added new entities
-backend/src/shared/middleware/index.ts - Added etag & idempotency exports
+backend/src/shared/middleware/index.ts - Added etag, idempotency, rate limiters, request-id exports
+backend/src/shared/middleware/rate-limiter.ts - Added tiered rate limiting
 backend/src/api/routes/users.ts - Added missing CRUD endpoints, ETag, Location header
 backend/src/api/routes/teams.ts - Added Swagger docs, ETag, Location header
 backend/src/api/routes/services.ts - Added Swagger docs, ETag, Location header
@@ -241,32 +356,33 @@ backend/src/api/routes/api-keys.ts - Added Location header
 
 ## Next Steps (Priority Order)
 
-1. **Deploy Changes** ⚠️ REQUIRED
-   - Run `./deploy.sh` to deploy Semantic Import (backend + frontend)
-   - Migration 042 (import_history) will run automatically
-   - Verify "AI Import" page works at `/settings/semantic-import`
+1. **Deploy All Changes** ⚠️ REQUIRED
+   - Run `./deploy.sh` to deploy all pending changes
+   - Migrations 043-047 will run automatically
+   - **CRITICAL:** Migrations add org_id columns and indexes for scalability
+   - New pagination, rate limiting, and compatibility endpoints will go live
 
-2. **AI Enhancements** (Remaining Phase 4 work)
+2. **Apply Pagination to Nested Endpoints** (Phase 2 - Remaining)
+   - Update nested list endpoints (members, notifications, timeline)
+   - Apply filters to incidents endpoint
+
+3. **Migrate to RFC 9457 Error Responses** (Phase 5)
+   - Replace `res.status(404).json({ error: '...' })` with `notFound(res, 'Resource', id)`
+   - Gradually update all error responses
+
+4. **Cursor Pagination** (Phase 6)
+   - Convert incidents to cursor-based pagination
+   - Convert timeline/events to cursor-based pagination
+
+5. **AI Enhancements** (Remaining AI Phase 4 work)
    - Proactive recommendations worker
    - Auto-fix capabilities
 
-3. **Ecosystem Integration** (Phase 5)
-   - Slack AI app
-   - Microsoft Copilot connector
-   - ChatGPT plugin / GPT Action
-
-4. **Architecture Documentation**
-   - System architecture overview
-   - Data flow diagrams
-   - Security model
-   - Deployment guide
-
-5. **Testing**
-   - Test new API key endpoints
-   - Test NL configuration
-   - Test onboarding agent
-   - Test idempotency middleware
-   - Test ETag caching
+6. **Testing**
+   - Test pagination with large datasets
+   - Verify rate limit headers
+   - Test request ID tracking
+   - Test PagerDuty/OpsGenie compatibility endpoints
 
 ---
 
@@ -311,3 +427,9 @@ If any agents were interrupted, they can be resumed with these IDs:
 - ETag middleware: `a7393d9`
 - Location headers: `ac577d4`
 - API stability docs: `abe4cca`
+
+### Session 5 Agents
+- Pagination (teams/users/services): `afde37a`
+- Pagination (schedules/runbooks/integrations/api-keys): `ac47180`
+- Request ID & Rate Limiting: `a8dac92`
+- PagerDuty/OpsGenie Compatibility: `a5c1255`

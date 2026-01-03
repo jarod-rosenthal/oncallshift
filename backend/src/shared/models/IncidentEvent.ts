@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { Incident } from './Incident';
 import { User } from './User';
+import { Organization } from './Organization';
 
 export type IncidentEventType =
   | 'alert'              // New alert received
@@ -25,6 +26,9 @@ export class IncidentEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'org_id', type: 'uuid' })
+  orgId: string;
+
   @Column({ name: 'incident_id', type: 'uuid' })
   incidentId: string;
 
@@ -44,6 +48,10 @@ export class IncidentEvent {
   createdAt: Date;
 
   // Relations
+  @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'org_id' })
+  organization: Organization;
+
   @ManyToOne(() => Incident, incident => incident.events, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'incident_id' })
   incident: Incident;
