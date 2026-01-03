@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { body, query, validationResult } from 'express-validator';
+import { body, validationResult } from 'express-validator';
 import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { Incident, IncidentEvent, User, Service, EscalationStep, Schedule, Notification, Runbook, IncidentResponder, IncidentSubscriber, IncidentStatusUpdate, Postmortem } from '../../shared/models';
@@ -10,6 +10,10 @@ import { checkETagAndRespond } from '../../shared/middleware/etag';
 import { workflowEngine } from '../../shared/services/workflow-engine';
 import { deliverToMatchingWebhooks } from '../../shared/services/webhook-delivery';
 import { setLocationHeader } from '../../shared/utils/location-header';
+import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
+import { parseIncidentFilters, applyIncidentFilters } from '../../shared/utils/filtering';
+import { incidentFilterValidators, paginationValidators } from '../../shared/validators/pagination';
+import { notFound, internalError } from '../../shared/utils/problem-details';
 
 const router = Router();
 
@@ -17,66 +21,153 @@ const router = Router();
 router.use(authenticateRequest);
 
 /**
- * GET /api/v1/incidents
- * List incidents for the organization
+ * @swagger
+ * /api/v1/incidents:
+ *   get:
+ *     summary: List incidents
+ *     description: Retrieves paginated list of incidents with optional filters.
+ *     tags: [Incidents]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 25
+ *         description: Maximum number of incidents to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of incidents to skip for pagination
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [triggeredAt, createdAt, severity, state]
+ *         description: Field to sort by
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *         description: Sort order
+ *       - in: query
+ *         name: state
+ *         schema:
+ *           type: string
+ *           enum: [triggered, acknowledged, resolved]
+ *         description: Filter by incident state
+ *       - in: query
+ *         name: severity
+ *         schema:
+ *           type: string
+ *           enum: [critical, error, warning, info]
+ *         description: Filter by severity
+ *       - in: query
+ *         name: service_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by service ID
+ *       - in: query
+ *         name: team_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by team ID
+ *       - in: query
+ *         name: assigned_to
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by assigned user ID
+ *       - in: query
+ *         name: since
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter incidents triggered after this date
+ *       - in: query
+ *         name: until
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Filter incidents triggered before this date
+ *     responses:
+ *       200:
+ *         description: List of incidents retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Incident'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         description: Internal server error
  */
-router.get(
-  '/',
-  [
-    query('state').optional().isIn(['triggered', 'acknowledged', 'resolved']),
-    query('service_id').optional().isUUID(),
-    query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-    query('offset').optional().isInt({ min: 0 }).toInt(),
-  ],
-  async (req: Request, res: Response) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const { state, service_id, limit = 50, offset = 0 } = req.query;
-      const orgId = req.orgId!;
-
-      const dataSource = await getDataSource();
-      const incidentRepo = dataSource.getRepository(Incident);
-
-      // Build query
-      const queryBuilder = incidentRepo
-        .createQueryBuilder('incident')
-        .leftJoinAndSelect('incident.service', 'service')
-        .leftJoinAndSelect('incident.acknowledgedByUser', 'ackUser')
-        .leftJoinAndSelect('incident.resolvedByUser', 'resUser')
-        .leftJoinAndSelect('incident.assignedToUser', 'assignedUser')
-        .where('incident.org_id = :orgId', { orgId })
-        .orderBy('incident.triggeredAt', 'DESC')
-        .take(limit as number)
-        .skip(offset as number);
-
-      if (state) {
-        queryBuilder.andWhere('incident.state = :state', { state });
-      }
-
-      if (service_id) {
-        queryBuilder.andWhere('incident.service_id = :serviceId', { serviceId: service_id });
-      }
-
-      const [incidents, total] = await queryBuilder.getManyAndCount();
-
-      return res.json({
-        incidents: incidents.map(incident => formatIncident(incident)),
-        pagination: {
-          total,
-          limit,
-          offset,
-        },
-      });
-    } catch (error) {
-      logger.error('Error fetching incidents:', error);
-      return res.status(500).json({ error: 'Failed to fetch incidents' });
+router.get('/', incidentFilterValidators, async (req: Request, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
+
+    const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const filters = parseIncidentFilters(req.query);
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+
+    // Build query with joins
+    const queryBuilder = incidentRepo
+      .createQueryBuilder('incident')
+      .leftJoinAndSelect('incident.service', 'service')
+      .leftJoinAndSelect('incident.acknowledgedByUser', 'ackUser')
+      .leftJoinAndSelect('incident.resolvedByUser', 'resUser')
+      .leftJoinAndSelect('incident.assignedToUser', 'assignedUser')
+      .where('incident.orgId = :orgId', { orgId });
+
+    // Apply filters
+    applyIncidentFilters(queryBuilder, filters, 'incident');
+
+    // Get valid sort field and apply sorting
+    const sortField = validateSortField('incidents', pagination.sort, 'triggeredAt');
+    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+
+    // TypeORM orderBy uses property names (camelCase), not column names
+    queryBuilder.orderBy(`incident.${sortField}`, sortOrder);
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const incidents = await queryBuilder.getMany();
+
+    const formattedIncidents = incidents.map(incident => formatIncident(incident));
+    const lastItem = incidents[incidents.length - 1];
+
+    return res.json(paginatedResponse(formattedIncidents, total, pagination, lastItem, 'incidents'));
+  } catch (error) {
+    logger.error('Error fetching incidents:', error);
+    return internalError(res, 'Failed to fetch incidents');
   }
-);
+});
 
 /**
  * GET /api/v1/incidents/:id
@@ -100,7 +191,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
 
     if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
+      return notFound(res, 'Incident', id);
     }
 
     // Generate ETag from incident ID and updatedAt timestamp
@@ -130,13 +221,68 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * GET /api/v1/incidents/:id/timeline
- * Get incident timeline (events)
+ * @swagger
+ * /api/v1/incidents/{id}/timeline:
+ *   get:
+ *     summary: Get incident timeline
+ *     description: Retrieves paginated timeline of events for an incident.
+ *     tags: [Incidents]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Incident ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *         description: Maximum number of events to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of events to skip for pagination
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: asc
+ *         description: Sort order (asc = oldest first, desc = newest first)
+ *     responses:
+ *       200:
+ *         description: Timeline events retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/IncidentEvent'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
+ *       404:
+ *         description: Incident not found
+ *       500:
+ *         description: Internal server error
  */
-router.get('/:id/timeline', async (req: Request, res: Response) => {
+router.get('/:id/timeline', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -148,45 +294,129 @@ router.get('/:id/timeline', async (req: Request, res: Response) => {
     });
 
     if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
+      return notFound(res, 'Incident', id);
     }
 
-    // Get incident events (timeline)
-    const events = await eventRepo.find({
-      where: { incidentId: id },
-      relations: ['actor'],
-      order: { createdAt: 'ASC' },
-    });
+    // Build query with pagination
+    const queryBuilder = eventRepo
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.actor', 'actor')
+      .where('event.incidentId = :incidentId', { incidentId: id });
 
-    return res.json({
-      events: events.map(event => ({
-        id: event.id,
-        type: event.type,
-        message: event.message,
-        payload: event.payload,
-        actor: event.actor ? {
-          id: event.actor.id,
-          fullName: event.actor.fullName,
-          email: event.actor.email,
-          profilePictureUrl: event.actor.profilePictureUrl,
-        } : null,
-        createdAt: event.createdAt,
-      })),
-    });
+    // Get total count
+    const total = await queryBuilder.getCount();
+
+    // Apply sorting (default ASC for timeline - oldest first)
+    const sortOrder = pagination.order === 'desc' ? 'DESC' : 'ASC';
+    queryBuilder.orderBy('event.createdAt', sortOrder);
+
+    // Apply pagination
+    queryBuilder.skip(pagination.offset).take(pagination.limit);
+
+    const events = await queryBuilder.getMany();
+
+    const formattedEvents = events.map(event => ({
+      id: event.id,
+      type: event.type,
+      message: event.message,
+      payload: event.payload,
+      actor: event.actor ? {
+        id: event.actor.id,
+        fullName: event.actor.fullName,
+        email: event.actor.email,
+        profilePictureUrl: event.actor.profilePictureUrl,
+      } : null,
+      createdAt: event.createdAt,
+    }));
+
+    const lastItem = events[events.length - 1];
+    return res.json(paginatedResponse(formattedEvents, total, pagination, lastItem, 'events'));
   } catch (error) {
     logger.error('Error fetching incident timeline:', error);
-    return res.status(500).json({ error: 'Failed to fetch incident timeline' });
+    return internalError(res, 'Failed to fetch incident timeline');
   }
 });
 
 /**
- * GET /api/v1/incidents/:id/notifications
- * Get notification statuses for an incident
+ * @swagger
+ * /api/v1/incidents/{id}/notifications:
+ *   get:
+ *     summary: Get incident notifications
+ *     description: Retrieves paginated notification statuses for an incident, grouped by user.
+ *     tags: [Incidents]
+ *     security:
+ *       - BearerAuth: []
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Incident ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *         description: Maximum number of notifications to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *         description: Number of notifications to skip for pagination
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, sent, delivered, failed]
+ *         description: Filter by notification status
+ *       - in: query
+ *         name: channel
+ *         schema:
+ *           type: string
+ *           enum: [push, sms, voice, email]
+ *         description: Filter by notification channel
+ *     responses:
+ *       200:
+ *         description: Notifications retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       userId:
+ *                         type: string
+ *                       userName:
+ *                         type: string
+ *                       userEmail:
+ *                         type: string
+ *                       channels:
+ *                         type: array
+ *                 pagination:
+ *                   $ref: '#/components/schemas/PaginationMeta'
+ *                 summary:
+ *                   type: object
+ *       404:
+ *         description: Incident not found
+ *       500:
+ *         description: Internal server error
  */
-router.get('/:id/notifications', async (req: Request, res: Response) => {
+router.get('/:id/notifications', paginationValidators, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
+    const pagination = parsePaginationParams(req.query);
+    const { status, channel } = req.query;
 
     const dataSource = await getDataSource();
     const incidentRepo = dataSource.getRepository(Incident);
@@ -198,15 +428,33 @@ router.get('/:id/notifications', async (req: Request, res: Response) => {
     });
 
     if (!incident) {
-      return res.status(404).json({ error: 'Incident not found' });
+      return notFound(res, 'Incident', id);
     }
 
-    // Get all notifications for this incident
-    const notifications = await notificationRepo.find({
-      where: { incidentId: id },
-      relations: ['user'],
-      order: { createdAt: 'ASC' },
-    });
+    // Build query with optional filters
+    const queryBuilder = notificationRepo
+      .createQueryBuilder('notification')
+      .leftJoinAndSelect('notification.user', 'user')
+      .where('notification.incidentId = :incidentId', { incidentId: id });
+
+    // Apply optional filters
+    if (status) {
+      queryBuilder.andWhere('notification.status = :status', { status });
+    }
+    if (channel) {
+      queryBuilder.andWhere('notification.channel = :channel', { channel });
+    }
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply sorting and pagination
+    queryBuilder
+      .orderBy('notification.createdAt', 'ASC')
+      .skip(pagination.offset)
+      .take(pagination.limit);
+
+    const notifications = await queryBuilder.getMany();
 
     // Group by user and format
     const userNotifications = new Map<string, {
@@ -214,12 +462,14 @@ router.get('/:id/notifications', async (req: Request, res: Response) => {
       userName: string;
       userEmail: string;
       channels: Array<{
+        id: string;
         channel: string;
         status: string;
         sentAt: Date | null;
         deliveredAt: Date | null;
         failedAt: Date | null;
         errorMessage: string | null;
+        createdAt: Date;
       }>;
     }>();
 
@@ -235,31 +485,37 @@ router.get('/:id/notifications', async (req: Request, res: Response) => {
       }
 
       userNotifications.get(userId)!.channels.push({
+        id: notification.id,
         channel: notification.channel,
         status: notification.status,
         sentAt: notification.sentAt,
         deliveredAt: notification.deliveredAt,
         failedAt: notification.failedAt,
         errorMessage: notification.errorMessage,
+        createdAt: notification.createdAt,
       });
     }
 
-    // Summary stats
+    // Summary stats for this page
     const summary = {
-      total: notifications.length,
+      total,
       pending: notifications.filter(n => n.status === 'pending').length,
       sent: notifications.filter(n => n.status === 'sent').length,
       delivered: notifications.filter(n => n.status === 'delivered').length,
       failed: notifications.filter(n => n.status === 'failed').length,
     };
 
+    const formattedData = Array.from(userNotifications.values());
+    const lastItem = notifications[notifications.length - 1];
+
+    const response = paginatedResponse(formattedData, total, pagination, lastItem, 'notifications');
     return res.json({
-      notifications: Array.from(userNotifications.values()),
+      ...response,
       summary,
     });
   } catch (error) {
     logger.error('Error fetching incident notifications:', error);
-    return res.status(500).json({ error: 'Failed to fetch incident notifications' });
+    return internalError(res, 'Failed to fetch incident notifications');
   }
 });
 
@@ -307,6 +563,7 @@ router.put('/:id/acknowledge', async (req: Request, res: Response) => {
 
     // Create event
     const event = eventRepo.create({
+      orgId,
       incidentId: incident.id,
       type: 'acknowledge',
       actorId: actorId,
@@ -432,6 +689,7 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
 
     // Create resolve event
     const event = eventRepo.create({
+      orgId,
       incidentId: incident.id,
       type: 'resolve',
       actorId: actorId,
@@ -442,6 +700,7 @@ router.put('/:id/resolve', async (req: Request, res: Response) => {
     // If a resolution note was provided, create a note event
     if (note && typeof note === 'string' && note.trim()) {
       const noteEvent = eventRepo.create({
+        orgId,
         incidentId: incident.id,
         type: 'note',
         actorId: actorId,
@@ -551,6 +810,7 @@ router.put('/:id/unacknowledge', async (req: Request, res: Response) => {
 
     // Create event
     const event = eventRepo.create({
+      orgId,
       incidentId: incident.id,
       type: 'state_change',
       actorId: user.id,
@@ -617,6 +877,7 @@ router.put('/:id/unresolve', async (req: Request, res: Response) => {
 
     // Create event
     const event = eventRepo.create({
+      orgId,
       incidentId: incident.id,
       type: 'state_change',
       actorId: user.id,
@@ -678,6 +939,7 @@ router.post(
 
       // Create note event
       const event = eventRepo.create({
+        orgId,
         incidentId: incident.id,
         type: 'note',
         actorId: user.id,
@@ -773,6 +1035,7 @@ router.post(
 
       // Create escalation event
       const event = eventRepo.create({
+        orgId,
         incidentId: incident.id,
         type: 'escalate',
         actorId: user.id,
@@ -904,6 +1167,7 @@ router.put(
 
       // Create reassign event
       const event = eventRepo.create({
+        orgId,
         incidentId: incident.id,
         type: 'reassign',
         actorId: user.id,
@@ -1708,6 +1972,7 @@ router.post(
           .join(', ');
 
         const event = eventRepo.create({
+          orgId,
           incidentId: id,
           type: 'responder_request' as any,
           actorId: requestingUser.id,
@@ -1803,6 +2068,7 @@ router.put(
 
       // Create timeline event
       const event = eventRepo.create({
+        orgId,
         incidentId: id,
         type: 'responder_response' as any,
         actorId: user.id,
@@ -1886,6 +2152,7 @@ router.post(
       // Create timeline event
       const durationStr = formatDuration(duration);
       const event = eventRepo.create({
+        orgId,
         incidentId: id,
         type: 'snooze' as any,
         actorId: user.id,
@@ -1946,6 +2213,7 @@ router.delete('/:id/snooze', async (req: Request, res: Response) => {
 
     // Create timeline event
     const event = eventRepo.create({
+      orgId,
       incidentId: id,
       type: 'unsnooze' as any,
       actorId: user.id,
@@ -2143,6 +2411,7 @@ router.post(
 
       // Add event to incident timeline
       const event = eventRepo.create({
+        orgId,
         incidentId: id,
         type: 'note',
         actorId: userId,
@@ -2341,6 +2610,7 @@ router.post(
       // Add event to incident timeline
       const eventRepo = dataSource.getRepository(IncidentEvent);
       await eventRepo.save(eventRepo.create({
+        orgId,
         incidentId: id,
         type: 'note',
         actorId: user.id,
@@ -2400,6 +2670,7 @@ router.delete('/:id/subscribers/:subscriberId', async (req: Request, res: Respon
 
     // Add event to incident timeline
     await eventRepo.save(eventRepo.create({
+      orgId,
       incidentId: id,
       type: 'note',
       actorId: user.id,
@@ -2535,6 +2806,7 @@ router.post(
 
       // Add event to incident timeline
       await eventRepo.save(eventRepo.create({
+        orgId,
         incidentId: id,
         type: 'note',
         actorId: user.id,

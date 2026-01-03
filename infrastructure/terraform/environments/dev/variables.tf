@@ -146,3 +146,10 @@ variable "github_repo" {
   type        = string
   default     = null
 }
+
+# Sentry configuration
+variable "sentry_enabled" {
+  description = "Enable Sentry error tracking. DSN is stored in Secrets Manager."
+  type        = bool
+  default     = false
+}

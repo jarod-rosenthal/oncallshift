@@ -151,11 +151,11 @@ export function applyBaseFilters<T extends ObjectLiteral>(
 
   // Date range filters
   if (filters.since) {
-    queryBuilder.andWhere(`${alias}.created_at >= :since`, { since: filters.since });
+    queryBuilder.andWhere(`${alias}.createdAt >= :since`, { since: filters.since });
   }
 
   if (filters.until) {
-    queryBuilder.andWhere(`${alias}.created_at <= :until`, { until: filters.until });
+    queryBuilder.andWhere(`${alias}.createdAt <= :until`, { until: filters.until });
   }
 
   return queryBuilder;
@@ -169,7 +169,20 @@ export function applyIncidentFilters<T extends ObjectLiteral>(
   filters: IncidentFilterParams,
   alias: string = 'incident'
 ): SelectQueryBuilder<T> {
-  applyBaseFilters(queryBuilder, filters, alias, ['title', 'description']);
+  // Incident model uses 'summary' for the title field
+  // Apply search filter on summary field
+  if (filters.search) {
+    queryBuilder.andWhere(`${alias}.summary ILIKE :search`, { search: `%${filters.search}%` });
+  }
+
+  // Incidents use triggeredAt for date filtering instead of createdAt
+  if (filters.since) {
+    queryBuilder.andWhere(`${alias}.triggeredAt >= :since`, { since: filters.since });
+  }
+
+  if (filters.until) {
+    queryBuilder.andWhere(`${alias}.triggeredAt <= :until`, { until: filters.until });
+  }
 
   if (filters.state) {
     queryBuilder.andWhere(`${alias}.state = :state`, { state: filters.state });
@@ -180,15 +193,15 @@ export function applyIncidentFilters<T extends ObjectLiteral>(
   }
 
   if (filters.serviceId) {
-    queryBuilder.andWhere(`${alias}.service_id = :serviceId`, { serviceId: filters.serviceId });
+    queryBuilder.andWhere(`${alias}.serviceId = :serviceId`, { serviceId: filters.serviceId });
   }
 
   if (filters.teamId) {
-    queryBuilder.andWhere(`${alias}.team_id = :teamId`, { teamId: filters.teamId });
+    queryBuilder.andWhere(`${alias}.teamId = :teamId`, { teamId: filters.teamId });
   }
 
   if (filters.assignedTo) {
-    queryBuilder.andWhere(`${alias}.assigned_to_user_id = :assignedTo`, { assignedTo: filters.assignedTo });
+    queryBuilder.andWhere(`${alias}.assignedToUserId = :assignedTo`, { assignedTo: filters.assignedTo });
   }
 
   return queryBuilder;
@@ -202,7 +215,7 @@ export function applyUserFilters<T extends ObjectLiteral>(
   filters: UserFilterParams,
   alias: string = 'user'
 ): SelectQueryBuilder<T> {
-  applyBaseFilters(queryBuilder, filters, alias, ['full_name', 'email']);
+  applyBaseFilters(queryBuilder, filters, alias, ['fullName', 'email']);
 
   if (filters.status) {
     queryBuilder.andWhere(`${alias}.status = :status`, { status: filters.status });
@@ -213,7 +226,7 @@ export function applyUserFilters<T extends ObjectLiteral>(
   }
 
   if (filters.teamId) {
-    queryBuilder.innerJoin(`${alias}.teamMemberships`, 'tm', 'tm.team_id = :teamId', { teamId: filters.teamId });
+    queryBuilder.innerJoin(`${alias}.teamMemberships`, 'tm', 'tm.teamId = :teamId', { teamId: filters.teamId });
   }
 
   return queryBuilder;
@@ -234,7 +247,7 @@ export function applyServiceFilters<T extends ObjectLiteral>(
   }
 
   if (filters.teamId) {
-    queryBuilder.andWhere(`${alias}.team_id = :teamId`, { teamId: filters.teamId });
+    queryBuilder.andWhere(`${alias}.teamId = :teamId`, { teamId: filters.teamId });
   }
 
   return queryBuilder;
@@ -251,11 +264,11 @@ export function applyNotificationFilters<T extends ObjectLiteral>(
   // Don't apply base search filters - notifications don't have name/description
 
   if (filters.since) {
-    queryBuilder.andWhere(`${alias}.created_at >= :since`, { since: filters.since });
+    queryBuilder.andWhere(`${alias}.createdAt >= :since`, { since: filters.since });
   }
 
   if (filters.until) {
-    queryBuilder.andWhere(`${alias}.created_at <= :until`, { until: filters.until });
+    queryBuilder.andWhere(`${alias}.createdAt <= :until`, { until: filters.until });
   }
 
   if (filters.status) {
@@ -267,11 +280,11 @@ export function applyNotificationFilters<T extends ObjectLiteral>(
   }
 
   if (filters.incidentId) {
-    queryBuilder.andWhere(`${alias}.incident_id = :incidentId`, { incidentId: filters.incidentId });
+    queryBuilder.andWhere(`${alias}.incidentId = :incidentId`, { incidentId: filters.incidentId });
   }
 
   if (filters.userId) {
-    queryBuilder.andWhere(`${alias}.user_id = :userId`, { userId: filters.userId });
+    queryBuilder.andWhere(`${alias}.userId = :userId`, { userId: filters.userId });
   }
 
   return queryBuilder;
@@ -293,15 +306,15 @@ export function applyGenericFilters<T extends ObjectLiteral>(
   }
 
   if (filters.teamId) {
-    queryBuilder.andWhere(`${alias}.team_id = :teamId`, { teamId: filters.teamId });
+    queryBuilder.andWhere(`${alias}.teamId = :teamId`, { teamId: filters.teamId });
   }
 
   if (filters.serviceId) {
-    queryBuilder.andWhere(`${alias}.service_id = :serviceId`, { serviceId: filters.serviceId });
+    queryBuilder.andWhere(`${alias}.serviceId = :serviceId`, { serviceId: filters.serviceId });
   }
 
   if (filters.userId) {
-    queryBuilder.andWhere(`${alias}.user_id = :userId`, { userId: filters.userId });
+    queryBuilder.andWhere(`${alias}.userId = :userId`, { userId: filters.userId });
   }
 
   return queryBuilder;

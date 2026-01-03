@@ -1,4 +1,9 @@
 import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry for this worker
+initSentry({ workerName: 'escalation-timer' });
+
 import { getDataSource } from '../shared/db/data-source';
 import { sendNotificationMessage } from '../shared/queues/sqs-client';
 import { Incident, IncidentEvent, Service, EscalationStep, EscalationTarget, Schedule, User, Heartbeat } from '../shared/models';
@@ -120,6 +125,7 @@ async function processIncidentEscalation(
 
     // Create final escalation event (optional)
     const finalEvent = eventRepo.create({
+      orgId: incident.orgId,
       incidentId: incident.id,
       type: 'escalate',
       message: `Final escalation step reached. No response after ${steps.length} escalation steps.`,
@@ -156,6 +162,7 @@ async function processIncidentEscalation(
 
   // Create escalation event
   const escalateEvent = eventRepo.create({
+    orgId: incident.orgId,
     incidentId: incident.id,
     type: 'escalate',
     message: `Incident escalated from step ${previousStep} to step ${nextStepIndex + 1} due to timeout`,
@@ -513,6 +520,7 @@ async function checkHeartbeats(): Promise<void> {
 
           // Create alert event for the heartbeat expiry
           const event = eventRepo.create({
+            orgId: incident.orgId,
             incidentId: incident.id,
             type: 'alert',
             message: `Heartbeat "${heartbeat.name}" has missed ${heartbeat.missedCount} ping(s)`,
@@ -618,6 +626,7 @@ async function checkAcknowledgementTimeouts(): Promise<void> {
 
         // Create timeline event
         const event = eventRepo.create({
+          orgId: incident.orgId,
           incidentId: incident.id,
           type: 'unacknowledge',
           message: `Incident auto-unacknowledged after ${service.ackTimeoutSeconds}s timeout (no response)`,

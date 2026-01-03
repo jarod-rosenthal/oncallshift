@@ -190,6 +190,7 @@ export async function sendPushNotification(payload: PushNotificationPayload): Pr
       });
 
       const notification = notificationRepo.create({
+        orgId: incident.orgId,
         incidentId,
         userId,
         channel: 'push',

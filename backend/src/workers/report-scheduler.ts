@@ -5,6 +5,12 @@
  * Runs on a configurable interval (default: 60 seconds).
  */
 
+import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry for this worker
+initSentry({ workerName: 'report-scheduler' });
+
 import { LessThanOrEqual } from 'typeorm';
 import { getDataSource } from '../shared/db/data-source';
 import { IncidentReport } from '../shared/models';

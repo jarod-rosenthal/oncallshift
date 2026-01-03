@@ -52,33 +52,79 @@ OnCallShift is a production incident management platform deployed at https://onc
 
 **Example**: If you need to create a PR and `gh` isn't installed, install it rather than telling the user to do it manually.
 
-## Local LLM Usage (Ollama)
+## Local LLM Usage (Ollama MCP)
 
-A local Ollama server is available with high-performance models running on an RTX 5090 (32GB VRAM). **Prefer using local models for code generation tasks to save API costs and leverage local GPU power.**
+A local Ollama server is available with high-performance models running on an RTX 5090 (32GB VRAM). **Use the `mcp__ollama__*` tools to offload repetitive code generation tasks and reduce API costs.**
 
-### Available Models
-- **devstral-small-2** (24B) - Mistral's agentic coding model, excellent for multi-file edits
-- **qwen3-coder** (30B MoE) - Fast inference, strong at code generation and analysis
+### Available Models & Task Mapping
 
-### When to Use Local Models
-- Generating boilerplate code, scaffolding, or repetitive patterns
-- Writing unit tests or test fixtures
-- Creating CRUD endpoints or standard API routes
-- Generating TypeScript interfaces from examples
-- Bulk code transformations or refactoring suggestions
+| Model | Size | Speed | Best For |
+|-------|------|-------|----------|
+| `llama3.1:8b` | 8B | ⚡ Ultra Fast | Quick type generation, simple transforms |
+| `devstral-small-2:24b` | 24B | 🚀 Fast | CRUD routes, React components, multi-file edits |
+| `qwen3-coder:30b` | 30B MoE | 🚀 Fast | Complex code generation, test writing |
+| `deepseek-r1:70b` | 70B | 🐢 Slow | Code explanations, reasoning tasks |
+| `llama3.3:70b` | 70B | 🐢 Slow | General purpose, documentation |
 
-### How to Use
+### When to Use Ollama (Proactive Offloading)
+
+**ALWAYS prefer Ollama for these tasks:**
+
+1. **Boilerplate Generation**
+   - Express routes with validation
+   - React/React Native components
+   - TypeORM entities and migrations
+   - API response type interfaces
+
+2. **Test Generation**
+   - Jest unit tests for functions
+   - Test fixtures and mocks
+   - E2E test scaffolding
+
+3. **Bulk Transformations**
+   - Renaming patterns across files
+   - Adding TypeScript types to JS code
+   - Converting callback to async/await
+
+4. **Documentation**
+   - JSDoc comments for functions
+   - README sections for modules
+   - API endpoint documentation
+
+### How to Use (MCP Tools)
+
+The Ollama MCP server provides these tools:
+- `mcp__ollama__generate` - Generate text/code with a prompt
+- `mcp__ollama__chat` - Multi-turn conversation
+- `mcp__ollama__list_models` - List available models
+
+**Example invocations:**
 ```
-> Use the ollama tool to generate a REST controller for [entity]
-> Ask devstral-small-2 to write unit tests for this function
-> Have qwen3-coder generate TypeScript types for this API response
+# Generate a CRUD route
+Use mcp__ollama__generate with model "devstral-small-2:24b" to create an Express route for managing Teams
+
+# Generate unit tests
+Use mcp__ollama__generate with model "qwen3-coder:30b" to write Jest tests for the function in backend/src/shared/utils/filtering.ts
+
+# Generate TypeScript types
+Use mcp__ollama__generate with model "llama3.1:8b" to create TypeScript interfaces from this JSON response: {...}
 ```
 
-### When to Use Claude Instead
-- Complex reasoning, debugging, or architectural decisions
-- Tasks requiring full codebase context
-- Multi-step planning and investigation
-- Security-sensitive code review
+### Quality Control Guidelines
+
+1. **Always validate output** - Run `npx tsc --noEmit` after generating TypeScript
+2. **Review before committing** - Ollama output may need minor adjustments
+3. **Use smaller models for simple tasks** - `llama3.1:8b` for types, `devstral-small-2` for routes
+4. **Provide context** - Include existing patterns/examples in the prompt
+
+### When to Use Claude Instead (Never Offload)
+
+- **Complex debugging** - Requires full codebase context
+- **Architectural decisions** - Trade-off analysis, design patterns
+- **Security-sensitive code** - Auth, validation, encryption
+- **Multi-step investigations** - Log analysis, root cause discovery
+- **Code requiring existing file context** - Modifications to existing functions
+- **Tasks where quality is critical** - Production hotfixes, data migrations
 
 ## Build and Development Commands
 

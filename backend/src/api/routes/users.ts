@@ -20,6 +20,7 @@ import {
 import { parsePaginationParams, paginatedResponse, validateSortField } from '../../shared/utils/pagination';
 import { parseUserFilters, applyUserFilters } from '../../shared/utils/filtering';
 import { userFilterValidators } from '../../shared/validators/pagination';
+import { notFound, badRequest, forbidden, conflict, internalError } from '../../shared/utils/problem-details';
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -164,7 +165,7 @@ router.put(
       }
 
       if (Object.keys(updateData).length === 0) {
-        return res.status(400).json({ error: 'No valid fields to update' });
+        return badRequest(res, 'No valid fields to update');
       }
 
       await userRepo.update(user.id, updateData);
@@ -196,7 +197,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating user profile:', error);
-      return res.status(500).json({ error: 'Failed to update profile' });
+      return internalError(res, 'Failed to update profile');
     }
   }
 );
@@ -280,7 +281,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating availability:', error);
-      return res.status(500).json({ error: 'Failed to update availability' });
+      return internalError(res, 'Failed to update availability');
     }
   }
 );
@@ -383,7 +384,7 @@ router.get(
 
       // Only admins can list users
       if (user.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
+        return forbidden(res, 'Admin access required');
       }
 
       const orgId = req.orgId!;
@@ -448,7 +449,7 @@ router.get(
       return res.json(paginatedResponse(formattedUsers, total, pagination, lastItem, 'users'));
     } catch (error) {
       logger.error('Error listing users:', error);
-      return res.status(500).json({ error: 'Failed to list users' });
+      return internalError(res, 'Failed to list users');
     }
   }
 );
@@ -543,7 +544,7 @@ router.post(
       // Check if user already exists in this org
       const existingUser = await userRepo.findOne({ where: { email } });
       if (existingUser) {
-        return res.status(409).json({ error: 'User with this email already exists' });
+        return conflict(res, 'User with this email already exists');
       }
 
       // Create user without Cognito (they'll set password on first login)
@@ -576,7 +577,7 @@ router.post(
       });
     } catch (error) {
       logger.error('Error creating user:', error);
-      return res.status(500).json({ error: 'Failed to create user' });
+      return internalError(res, 'Failed to create user');
     }
   }
 );
@@ -642,7 +643,7 @@ router.get(
       });
 
       if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return notFound(res, 'User', id);
       }
 
       // Generate ETag from user ID and updatedAt timestamp
@@ -701,7 +702,7 @@ router.get(
       });
     } catch (error) {
       logger.error('Error fetching user:', error);
-      return res.status(500).json({ error: 'Failed to fetch user' });
+      return internalError(res, 'Failed to fetch user');
     }
   }
 );
@@ -787,7 +788,7 @@ router.put(
 
       // Require admin role (for JWT auth) or allow API key auth
       if (currentUser && currentUser.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
+        return forbidden(res, 'Admin access required');
       }
 
       const { fullName, role, status, timezone } = req.body;
@@ -800,12 +801,12 @@ router.put(
       });
 
       if (!targetUser) {
-        return res.status(404).json({ error: 'User not found' });
+        return notFound(res, 'User', id);
       }
 
       // Prevent self-deactivation
       if (currentUser && id === currentUser.id && status === 'inactive') {
-        return res.status(400).json({ error: 'Cannot deactivate your own account' });
+        return badRequest(res, 'Cannot deactivate your own account');
       }
 
       // Build update object
@@ -854,7 +855,7 @@ router.put(
       }
 
       if (Object.keys(updateData).length === 0) {
-        return res.status(400).json({ error: 'No valid fields to update' });
+        return badRequest(res, 'No valid fields to update');
       }
 
       await userRepo.update(id, updateData);
@@ -883,7 +884,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating user:', error);
-      return res.status(500).json({ error: 'Failed to update user' });
+      return internalError(res, 'Failed to update user');
     }
   }
 );
@@ -949,12 +950,12 @@ router.delete(
 
       // Require admin role (for JWT auth) or allow API key auth
       if (currentUser && currentUser.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
+        return forbidden(res, 'Admin access required');
       }
 
       // Prevent self-deletion
       if (currentUser && id === currentUser.id) {
-        return res.status(400).json({ error: 'Cannot delete your own account' });
+        return badRequest(res, 'Cannot delete your own account');
       }
 
       const dataSource = await getDataSource();
@@ -966,7 +967,7 @@ router.delete(
       });
 
       if (!targetUser) {
-        return res.status(404).json({ error: 'User not found' });
+        return notFound(res, 'User', id);
       }
 
       // Check for active schedule assignments
@@ -1007,7 +1008,7 @@ router.delete(
       return res.status(204).send();
     } catch (error) {
       logger.error('Error deleting user:', error);
-      return res.status(500).json({ error: 'Failed to delete user' });
+      return internalError(res, 'Failed to delete user');
     }
   }
 );
@@ -1042,7 +1043,7 @@ router.put(
       });
 
       if (adminCount > 0 && currentUser.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
+        return forbidden(res, 'Admin access required');
       }
 
       // Get target user
@@ -1051,7 +1052,7 @@ router.put(
       });
 
       if (!targetUser) {
-        return res.status(404).json({ error: 'User not found' });
+        return notFound(res, 'User', id);
       }
 
       // Update role
@@ -1070,7 +1071,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating user role:', error);
-      return res.status(500).json({ error: 'Failed to update user role' });
+      return internalError(res, 'Failed to update user role');
     }
   }
 );
@@ -1099,7 +1100,7 @@ router.post(
 
       // Only admins can invite users
       if (currentUser.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
+        return forbidden(res, 'Admin access required');
       }
 
       const { email, fullName, role = 'member' } = req.body;
@@ -1110,7 +1111,7 @@ router.post(
       // Check if user already exists
       const existingUser = await userRepo.findOne({ where: { email } });
       if (existingUser) {
-        return res.status(400).json({ error: 'User with this email already exists' });
+        return conflict(res, 'User with this email already exists');
       }
 
       // Create user in Cognito with AdminCreateUserCommand
@@ -1162,10 +1163,10 @@ router.post(
       logger.error('Error inviting user:', error);
 
       if (error.name === 'UsernameExistsException') {
-        return res.status(400).json({ error: 'User with this email already exists in authentication system' });
+        return conflict(res, 'User with this email already exists in authentication system');
       }
 
-      return res.status(500).json({ error: 'Failed to invite user', details: error.message });
+      return internalError(res, 'Failed to invite user');
     }
   }
 );
@@ -1193,12 +1194,12 @@ router.put(
 
       // Only admins can change user status
       if (currentUser.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
+        return forbidden(res, 'Admin access required');
       }
 
       // Prevent self-deactivation
       if (id === currentUser.id && status === 'inactive') {
-        return res.status(400).json({ error: 'Cannot deactivate your own account' });
+        return badRequest(res, 'Cannot deactivate your own account');
       }
 
       const dataSource = await getDataSource();
@@ -1209,7 +1210,7 @@ router.put(
       });
 
       if (!targetUser) {
-        return res.status(404).json({ error: 'User not found' });
+        return notFound(res, 'User', id);
       }
 
       // Update Cognito user status
@@ -1249,7 +1250,7 @@ router.put(
       });
     } catch (error) {
       logger.error('Error updating user status:', error);
-      return res.status(500).json({ error: 'Failed to update user status' });
+      return internalError(res, 'Failed to update user status');
     }
   }
 );

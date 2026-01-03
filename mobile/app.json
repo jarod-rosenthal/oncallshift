@@ -31,6 +31,7 @@
     },
     "android": {
       "package": "com.oncallshift.mobile",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#475569"
@@ -73,7 +74,8 @@
     "extra": {
       "eas": {
         "projectId": "7311a48c-3b87-4bb8-8bba-549de8a578e7"
-      }
+      },
+      "sentryDsn": ""
     },
     "owner": "jarod.rosenthal"
   }

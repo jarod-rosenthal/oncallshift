@@ -1,4 +1,9 @@
 import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry for this worker
+initSentry({ workerName: 'alert-processor' });
+
 import { getDataSource } from '../shared/db/data-source';
 import { processQueue, AlertMessage, sendNotificationMessage } from '../shared/queues/sqs-client';
 import { Incident, IncidentEvent, Service, MaintenanceWindow, AlertRoutingRule, User } from '../shared/models';

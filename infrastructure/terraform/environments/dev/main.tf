@@ -525,6 +525,12 @@ resource "aws_secretsmanager_secret" "anthropic_api_key" {
   }
 }
 
+# Sentry DSN secret (created manually, referenced here)
+# DSN is stored in Secrets Manager, enabled via var.sentry_enabled
+data "aws_secretsmanager_secret" "sentry_dsn" {
+  name = "${var.project_name}-${var.environment}/sentry-dsn"
+}
+
 # Secrets Manager secret for credential encryption key (encrypts user-provided API keys)
 # This key is auto-generated - no manual setup needed
 resource "random_password" "credential_encryption_key" {
@@ -577,15 +583,18 @@ module "api_service" {
     APNS_PLATFORM_APP_ARN = var.apns_certificate != null ? aws_sns_platform_application.apns[0].arn : ""
     COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
     COGNITO_CLIENT_ID = aws_cognito_user_pool_client.mobile.id
+    SENTRY_ENABLED = tostring(var.sentry_enabled)
+    SENTRY_ENVIRONMENT = var.environment
   }
 
   secrets = {
     DATABASE_URL = module.database.secret_arn
     ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
     CREDENTIAL_ENCRYPTION_KEY = aws_secretsmanager_secret.credential_encryption_key.arn
+    SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, data.aws_secretsmanager_secret.sentry_dsn.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -696,6 +705,8 @@ module "notification_worker" {
     NOTIFICATIONS_QUEUE_URL = aws_sqs_queue.notifications.url
     FCM_PLATFORM_APP_ARN = var.fcm_server_key != null ? aws_sns_platform_application.fcm[0].arn : ""
     APNS_PLATFORM_APP_ARN = var.apns_certificate != null ? aws_sns_platform_application.apns[0].arn : ""
+    SENTRY_ENABLED = tostring(var.sentry_enabled)
+    SENTRY_ENVIRONMENT = var.environment
     SES_FROM_EMAIL = "noreply@oncallshift.com"
     COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
     COGNITO_CLIENT_ID = aws_cognito_user_pool_client.mobile.id
@@ -704,9 +715,10 @@ module "notification_worker" {
   secrets = {
     DATABASE_URL = module.database.secret_arn
     ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
+    SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, data.aws_secretsmanager_secret.sentry_dsn.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.notifications.arn
@@ -766,13 +778,16 @@ module "alert_processor" {
     AWS_REGION = var.aws_region
     ALERTS_QUEUE_URL = aws_sqs_queue.alerts.url
     NOTIFICATIONS_QUEUE_URL = aws_sqs_queue.notifications.url
+    SENTRY_ENABLED = tostring(var.sentry_enabled)
+    SENTRY_ENVIRONMENT = var.environment
   }
 
   secrets = {
     DATABASE_URL = module.database.secret_arn
+    SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
   }
 
-  secrets_arns = [module.database.secret_arn]
+  secrets_arns = [module.database.secret_arn, data.aws_secretsmanager_secret.sentry_dsn.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -819,13 +834,16 @@ module "escalation_timer" {
     AWS_REGION = var.aws_region
     NOTIFICATIONS_QUEUE_URL = aws_sqs_queue.notifications.url
     ESCALATION_CHECK_INTERVAL_MS = "30000"  # Check every 30 seconds
+    SENTRY_ENABLED = tostring(var.sentry_enabled)
+    SENTRY_ENVIRONMENT = var.environment
   }
 
   secrets = {
     DATABASE_URL = module.database.secret_arn
+    SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
   }
 
-  secrets_arns = [module.database.secret_arn]
+  secrets_arns = [module.database.secret_arn, data.aws_secretsmanager_secret.sentry_dsn.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.notifications.arn

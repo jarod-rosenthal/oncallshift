@@ -77,6 +77,7 @@ export async function sendSMSNotification(payload: SMSNotificationPayload): Prom
 
     // Create notification record
     const notification = notificationRepo.create({
+      orgId: incident.orgId,
       incidentId,
       userId,
       channel: 'sms',

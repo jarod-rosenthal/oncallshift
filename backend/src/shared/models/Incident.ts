@@ -168,7 +168,7 @@ export class Incident {
 
 
   canEscalate(): boolean {
-    return this.state === 'triggered';
+    return this.state === 'triggered' || this.state === 'acknowledged';
   }
 
 

@@ -1,4 +1,9 @@
 import 'dotenv/config';
+import { initSentry } from '../shared/config/sentry';
+
+// Initialize Sentry BEFORE other imports (catches early errors)
+initSentry();
+
 import { createApp } from './app';
 import { getDataSource } from '../shared/db/data-source';
 import { logger } from '../shared/utils/logger';
