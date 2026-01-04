@@ -437,6 +437,52 @@ router.post(
 );
 
 /**
+ * POST /api/v1/ai-worker-tasks/:id/heartbeat
+ * Update task heartbeat timestamp (called by running ECS tasks)
+ */
+router.post(
+  '/:id/heartbeat',
+  [param('id').isUUID()],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const orgId = req.orgId!;
+      const { id } = req.params;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({
+        where: { id, orgId },
+      });
+
+      if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      // Update heartbeat timestamp
+      task.lastHeartbeatAt = new Date();
+      await taskRepo.save(task);
+
+      logger.debug('Heartbeat received for task', { taskId: id });
+
+      return res.json({
+        taskId: task.id,
+        lastHeartbeatAt: task.lastHeartbeatAt,
+        status: task.status,
+      });
+    } catch (error) {
+      logger.error('Error updating task heartbeat:', error);
+      return res.status(500).json({ error: 'Failed to update heartbeat' });
+    }
+  }
+);
+
+/**
  * POST /api/v1/ai-worker-tasks/:id/retry
  * Retry a failed task
  */
@@ -529,6 +575,14 @@ function formatTask(task: AIWorkerTask) {
     errorMessage: task.errorMessage,
     retryCount: task.retryCount,
     maxRetries: task.maxRetries,
+    // Self-recovery fields
+    lastHeartbeatAt: task.lastHeartbeatAt,
+    previousRunContext: task.previousRunContext,
+    globalTimeoutAt: task.globalTimeoutAt,
+    nextRetryAt: task.nextRetryAt,
+    retryBackoffSeconds: task.retryBackoffSeconds,
+    failureCategory: task.failureCategory,
+    watcherNotes: task.watcherNotes,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     approvals: task.approvals?.map(a => ({

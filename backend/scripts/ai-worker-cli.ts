@@ -51,6 +51,49 @@ const API_BASE_URL = process.env.API_BASE_URL || 'https://oncallshift.com/api/v1
 const API_KEY = process.env.ONCALLSHIFT_API_KEY;
 const REFRESH_INTERVAL = 2000; // 2 seconds
 
+// CLI Options (parsed from args)
+interface CLIOptions {
+  taskId?: string;
+  timeout: number; // 0 = no timeout
+  watch: boolean; // Keep watching after task completes
+  logLevel: 'debug' | 'info' | 'warning' | 'error';
+  noColors: boolean;
+}
+
+function parseArgs(): CLIOptions {
+  const args = process.argv.slice(2);
+  const options: CLIOptions = {
+    timeout: 0,
+    watch: false,
+    logLevel: 'info',
+    noColors: false,
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--help' || arg === '-h') {
+      showHelp();
+      process.exit(0);
+    } else if (arg === '--watch' || arg === '-w') {
+      options.watch = true;
+    } else if (arg === '--no-colors') {
+      options.noColors = true;
+    } else if (arg.startsWith('--timeout=')) {
+      options.timeout = parseInt(arg.split('=')[1]) * 1000; // Convert to ms
+    } else if (arg.startsWith('--log-level=')) {
+      const level = arg.split('=')[1] as CLIOptions['logLevel'];
+      if (['debug', 'info', 'warning', 'error'].includes(level)) {
+        options.logLevel = level;
+      }
+    } else if (!arg.startsWith('-')) {
+      options.taskId = arg;
+    }
+  }
+
+  return options;
+}
+
 interface Stats {
   totalWorkers: number;
   activeWorkers: number;
@@ -252,9 +295,18 @@ function printRecentCompleted(tasks: CompletedTask[]) {
   console.log();
 }
 
-function printFooter() {
+function printFooter(options?: CLIOptions) {
   const timestamp = new Date().toLocaleTimeString();
-  console.log(`${colors.dim}Last updated: ${timestamp}  │  Press Ctrl+C to exit  │  Refreshing every ${REFRESH_INTERVAL / 1000}s${colors.reset}`);
+  let footer = `Last updated: ${timestamp}  │  Press Ctrl+C to exit  │  Refreshing every ${REFRESH_INTERVAL / 1000}s`;
+
+  if (options?.watch) {
+    footer += `  │  Watch mode: ON`;
+  }
+  if (options?.timeout && options.timeout > 0) {
+    footer += `  │  Timeout: ${options.timeout / 1000}s`;
+  }
+
+  console.log(`${colors.dim}${footer}${colors.reset}`);
 }
 
 async function fetchControlCenterData(): Promise<ControlCenterData | null> {
@@ -285,9 +337,22 @@ async function fetchControlCenterData(): Promise<ControlCenterData | null> {
   }
 }
 
-async function watchTasks() {
+async function watchTasks(options: CLIOptions) {
   console.log(`${colors.cyan}Starting AI Worker Control Center...${colors.reset}`);
   console.log(`${colors.dim}Connecting to ${API_BASE_URL}${colors.reset}`);
+
+  if (options.taskId) {
+    console.log(`${colors.dim}Watching task: ${options.taskId}${colors.reset}`);
+  }
+  if (options.timeout > 0) {
+    console.log(`${colors.dim}Session timeout: ${options.timeout / 1000}s${colors.reset}`);
+  }
+  if (options.watch) {
+    console.log(`${colors.dim}Watch mode: enabled (will continue after task completion)${colors.reset}`);
+  }
+  if (options.logLevel !== 'info') {
+    console.log(`${colors.dim}Log level: ${options.logLevel}${colors.reset}`);
+  }
   console.log();
 
   if (!API_KEY) {
@@ -295,7 +360,18 @@ async function watchTasks() {
     console.log();
   }
 
+  const startTime = Date.now();
+  let intervalId: NodeJS.Timeout | null = null;
+  let lastTaskStatus: string | null = null;
+
   const refresh = async () => {
+    // Check timeout
+    if (options.timeout > 0 && Date.now() - startTime > options.timeout) {
+      console.log(`\n${colors.yellow}Session timeout reached. Exiting...${colors.reset}`);
+      if (intervalId) clearInterval(intervalId);
+      process.exit(0);
+    }
+
     let data: ControlCenterData | null;
 
     if (!API_KEY) {
@@ -309,20 +385,57 @@ async function watchTasks() {
       return;
     }
 
+    // If watching a specific task, check if it completed
+    if (options.taskId && !options.watch) {
+      const activeTask = data.activeTasks.find(t => t.id === options.taskId || t.jiraIssueKey === options.taskId);
+      const completedTask = data.recentCompleted.find(t => t.id === options.taskId || t.jiraIssueKey === options.taskId);
+
+      if (!activeTask && completedTask) {
+        // Task completed
+        if (lastTaskStatus !== completedTask.status) {
+          clearScreen();
+          printHeader();
+          console.log(`${colors.bold}Task ${completedTask.jiraIssueKey} completed!${colors.reset}`);
+          console.log(`  Status: ${getStatusIcon(completedTask.status)} ${completedTask.status}`);
+          console.log(`  Cost: $${completedTask.costUsd.toFixed(2)}`);
+          console.log(`  Duration: ${completedTask.durationMinutes}m`);
+          console.log();
+          console.log(`${colors.dim}Exiting... Use --watch to keep monitoring${colors.reset}`);
+
+          if (intervalId) clearInterval(intervalId);
+          process.exit(completedTask.status === 'completed' ? 0 : 1);
+        }
+      }
+      lastTaskStatus = activeTask?.status || completedTask?.status || null;
+    }
+
+    // Filter logs by log level
+    if (options.logLevel !== 'debug') {
+      const levelPriority: Record<string, number> = { debug: 0, info: 1, warning: 2, error: 3 };
+      const minPriority = levelPriority[options.logLevel] || 1;
+
+      for (const task of data.activeTasks) {
+        task.recentLogs = task.recentLogs.filter(log => {
+          const logPriority = log.type === 'error' ? 3 : log.type === 'warning' ? 2 : 1;
+          return logPriority >= minPriority;
+        });
+      }
+    }
+
     clearScreen();
     printHeader();
     printStats(data.stats);
     printWorkers(data.workers);
     printActiveTasks(data.activeTasks);
     printRecentCompleted(data.recentCompleted);
-    printFooter();
+    printFooter(options);
   };
 
   // Initial fetch
   await refresh();
 
   // Start polling
-  setInterval(refresh, REFRESH_INTERVAL);
+  intervalId = setInterval(refresh, REFRESH_INTERVAL);
 }
 
 function getMockData(): ControlCenterData {
@@ -424,27 +537,36 @@ function showHelp() {
 ${colors.bold}AI Worker Control Center CLI${colors.reset}
 
 ${colors.bold}Usage:${colors.reset}
-  npm run ai:watch              Watch all active tasks (default)
+  npx ts-node scripts/ai-worker-cli.ts [taskId] [options]
+
+${colors.bold}Arguments:${colors.reset}
+  taskId                       Watch a specific task (optional)
+
+${colors.bold}Options:${colors.reset}
+  -h, --help                   Show this help message
+  -w, --watch                  Keep watching even after task completes
+  --timeout=SECONDS            Session timeout (0 = no timeout, default: 0)
+  --log-level=LEVEL            Filter logs (debug, info, warning, error)
+  --no-colors                  Disable colored output
 
 ${colors.bold}Environment Variables:${colors.reset}
   ONCALLSHIFT_API_KEY          API key for authentication (required for live data)
   API_BASE_URL                 API base URL (default: https://oncallshift.com/api/v1)
 
 ${colors.bold}Examples:${colors.reset}
-  ONCALLSHIFT_API_KEY=xxx npm run ai:watch
+  npx ts-node scripts/ai-worker-cli.ts                           # Watch all tasks
+  npx ts-node scripts/ai-worker-cli.ts abc-123                   # Watch specific task
+  npx ts-node scripts/ai-worker-cli.ts --watch                   # Keep watching after completion
+  npx ts-node scripts/ai-worker-cli.ts --timeout=3600            # 1 hour session timeout
+  npx ts-node scripts/ai-worker-cli.ts --log-level=error         # Only show errors
 
 ${colors.bold}Demo Mode:${colors.reset}
-  Run without API_KEY to see mock data demonstration
+  Run without ONCALLSHIFT_API_KEY to see mock data demonstration
 `);
 }
 
 // Main entry point
-const args = process.argv.slice(2);
-
-if (args.includes('--help') || args.includes('-h')) {
-  showHelp();
-  process.exit(0);
-}
+const cliOptions = parseArgs();
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
@@ -453,7 +575,7 @@ process.on('SIGINT', () => {
 });
 
 // Start watching
-watchTasks().catch(error => {
+watchTasks(cliOptions).catch(error => {
   console.error(`${colors.red}Fatal error: ${error}${colors.reset}`);
   process.exit(1);
 });
