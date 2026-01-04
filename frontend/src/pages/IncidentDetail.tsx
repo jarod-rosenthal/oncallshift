@@ -445,7 +445,7 @@ export function IncidentDetail() {
         </div>
 
         {/* Admin Actions */}
-        {currentUser?.role === 'admin' && (
+        {(currentUser?.role === 'admin' || currentUser?.role === 'super_admin') && (
           <Section variant="card" className="mt-8 border-danger/30">
             <h3 className="text-heading-sm text-danger mb-4">Admin Actions</h3>
             <Button

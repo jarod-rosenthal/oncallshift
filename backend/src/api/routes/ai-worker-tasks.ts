@@ -29,6 +29,65 @@ const sqs = new SQS({ region: process.env.AWS_REGION || 'us-east-1' });
 const queueUrl = process.env.AI_WORKER_QUEUE_URL;
 
 /**
+ * GET /api/v1/ai-worker-tasks/summary
+ * Get summary statistics for tasks
+ * NOTE: This route MUST be defined before /:id to avoid "summary" being matched as a UUID
+ */
+router.get('/summary', async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+
+    const dataSource = await getDataSource();
+    const taskRepo = dataSource.getRepository(AIWorkerTask);
+    const workerRepo = dataSource.getRepository(AIWorkerInstance);
+
+    // Count tasks by status
+    const statusCounts = await taskRepo
+      .createQueryBuilder('task')
+      .select('task.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('task.org_id = :orgId', { orgId })
+      .groupBy('task.status')
+      .getRawMany();
+
+    // Calculate total cost
+    const costResult = await taskRepo
+      .createQueryBuilder('task')
+      .select('SUM(task.estimated_cost_usd)', 'totalCost')
+      .where('task.org_id = :orgId', { orgId })
+      .getRawOne();
+
+    // Get worker counts
+    const workerCounts = await workerRepo
+      .createQueryBuilder('worker')
+      .select('worker.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('worker.org_id = :orgId', { orgId })
+      .groupBy('worker.status')
+      .getRawMany();
+
+    return res.json({
+      tasks: {
+        byStatus: statusCounts.reduce((acc, { status, count }) => {
+          acc[status] = parseInt(count, 10);
+          return acc;
+        }, {} as Record<string, number>),
+        totalCostUsd: parseFloat(costResult?.totalCost || '0'),
+      },
+      workers: {
+        byStatus: workerCounts.reduce((acc, { status, count }) => {
+          acc[status] = parseInt(count, 10);
+          return acc;
+        }, {} as Record<string, number>),
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching task summary:', error);
+    return res.status(500).json({ error: 'Failed to fetch task summary' });
+  }
+});
+
+/**
  * GET /api/v1/ai-worker-tasks
  * List all AI worker tasks for the organization
  */
@@ -432,64 +491,6 @@ router.post(
     }
   }
 );
-
-/**
- * GET /api/v1/ai-worker-tasks/summary
- * Get summary statistics for tasks
- */
-router.get('/summary', async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
-
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
-    const workerRepo = dataSource.getRepository(AIWorkerInstance);
-
-    // Count tasks by status
-    const statusCounts = await taskRepo
-      .createQueryBuilder('task')
-      .select('task.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .where('task.org_id = :orgId', { orgId })
-      .groupBy('task.status')
-      .getRawMany();
-
-    // Calculate total cost
-    const costResult = await taskRepo
-      .createQueryBuilder('task')
-      .select('SUM(task.estimated_cost_usd)', 'totalCost')
-      .where('task.org_id = :orgId', { orgId })
-      .getRawOne();
-
-    // Get worker counts
-    const workerCounts = await workerRepo
-      .createQueryBuilder('worker')
-      .select('worker.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .where('worker.org_id = :orgId', { orgId })
-      .groupBy('worker.status')
-      .getRawMany();
-
-    return res.json({
-      tasks: {
-        byStatus: statusCounts.reduce((acc, { status, count }) => {
-          acc[status] = parseInt(count, 10);
-          return acc;
-        }, {} as Record<string, number>),
-        totalCostUsd: parseFloat(costResult?.totalCost || '0'),
-      },
-      workers: {
-        byStatus: workerCounts.reduce((acc, { status, count }) => {
-          acc[status] = parseInt(count, 10);
-          return acc;
-        }, {} as Record<string, number>),
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching task summary:', error);
-    return res.status(500).json({ error: 'Failed to fetch task summary' });
-  }
-});
 
 // Helper function to format task response
 function formatTask(task: AIWorkerTask) {

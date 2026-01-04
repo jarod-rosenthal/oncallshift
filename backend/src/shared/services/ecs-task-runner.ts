@@ -77,7 +77,7 @@ export class ECSTaskRunner {
     const command = new RunTaskCommand({
       cluster: this.config.cluster,
       taskDefinition: this.config.taskDefinition,
-      launchType: 'FARGATE',
+      // Use capacity provider strategy for Fargate Spot (don't set launchType with capacityProviderStrategy)
       capacityProviderStrategy: [
         {
           capacityProvider: 'FARGATE_SPOT',
@@ -310,12 +310,12 @@ export function initECSTaskRunner(config: ECSTaskRunnerConfig): ECSTaskRunner {
 // Default configuration from environment
 export function getDefaultECSConfig(): ECSTaskRunnerConfig {
   return {
-    cluster: process.env.ECS_CLUSTER || 'pagerduty-lite-dev',
-    taskDefinition: process.env.AI_WORKER_TASK_DEFINITION || 'pagerduty-lite-dev-ai-worker',
-    subnets: (process.env.PRIVATE_SUBNETS || '').split(',').filter(Boolean),
-    securityGroups: (process.env.SECURITY_GROUPS || '').split(',').filter(Boolean),
-    containerName: 'ai-worker',
-    logGroup: process.env.AI_WORKER_LOG_GROUP || '/ecs/pagerduty-lite-dev/ai-worker',
+    cluster: process.env.ECS_CLUSTER_NAME || process.env.ECS_CLUSTER || 'pagerduty-lite-dev',
+    taskDefinition: process.env.EXECUTOR_TASK_DEFINITION || process.env.AI_WORKER_TASK_DEFINITION || 'pagerduty-lite-dev-ai-worker-executor',
+    subnets: (process.env.EXECUTOR_SUBNET_IDS || process.env.PRIVATE_SUBNETS || '').split(',').filter(Boolean),
+    securityGroups: (process.env.EXECUTOR_SECURITY_GROUP_IDS || process.env.SECURITY_GROUPS || '').split(',').filter(Boolean),
+    containerName: 'ai-worker-executor',
+    logGroup: process.env.AI_WORKER_LOG_GROUP || '/ecs/pagerduty-lite-dev/ai-worker-executor',
     region: process.env.AWS_REGION || 'us-east-1',
   };
 }

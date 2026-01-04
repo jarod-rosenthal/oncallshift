@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ToastProvider } from './components/Toast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
+import { SuperAdminRoute } from './components/SuperAdminRoute';
 import { AppLayout } from './components/AppLayout';
 
 // Eagerly loaded pages (critical for initial user experience)
@@ -49,6 +50,9 @@ const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ defaul
 const ImportWizard = lazy(() => import('./pages/ImportWizard').then(m => ({ default: m.ImportWizard })));
 const SemanticImportPage = lazy(() => import('./features/semanticImport/SemanticImportPage').then(m => ({ default: m.SemanticImportPage })));
 const AIWorkers = lazy(() => import('./pages/AIWorkers').then(m => ({ default: m.AIWorkers })));
+
+// Lazy loaded pages - Super Admin functionality
+const SuperAdminControlCenter = lazy(() => import('./pages/SuperAdminControlCenter'));
 
 // Lazy loaded pages - Marketing/public pages
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
@@ -117,6 +121,15 @@ function AdminWithLayout({ children }: { children: React.ReactNode }) {
     <AdminRoute>
       <AppLayout>{children}</AppLayout>
     </AdminRoute>
+  );
+}
+
+// Wrapper component for super admin routes with layout
+function SuperAdminWithLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <SuperAdminRoute>
+      <AppLayout>{children}</AppLayout>
+    </SuperAdminRoute>
   );
 }
 
@@ -453,6 +466,16 @@ function App() {
             <AdminWithLayout>
               <ApiKeys />
             </AdminWithLayout>
+          }
+        />
+
+        {/* Super Admin routes */}
+        <Route
+          path="/super-admin/control-center"
+          element={
+            <SuperAdminWithLayout>
+              <SuperAdminControlCenter />
+            </SuperAdminWithLayout>
           }
         />
 

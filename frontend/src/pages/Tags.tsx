@@ -33,7 +33,7 @@ const ENTITY_TYPE_LABELS: Record<EntityType, string> = {
 
 export function Tags() {
   const currentUser = useAuthStore((state) => state.user);
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
   const [tags, setTags] = useState<Tag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

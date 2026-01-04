@@ -54,7 +54,7 @@ export function ScheduleDetail() {
   const loadCurrentUser = async () => {
     try {
       const response = await usersAPI.getMe();
-      setIsAdmin(response.user.role === 'admin');
+      setIsAdmin(response.user.role === 'admin' || response.user.role === 'super_admin');
     } catch (err) {
       console.error('Failed to load user role:', err);
     }
