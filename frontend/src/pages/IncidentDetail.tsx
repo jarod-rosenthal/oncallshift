@@ -71,7 +71,7 @@ export function IncidentDetail() {
     try {
       setIsTimelineLoading(true);
       const response = await incidentsAPI.getTimeline(id);
-      setEvents(response.events);
+      setEvents(response?.events || []);
     } catch {
       console.error('Failed to load timeline');
     } finally {
@@ -82,7 +82,7 @@ export function IncidentDetail() {
   const loadUsers = useCallback(async () => {
     try {
       const response = await usersAPI.listUsers();
-      setUsers(response.users);
+      setUsers(response?.users || []);
     } catch {
       // Users list is optional
     }

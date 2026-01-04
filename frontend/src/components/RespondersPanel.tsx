@@ -45,7 +45,7 @@ export function RespondersPanel({
   const loadResponders = useCallback(async () => {
     try {
       const response = await incidentsAPI.getResponders(incidentId);
-      setResponders(response.responders);
+      setResponders(response?.responders || []);
     } catch (error) {
       console.error('Failed to load responders:', error);
     } finally {
@@ -56,7 +56,7 @@ export function RespondersPanel({
   const loadUsers = useCallback(async () => {
     try {
       const response = await usersAPI.listUsers();
-      setUsers(response.users);
+      setUsers(response?.users || []);
     } catch (error) {
       console.error('Failed to load users:', error);
     }

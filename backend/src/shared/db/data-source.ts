@@ -68,6 +68,8 @@ import { IdempotencyKey } from '../models/IdempotencyKey';
 import { ImportHistory } from '../models/ImportHistory';
 import { AIRecommendation } from '../models/AIRecommendation';
 import { AIWorkerTask } from '../models/AIWorkerTask';
+import { AIWorkerTaskRun } from '../models/AIWorkerTaskRun';
+import { AIWorkerReview } from '../models/AIWorkerReview';
 import { AIWorkerInstance } from '../models/AIWorkerInstance';
 import { AIWorkerTaskLog } from '../models/AIWorkerTaskLog';
 import { AIWorkerConversation } from '../models/AIWorkerConversation';
@@ -155,6 +157,8 @@ export async function createDataSource(): Promise<DataSource> {
       ImportHistory,
       AIRecommendation,
       AIWorkerTask,
+      AIWorkerTaskRun,
+      AIWorkerReview,
       AIWorkerInstance,
       AIWorkerTaskLog,
       AIWorkerConversation,

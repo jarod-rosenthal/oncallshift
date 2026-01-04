@@ -4,6 +4,8 @@ import { AIWorkerTask, AIWorkerPersona } from './AIWorkerTask';
 
 export type AIWorkerStatus = 'idle' | 'working' | 'paused' | 'disabled';
 
+export type AIWorkerRole = 'worker' | 'manager';
+
 export interface AIWorkerConfig {
   maxConcurrentTasks?: number;
   allowedProjectKeys?: string[];
@@ -38,6 +40,12 @@ export class AIWorkerInstance {
   @Column({ type: 'varchar', length: 30, default: 'idle' })
   status: AIWorkerStatus;
 
+  @Column({ type: 'varchar', length: 20, default: 'worker' })
+  role: AIWorkerRole;
+
+  @Column({ name: 'model_id', type: 'varchar', length: 100, default: 'claude-sonnet-4-20250514' })
+  modelId: string;
+
   @Column({ name: 'current_task_id', type: 'uuid', nullable: true })
   currentTaskId: string | null;
 
@@ -66,6 +74,19 @@ export class AIWorkerInstance {
 
   @Column({ name: 'last_task_at', type: 'timestamp', nullable: true })
   lastTaskAt: Date | null;
+
+  // Manager-specific metrics (only used when role='manager')
+  @Column({ name: 'review_count', type: 'int', default: 0 })
+  reviewCount: number;
+
+  @Column({ name: 'approvals_count', type: 'int', default: 0 })
+  approvalsCount: number;
+
+  @Column({ name: 'rejections_count', type: 'int', default: 0 })
+  rejectionsCount: number;
+
+  @Column({ name: 'revisions_requested_count', type: 'int', default: 0 })
+  revisionsRequestedCount: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
@@ -116,13 +137,33 @@ export class AIWorkerInstance {
 
   getPersonaDisplayName(): string {
     const names: Record<AIWorkerPersona, string> = {
-      developer: 'Developer',
+      frontend_developer: 'Frontend Developer',
+      backend_developer: 'Backend Developer',
+      devops_engineer: 'DevOps Engineer',
+      security_engineer: 'Security Engineer',
       qa_engineer: 'QA Engineer',
-      devops: 'DevOps Engineer',
       tech_writer: 'Technical Writer',
-      support: 'Support Engineer',
-      pm: 'Project Manager',
+      project_manager: 'Project Manager',
     };
     return names[this.persona] || this.persona;
+  }
+
+  // Manager-specific helpers
+  isManager(): boolean {
+    return this.role === 'manager';
+  }
+
+  isWorker(): boolean {
+    return this.role === 'worker';
+  }
+
+  getApprovalRate(): number {
+    if (this.reviewCount === 0) return 0;
+    return (this.approvalsCount / this.reviewCount) * 100;
+  }
+
+  getRevisionRate(): number {
+    if (this.reviewCount === 0) return 0;
+    return (this.revisionsRequestedCount / this.reviewCount) * 100;
   }
 }

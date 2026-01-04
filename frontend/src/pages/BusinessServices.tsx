@@ -65,10 +65,10 @@ export function BusinessServices() {
         teamsAPI.list(),
         usersAPI.listUsers(),
       ]);
-      setBusinessServices(bsData);
-      setServices(servicesData.services);
-      setTeams(teamsData.teams);
-      setUsers(usersData.users);
+      setBusinessServices(bsData || []);
+      setServices(servicesData?.services || []);
+      setTeams(teamsData?.teams || []);
+      setUsers(usersData?.users || []);
       setError(null);
     } catch (err) {
       console.error('Failed to load data:', err);

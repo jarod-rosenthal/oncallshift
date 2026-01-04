@@ -38,13 +38,18 @@ interface JiraConfig {
 
 // Issue type to persona mapping
 const DEFAULT_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
-  // Software development
-  'Story': 'developer',
-  'Bug': 'developer',
-  'Task': 'developer',
-  'Sub-task': 'developer',
-  'Technical Debt': 'developer',
-  'Spike': 'developer',
+  // Software development (backend by default)
+  'Story': 'backend_developer',
+  'Bug': 'backend_developer',
+  'Task': 'backend_developer',
+  'Sub-task': 'backend_developer',
+  'Technical Debt': 'backend_developer',
+  'Spike': 'backend_developer',
+
+  // Frontend specific
+  'UI': 'frontend_developer',
+  'Frontend': 'frontend_developer',
+  'Design': 'frontend_developer',
 
   // QA
   'Test': 'qa_engineer',
@@ -52,23 +57,22 @@ const DEFAULT_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
   'QA Task': 'qa_engineer',
 
   // DevOps
-  'Infrastructure': 'devops',
-  'CI/CD': 'devops',
-  'Deployment': 'devops',
+  'Infrastructure': 'devops_engineer',
+  'CI/CD': 'devops_engineer',
+  'Deployment': 'devops_engineer',
+
+  // Security
+  'Security': 'security_engineer',
+  'Vulnerability': 'security_engineer',
 
   // Documentation
   'Documentation': 'tech_writer',
   'Docs': 'tech_writer',
 
-  // Support
-  'Service Request': 'support',
-  'Support': 'support',
-  'Customer Issue': 'support',
-
   // Project Management
-  'Epic': 'pm',
-  'Initiative': 'pm',
-  'Planning': 'pm',
+  'Epic': 'project_manager',
+  'Initiative': 'project_manager',
+  'Planning': 'project_manager',
 };
 
 // Priority mapping (Jira priority to our 1-5 scale)
@@ -311,6 +315,19 @@ export class JiraAIWorkerService {
     }
   }
 
+  private getPersonaDisplayName(persona: AIWorkerPersona): string {
+    const displayNames: Record<AIWorkerPersona, string> = {
+      backend_developer: 'Backend Developer',
+      frontend_developer: 'Frontend Developer',
+      qa_engineer: 'QA Engineer',
+      devops_engineer: 'DevOps Engineer',
+      security_engineer: 'Security Engineer',
+      tech_writer: 'Technical Writer',
+      project_manager: 'Project Manager',
+    };
+    return displayNames[persona] || persona.replace(/_/g, ' ');
+  }
+
   private formatTaskUpdate(task: AIWorkerTask): string {
     const statusEmoji: Record<string, string> = {
       queued: '⏳',
@@ -327,10 +344,14 @@ export class JiraAIWorkerService {
       cancelled: '🛑',
     };
 
+    // Identity signature - clearly identifies this as an AI Worker
+    const personaName = this.getPersonaDisplayName(task.workerPersona);
+    const signature = `🤖 *AI Worker (${personaName})* - Automated Update`;
+
     const emoji = statusEmoji[task.status] || '📌';
-    let message = `${emoji} *AI Worker Update*\n\n`;
+    let message = `${signature}\n\n`;
+    message += `${emoji} *Status Update*\n\n`;
     message += `Status: *${task.status.replace(/_/g, ' ').toUpperCase()}*\n`;
-    message += `Worker: ${task.workerPersona.replace(/_/g, ' ')}\n`;
 
     if (task.githubBranch) {
       message += `Branch: \`${task.githubBranch}\`\n`;

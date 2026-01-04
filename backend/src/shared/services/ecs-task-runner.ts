@@ -216,7 +216,9 @@ export class ECSTaskRunner {
     taskId: string,
     options?: { startTime?: number; limit?: number; nextToken?: string }
   ): Promise<{ events: Array<{ timestamp: number; message: string }>; nextToken?: string }> {
-    const logStreamName = `${this.config.containerName}/${this.config.containerName}/${taskId}`;
+    // CloudWatch log stream format: prefix/container-name/task-id
+    // prefix is "ecs" from awslogs-stream-prefix in the task definition
+    const logStreamName = `ecs/${this.config.containerName}/${taskId}`;
 
     try {
       const command = new GetLogEventsCommand({

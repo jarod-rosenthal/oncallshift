@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
   RefreshCw,
   ExternalLink,
@@ -23,7 +23,10 @@ import {
   Shield,
   X,
   History,
-} from 'lucide-react';
+  Plus,
+  Play,
+} from "lucide-react";
+import { aiWorkersAPI } from "../lib/api-client";
 
 interface ControlCenterStats {
   totalWorkers: number;
@@ -56,7 +59,7 @@ interface Worker {
 
 interface TaskStep {
   name: string;
-  status: 'done' | 'active' | 'pending';
+  status: "done" | "active" | "pending";
 }
 
 interface TaskLog {
@@ -110,6 +113,35 @@ interface WatcherStatus {
   tasksMonitored: number;
 }
 
+// Virtual Manager types
+interface ManagerStatus {
+  enabled: boolean;
+  managers: Array<{
+    id: string;
+    displayName: string;
+    modelId: string;
+    status: string;
+    reviewCount: number;
+    approvalsCount: number;
+    rejectionsCount: number;
+    revisionsRequestedCount: number;
+    approvalRate: number;
+  }>;
+  queue: {
+    awaitingReview: number;
+    underReview: number;
+    revisionNeeded: number;
+  };
+  last24Hours: {
+    totalReviews: number;
+    approved: number;
+    rejected: number;
+    revisionsRequested: number;
+    totalCost: number;
+    avgDurationSeconds: number;
+  };
+}
+
 interface TaskRun {
   id: string;
   runNumber: number;
@@ -147,78 +179,60 @@ interface TaskWithRuns {
   startedAt: string | null;
   completedAt: string | null;
   ecsTaskArn: string | null;
+  githubPrUrl: string | null;
+  githubPrNumber: number | null;
+  githubBranch: string | null;
   runs?: TaskRun[];
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // Persona definitions with full details
-const PERSONA_CONFIG: Record<string, { emoji: string; title: string; description: string; skills: string[] }> = {
-  developer: {
-    emoji: '👨‍💻',
-    title: 'Developer',
-    description: 'General development tasks across the stack',
-    skills: ['TypeScript', 'Node.js', 'React', 'SQL'],
-  },
-  senior_developer: {
-    emoji: '👨‍💻',
-    title: 'Senior Developer',
-    description: 'Full-stack development, code reviews, architecture decisions',
-    skills: ['TypeScript', 'Node.js', 'React', 'PostgreSQL', 'System Design'],
-  },
-  qa_engineer: {
-    emoji: '🧪',
-    title: 'QA Engineer',
-    description: 'Test writing, quality assurance, bug verification',
-    skills: ['Jest', 'Playwright', 'Test Design', 'Bug Triage'],
-  },
-  devops: {
-    emoji: '🔧',
-    title: 'DevOps Engineer',
-    description: 'Infrastructure, CI/CD, deployment automation',
-    skills: ['Terraform', 'AWS', 'Docker', 'GitHub Actions'],
-  },
-  devops_engineer: {
-    emoji: '🔧',
-    title: 'DevOps Engineer',
-    description: 'Infrastructure, CI/CD, deployment automation',
-    skills: ['Terraform', 'AWS', 'Docker', 'GitHub Actions'],
-  },
-  security_engineer: {
-    emoji: '🔒',
-    title: 'Security Engineer',
-    description: 'Security audits, vulnerability fixes, compliance',
-    skills: ['OWASP', 'Penetration Testing', 'IAM', 'Encryption'],
-  },
+const PERSONA_CONFIG: Record<
+  string,
+  { emoji: string; title: string; description: string; skills: string[] }
+> = {
   frontend_developer: {
-    emoji: '🎨',
-    title: 'Frontend Developer',
-    description: 'UI/UX implementation, React components, styling',
-    skills: ['React', 'TypeScript', 'Tailwind CSS', 'Accessibility'],
+    emoji: "🎨",
+    title: "Frontend Developer",
+    description: "UI/UX implementation, React components, styling",
+    skills: ["React", "TypeScript", "Tailwind CSS", "Accessibility"],
   },
   backend_developer: {
-    emoji: '⚙️',
-    title: 'Backend Developer',
-    description: 'API development, database design, server logic',
-    skills: ['Node.js', 'Express', 'PostgreSQL', 'REST APIs'],
+    emoji: "⚙️",
+    title: "Backend Developer",
+    description: "API development, database design, server logic",
+    skills: ["Node.js", "Express", "PostgreSQL", "REST APIs"],
+  },
+  devops_engineer: {
+    emoji: "🔧",
+    title: "DevOps Engineer",
+    description: "Infrastructure, CI/CD, deployment automation",
+    skills: ["Terraform", "AWS", "Docker", "GitHub Actions"],
+  },
+  security_engineer: {
+    emoji: "🔒",
+    title: "Security Engineer",
+    description: "Security audits, vulnerability fixes, compliance",
+    skills: ["OWASP", "Penetration Testing", "IAM", "Encryption"],
+  },
+  qa_engineer: {
+    emoji: "🧪",
+    title: "QA Engineer",
+    description: "Test writing, quality assurance, bug verification",
+    skills: ["Jest", "Playwright", "Test Design", "Bug Triage"],
   },
   tech_writer: {
-    emoji: '📝',
-    title: 'Technical Writer',
-    description: 'Documentation, API docs, user guides',
-    skills: ['Markdown', 'API Documentation', 'User Guides'],
+    emoji: "📝",
+    title: "Technical Writer",
+    description: "Documentation, API docs, user guides",
+    skills: ["Markdown", "API Documentation", "User Guides"],
   },
-  support: {
-    emoji: '🎧',
-    title: 'Support Engineer',
-    description: 'Customer issues, debugging, escalations',
-    skills: ['Troubleshooting', 'Customer Communication', 'Log Analysis'],
-  },
-  pm: {
-    emoji: '📋',
-    title: 'Project Manager',
-    description: 'Task planning, coordination, status updates',
-    skills: ['Jira', 'Project Planning', 'Stakeholder Management'],
+  project_manager: {
+    emoji: "📋",
+    title: "Project Manager",
+    description: "Task planning, coordination, status updates",
+    skills: ["Jira", "Project Planning", "Stakeholder Management"],
   },
 };
 
@@ -227,33 +241,84 @@ export default function SuperAdminControlCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set());
+  // Initialize expanded workers from localStorage (collapsed ones are stored)
+  const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(() => {
+    // Start with empty set - will be populated when data loads
+    return new Set();
+  });
+  const [collapsedWorkers, setCollapsedWorkers] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem("control-center-collapsed-workers");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   // Self-recovery state
-  const [watcherStatus, setWatcherStatus] = useState<WatcherStatus | null>(null);
+  const [watcherStatus, setWatcherStatus] = useState<WatcherStatus | null>(
+    null,
+  );
   const [taskList, setTaskList] = useState<TaskWithRuns[]>([]);
   const [taskListLoading, setTaskListLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedTask, setSelectedTask] = useState<TaskWithRuns | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [retryOptions, setRetryOptions] = useState({ resetRetryCount: false, customContext: '' });
-  const [cancelReason, setCancelReason] = useState('');
+  const [retryOptions, setRetryOptions] = useState({
+    resetRetryCount: false,
+    customContext: "",
+  });
+  const [cancelReason, setCancelReason] = useState("");
+
+  // Virtual Manager state
+  const [managerStatus, setManagerStatus] = useState<ManagerStatus | null>(
+    null,
+  );
+
+  // Create Worker/Task state
+  const [showCreateWorkerModal, setShowCreateWorkerModal] = useState(false);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [createWorkerForm, setCreateWorkerForm] = useState({
+    persona: "developer" as string,
+    displayName: "",
+    description: "",
+  });
+  const [createTaskForm, setCreateTaskForm] = useState({
+    jiraIssueKey: "",
+    workerPersona: "developer" as string,
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // Terminal output state
+  const [terminalLogs, setTerminalLogs] = useState<Record<string, string[]>>({});
+  const [expandedTerminals, setExpandedTerminals] = useState<Set<string>>(
+    new Set(),
+  );
+  const [terminalLoading, setTerminalLoading] = useState<Set<string>>(
+    new Set(),
+  );
 
   const fetchData = useCallback(async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${API_BASE}/api/v1/super-admin/control-center`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch control center data');
+        throw new Error("Failed to fetch control center data");
       }
 
       const result = await response.json();
@@ -261,7 +326,7 @@ export default function SuperAdminControlCenter() {
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -270,16 +335,38 @@ export default function SuperAdminControlCenter() {
   // Fetch watcher status
   const fetchWatcherStatus = useCallback(async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${API_BASE}/api/v1/super-admin/control-center/watcher/status`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/watcher/status`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (response.ok) {
         const result = await response.json();
         setWatcherStatus(result);
       }
     } catch (err) {
-      console.error('Failed to fetch watcher status:', err);
+      console.error("Failed to fetch watcher status:", err);
+    }
+  }, []);
+
+  // Fetch manager status
+  const fetchManagerStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/manager/status`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setManagerStatus(result);
+      }
+    } catch (err) {
+      console.error("Failed to fetch manager status:", err);
     }
   }, []);
 
@@ -287,39 +374,55 @@ export default function SuperAdminControlCenter() {
   const fetchTaskList = useCallback(async () => {
     setTaskListLoading(true);
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = localStorage.getItem("accessToken");
       const params = new URLSearchParams();
-      if (statusFilter !== 'all') params.set('status', statusFilter);
-      if (searchQuery) params.set('search', searchQuery);
-      params.set('limit', '50');
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (searchQuery) params.set("search", searchQuery);
+      params.set("limit", "10");
 
-      const response = await fetch(`${API_BASE}/api/v1/super-admin/control-center/tasks?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks?${params}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (response.ok) {
         const result = await response.json();
         setTaskList(result.tasks || []);
       }
     } catch (err) {
-      console.error('Failed to fetch task list:', err);
+      console.error("Failed to fetch task list:", err);
     } finally {
       setTaskListLoading(false);
     }
   }, [statusFilter, searchQuery]);
 
+  // Refresh all data (called by refresh button)
+  const refreshAll = useCallback(() => {
+    fetchData();
+    fetchWatcherStatus();
+    fetchManagerStatus();
+    fetchTaskList();
+  }, [fetchData, fetchWatcherStatus, fetchManagerStatus, fetchTaskList]);
+
   // Fetch task runs for detail modal
   const fetchTaskRuns = useCallback(async (taskId: string) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${API_BASE}/api/v1/super-admin/control-center/tasks/${taskId}/runs`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks/${taskId}/runs`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (response.ok) {
         const result = await response.json();
-        setSelectedTask((prev) => (prev ? { ...prev, runs: result.runs } : null));
+        setSelectedTask((prev) =>
+          prev ? { ...prev, runs: result.runs } : null,
+        );
       }
     } catch (err) {
-      console.error('Failed to fetch task runs:', err);
+      console.error("Failed to fetch task runs:", err);
     }
   }, []);
 
@@ -328,23 +431,26 @@ export default function SuperAdminControlCenter() {
     if (!selectedTask) return;
     setActionLoading(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${API_BASE}/api/v1/super-admin/control-center/tasks/${selectedTask.id}/retry`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks/${selectedTask.id}/retry`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(retryOptions),
         },
-        body: JSON.stringify(retryOptions),
-      });
+      );
       if (response.ok) {
         setShowRetryModal(false);
-        setRetryOptions({ resetRetryCount: false, customContext: '' });
+        setRetryOptions({ resetRetryCount: false, customContext: "" });
         fetchTaskList();
         fetchData();
       }
     } catch (err) {
-      console.error('Failed to retry task:', err);
+      console.error("Failed to retry task:", err);
     } finally {
       setActionLoading(false);
     }
@@ -355,26 +461,76 @@ export default function SuperAdminControlCenter() {
     if (!selectedTask) return;
     setActionLoading(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${API_BASE}/api/v1/super-admin/control-center/tasks/${selectedTask.id}/cancel`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks/${selectedTask.id}/cancel`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reason: cancelReason }),
         },
-        body: JSON.stringify({ reason: cancelReason }),
-      });
+      );
       if (response.ok) {
         setShowCancelModal(false);
-        setCancelReason('');
+        setCancelReason("");
         fetchTaskList();
         fetchData();
       }
     } catch (err) {
-      console.error('Failed to cancel task:', err);
+      console.error("Failed to cancel task:", err);
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Fetch terminal logs for a task
+  const fetchTerminalLogs = useCallback(async (taskId: string) => {
+    setTerminalLoading((prev) => new Set([...prev, taskId]));
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/logs/${taskId}?limit=100`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        const logLines = (result.logs || []).map(
+          (log: { timestamp: string; message: string }) =>
+            `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`,
+        );
+        setTerminalLogs((prev) => ({ ...prev, [taskId]: logLines }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch terminal logs:", err);
+    } finally {
+      setTerminalLoading((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(taskId);
+        return newSet;
+      });
+    }
+  }, []);
+
+  // Toggle terminal expansion
+  const toggleTerminal = (taskId: string) => {
+    setExpandedTerminals((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+        // Fetch logs when expanding
+        if (!terminalLogs[taskId]) {
+          fetchTerminalLogs(taskId);
+        }
+      }
+      return newSet;
+    });
   };
 
   // Open detail modal
@@ -384,36 +540,153 @@ export default function SuperAdminControlCenter() {
     fetchTaskRuns(task.id);
   };
 
+  // Create worker handler
+  const handleCreateWorker = async () => {
+    if (!createWorkerForm.displayName.trim()) {
+      setCreateError("Display name is required");
+      return;
+    }
+    setCreateLoading(true);
+    setCreateError(null);
+    try {
+      await aiWorkersAPI.create(createWorkerForm);
+      setCreateSuccess("Worker created successfully");
+      setShowCreateWorkerModal(false);
+      setCreateWorkerForm({
+        persona: "developer",
+        displayName: "",
+        description: "",
+      });
+      fetchData();
+      setTimeout(() => setCreateSuccess(null), 3000);
+    } catch (err: any) {
+      setCreateError(err.response?.data?.error || "Failed to create worker");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  // Create task handler (trigger from Jira key)
+  const handleCreateTask = async () => {
+    if (!createTaskForm.jiraIssueKey.trim()) {
+      setCreateError("Jira issue key is required");
+      return;
+    }
+    setCreateLoading(true);
+    setCreateError(null);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/ai-worker-tasks/trigger`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jiraIssueKey: createTaskForm.jiraIssueKey.trim().toUpperCase(),
+            workerPersona: createTaskForm.workerPersona,
+          }),
+        },
+      );
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create task");
+      }
+      setCreateSuccess("Task queued successfully");
+      setShowCreateTaskModal(false);
+      setCreateTaskForm({ jiraIssueKey: "", workerPersona: "developer" });
+      fetchData();
+      fetchTaskList();
+      setTimeout(() => setCreateSuccess(null), 3000);
+    } catch (err: any) {
+      setCreateError(err.message || "Failed to create task");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
     fetchWatcherStatus();
+    fetchManagerStatus();
     fetchTaskList();
 
-    // Poll every 5 seconds
+    // Poll every 5 seconds if auto-refresh is enabled
+    if (!autoRefresh) return;
+
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         fetchData();
         fetchWatcherStatus();
+        fetchManagerStatus();
+        fetchTaskList();
+        // Also refresh terminal logs for expanded terminals
+        expandedTerminals.forEach((taskId) => {
+          fetchTerminalLogs(taskId);
+        });
       }
     }, 5000);
 
     return () => {
       clearInterval(interval);
     };
-  }, [fetchData, fetchWatcherStatus, fetchTaskList]);
+  }, [
+    fetchData,
+    fetchWatcherStatus,
+    fetchManagerStatus,
+    fetchTaskList,
+    fetchTerminalLogs,
+    expandedTerminals,
+    autoRefresh,
+  ]);
 
   // Refetch task list when filters change
   useEffect(() => {
     fetchTaskList();
   }, [statusFilter, searchQuery, fetchTaskList]);
 
+  // Auto-expand workers when data loads (except those that were collapsed by user)
+  useEffect(() => {
+    if (data?.workers && data.workers.length > 0) {
+      // Expand all workers except those the user has collapsed
+      const expanded = new Set(
+        data.workers
+          .map((w) => w.id)
+          .filter((id) => !collapsedWorkers.has(id)),
+      );
+      setExpandedWorkers(expanded);
+    }
+  }, [data?.workers, collapsedWorkers]);
+
   const toggleWorkerExpansion = (workerId: string) => {
     setExpandedWorkers((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(workerId)) {
         newSet.delete(workerId);
+        // Remember this worker is collapsed
+        setCollapsedWorkers((prevCollapsed) => {
+          const newCollapsed = new Set(prevCollapsed);
+          newCollapsed.add(workerId);
+          localStorage.setItem(
+            "control-center-collapsed-workers",
+            JSON.stringify([...newCollapsed]),
+          );
+          return newCollapsed;
+        });
       } else {
         newSet.add(workerId);
+        // Remove from collapsed list
+        setCollapsedWorkers((prevCollapsed) => {
+          const newCollapsed = new Set(prevCollapsed);
+          newCollapsed.delete(workerId);
+          localStorage.setItem(
+            "control-center-collapsed-workers",
+            JSON.stringify([...newCollapsed]),
+          );
+          return newCollapsed;
+        });
       }
       return newSet;
     });
@@ -421,57 +694,64 @@ export default function SuperAdminControlCenter() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed':
-        return 'text-green-500';
-      case 'executing':
-        return 'text-blue-500';
-      case 'queued':
-      case 'claimed':
-      case 'environment_setup':
-        return 'text-yellow-500';
-      case 'failed':
-        return 'text-red-500';
-      case 'blocked':
-        return 'text-orange-500';
-      case 'cancelled':
-        return 'text-gray-500';
-      case 'pr_created':
-      case 'review_pending':
-        return 'text-purple-500';
-      case 'review_approved':
-        return 'text-green-400';
+      case "completed":
+        return "text-green-500";
+      case "executing":
+        return "text-blue-500";
+      case "queued":
+      case "claimed":
+      case "environment_setup":
+        return "text-yellow-500";
+      case "failed":
+        return "text-red-500";
+      case "blocked":
+        return "text-orange-500";
+      case "cancelled":
+        return "text-gray-500";
+      case "pr_created":
+      case "review_pending":
+        return "text-purple-500";
+      case "manager_review":
+        return "text-indigo-500";
+      case "revision_needed":
+        return "text-orange-500";
+      case "review_approved":
+        return "text-green-400";
+      case "review_rejected":
+        return "text-red-400";
       default:
-        return 'text-gray-400';
+        return "text-gray-400";
     }
   };
 
   const getWorkerStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
-      working: 'bg-green-500/10 text-green-500 border-green-500/30',
-      idle: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30',
-      paused: 'bg-orange-500/10 text-orange-500 border-orange-500/30',
-      disabled: 'bg-red-500/10 text-red-500 border-red-500/30',
+      working: "bg-green-500/10 text-green-500 border-green-500/30",
+      idle: "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
+      paused: "bg-orange-500/10 text-orange-500 border-orange-500/30",
+      disabled: "bg-red-500/10 text-red-500 border-red-500/30",
     };
-    return colors[status] || 'bg-gray-500/10 text-gray-500 border-gray-500/30';
+    return colors[status] || "bg-gray-500/10 text-gray-500 border-gray-500/30";
   };
 
   const getPersonaInfo = (persona: string) => {
-    return PERSONA_CONFIG[persona] || { emoji: '🤖', title: persona, description: 'AI Worker', skills: [] };
-  };
-
-  const formatDuration = (minutes: number | null) => {
-    if (minutes === null) return '-';
-    if (minutes < 60) return `${minutes}m`;
-    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    return (
+      PERSONA_CONFIG[persona] || {
+        emoji: "🤖",
+        title: persona,
+        description: "AI Worker",
+        skills: [],
+      }
+    );
   };
 
   const formatRelativeTime = (dateStr: string | null) => {
-    if (!dateStr) return 'Never';
+    if (!dateStr) return "Never";
     const date = new Date(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
+    if (diffMins < 1) return "Just now";
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
@@ -480,43 +760,43 @@ export default function SuperAdminControlCenter() {
 
   const getOutcomeColor = (outcome: string) => {
     switch (outcome) {
-      case 'success':
-        return 'text-green-500';
-      case 'failed':
-        return 'text-red-500';
-      case 'timeout':
-        return 'text-orange-500';
-      case 'killed':
-        return 'text-yellow-500';
-      case 'cancelled':
-        return 'text-gray-500';
+      case "success":
+        return "text-green-500";
+      case "failed":
+        return "text-red-500";
+      case "timeout":
+        return "text-orange-500";
+      case "killed":
+        return "text-yellow-500";
+      case "cancelled":
+        return "text-gray-500";
       default:
-        return 'text-muted-foreground';
+        return "text-muted-foreground";
     }
   };
 
   const getLogIcon = (type: string) => {
     switch (type) {
-      case 'file_read':
-        return '📝';
-      case 'file_changed':
-        return '✨';
-      case 'command_executed':
-        return '⚡';
-      case 'test_run':
-        return '🧪';
-      case 'build_run':
-        return '🔨';
-      case 'git_operation':
-        return '🔀';
-      case 'error':
-        return '❌';
-      case 'warning':
-        return '⚠️';
-      case 'status_change':
-        return '🔄';
+      case "file_read":
+        return "📝";
+      case "file_changed":
+        return "✨";
+      case "command_executed":
+        return "⚡";
+      case "test_run":
+        return "🧪";
+      case "build_run":
+        return "🔨";
+      case "git_operation":
+        return "🔀";
+      case "error":
+        return "❌";
+      case "warning":
+        return "⚠️";
+      case "status_change":
+        return "🔄";
       default:
-        return '📋';
+        return "📋";
     }
   };
 
@@ -548,25 +828,70 @@ export default function SuperAdminControlCenter() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">AI Workers Control Center</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            AI Workers Control Center
+          </h1>
           <p className="text-sm text-muted-foreground">
             Monitor and manage AI worker instances
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-muted-foreground">
-            Last updated: {lastUpdated?.toLocaleTimeString() || 'Never'}
-          </span>
+        <div className="flex items-center gap-3">
           <button
-            onClick={fetchData}
-            disabled={loading}
+            onClick={() => setShowCreateTaskModal(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm"
+          >
+            <Play className="w-4 h-4" />
+            Run Task
+          </button>
+          <button
+            onClick={() => setShowCreateWorkerModal(true)}
             className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-muted/80 rounded-lg text-sm"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            <Plus className="w-4 h-4" />
+            Add Worker
+          </button>
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              autoRefresh
+                ? "bg-green-500/20 text-green-500 border border-green-500/30"
+                : "bg-muted text-muted-foreground border border-border"
+            }`}
+            title={autoRefresh ? "Auto-refresh ON (5s)" : "Auto-refresh OFF"}
+          >
+            {autoRefresh ? "Auto: ON" : "Auto: OFF"}
+          </button>
+          <span className="text-xs text-muted-foreground">
+            {lastUpdated?.toLocaleTimeString() || "Never"}
+          </span>
+          <button
+            onClick={refreshAll}
+            disabled={loading}
+            className="flex items-center gap-2 px-2 py-2 bg-muted hover:bg-muted/80 rounded-lg text-sm"
+            title="Refresh all data"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
       </div>
+
+      {/* Success/Error Messages */}
+      {createSuccess && (
+        <div className="bg-green-500/10 border border-green-500/30 text-green-500 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span>{createSuccess}</span>
+          <button onClick={() => setCreateSuccess(null)} className="font-bold">
+            &times;
+          </button>
+        </div>
+      )}
+      {createError && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-500 px-4 py-3 rounded-lg flex items-center justify-between">
+          <span>{createError}</span>
+          <button onClick={() => setCreateError(null)} className="font-bold">
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* System Overview Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -575,98 +900,823 @@ export default function SuperAdminControlCenter() {
             <Users className="w-4 h-4" />
             <span className="text-xs uppercase">Workers</span>
           </div>
-          <div className="text-2xl font-bold">{data?.stats.totalWorkers || 0}</div>
+          <div className="text-2xl font-bold">
+            {data?.stats.totalWorkers || 0}
+          </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <Cpu className="w-4 h-4" />
             <span className="text-xs uppercase">Active</span>
           </div>
-          <div className="text-2xl font-bold text-green-500">{data?.stats.activeWorkers || 0}</div>
+          <div className="text-2xl font-bold text-green-500">
+            {data?.stats.activeWorkers || 0}
+          </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <Clock className="w-4 h-4" />
             <span className="text-xs uppercase">Queue</span>
           </div>
-          <div className="text-2xl font-bold text-yellow-500">{data?.stats.queueDepth || 0}</div>
+          <div className="text-2xl font-bold text-yellow-500">
+            {data?.stats.queueDepth || 0}
+          </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <CheckCircle className="w-4 h-4" />
             <span className="text-xs uppercase">Completed</span>
           </div>
-          <div className="text-2xl font-bold text-green-500">{data?.stats.todayCompleted || 0}</div>
+          <div className="text-2xl font-bold text-green-500">
+            {data?.stats.todayCompleted || 0}
+          </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <XCircle className="w-4 h-4" />
             <span className="text-xs uppercase">Failed</span>
           </div>
-          <div className="text-2xl font-bold text-red-500">{data?.stats.todayFailed || 0}</div>
+          <div className="text-2xl font-bold text-red-500">
+            {data?.stats.todayFailed || 0}
+          </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <DollarSign className="w-4 h-4" />
             <span className="text-xs uppercase">Cost Today</span>
           </div>
-          <div className="text-2xl font-bold">${data?.stats.todayCost?.toFixed(2) || '0.00'}</div>
+          <div className="text-2xl font-bold">
+            ${data?.stats.todayCost?.toFixed(2) || "0.00"}
+          </div>
         </div>
       </div>
 
-      {/* Watcher Status Panel */}
-      {watcherStatus && (
+      {/* Manager Status Panel (with Watcher indicator) */}
+      {managerStatus && (
         <div className="bg-card border border-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold">Watcher Service</h3>
+              <Users className="w-5 h-5 text-indigo-500" />
+              <h3 className="font-semibold">Virtual Manager</h3>
               <span
                 className={`px-2 py-0.5 text-xs font-medium rounded ${
-                  watcherStatus.enabled
-                    ? 'bg-green-500/10 text-green-500'
-                    : 'bg-red-500/10 text-red-500'
+                  managerStatus.enabled
+                    ? "bg-indigo-500/10 text-indigo-500"
+                    : "bg-red-500/10 text-red-500"
                 }`}
               >
-                {watcherStatus.enabled ? 'Active' : 'Disabled'}
+                {managerStatus.enabled ? "Active" : "Disabled"}
               </span>
+              {/* Watcher status indicator */}
+              {watcherStatus && (
+                <span
+                  className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${
+                    watcherStatus.enabled
+                      ? "bg-green-500/10 text-green-500"
+                      : "bg-red-500/10 text-red-500"
+                  }`}
+                >
+                  <Shield className="w-3 h-3" />
+                  Watcher {watcherStatus.enabled ? "Active" : "Off"}
+                </span>
+              )}
             </div>
             <span className="text-xs text-muted-foreground">
-              Last run: {formatRelativeTime(watcherStatus.lastRunAt)}
+              Reviews PRs using Opus 4.5
             </span>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+
+          {/* Queue Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
             <div>
-              <div className="text-xs text-muted-foreground">Monitored</div>
-              <div className="text-lg font-semibold">{watcherStatus.tasksMonitored}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Stuck</div>
-              <div className={`text-lg font-semibold ${watcherStatus.stuckTasks > 0 ? 'text-red-500' : ''}`}>
-                {watcherStatus.stuckTasks}
+              <div className="text-xs text-muted-foreground">
+                Awaiting Review
+              </div>
+              <div
+                className={`text-lg font-semibold ${managerStatus.queue.awaitingReview > 0 ? "text-purple-500" : ""}`}
+              >
+                {managerStatus.queue.awaitingReview}
               </div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Pending Retries</div>
-              <div className={`text-lg font-semibold ${watcherStatus.pendingRetries > 0 ? 'text-yellow-500' : ''}`}>
-                {watcherStatus.pendingRetries}
+              <div className="text-xs text-muted-foreground">Under Review</div>
+              <div
+                className={`text-lg font-semibold ${managerStatus.queue.underReview > 0 ? "text-indigo-500" : ""}`}
+              >
+                {managerStatus.queue.underReview}
               </div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground">Loops Detected</div>
-              <div className={`text-lg font-semibold ${watcherStatus.loopsDetected > 0 ? 'text-orange-500' : ''}`}>
-                {watcherStatus.loopsDetected}
+              <div className="text-xs text-muted-foreground">
+                Revision Needed
               </div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Timeouts</div>
-              <div className={`text-lg font-semibold ${watcherStatus.globalTimeouts > 0 ? 'text-red-500' : ''}`}>
-                {watcherStatus.globalTimeouts}
+              <div
+                className={`text-lg font-semibold ${managerStatus.queue.revisionNeeded > 0 ? "text-orange-500" : ""}`}
+              >
+                {managerStatus.queue.revisionNeeded}
               </div>
             </div>
           </div>
+
+          {/* Last 24 Hours Stats */}
+          <div className="border-t border-border pt-3">
+            <div className="text-xs text-muted-foreground mb-2">
+              Last 24 Hours
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+              <div>
+                <div className="text-xs text-muted-foreground">Reviews</div>
+                <div className="text-lg font-semibold">
+                  {managerStatus.last24Hours.totalReviews}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Approved</div>
+                <div className="text-lg font-semibold text-green-500">
+                  {managerStatus.last24Hours.approved}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Rejected</div>
+                <div className="text-lg font-semibold text-red-500">
+                  {managerStatus.last24Hours.rejected}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Revisions</div>
+                <div className="text-lg font-semibold text-orange-500">
+                  {managerStatus.last24Hours.revisionsRequested}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  Avg Duration
+                </div>
+                <div className="text-lg font-semibold">
+                  {managerStatus.last24Hours.avgDurationSeconds > 0
+                    ? `${Math.floor(managerStatus.last24Hours.avgDurationSeconds / 60)}m ${managerStatus.last24Hours.avgDurationSeconds % 60}s`
+                    : "-"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Cost</div>
+                <div className="text-lg font-semibold">
+                  ${managerStatus.last24Hours.totalCost.toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Manager Instances (if any) */}
+          {managerStatus.managers && managerStatus.managers.length > 0 && (
+            <div className="border-t border-border pt-3 mt-3">
+              <div className="text-xs text-muted-foreground mb-2">
+                Manager Instances
+              </div>
+              <div className="space-y-2">
+                {managerStatus.managers.map((manager) => (
+                  <div
+                    key={manager.id}
+                    className="flex items-center justify-between text-sm bg-muted/20 rounded p-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          manager.status === "working"
+                            ? "bg-green-500"
+                            : manager.status === "idle"
+                              ? "bg-yellow-500"
+                              : "bg-gray-500"
+                        }`}
+                      />
+                      <span className="font-medium">{manager.displayName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({manager.modelId})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="text-green-500">
+                        {manager.approvalsCount} approved
+                      </span>
+                      <span className="text-red-500">
+                        {manager.rejectionsCount} rejected
+                      </span>
+                      <span className="text-orange-500">
+                        {manager.revisionsRequestedCount} revisions
+                      </span>
+                      <span className="text-muted-foreground">
+                        {manager.approvalRate > 0
+                          ? `${(manager.approvalRate * 100).toFixed(0)}% approval`
+                          : "-"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Active Tasks Workflow Visualization */}
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/50">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            Active Workflows
+          </h2>
+        </div>
+        <div className="p-4 space-y-4">
+          {!data?.activeTasks || data.activeTasks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No active workflows</p>
+              <p className="text-xs mt-1">
+                Trigger a task to see the workflow pipeline
+              </p>
+            </div>
+          ) : (
+            data.activeTasks.map((task) => {
+              // Define workflow stages
+              const stages = [
+                { id: "queued", label: "Queued", icon: Clock },
+                { id: "executing", label: "Executing", icon: Cpu },
+                { id: "pr_created", label: "PR Created", icon: GitBranch },
+                { id: "manager_review", label: "Review", icon: Users },
+                { id: "completed", label: "Complete", icon: CheckCircle },
+              ];
+
+              // Determine current stage index
+              const statusToStage: Record<string, number> = {
+                queued: 0,
+                claimed: 0,
+                environment_setup: 1,
+                executing: 1,
+                pr_created: 2,
+                manager_review: 3,
+                revision_needed: 1, // Goes back to executing
+                review_pending: 3,
+                review_approved: 4,
+                completed: 4,
+                failed: -1,
+                blocked: -1,
+                cancelled: -1,
+              };
+
+              const currentStageIndex = statusToStage[task.status] ?? 0;
+              const isFailed =
+                task.status === "failed" || task.status === "blocked";
+              const isRevision = task.status === "revision_needed";
+
+              return (
+                <div key={task.id} className="bg-muted/20 rounded-lg p-4">
+                  {/* Task Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={`https://oncallshift.atlassian.net/browse/${task.jiraIssueKey}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline font-mono font-medium flex items-center gap-1"
+                      >
+                        {task.jiraIssueKey}
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <span className="text-sm text-muted-foreground truncate max-w-xs">
+                        {task.summary}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">
+                        {task.workerName}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded font-medium ${
+                          isFailed
+                            ? "bg-red-500/10 text-red-500"
+                            : isRevision
+                              ? "bg-orange-500/10 text-orange-500"
+                              : task.status === "completed"
+                                ? "bg-green-500/10 text-green-500"
+                                : "bg-blue-500/10 text-blue-500"
+                        }`}
+                      >
+                        {task.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Workflow Pipeline */}
+                  <div className="flex items-center justify-between">
+                    {stages.map((stage, index) => {
+                      const StageIcon = stage.icon;
+                      const isCompleted =
+                        !isFailed && currentStageIndex > index;
+                      const isCurrent =
+                        !isFailed && currentStageIndex === index;
+                      const isPending = !isFailed && currentStageIndex < index;
+                      const isFailedStage =
+                        isFailed && currentStageIndex === index;
+
+                      return (
+                        <div
+                          key={stage.id}
+                          className="flex items-center flex-1"
+                        >
+                          {/* Stage Node */}
+                          <div className="flex flex-col items-center">
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                                isCompleted
+                                  ? "bg-green-500 border-green-500 text-white"
+                                  : isCurrent
+                                    ? "bg-blue-500 border-blue-500 text-white animate-pulse"
+                                    : isFailedStage
+                                      ? "bg-red-500 border-red-500 text-white"
+                                      : isPending
+                                        ? "bg-muted border-border text-muted-foreground"
+                                        : "bg-muted border-border text-muted-foreground"
+                              }`}
+                            >
+                              {isCompleted ? (
+                                <CheckCircle className="w-5 h-5" />
+                              ) : isFailedStage ? (
+                                <XCircle className="w-5 h-5" />
+                              ) : (
+                                <StageIcon className="w-5 h-5" />
+                              )}
+                            </div>
+                            <span
+                              className={`text-xs mt-1 ${
+                                isCompleted || isCurrent
+                                  ? "text-foreground font-medium"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {stage.label}
+                            </span>
+                          </div>
+
+                          {/* Connector Line */}
+                          {index < stages.length - 1 && (
+                            <div
+                              className={`flex-1 h-0.5 mx-2 ${
+                                isCompleted
+                                  ? "bg-green-500"
+                                  : isCurrent
+                                    ? "bg-gradient-to-r from-blue-500 to-muted"
+                                    : "bg-border"
+                              }`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Progress Bar and Turn Count */}
+                  {task.status === "executing" && (
+                    <div className="mt-4 flex items-center gap-3">
+                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 transition-all"
+                          style={{
+                            width: `${(task.turnCount / task.maxTurns) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        Turn {task.turnCount}/{task.maxTurns}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        ${task.estimatedCostUsd.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Revision Notice */}
+                  {isRevision && (
+                    <div className="mt-3 flex items-center gap-2 text-xs text-orange-500 bg-orange-500/10 rounded px-3 py-2">
+                      <RotateCcw className="w-3 h-3" />
+                      Revision requested - worker will address feedback
+                    </div>
+                  )}
+
+                  {/* Terminal Output Toggle */}
+                  <div className="mt-3">
+                    <button
+                      onClick={() => toggleTerminal(task.id)}
+                      className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Terminal className="w-3 h-3" />
+                      {expandedTerminals.has(task.id)
+                        ? "Hide Terminal Output"
+                        : "Show Terminal Output"}
+                      {expandedTerminals.has(task.id) ? (
+                        <ChevronDown className="w-3 h-3" />
+                      ) : (
+                        <ChevronRight className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    {/* Terminal Output Box */}
+                    {expandedTerminals.has(task.id) && (
+                      <div className="mt-2 bg-black/90 border border-gray-700 rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700">
+                          <div className="flex items-center gap-2">
+                            <div className="flex gap-1.5">
+                              <div className="w-3 h-3 rounded-full bg-red-500" />
+                              <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                              <div className="w-3 h-3 rounded-full bg-green-500" />
+                            </div>
+                            <span className="text-xs text-gray-400 font-mono">
+                              worker-{task.id.substring(0, 8)}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => fetchTerminalLogs(task.id)}
+                            className="text-gray-400 hover:text-white p-1"
+                            title="Refresh logs"
+                          >
+                            <RefreshCw
+                              className={`w-3 h-3 ${terminalLoading.has(task.id) ? "animate-spin" : ""}`}
+                            />
+                          </button>
+                        </div>
+                        <div className="p-3 h-48 overflow-y-auto font-mono text-xs text-green-400 leading-relaxed">
+                          {terminalLoading.has(task.id) &&
+                          !terminalLogs[task.id] ? (
+                            <div className="flex items-center gap-2 text-gray-500">
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              Loading logs...
+                            </div>
+                          ) : terminalLogs[task.id]?.length === 0 ? (
+                            <div className="text-gray-500">
+                              No logs available yet...
+                            </div>
+                          ) : (
+                            terminalLogs[task.id]?.map((line, idx) => (
+                              <div
+                                key={idx}
+                                className={`whitespace-pre-wrap break-all ${
+                                  line.includes("[ERROR]") ||
+                                  line.includes("error")
+                                    ? "text-red-400"
+                                    : line.includes("[WARN]") ||
+                                        line.includes("warning")
+                                      ? "text-yellow-400"
+                                      : line.includes("[Claude]") ||
+                                          line.includes("Claude")
+                                        ? "text-blue-400"
+                                        : line.includes("[SUCCESS]") ||
+                                            line.includes("✅")
+                                          ? "text-green-400"
+                                          : "text-gray-300"
+                                }`}
+                              >
+                                {line}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Workers Section - Each worker is an expandable card */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Users className="w-5 h-5" />
+          Workers
+        </h2>
+
+        {data?.workers.map((worker) => {
+          const personaInfo = getPersonaInfo(worker.persona);
+          const isExpanded = expandedWorkers.has(worker.id);
+          const workerActiveTask = data?.activeTasks.find(
+            (t) => t.workerName === worker.displayName,
+          );
+
+          return (
+            <div
+              key={worker.id}
+              className="bg-card border border-border rounded-lg overflow-hidden"
+            >
+              {/* Worker Header - Always visible */}
+              <button
+                onClick={() => toggleWorkerExpansion(worker.id)}
+                className="w-full px-4 py-4 flex items-center gap-4 hover:bg-muted/50 transition-colors"
+              >
+                {/* Status indicator */}
+                <div
+                  className={`w-3 h-3 rounded-full ${
+                    worker.status === "working"
+                      ? "bg-green-500 animate-pulse"
+                      : worker.status === "idle"
+                        ? "bg-yellow-500"
+                        : worker.status === "paused"
+                          ? "bg-orange-500"
+                          : "bg-red-500"
+                  }`}
+                />
+
+                {/* Persona emoji */}
+                <span className="text-2xl">{personaInfo.emoji}</span>
+
+                {/* Worker info */}
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">{worker.displayName}</span>
+                    <span
+                      className={`px-2 py-0.5 text-xs font-medium uppercase rounded border ${getWorkerStatusBadge(worker.status)}`}
+                    >
+                      {worker.status}
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {personaInfo.title}
+                  </div>
+                </div>
+
+                {/* Current task preview */}
+                {worker.currentTask && (
+                  <div className="hidden md:flex items-center gap-3 text-sm">
+                    <span className="text-primary font-mono">
+                      {worker.currentTask.jiraKey}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary"
+                          style={{
+                            width: `${(worker.currentTask.turnCount / worker.currentTask.maxTurns) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {worker.currentTask.turnCount}/
+                        {worker.currentTask.maxTurns}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stats */}
+                <div className="hidden lg:flex items-center gap-4 text-sm">
+                  <span className="text-green-500">
+                    {worker.tasksCompleted} done
+                  </span>
+                  <span className="text-red-500">
+                    {worker.tasksFailed} failed
+                  </span>
+                  <span className="text-muted-foreground">
+                    ${worker.totalCostUsd.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Expand icon */}
+                {isExpanded ? (
+                  <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                )}
+              </button>
+
+              {/* Expanded details */}
+              {isExpanded && (
+                <div className="border-t border-border">
+                  <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Left: Persona details */}
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-medium text-muted-foreground mb-2">
+                          About This Worker
+                        </h4>
+                        <p className="text-sm">{personaInfo.description}</p>
+                      </div>
+
+                      {personaInfo.skills.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-medium text-muted-foreground mb-2">
+                            Skills
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {personaInfo.skills.map((skill) => (
+                              <span
+                                key={skill}
+                                className="px-2 py-1 bg-muted text-xs rounded-full"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-4 pt-2">
+                        <div>
+                          <div className="text-xs text-muted-foreground">
+                            Completed
+                          </div>
+                          <div className="text-lg font-semibold text-green-500">
+                            {worker.tasksCompleted}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">
+                            Failed
+                          </div>
+                          <div className="text-lg font-semibold text-red-500">
+                            {worker.tasksFailed}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">
+                            Total Cost
+                          </div>
+                          <div className="text-lg font-semibold">
+                            ${worker.totalCostUsd.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Current task details */}
+                    <div>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-2">
+                        Current Task
+                      </h4>
+                      {workerActiveTask ? (
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <a
+                                href={`https://oncallshift.atlassian.net/browse/${workerActiveTask.jiraIssueKey}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline flex items-center gap-1 font-medium"
+                              >
+                                {workerActiveTask.jiraIssueKey}
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {workerActiveTask.summary}
+                              </p>
+                            </div>
+                            <span
+                              className={`text-xs uppercase font-medium ${getStatusColor(workerActiveTask.status)}`}
+                            >
+                              {workerActiveTask.status.replace(/_/g, " ")}
+                            </span>
+                          </div>
+
+                          {/* Progress steps */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {workerActiveTask.steps.map((step, index) => (
+                              <div
+                                key={step.name}
+                                className="flex items-center"
+                              >
+                                <div className="flex items-center gap-1">
+                                  {step.status === "done" && (
+                                    <CheckCircle className="w-3 h-3 text-green-500" />
+                                  )}
+                                  {step.status === "active" && (
+                                    <RefreshCw className="w-3 h-3 text-blue-500 animate-spin" />
+                                  )}
+                                  {step.status === "pending" && (
+                                    <div className="w-3 h-3 rounded-full border border-muted-foreground" />
+                                  )}
+                                  <span
+                                    className={`text-xs ${
+                                      step.status === "active"
+                                        ? "text-blue-500"
+                                        : step.status === "done"
+                                          ? "text-green-500"
+                                          : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    {step.name}
+                                  </span>
+                                </div>
+                                {index < workerActiveTask.steps.length - 1 && (
+                                  <div className="w-4 h-px bg-border mx-1" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Progress bar */}
+                          <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-muted-foreground" />
+                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all"
+                                style={{
+                                  width: `${(workerActiveTask.turnCount / workerActiveTask.maxTurns) * 100}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {workerActiveTask.turnCount}/
+                              {workerActiveTask.maxTurns} turns
+                            </span>
+                          </div>
+
+                          {/* Recent logs */}
+                          {workerActiveTask.recentLogs.length > 0 && (
+                            <div className="bg-muted/30 rounded p-2 max-h-32 overflow-y-auto">
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                                <Terminal className="w-3 h-3" />
+                                Recent Activity
+                              </div>
+                              <div className="space-y-0.5 font-mono text-xs">
+                                {workerActiveTask.recentLogs
+                                  .slice(0, 5)
+                                  .map((log, index) => (
+                                    <div
+                                      key={index}
+                                      className="flex items-start gap-1"
+                                    >
+                                      <span className="text-muted-foreground">
+                                        {new Date(
+                                          log.timestamp,
+                                        ).toLocaleTimeString([], {
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })}
+                                      </span>
+                                      <span>{getLogIcon(log.type)}</span>
+                                      <span
+                                        className={
+                                          log.severity === "error"
+                                            ? "text-red-500"
+                                            : ""
+                                        }
+                                      >
+                                        {log.message}
+                                      </span>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : worker.currentTask ? (
+                        <div className="space-y-2">
+                          <a
+                            href={`https://oncallshift.atlassian.net/browse/${worker.currentTask.jiraKey}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1"
+                          >
+                            {worker.currentTask.jiraKey}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <p className="text-sm text-muted-foreground">
+                            {worker.currentTask.summary}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary"
+                                style={{
+                                  width: `${(worker.currentTask.turnCount / worker.currentTask.maxTurns) * 100}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {worker.currentTask.turnCount}/
+                              {worker.currentTask.maxTurns}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-muted-foreground">
+                          <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">Worker is idle</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {(!data?.workers || data.workers.length === 0) && (
+          <div className="bg-card border border-border rounded-lg p-8 text-center text-muted-foreground">
+            No workers configured
+          </div>
+        )}
+      </div>
 
       {/* Task List with Filtering */}
       <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -698,6 +1748,11 @@ export default function SuperAdminControlCenter() {
                 <option value="all">All Status</option>
                 <option value="executing">Executing</option>
                 <option value="queued">Queued</option>
+                <option value="pr_created">PR Created</option>
+                <option value="manager_review">Manager Review</option>
+                <option value="revision_needed">Revision Needed</option>
+                <option value="review_approved">Approved</option>
+                <option value="review_rejected">Rejected</option>
                 <option value="failed">Failed</option>
                 <option value="completed">Completed</option>
                 <option value="blocked">Blocked</option>
@@ -712,30 +1767,54 @@ export default function SuperAdminControlCenter() {
           <table className="w-full text-sm">
             <thead className="bg-muted/30">
               <tr>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Task</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Summary</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Status</th>
-                <th className="text-center px-4 py-2 font-medium text-muted-foreground">Retries</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Cost</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Actions</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Task
+                </th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Time
+                </th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Summary
+                </th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Status
+                </th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Links
+                </th>
+                <th className="text-center px-4 py-2 font-medium text-muted-foreground">
+                  Retries
+                </th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">
+                  Cost
+                </th>
+                <th className="text-right px-4 py-2 font-medium text-muted-foreground">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {taskListLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center">
+                  <td colSpan={8} className="px-4 py-8 text-center">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
                   </td>
                 </tr>
               ) : taskList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                  <td
+                    colSpan={8}
+                    className="px-4 py-8 text-center text-muted-foreground"
+                  >
                     No tasks found
                   </td>
                 </tr>
               ) : (
                 taskList.map((task) => (
-                  <tr key={task.id} className="hover:bg-muted/20">
+                  <tr
+                    key={task.id}
+                    className={`hover:bg-muted/20 ${task.errorMessage ? "bg-red-500/5" : ""}`}
+                  >
                     <td className="px-4 py-3">
                       <a
                         href={`https://oncallshift.atlassian.net/browse/${task.jiraIssueKey}`}
@@ -747,18 +1826,66 @@ export default function SuperAdminControlCenter() {
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     </td>
-                    <td className="px-4 py-3 max-w-xs truncate">{task.summary}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {task.startedAt ? (
+                        <div className="flex flex-col">
+                          <span>
+                            {new Date(task.startedAt).toLocaleDateString()}
+                          </span>
+                          <span>
+                            {new Date(task.startedAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                      ) : (
+                        <span>-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 max-w-xs">
+                      <div className="truncate">{task.summary}</div>
+                      {task.errorMessage && (
+                        <div
+                          className="text-xs text-red-400 mt-1 truncate max-w-[300px]"
+                          title={task.errorMessage}
+                        >
+                          ❌ {task.errorMessage.split("\n")[0].substring(0, 80)}
+                          ...
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-0.5">
-                        <span className={`flex items-center gap-1 ${getStatusColor(task.status)}`}>
-                          {task.status === 'completed' && <CheckCircle className="w-3 h-3" />}
-                          {task.status === 'failed' && <XCircle className="w-3 h-3" />}
-                          {task.status === 'executing' && <RefreshCw className="w-3 h-3 animate-spin" />}
-                          {task.status === 'queued' && <Clock className="w-3 h-3" />}
-                          <span className="capitalize text-xs">{task.status.replace(/_/g, ' ')}</span>
+                        <span
+                          className={`flex items-center gap-1 ${getStatusColor(task.status)}`}
+                        >
+                          {task.status === "completed" && (
+                            <CheckCircle className="w-3 h-3" />
+                          )}
+                          {task.status === "failed" && (
+                            <XCircle className="w-3 h-3" />
+                          )}
+                          {task.status === "executing" && (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          )}
+                          {task.status === "queued" && (
+                            <Clock className="w-3 h-3" />
+                          )}
+                          {task.status === "pr_created" && (
+                            <GitBranch className="w-3 h-3" />
+                          )}
+                          {task.status === "manager_review" && (
+                            <Users className="w-3 h-3" />
+                          )}
+                          <span className="capitalize text-xs">
+                            {task.status.replace(/_/g, " ")}
+                          </span>
                         </span>
                         {task.failureCategory && (
-                          <span className="text-xs text-muted-foreground">{task.failureCategory}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {task.failureCategory}
+                          </span>
                         )}
                         {task.nextRetryAt && (
                           <span className="text-xs text-yellow-500">
@@ -767,12 +1894,49 @@ export default function SuperAdminControlCenter() {
                         )}
                       </div>
                     </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {task.githubPrUrl && (
+                          <a
+                            href={task.githubPrUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1 text-xs"
+                            title="View Pull Request"
+                          >
+                            <GitBranch className="w-3 h-3" />
+                            PR#{task.githubPrNumber}
+                          </a>
+                        )}
+                        {task.ecsTaskArn && (
+                          <a
+                            href={`https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fpagerduty-lite-dev$252Fai-worker-executor`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-primary flex items-center gap-1 text-xs"
+                            title="View CloudWatch Logs"
+                          >
+                            <Terminal className="w-3 h-3" />
+                            Logs
+                          </a>
+                        )}
+                        {!task.githubPrUrl && !task.ecsTaskArn && (
+                          <span className="text-xs text-muted-foreground">
+                            -
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={task.retryCount > 0 ? 'text-yellow-500' : ''}>
+                      <span
+                        className={task.retryCount > 0 ? "text-yellow-500" : ""}
+                      >
                         {task.retryCount}/{task.maxRetries}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">${task.estimatedCostUsd.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">
+                      ${task.estimatedCostUsd.toFixed(2)}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
@@ -782,7 +1946,9 @@ export default function SuperAdminControlCenter() {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        {['failed', 'blocked', 'cancelled'].includes(task.status) && (
+                        {["failed", "blocked", "cancelled"].includes(
+                          task.status,
+                        ) && (
                           <button
                             onClick={() => {
                               setSelectedTask(task);
@@ -794,7 +1960,9 @@ export default function SuperAdminControlCenter() {
                             <RotateCcw className="w-4 h-4" />
                           </button>
                         )}
-                        {['executing', 'queued', 'environment_setup'].includes(task.status) && (
+                        {["executing", "queued", "environment_setup"].includes(
+                          task.status,
+                        ) && (
                           <button
                             onClick={() => {
                               setSelectedTask(task);
@@ -816,314 +1984,6 @@ export default function SuperAdminControlCenter() {
         </div>
       </div>
 
-      {/* Workers Section - Each worker is an expandable card */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Workers</h2>
-
-        {data?.workers.map((worker) => {
-          const personaInfo = getPersonaInfo(worker.persona);
-          const isExpanded = expandedWorkers.has(worker.id);
-          const workerActiveTask = data?.activeTasks.find((t) => t.workerName === worker.displayName);
-
-          return (
-            <div key={worker.id} className="bg-card border border-border rounded-lg overflow-hidden">
-              {/* Worker Header - Always visible */}
-              <button
-                onClick={() => toggleWorkerExpansion(worker.id)}
-                className="w-full px-4 py-4 flex items-center gap-4 hover:bg-muted/50 transition-colors"
-              >
-                {/* Status indicator */}
-                <div className={`w-3 h-3 rounded-full ${
-                  worker.status === 'working' ? 'bg-green-500 animate-pulse' :
-                  worker.status === 'idle' ? 'bg-yellow-500' :
-                  worker.status === 'paused' ? 'bg-orange-500' : 'bg-red-500'
-                }`} />
-
-                {/* Persona emoji */}
-                <span className="text-2xl">{personaInfo.emoji}</span>
-
-                {/* Worker info */}
-                <div className="flex-1 text-left">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">{worker.displayName}</span>
-                    <span className={`px-2 py-0.5 text-xs font-medium uppercase rounded border ${getWorkerStatusBadge(worker.status)}`}>
-                      {worker.status}
-                    </span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">{personaInfo.title}</div>
-                </div>
-
-                {/* Current task preview */}
-                {worker.currentTask && (
-                  <div className="hidden md:flex items-center gap-3 text-sm">
-                    <span className="text-primary font-mono">{worker.currentTask.jiraKey}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary"
-                          style={{ width: `${(worker.currentTask.turnCount / worker.currentTask.maxTurns) * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {worker.currentTask.turnCount}/{worker.currentTask.maxTurns}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Stats */}
-                <div className="hidden lg:flex items-center gap-4 text-sm">
-                  <span className="text-green-500">{worker.tasksCompleted} done</span>
-                  <span className="text-red-500">{worker.tasksFailed} failed</span>
-                  <span className="text-muted-foreground">${worker.totalCostUsd.toFixed(2)}</span>
-                </div>
-
-                {/* Expand icon */}
-                {isExpanded ? (
-                  <ChevronDown className="w-5 h-5 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                )}
-              </button>
-
-              {/* Expanded details */}
-              {isExpanded && (
-                <div className="border-t border-border">
-                  <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* Left: Persona details */}
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="text-sm font-medium text-muted-foreground mb-2">About This Worker</h4>
-                        <p className="text-sm">{personaInfo.description}</p>
-                      </div>
-
-                      {personaInfo.skills.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-medium text-muted-foreground mb-2">Skills</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {personaInfo.skills.map((skill) => (
-                              <span
-                                key={skill}
-                                className="px-2 py-1 bg-muted text-xs rounded-full"
-                              >
-                                {skill}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-3 gap-4 pt-2">
-                        <div>
-                          <div className="text-xs text-muted-foreground">Completed</div>
-                          <div className="text-lg font-semibold text-green-500">{worker.tasksCompleted}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">Failed</div>
-                          <div className="text-lg font-semibold text-red-500">{worker.tasksFailed}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">Total Cost</div>
-                          <div className="text-lg font-semibold">${worker.totalCostUsd.toFixed(2)}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Current task details */}
-                    <div>
-                      <h4 className="text-sm font-medium text-muted-foreground mb-2">Current Task</h4>
-                      {workerActiveTask ? (
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <a
-                                href={`https://oncallshift.atlassian.net/browse/${workerActiveTask.jiraIssueKey}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline flex items-center gap-1 font-medium"
-                              >
-                                {workerActiveTask.jiraIssueKey}
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
-                              <p className="text-sm text-muted-foreground mt-1">{workerActiveTask.summary}</p>
-                            </div>
-                            <span className={`text-xs uppercase font-medium ${getStatusColor(workerActiveTask.status)}`}>
-                              {workerActiveTask.status.replace(/_/g, ' ')}
-                            </span>
-                          </div>
-
-                          {/* Progress steps */}
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {workerActiveTask.steps.map((step, index) => (
-                              <div key={step.name} className="flex items-center">
-                                <div className="flex items-center gap-1">
-                                  {step.status === 'done' && <CheckCircle className="w-3 h-3 text-green-500" />}
-                                  {step.status === 'active' && <RefreshCw className="w-3 h-3 text-blue-500 animate-spin" />}
-                                  {step.status === 'pending' && <div className="w-3 h-3 rounded-full border border-muted-foreground" />}
-                                  <span className={`text-xs ${
-                                    step.status === 'active' ? 'text-blue-500' :
-                                    step.status === 'done' ? 'text-green-500' : 'text-muted-foreground'
-                                  }`}>
-                                    {step.name}
-                                  </span>
-                                </div>
-                                {index < workerActiveTask.steps.length - 1 && <div className="w-4 h-px bg-border mx-1" />}
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Progress bar */}
-                          <div className="flex items-center gap-2">
-                            <Activity className="w-4 h-4 text-muted-foreground" />
-                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary transition-all"
-                                style={{ width: `${(workerActiveTask.turnCount / workerActiveTask.maxTurns) * 100}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {workerActiveTask.turnCount}/{workerActiveTask.maxTurns} turns
-                            </span>
-                          </div>
-
-                          {/* Recent logs */}
-                          {workerActiveTask.recentLogs.length > 0 && (
-                            <div className="bg-muted/30 rounded p-2 max-h-32 overflow-y-auto">
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                                <Terminal className="w-3 h-3" />
-                                Recent Activity
-                              </div>
-                              <div className="space-y-0.5 font-mono text-xs">
-                                {workerActiveTask.recentLogs.slice(0, 5).map((log, index) => (
-                                  <div key={index} className="flex items-start gap-1">
-                                    <span className="text-muted-foreground">
-                                      {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                    <span>{getLogIcon(log.type)}</span>
-                                    <span className={log.severity === 'error' ? 'text-red-500' : ''}>{log.message}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ) : worker.currentTask ? (
-                        <div className="space-y-2">
-                          <a
-                            href={`https://oncallshift.atlassian.net/browse/${worker.currentTask.jiraKey}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline flex items-center gap-1"
-                          >
-                            {worker.currentTask.jiraKey}
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                          <p className="text-sm text-muted-foreground">{worker.currentTask.summary}</p>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-primary"
-                                style={{ width: `${(worker.currentTask.turnCount / worker.currentTask.maxTurns) * 100}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {worker.currentTask.turnCount}/{worker.currentTask.maxTurns}
-                            </span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-center py-6 text-muted-foreground">
-                          <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">Worker is idle</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {(!data?.workers || data.workers.length === 0) && (
-          <div className="bg-card border border-border rounded-lg p-8 text-center text-muted-foreground">
-            No workers configured
-          </div>
-        )}
-      </div>
-
-      {/* Recent Completed */}
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-border bg-muted/50">
-          <h2 className="font-semibold">Recent Completed (Today)</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/30">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Task</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Summary</th>
-                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Status</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Cost</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">Duration</th>
-                <th className="text-right px-4 py-2 font-medium text-muted-foreground">PR</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {data?.recentCompleted.map((task) => (
-                <tr key={task.id} className="hover:bg-muted/20">
-                  <td className="px-4 py-3">
-                    <a
-                      href={`https://oncallshift.atlassian.net/browse/${task.jiraIssueKey}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline flex items-center gap-1"
-                    >
-                      {task.jiraIssueKey}
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 max-w-xs truncate">{task.summary}</td>
-                  <td className="px-4 py-3">
-                    <span className={`flex items-center gap-1 ${getStatusColor(task.status)}`}>
-                      {task.status === 'completed' && <CheckCircle className="w-4 h-4" />}
-                      {task.status === 'failed' && <XCircle className="w-4 h-4" />}
-                      <span className="capitalize">{task.status}</span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">${task.costUsd.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right text-muted-foreground">
-                    {formatDuration(task.durationMinutes)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {task.githubPrUrl ? (
-                      <a
-                        href={task.githubPrUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline flex items-center gap-1 justify-end"
-                      >
-                        <GitBranch className="w-3 h-3" />
-                        View PR
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {(!data?.recentCompleted || data.recentCompleted.length === 0) && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
-                    No completed tasks today
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       {/* Task Detail Modal */}
       {showDetailModal && selectedTask && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1139,8 +1999,10 @@ export default function SuperAdminControlCenter() {
                   {selectedTask.jiraIssueKey}
                   <ExternalLink className="w-3 h-3" />
                 </a>
-                <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(selectedTask.status)}`}>
-                  {selectedTask.status.replace(/_/g, ' ')}
+                <span
+                  className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(selectedTask.status)}`}
+                >
+                  {selectedTask.status.replace(/_/g, " ")}
                 </span>
               </div>
               <button
@@ -1158,20 +2020,34 @@ export default function SuperAdminControlCenter() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <div className="text-xs text-muted-foreground">Retries</div>
-                  <div className="font-medium">{selectedTask.retryCount}/{selectedTask.maxRetries}</div>
+                  <div className="font-medium">
+                    {selectedTask.retryCount}/{selectedTask.maxRetries}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">Cost</div>
-                  <div className="font-medium">${selectedTask.estimatedCostUsd.toFixed(2)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Last Heartbeat</div>
-                  <div className="font-medium">{formatRelativeTime(selectedTask.lastHeartbeatAt)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">Global Timeout</div>
                   <div className="font-medium">
-                    {selectedTask.globalTimeoutAt ? new Date(selectedTask.globalTimeoutAt).toLocaleTimeString() : 'Not set'}
+                    ${selectedTask.estimatedCostUsd.toFixed(2)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Last Heartbeat
+                  </div>
+                  <div className="font-medium">
+                    {formatRelativeTime(selectedTask.lastHeartbeatAt)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Global Timeout
+                  </div>
+                  <div className="font-medium">
+                    {selectedTask.globalTimeoutAt
+                      ? new Date(
+                          selectedTask.globalTimeoutAt,
+                        ).toLocaleTimeString()
+                      : "Not set"}
                   </div>
                 </div>
               </div>
@@ -1181,7 +2057,9 @@ export default function SuperAdminControlCenter() {
                 <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
                   <div className="flex items-center gap-2 text-red-500 text-sm font-medium mb-1">
                     <AlertCircle className="w-4 h-4" />
-                    Error {selectedTask.failureCategory && `(${selectedTask.failureCategory})`}
+                    Error{" "}
+                    {selectedTask.failureCategory &&
+                      `(${selectedTask.failureCategory})`}
                   </div>
                   <pre className="text-xs text-red-400 whitespace-pre-wrap overflow-x-auto">
                     {selectedTask.errorMessage}
@@ -1217,8 +2095,12 @@ export default function SuperAdminControlCenter() {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">Run #{run.runNumber}</span>
-                            <span className={`text-xs font-medium ${getOutcomeColor(run.outcome)}`}>
+                            <span className="text-sm font-medium">
+                              Run #{run.runNumber}
+                            </span>
+                            <span
+                              className={`text-xs font-medium ${getOutcomeColor(run.outcome)}`}
+                            >
                               {run.outcome.toUpperCase()}
                             </span>
                           </div>
@@ -1229,15 +2111,23 @@ export default function SuperAdminControlCenter() {
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                           <div>
-                            <span className="text-muted-foreground">Duration:</span>{' '}
-                            {run.durationSeconds ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s` : '-'}
+                            <span className="text-muted-foreground">
+                              Duration:
+                            </span>{" "}
+                            {run.durationSeconds
+                              ? `${Math.floor(run.durationSeconds / 60)}m ${run.durationSeconds % 60}s`
+                              : "-"}
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Cost:</span> ${run.estimatedCostUsd.toFixed(3)}
+                            <span className="text-muted-foreground">Cost:</span>{" "}
+                            ${run.estimatedCostUsd.toFixed(3)}
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Tokens:</span>{' '}
-                            {run.claudeInputTokens.toLocaleString()} / {run.claudeOutputTokens.toLocaleString()}
+                            <span className="text-muted-foreground">
+                              Tokens:
+                            </span>{" "}
+                            {run.claudeInputTokens.toLocaleString()} /{" "}
+                            {run.claudeOutputTokens.toLocaleString()}
                           </div>
                           {run.gitBranch && (
                             <div className="flex items-center gap-1">
@@ -1249,16 +2139,23 @@ export default function SuperAdminControlCenter() {
 
                         {run.errorMessage && (
                           <div className="mt-2 text-xs text-red-400 bg-red-500/10 rounded p-2">
-                            {run.errorCategory && <span className="font-medium">[{run.errorCategory}] </span>}
+                            {run.errorCategory && (
+                              <span className="font-medium">
+                                [{run.errorCategory}]{" "}
+                              </span>
+                            )}
                             {run.errorMessage}
                           </div>
                         )}
 
                         {run.filesModified && run.filesModified.length > 0 && (
                           <div className="mt-2 text-xs">
-                            <span className="text-muted-foreground">Files: </span>
-                            {run.filesModified.slice(0, 5).join(', ')}
-                            {run.filesModified.length > 5 && ` +${run.filesModified.length - 5} more`}
+                            <span className="text-muted-foreground">
+                              Files:{" "}
+                            </span>
+                            {run.filesModified.slice(0, 5).join(", ")}
+                            {run.filesModified.length > 5 &&
+                              ` +${run.filesModified.length - 5} more`}
                           </div>
                         )}
                       </div>
@@ -1270,7 +2167,9 @@ export default function SuperAdminControlCenter() {
 
             {/* Modal Footer Actions */}
             <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
-              {['failed', 'blocked', 'cancelled'].includes(selectedTask.status) && (
+              {["failed", "blocked", "cancelled"].includes(
+                selectedTask.status,
+              ) && (
                 <button
                   onClick={() => {
                     setShowDetailModal(false);
@@ -1282,7 +2181,9 @@ export default function SuperAdminControlCenter() {
                   Retry
                 </button>
               )}
-              {['executing', 'queued', 'environment_setup'].includes(selectedTask.status) && (
+              {["executing", "queued", "environment_setup"].includes(
+                selectedTask.status,
+              ) && (
                 <button
                   onClick={() => {
                     setShowDetailModal(false);
@@ -1324,24 +2225,40 @@ export default function SuperAdminControlCenter() {
 
             <div className="p-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Retry <span className="text-primary font-medium">{selectedTask.jiraIssueKey}</span>?
+                Retry{" "}
+                <span className="text-primary font-medium">
+                  {selectedTask.jiraIssueKey}
+                </span>
+                ?
               </p>
 
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={retryOptions.resetRetryCount}
-                  onChange={(e) => setRetryOptions((prev) => ({ ...prev, resetRetryCount: e.target.checked }))}
+                  onChange={(e) =>
+                    setRetryOptions((prev) => ({
+                      ...prev,
+                      resetRetryCount: e.target.checked,
+                    }))
+                  }
                   className="rounded"
                 />
                 Reset retry count to 0
               </label>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Custom Context (optional)</label>
+                <label className="block text-sm font-medium mb-1">
+                  Custom Context (optional)
+                </label>
                 <textarea
                   value={retryOptions.customContext}
-                  onChange={(e) => setRetryOptions((prev) => ({ ...prev, customContext: e.target.value }))}
+                  onChange={(e) =>
+                    setRetryOptions((prev) => ({
+                      ...prev,
+                      customContext: e.target.value,
+                    }))
+                  }
                   placeholder="Additional instructions for the retry attempt..."
                   className="w-full h-24 px-3 py-2 text-sm bg-background border border-border rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-primary"
                 />
@@ -1361,7 +2278,9 @@ export default function SuperAdminControlCenter() {
                 disabled={actionLoading}
                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
               >
-                {actionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {actionLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
                 Retry Task
               </button>
             </div>
@@ -1388,12 +2307,17 @@ export default function SuperAdminControlCenter() {
 
             <div className="p-4 space-y-4">
               <p className="text-sm text-muted-foreground">
-                Cancel <span className="text-primary font-medium">{selectedTask.jiraIssueKey}</span>?
-                This will stop the running ECS task.
+                Cancel{" "}
+                <span className="text-primary font-medium">
+                  {selectedTask.jiraIssueKey}
+                </span>
+                ? This will stop the running ECS task.
               </p>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Reason (optional)</label>
+                <label className="block text-sm font-medium mb-1">
+                  Reason (optional)
+                </label>
                 <input
                   type="text"
                   value={cancelReason}
@@ -1417,8 +2341,198 @@ export default function SuperAdminControlCenter() {
                 disabled={actionLoading}
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2"
               >
-                {actionLoading && <RefreshCw className="w-4 h-4 animate-spin" />}
+                {actionLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
                 Cancel Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Worker Modal */}
+      {showCreateWorkerModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg w-full max-w-md">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Create AI Worker
+              </h3>
+              <button
+                onClick={() => setShowCreateWorkerModal(false)}
+                className="p-1 hover:bg-muted rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Persona
+                </label>
+                <select
+                  value={createWorkerForm.persona}
+                  onChange={(e) =>
+                    setCreateWorkerForm((prev) => ({
+                      ...prev,
+                      persona: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {Object.entries(PERSONA_CONFIG).map(([key, config]) => (
+                    <option key={key} value={key}>
+                      {config.emoji} {config.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Display Name
+                </label>
+                <input
+                  type="text"
+                  value={createWorkerForm.displayName}
+                  onChange={(e) =>
+                    setCreateWorkerForm((prev) => ({
+                      ...prev,
+                      displayName: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g., Backend Developer Bot"
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Description (optional)
+                </label>
+                <input
+                  type="text"
+                  value={createWorkerForm.description}
+                  onChange={(e) =>
+                    setCreateWorkerForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="What this worker specializes in"
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                onClick={() => setShowCreateWorkerModal(false)}
+                className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg"
+                disabled={createLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateWorker}
+                disabled={createLoading}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
+              >
+                {createLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                Create Worker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Task Modal */}
+      {showCreateTaskModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg w-full max-w-md">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Play className="w-4 h-4" />
+                Run AI Task
+              </h3>
+              <button
+                onClick={() => setShowCreateTaskModal(false)}
+                className="p-1 hover:bg-muted rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Trigger an AI worker to work on a Jira issue. The task will be
+                queued and picked up by an available worker.
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Jira Issue Key
+                </label>
+                <input
+                  type="text"
+                  value={createTaskForm.jiraIssueKey}
+                  onChange={(e) =>
+                    setCreateTaskForm((prev) => ({
+                      ...prev,
+                      jiraIssueKey: e.target.value.toUpperCase(),
+                    }))
+                  }
+                  placeholder="e.g., OCS-123"
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Worker Persona
+                </label>
+                <select
+                  value={createTaskForm.workerPersona}
+                  onChange={(e) =>
+                    setCreateTaskForm((prev) => ({
+                      ...prev,
+                      workerPersona: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {Object.entries(PERSONA_CONFIG).map(([key, config]) => (
+                    <option key={key} value={key}>
+                      {config.emoji} {config.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                onClick={() => setShowCreateTaskModal(false)}
+                className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg"
+                disabled={createLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateTask}
+                disabled={createLoading || !createTaskForm.jiraIssueKey.trim()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50"
+              >
+                {createLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                <Play className="w-4 h-4" />
+                Run Task
               </button>
             </div>
           </div>

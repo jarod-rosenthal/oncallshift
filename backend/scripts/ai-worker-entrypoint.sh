@@ -15,6 +15,67 @@ echo "Retry Number: ${RETRY_NUMBER:-0}"
 HEARTBEAT_INTERVAL=60
 HEARTBEAT_PID=""
 
+# Jira API helper function
+add_jira_comment() {
+    local comment="$1"
+    if [ -z "${JIRA_BASE_URL}" ] || [ -z "${JIRA_EMAIL}" ] || [ -z "${JIRA_API_TOKEN}" ]; then
+        echo "[Jira] Skipping comment - credentials not configured"
+        return 0
+    fi
+
+    local auth=$(echo -n "${JIRA_EMAIL}:${JIRA_API_TOKEN}" | base64)
+    local body=$(cat <<EOF
+{
+  "body": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "${comment}"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+)
+
+    curl -s -X POST "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_ISSUE_KEY}/comment" \
+        -H "Authorization: Basic ${auth}" \
+        -H "Content-Type: application/json" \
+        -d "${body}" > /dev/null 2>&1 && echo "[Jira] Comment added" || echo "[Jira] Failed to add comment"
+}
+
+# Transition Jira issue to "In Progress"
+transition_jira_to_progress() {
+    if [ -z "${JIRA_BASE_URL}" ] || [ -z "${JIRA_EMAIL}" ] || [ -z "${JIRA_API_TOKEN}" ]; then
+        return 0
+    fi
+
+    local auth=$(echo -n "${JIRA_EMAIL}:${JIRA_API_TOKEN}" | base64)
+
+    # Get available transitions
+    local transitions=$(curl -s "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_ISSUE_KEY}/transitions" \
+        -H "Authorization: Basic ${auth}" \
+        -H "Accept: application/json")
+
+    # Find "In Progress" transition
+    local transition_id=$(echo "${transitions}" | jq -r '.transitions[] | select(.name | test("progress"; "i")) | .id' | head -1)
+
+    if [ -n "${transition_id}" ] && [ "${transition_id}" != "null" ]; then
+        curl -s -X POST "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_ISSUE_KEY}/transitions" \
+            -H "Authorization: Basic ${auth}" \
+            -H "Content-Type: application/json" \
+            -d "{\"transition\": {\"id\": \"${transition_id}\"}}" > /dev/null 2>&1 \
+            && echo "[Jira] Transitioned to In Progress" || echo "[Jira] Failed to transition"
+    fi
+}
+
 # Cleanup function to kill heartbeat on exit
 cleanup() {
     if [ -n "${HEARTBEAT_PID}" ]; then
@@ -81,6 +142,10 @@ start_heartbeat
 BRANCH_NAME="ai/${JIRA_ISSUE_KEY,,}"
 echo "[Setup] Creating branch: ${BRANCH_NAME}"
 git checkout -b "${BRANCH_NAME}"
+
+# Notify Jira that work is starting
+transition_jira_to_progress
+add_jira_comment "🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n⚡ Starting work on this task.\n\nBranch: ${BRANCH_NAME}\nRepository: ${GITHUB_REPO}"
 
 # Build the task instructions
 INSTRUCTIONS_FILE="/tmp/task-instructions.md"
@@ -158,24 +223,99 @@ export CLAUDE_CODE_MAX_TURNS="${MAX_TURNS:-50}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-haiku}"
 echo "[Claude] Using model: ${CLAUDE_MODEL}"
 
-# Run Claude Code (binary is named 'claude' not 'claude-code')
+# Run Claude Code with stream-json output for accurate token tracking
+CLAUDE_OUTPUT_FILE="/tmp/claude-output.json"
+CLAUDE_TEXT_FILE="/tmp/claude-output.txt"
+
+# Use stream-json to get structured output with token counts
 claude \
     --print \
     --dangerously-skip-permissions \
     --max-turns "${MAX_TURNS:-50}" \
     --model "${CLAUDE_MODEL}" \
-    "$(cat ${INSTRUCTIONS_FILE})"
+    --output-format stream-json \
+    "$(cat ${INSTRUCTIONS_FILE})" 2>&1 | tee "${CLAUDE_OUTPUT_FILE}" | while IFS= read -r line; do
+    # Extract and display text content for human-readable output
+    if echo "$line" | jq -e '.type == "assistant" and .message.content' > /dev/null 2>&1; then
+        echo "$line" | jq -r '.message.content[]? | select(.type == "text") | .text // empty' 2>/dev/null
+    elif echo "$line" | jq -e '.type == "result"' > /dev/null 2>&1; then
+        # Final result - save usage for later parsing
+        echo "$line" > /tmp/claude-final-result.json
+    fi
+done
 
-CLAUDE_EXIT_CODE=$?
+CLAUDE_EXIT_CODE=${PIPESTATUS[0]}
 
 echo "================================"
 echo "[Claude] Agent finished with exit code: ${CLAUDE_EXIT_CODE}"
+
+# Parse token usage from the final result JSON
+FINAL_RESULT="/tmp/claude-final-result.json"
+if [ -f "${FINAL_RESULT}" ]; then
+    INPUT_TOKENS=$(jq -r '.result.usage.input_tokens // 0' "${FINAL_RESULT}" 2>/dev/null || echo "0")
+    OUTPUT_TOKENS=$(jq -r '.result.usage.output_tokens // 0' "${FINAL_RESULT}" 2>/dev/null || echo "0")
+    CACHE_CREATION=$(jq -r '.result.usage.cache_creation_input_tokens // 0' "${FINAL_RESULT}" 2>/dev/null || echo "0")
+    CACHE_READ=$(jq -r '.result.usage.cache_read_input_tokens // 0' "${FINAL_RESULT}" 2>/dev/null || echo "0")
+
+    # Calculate cost based on model pricing
+    # Haiku: $0.25/M input, $1.25/M output, $0.30/M cache write, $0.03/M cache read
+    # Sonnet: $3/M input, $15/M output, $3.75/M cache write, $0.30/M cache read
+    if [ "${CLAUDE_MODEL}" = "haiku" ]; then
+        INPUT_RATE="0.00000025"
+        OUTPUT_RATE="0.00000125"
+        CACHE_WRITE_RATE="0.0000003"
+        CACHE_READ_RATE="0.00000003"
+    else
+        # Default to Sonnet pricing
+        INPUT_RATE="0.000003"
+        OUTPUT_RATE="0.000015"
+        CACHE_WRITE_RATE="0.00000375"
+        CACHE_READ_RATE="0.0000003"
+    fi
+
+    CLAUDE_COST=$(echo "scale=4; ${INPUT_TOKENS} * ${INPUT_RATE} + ${OUTPUT_TOKENS} * ${OUTPUT_RATE} + ${CACHE_CREATION} * ${CACHE_WRITE_RATE} + ${CACHE_READ} * ${CACHE_READ_RATE}" | bc 2>/dev/null || echo "0")
+else
+    # Fallback: try parsing text format
+    INPUT_TOKENS=$(grep -i "input_tokens" "${CLAUDE_OUTPUT_FILE}" | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+    OUTPUT_TOKENS=$(grep -i "output_tokens" "${CLAUDE_OUTPUT_FILE}" | tail -1 | grep -oE '[0-9]+' | head -1 || echo "0")
+    CLAUDE_COST="0"
+fi
+
+echo "[Tokens] Model: ${CLAUDE_MODEL}"
+echo "[Tokens] Input: ${INPUT_TOKENS}, Output: ${OUTPUT_TOKENS}"
+echo "[Tokens] Cache: created=${CACHE_CREATION:-0}, read=${CACHE_READ:-0}"
+echo "[Tokens] Calculated cost: \$${CLAUDE_COST}"
+
+# Output token markers for orchestrator to parse
+echo "::input_tokens::${INPUT_TOKENS:-0}"
+echo "::output_tokens::${OUTPUT_TOKENS:-0}"
+echo "::cache_creation_tokens::${CACHE_CREATION:-0}"
+echo "::cache_read_tokens::${CACHE_READ:-0}"
+echo "::claude_cost::${CLAUDE_COST:-0}"
+echo "::model::${CLAUDE_MODEL}"
+
+# Report token usage to API
+if [ -n "${API_BASE_URL}" ] && [ -n "${ORG_API_KEY}" ]; then
+    echo "[API] Reporting token usage..."
+    curl -s -X POST "${API_BASE_URL}/api/v1/ai-worker-tasks/${TASK_ID}/usage" \
+        -H "Authorization: Bearer ${ORG_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"model\": \"${CLAUDE_MODEL}\",
+            \"inputTokens\": ${INPUT_TOKENS:-0},
+            \"outputTokens\": ${OUTPUT_TOKENS:-0},
+            \"reportedCost\": ${CLAUDE_COST:-0}
+        }" > /dev/null 2>&1 && echo "[API] Token usage reported" || echo "[API] Failed to report token usage"
+fi
 
 # Check if PR was created
 PR_URL=$(gh pr view --json url -q '.url' 2>/dev/null || echo "")
 
 if [ -n "${PR_URL}" ]; then
     echo "[SUCCESS] PR created: ${PR_URL}"
+
+    # Update Jira with PR link
+    add_jira_comment "🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n✅ Implementation complete!\n\n🔀 Pull Request: ${PR_URL}\n🌿 Branch: ${BRANCH_NAME}\n\n⏳ Awaiting Virtual Manager review."
 
     # Output result for orchestrator to parse
     echo "::result::success"
@@ -202,16 +342,21 @@ Automated implementation for [${JIRA_ISSUE_KEY}](https://oncallshift.atlassian.n
 ${JIRA_DESCRIPTION:-}
 
 ---
-Generated by AI Worker (${WORKER_PERSONA//_/ })"
+🤖 Generated by AI Worker (${WORKER_PERSONA//_/ })"
 
         PR_URL=$(gh pr view --json url -q '.url')
         echo "[SUCCESS] PR created: ${PR_URL}"
+
+        # Update Jira with PR link
+        add_jira_comment "🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n✅ Implementation complete!\n\n🔀 Pull Request: ${PR_URL}\n🌿 Branch: ${BRANCH_NAME}\n\n⏳ Awaiting Virtual Manager review."
+
         echo "::result::success"
         echo "::pr_url::${PR_URL}"
         echo "::pr_number::$(gh pr view --json number -q '.number')"
         echo "::branch::${BRANCH_NAME}"
     else
         echo "[WARNING] No changes were made"
+        add_jira_comment "🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n⚠️ No changes needed.\n\nAnalyzed the task but determined no code changes were required. This may indicate the task is already complete or requires clarification."
         echo "::result::no_changes"
     fi
 fi

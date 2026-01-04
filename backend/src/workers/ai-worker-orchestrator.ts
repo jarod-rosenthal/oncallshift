@@ -16,6 +16,7 @@ import { initSentry } from '../shared/config/sentry';
 initSentry({ workerName: 'ai-worker-orchestrator' });
 
 import { SQS, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { DataSource } from 'typeorm';
 import { AIWorkerTask, AIWorkerTaskStatus } from '../shared/models/AIWorkerTask';
 import { AIWorkerInstance } from '../shared/models/AIWorkerInstance';
@@ -32,8 +33,12 @@ interface QueueMessage {
   action: 'execute' | 'retry' | 'cancel' | 'check_status';
 }
 
+// Manager Lambda name for event-driven invocation
+const MANAGER_LAMBDA_NAME = process.env.AI_WORKER_MANAGER_LAMBDA || 'pagerduty-lite-dev-ai-worker-manager';
+
 class AIWorkerOrchestrator {
   private sqs: SQS;
+  private lambda: LambdaClient;
   private dataSource: DataSource;
   private queueUrl: string;
   private running = false;
@@ -42,7 +47,9 @@ class AIWorkerOrchestrator {
   constructor(dataSource: DataSource, queueUrl: string) {
     this.dataSource = dataSource;
     this.queueUrl = queueUrl;
-    this.sqs = new SQS({ region: process.env.AWS_REGION || 'us-east-1' });
+    const region = process.env.AWS_REGION || 'us-east-1';
+    this.sqs = new SQS({ region });
+    this.lambda = new LambdaClient({ region });
   }
 
   async initialize(): Promise<void> {
@@ -269,9 +276,26 @@ class AIWorkerOrchestrator {
 
       // Check exit code
       if (status.exitCode === 0) {
-        // Success - check for PR
-        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 100 });
+        // Success - check for PR and token usage
+        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 200 });
         const prInfo = this.parseTaskOutput(logs.events.map(e => e.message).join('\n'));
+
+        // Update token counts from parsed output
+        if (prInfo.inputTokens !== undefined) {
+          task.claudeInputTokens = prInfo.inputTokens;
+        }
+        if (prInfo.outputTokens !== undefined) {
+          task.claudeOutputTokens = prInfo.outputTokens;
+        }
+
+        logger.info('Parsed task output', {
+          taskId: task.id,
+          inputTokens: prInfo.inputTokens,
+          outputTokens: prInfo.outputTokens,
+          claudeCost: prInfo.claudeCost,
+          model: prInfo.model,
+          prUrl: prInfo.prUrl,
+        });
 
         if (prInfo.prUrl) {
           task.githubPrUrl = prInfo.prUrl;
@@ -282,6 +306,9 @@ class AIWorkerOrchestrator {
 
           // Create approval request
           await this.createApprovalRequest(task);
+
+          // Invoke Manager Lambda immediately for event-driven review
+          await this.invokeManagerLambda(task.id);
         } else if (prInfo.result === 'no_changes') {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed with no changes needed');
@@ -290,15 +317,33 @@ class AIWorkerOrchestrator {
           await this.logTaskEvent(task, 'status_change', 'Task completed');
         }
       } else {
-        // Failure
+        // Failure - still try to get token usage
+        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 200 });
+        const prInfo = this.parseTaskOutput(logs.events.map(e => e.message).join('\n'));
+
+        if (prInfo.inputTokens !== undefined) {
+          task.claudeInputTokens = prInfo.inputTokens;
+        }
+        if (prInfo.outputTokens !== undefined) {
+          task.claudeOutputTokens = prInfo.outputTokens;
+        }
+
         task.errorMessage = status.reason || `Exit code: ${status.exitCode}`;
         await this.updateTaskStatus(task, 'failed');
         await this.logTaskEvent(task, 'error', `Task failed: ${task.errorMessage}`, { severity: 'error' as const });
       }
 
-      // Update cost
+      // Update cost (now with accurate token counts)
       task.estimatedCostUsd = task.calculateCost();
       await taskRepo.save(task);
+
+      logger.info('Task cost calculated', {
+        taskId: task.id,
+        inputTokens: task.claudeInputTokens,
+        outputTokens: task.claudeOutputTokens,
+        ecsTaskSeconds: task.ecsTaskSeconds,
+        estimatedCostUsd: task.estimatedCostUsd,
+      });
 
       // Release worker
       if (task.assignedWorkerId) {
@@ -336,6 +381,10 @@ class AIWorkerOrchestrator {
     prUrl?: string;
     prNumber?: number;
     branch?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    claudeCost?: number;
+    model?: string;
   } {
     const result: any = {};
 
@@ -350,6 +399,19 @@ class AIWorkerOrchestrator {
 
     const branchMatch = output.match(/::branch::(.+)/);
     if (branchMatch) result.branch = branchMatch[1].trim();
+
+    // Parse token usage
+    const inputTokensMatch = output.match(/::input_tokens::(\d+)/);
+    if (inputTokensMatch) result.inputTokens = parseInt(inputTokensMatch[1], 10);
+
+    const outputTokensMatch = output.match(/::output_tokens::(\d+)/);
+    if (outputTokensMatch) result.outputTokens = parseInt(outputTokensMatch[1], 10);
+
+    const claudeCostMatch = output.match(/::claude_cost::([0-9.]+)/);
+    if (claudeCostMatch) result.claudeCost = parseFloat(claudeCostMatch[1]);
+
+    const modelMatch = output.match(/::model::(\w+)/);
+    if (modelMatch) result.model = modelMatch[1];
 
     return result;
   }
@@ -484,6 +546,40 @@ class AIWorkerOrchestrator {
     });
 
     await logRepo.save(log);
+  }
+
+  /**
+   * Invoke the Manager Lambda to review a PR immediately (event-driven)
+   * This provides faster feedback than waiting for the cron sweep
+   */
+  private async invokeManagerLambda(taskId: string): Promise<void> {
+    try {
+      logger.info('Invoking Manager Lambda for immediate PR review', {
+        taskId,
+        lambdaName: MANAGER_LAMBDA_NAME,
+      });
+
+      await this.lambda.send(
+        new InvokeCommand({
+          FunctionName: MANAGER_LAMBDA_NAME,
+          InvocationType: 'Event', // Async invocation - don't wait for result
+          Payload: Buffer.from(JSON.stringify({ taskId })),
+        })
+      );
+
+      logger.info('Manager Lambda invoked successfully', { taskId });
+      await this.logTaskEvent(
+        { id: taskId } as AIWorkerTask,
+        'info',
+        'Manager Lambda invoked for PR review'
+      );
+    } catch (error) {
+      // Log but don't fail - the cron sweep will catch missed tasks
+      logger.warn('Failed to invoke Manager Lambda (cron will catch it)', {
+        taskId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 
   private async handleTaskError(task: AIWorkerTask, error: any): Promise<void> {
