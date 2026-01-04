@@ -429,3 +429,494 @@ Runbook auto-created, kept fresh as humans deviate
 
 **For leadership:**
 > "Reduce incidents by 40%, cut MTTR by 60%, and finally measure the cost of reliability."
+
+---
+
+## Part 5: Own the Full Incident Lifecycle
+
+Most tools focus on "Alert → Page." But incident management is a complex, multi-phase process with coordination, communication, approvals, and follow-up. OnCallShift should own **every step**.
+
+### The Complete Incident Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        THE INCIDENT LIFECYCLE                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  PHASE 1: PREPARATION (Before incidents happen)                            │
+│  ├── On-call schedules & rotations                                          │
+│  ├── Escalation policies                                                    │
+│  ├── Runbooks documented & accessible                                       │
+│  ├── Communication templates ready                                          │
+│  ├── Stakeholder lists defined                                              │
+│  └── War room / bridge call setup                                           │
+│                                                                             │
+│  PHASE 2: DETECTION & TRIAGE (First 5 minutes)                              │
+│  ├── Alert fires                                                            │
+│  ├── On-call paged                                                          │
+│  ├── Acknowledge                                                            │
+│  ├── Initial severity assessment                                            │
+│  ├── Incident declared (P1/P2/P3/P4)                                        │
+│  └── Incident Commander assigned                                            │
+│                                                                             │
+│  PHASE 3: MOBILIZATION (First 15 minutes)                                   │
+│  ├── Create incident channel (Slack/Teams)                                  │
+│  ├── Spin up war room / bridge call                                         │
+│  ├── Page additional responders                                             │
+│  ├── Assign roles (IC, Comms, Scribe, Technical)                            │
+│  ├── Initial stakeholder notification                                       │
+│  └── Status page updated (if customer-facing)                               │
+│                                                                             │
+│  PHASE 4: INVESTIGATION (Active incident)                                   │
+│  ├── Gather context (logs, metrics, recent changes)                         │
+│  ├── Form hypotheses                                                        │
+│  ├── Test hypotheses                                                        │
+│  ├── Document everything tried                                              │
+│  ├── Regular status updates (every 15-30 min)                               │
+│  ├── Escalate if needed                                                     │
+│  └── Coordinate multiple teams                                              │
+│                                                                             │
+│  PHASE 5: REMEDIATION (Fixing the issue)                                    │
+│  ├── Identify fix                                                           │
+│  ├── Get approval for risky changes                                         │
+│  ├── Execute remediation                                                    │
+│  ├── Verify fix worked                                                      │
+│  └── Monitor for recurrence                                                 │
+│                                                                             │
+│  PHASE 6: RESOLUTION & CLOSURE                                              │
+│  ├── Confirm service restored                                               │
+│  ├── Final stakeholder update                                               │
+│  ├── Status page updated                                                    │
+│  ├── Incident closed                                                        │
+│  └── Schedule postmortem                                                    │
+│                                                                             │
+│  PHASE 7: POSTMORTEM & LEARNING                                             │
+│  ├── Timeline reconstruction                                                │
+│  ├── Root cause analysis                                                    │
+│  ├── Blameless retrospective                                                │
+│  ├── Action items identified                                                │
+│  ├── Action items assigned with owners                                      │
+│  ├── Follow-up tracking (30/60/90 days)                                     │
+│  └── Runbooks updated                                                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### What Current Tools Do vs. What's Missing
+
+| Phase | What Tools Do | What's Still Manual/Broken |
+|-------|---------------|---------------------------|
+| **Preparation** | Schedules, escalation policies | Runbooks stale, templates scattered, no rehearsal |
+| **Detection** | Page on-call | No AI triage, severity is guesswork |
+| **Mobilization** | Create Slack channel (maybe) | Role assignment manual, stakeholder lists scattered |
+| **Investigation** | Show alerts, maybe logs | No guided investigation, tribal knowledge problem |
+| **Remediation** | Runbook links | Approvals outside the tool, no execution tracking |
+| **Resolution** | Mark resolved | Status page updates manual, verification is hope |
+| **Postmortem** | Template generation | Action items get lost, no follow-up tracking |
+
+---
+
+### Phase 1: Preparation Capabilities
+
+#### 5.1 Runbook Health Dashboard
+
+**The Problem:** Runbooks get stale and nobody knows which services are covered.
+
+**The Solution:**
+- Dashboard showing runbook coverage per service
+- Stale runbook detection: "payment-service runbook not updated in 6 months, had 3 incidents"
+- Auto-flag when runbook doesn't match actual resolution patterns
+- Runbook effectiveness score based on usage during incidents
+
+---
+
+#### 5.2 Incident Response Rehearsal ("Game Day")
+
+**The Problem:** Teams only practice incident response during real incidents.
+
+**The Solution:**
+- Simulate incidents to test response procedures
+- "Wheel of Misfortune" — random scenario drills
+- Track team readiness scores over time
+- Identify gaps before they matter
+
+---
+
+#### 5.3 Communication Template Library
+
+**The Problem:** During incidents, people waste time crafting messages.
+
+**The Solution:**
+- Pre-approved templates for each severity level
+- Stakeholder-specific templates (execs, customers, internal teams)
+- Variable substitution: `{{service_name}}`, `{{eta}}`, `{{impact}}`
+- Template versioning and approval workflow
+
+---
+
+### Phase 2: Detection & Triage Capabilities
+
+#### 5.4 AI-Powered Severity Assessment
+
+**The Problem:** Severity classification is guesswork, often wrong.
+
+**The Solution:**
+- Auto-classify P1/P2/P3/P4 based on:
+  - Business impact (customer count, revenue affected)
+  - Blast radius (dependent services)
+  - Historical data ("similar incidents were P2")
+  - Time of day (production hours vs off-hours)
+- Human can override but starts with AI recommendation
+- Learn from overrides to improve over time
+
+---
+
+#### 5.5 Smart Incident Declaration
+
+**The Problem:** Multiple alerts fire for one problem, creating duplicate incidents.
+
+**The Solution:**
+- Detect when multiple alerts = one incident
+- "These 5 alerts are all symptoms of the same root cause"
+- Auto-group related alerts
+- Prevent duplicate incident creation
+- Surface the root alert vs. symptoms
+
+---
+
+### Phase 3: Mobilization Capabilities
+
+#### 5.6 One-Click War Room
+
+**The Problem:** Setting up incident coordination takes precious minutes.
+
+**The Solution:**
+- One click creates:
+  - Slack/Teams channel with naming convention
+  - Zoom/Meet bridge call link
+  - Invites to on-call + relevant responders
+- Pre-populate channel with incident context
+- Link everything together automatically
+- Template-based setup per severity level
+
+---
+
+#### 5.7 Role Assignment & Tracking
+
+**The Problem:** Unclear who's doing what during an incident.
+
+**The Solution:**
+- Formal role assignment: IC, Comms Lead, Scribe, Technical Lead
+- Track who's doing what in real-time
+- AI suggests roles based on expertise and availability
+- Handoff tracking when shifts change
+- Role history for postmortem
+
+---
+
+#### 5.8 Stakeholder Management
+
+**The Problem:** Notifying the right people is manual and often forgotten.
+
+**The Solution:**
+- Define stakeholder groups per service/severity
+  - P1: Execs, customer success, PR
+  - P2: Engineering leads, affected team managers
+  - P3: Team leads only
+- Auto-notify right people at right time
+- Different message templates per audience
+- Track who's been notified and acknowledged
+- Escalate if no acknowledgment
+
+---
+
+### Phase 4: Investigation Capabilities
+
+#### 5.9 Guided Investigation Workflow
+
+**The Problem:** Investigation is ad-hoc, depends on who's on-call.
+
+**The Solution:**
+- Step-by-step investigation checklist per service
+- "Have you checked: logs? recent deploys? related alerts? metrics?"
+- AI suggests next steps based on what's been tried
+- Track investigation progress
+- Prevent duplicate work when multiple people are investigating
+
+---
+
+#### 5.10 Scribe Bot / Auto-Timeline
+
+**The Problem:** Nobody documents what happened during incident.
+
+**The Solution:**
+- Automatically capture everything:
+  - Who joined the incident, when
+  - Messages in incident channel
+  - Commands run (via runbook execution)
+  - Alerts that fired, resolved
+  - Status changes
+- Build timeline without manual note-taking
+- Feed directly into postmortem
+
+---
+
+#### 5.11 Expertise Finder
+
+**The Problem:** "Who knows about this system?"
+
+**The Solution:**
+- Auto-suggest experts based on:
+  - Code ownership (CODEOWNERS, git history)
+  - Past incident resolution
+  - On-call history for this service
+  - Documented SME lists
+- "Alice has resolved 4 similar incidents, last one 2 weeks ago"
+- One-click escalation to expert
+
+---
+
+### Phase 5: Remediation Capabilities
+
+#### 5.12 Change Approval Workflow
+
+**The Problem:** Risky changes during incidents need approval but it happens via Slack.
+
+**The Solution:**
+- In-platform approval for remediation actions
+- "I want to restart the database" → Approval required from service owner
+- Track who approved what, when
+- Audit trail for compliance
+- Emergency bypass with extra logging
+
+---
+
+#### 5.13 Remediation Execution Tracking
+
+**The Problem:** No record of what was tried during incident.
+
+**The Solution:**
+- Track every remediation attempt:
+  - What was tried
+  - Who did it
+  - When
+  - Did it work?
+- "Tried restarting pods at 3:42pm — didn't work. Scaled up at 3:55pm — worked."
+- Auto-feed into postmortem
+- Build pattern database for future incidents
+
+---
+
+#### 5.14 One-Click Rollback
+
+**The Problem:** Rollback requires leaving incident tool, navigating CI/CD.
+
+**The Solution:**
+- Surface recent deploys in incident view
+- One-click rollback to previous version
+- Connected to your deploy pipeline (GitHub Actions, ArgoCD, etc.)
+- Track rollback as incident action
+- Auto-monitor after rollback
+
+---
+
+### Phase 6: Resolution & Closure Capabilities
+
+#### 5.15 Resolution Verification Checklist
+
+**The Problem:** "Is it actually fixed?" is based on hope.
+
+**The Solution:**
+- Checklist before closing:
+  - [ ] Monitoring shows normal metrics
+  - [ ] No related alerts in last 15 minutes
+  - [ ] Manual verification completed
+  - [ ] Customer-facing services tested
+- Auto-reopen if alert fires again within window
+- Require verification before marking resolved
+
+---
+
+#### 5.16 Automated Status Page Updates
+
+**The Problem:** Status page updates are manual and often forgotten.
+
+**The Solution:**
+- Sync incident status → status page automatically
+- AI drafts customer-facing messages based on internal incident data
+- Approval workflow before publish
+- Track status page history with incident
+- Auto-resolve status page when incident closes
+
+---
+
+#### 5.17 Stakeholder Close-Out
+
+**The Problem:** People notified at start never hear how it ended.
+
+**The Solution:**
+- Auto-send resolution summary to all notified stakeholders
+- Different message templates per audience
+- Include: what happened, impact, duration, next steps
+- Track acknowledgment
+- Feed into communication effectiveness metrics
+
+---
+
+### Phase 7: Postmortem & Learning Capabilities
+
+#### 5.18 Auto-Generated Postmortem Draft
+
+**The Problem:** Writing postmortems is tedious, often skipped.
+
+**The Solution:**
+- AI generates draft postmortem including:
+  - Timeline (from scribe bot)
+  - Actions taken (from execution tracking)
+  - Metrics (TTD, TTR, impact)
+  - Who was involved
+  - AI-suggested contributing factors
+- Human reviews, edits, approves
+- Blameless framing built-in
+
+---
+
+#### 5.19 Action Item Tracking That Works
+
+**The Problem:** "Without follow-through, a postmortem is indistinguishable from no postmortem."
+
+**The Solution:**
+- Create Jira/Linear tickets directly from postmortem
+- Assign owners with due dates
+- **Track completion** (this is where everyone fails)
+- 30/60/90 day follow-up reminders
+- Dashboard: "67% of action items completed, 12 overdue"
+- Block closing postmortem without action items
+- Link action item completion to incident reduction
+
+---
+
+#### 5.20 Recurring Incident Detection
+
+**The Problem:** Same incidents keep happening, nobody notices the pattern.
+
+**The Solution:**
+- "This is the 3rd time this month we've had this type of incident"
+- "Action items from incident #123 were never completed — that's why this happened again"
+- Force prioritization of repeat issues
+- Track recurrence rate per service
+- Surface in on-call health score
+
+---
+
+## The Vision: AI Incident Commander
+
+The ultimate differentiator: **AI that can run the incident process**, not just investigate.
+
+```
+Incident fires
+     │
+     ▼
+AI Incident Commander activates:
+├── Assesses severity (auto-classify)
+├── Creates war room (Slack + bridge)
+├── Pages right people (based on expertise)
+├── Assigns roles (suggests IC, comms, etc.)
+├── Starts investigation (queries infrastructure)
+├── Posts regular status updates (drafts, human approves)
+├── Tracks what's being tried
+├── Suggests next steps
+├── Drafts stakeholder comms
+├── Updates status page
+├── Verifies resolution
+├── Generates postmortem
+├── Creates action items
+└── Tracks follow-up
+```
+
+**The human is still in control**, but AI handles the coordination overhead so humans can focus on the actual problem.
+
+---
+
+## Complete Capability Summary
+
+### Preparation (3 capabilities)
+1. Runbook Health Dashboard
+2. Incident Response Rehearsal
+3. Communication Template Library
+
+### Detection & Triage (2 capabilities)
+4. AI-Powered Severity Assessment
+5. Smart Incident Declaration
+
+### Mobilization (3 capabilities)
+6. One-Click War Room
+7. Role Assignment & Tracking
+8. Stakeholder Management
+
+### Investigation (3 capabilities)
+9. Guided Investigation Workflow
+10. Scribe Bot / Auto-Timeline
+11. Expertise Finder
+
+### Remediation (3 capabilities)
+12. Change Approval Workflow
+13. Remediation Execution Tracking
+14. One-Click Rollback
+
+### Resolution & Closure (3 capabilities)
+15. Resolution Verification Checklist
+16. Automated Status Page Updates
+17. Stakeholder Close-Out
+
+### Postmortem & Learning (3 capabilities)
+18. Auto-Generated Postmortem Draft
+19. Action Item Tracking That Works
+20. Recurring Incident Detection
+
+---
+
+## Updated Implementation Priority
+
+### Immediate (Part 5 additions)
+- 5.4 AI-Powered Severity Assessment
+- 5.10 Scribe Bot / Auto-Timeline
+- 5.18 Auto-Generated Postmortem Draft
+- 5.19 Action Item Tracking
+
+### Near-Term
+- 5.6 One-Click War Room
+- 5.8 Stakeholder Management
+- 5.11 Expertise Finder
+- 5.16 Automated Status Page Updates
+
+### Medium-Term
+- 5.1 Runbook Health Dashboard
+- 5.7 Role Assignment & Tracking
+- 5.9 Guided Investigation Workflow
+- 5.12 Change Approval Workflow
+- 5.13 Remediation Execution Tracking
+- 5.20 Recurring Incident Detection
+
+### Future
+- 5.2 Incident Response Rehearsal
+- 5.3 Communication Template Library
+- 5.5 Smart Incident Declaration
+- 5.14 One-Click Rollback
+- 5.15 Resolution Verification Checklist
+- 5.17 Stakeholder Close-Out
+
+---
+
+## Total Capability Count
+
+| Part | Focus Area | Capabilities |
+|------|-----------|--------------|
+| 1 | AI First Responder | 5 |
+| 2 | Infrastructure-Native AI | 4 |
+| 3 | Unified Incident Context | 6 |
+| 4 | DevOps-Native Architecture | 8 |
+| 5 | Full Incident Lifecycle | 20 |
+| **Total** | | **43 capabilities** |
+
+This is the roadmap to becoming the best incident management platform on the planet.
