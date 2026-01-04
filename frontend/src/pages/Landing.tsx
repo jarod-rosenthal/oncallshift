@@ -64,7 +64,7 @@ export function Landing() {
 
           <p className="relative text-lg text-slate-500 mb-12 max-w-lg mx-auto">
             On-call scheduling, escalation policies, and intelligent incident response.
-            Built by DevOps engineers who've carried the pager.
+            Built by DevOps and SRE engineers who've been at the tip of the spear in high‑stress outages, when muscle memory and good tooling are all you have.
           </p>
 
           {/* Email Signup */}

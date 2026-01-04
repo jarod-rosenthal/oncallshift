@@ -24,6 +24,12 @@ interface TaskEnvironment {
   ANTHROPIC_API_KEY: string;
   GITHUB_TOKEN: string;
   MAX_TURNS?: string;
+  // Self-recovery env vars
+  RETRY_NUMBER?: string;
+  PREVIOUS_RUN_CONTEXT?: string;
+  GLOBAL_TIMEOUT_AT?: string;
+  API_BASE_URL?: string;
+  ORG_API_KEY?: string;
 }
 
 interface RunTaskResult {
@@ -59,7 +65,7 @@ export class ECSTaskRunner {
   async runWorkerTask(
     task: AIWorkerTask,
     worker: AIWorkerInstance,
-    credentials: { anthropicApiKey: string; githubToken: string }
+    credentials: { anthropicApiKey: string; githubToken: string; orgApiKey?: string }
   ): Promise<RunTaskResult> {
     // Build environment variables for the container
     const environment: TaskEnvironment = {
@@ -72,6 +78,12 @@ export class ECSTaskRunner {
       ANTHROPIC_API_KEY: credentials.anthropicApiKey,
       GITHUB_TOKEN: credentials.githubToken,
       MAX_TURNS: String(worker.config.maxTurns || 50),
+      // Self-recovery env vars
+      RETRY_NUMBER: String(task.retryCount),
+      PREVIOUS_RUN_CONTEXT: task.previousRunContext || '',
+      GLOBAL_TIMEOUT_AT: task.globalTimeoutAt?.toISOString() || '',
+      API_BASE_URL: process.env.API_BASE_URL || 'https://oncallshift.com',
+      ORG_API_KEY: credentials.orgApiKey || '',
     };
 
     const command = new RunTaskCommand({

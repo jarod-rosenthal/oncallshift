@@ -67,3 +67,18 @@ output "executor_log_group_name" {
   description = "Name of the executor CloudWatch log group"
   value       = aws_cloudwatch_log_group.executor.name
 }
+
+output "watcher_lambda_arn" {
+  description = "ARN of the AI Worker Watcher Lambda function"
+  value       = var.enable_watcher ? aws_lambda_function.watcher[0].arn : null
+}
+
+output "watcher_lambda_name" {
+  description = "Name of the AI Worker Watcher Lambda function"
+  value       = var.enable_watcher ? aws_lambda_function.watcher[0].function_name : null
+}
+
+output "watcher_log_group_name" {
+  description = "Name of the watcher CloudWatch log group"
+  value       = var.enable_watcher ? aws_cloudwatch_log_group.watcher[0].name : null
+}

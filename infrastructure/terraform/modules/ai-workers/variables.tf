@@ -90,3 +90,21 @@ variable "enable_spot" {
   type        = bool
   default     = true
 }
+
+variable "enable_watcher" {
+  description = "Enable the AI Worker Watcher Lambda"
+  type        = bool
+  default     = true
+}
+
+variable "database_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing database credentials"
+  type        = string
+  default     = ""
+}
+
+variable "watcher_schedule" {
+  description = "CloudWatch Events schedule expression for the Watcher Lambda"
+  type        = string
+  default     = "rate(5 minutes)"
+}

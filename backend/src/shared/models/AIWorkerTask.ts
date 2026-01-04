@@ -4,6 +4,7 @@ import { AIWorkerInstance } from './AIWorkerInstance';
 import { AIWorkerTaskLog } from './AIWorkerTaskLog';
 import { AIWorkerConversation } from './AIWorkerConversation';
 import { AIWorkerApproval } from './AIWorkerApproval';
+import { AIWorkerTaskRun } from './AIWorkerTaskRun';
 
 export type AIWorkerPersona = 'developer' | 'qa_engineer' | 'devops' | 'tech_writer' | 'support' | 'pm';
 
@@ -118,6 +119,28 @@ export class AIWorkerTask {
   @Column({ name: 'max_retries', type: 'int', default: 3 })
   maxRetries: number;
 
+  // Self-recovery fields
+  @Column({ name: 'last_heartbeat_at', type: 'timestamp', nullable: true })
+  lastHeartbeatAt: Date | null;
+
+  @Column({ name: 'previous_run_context', type: 'text', nullable: true })
+  previousRunContext: string | null;
+
+  @Column({ name: 'global_timeout_at', type: 'timestamp', nullable: true })
+  globalTimeoutAt: Date | null;
+
+  @Column({ name: 'next_retry_at', type: 'timestamp', nullable: true })
+  nextRetryAt: Date | null;
+
+  @Column({ name: 'retry_backoff_seconds', type: 'int', default: 60 })
+  retryBackoffSeconds: number;
+
+  @Column({ name: 'failure_category', type: 'varchar', length: 50, nullable: true })
+  failureCategory: string | null;
+
+  @Column({ name: 'watcher_notes', type: 'text', nullable: true })
+  watcherNotes: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -141,6 +164,9 @@ export class AIWorkerTask {
 
   @OneToMany(() => AIWorkerApproval, approval => approval.task)
   approvals: AIWorkerApproval[];
+
+  @OneToMany(() => AIWorkerTaskRun, run => run.task)
+  runs: AIWorkerTaskRun[];
 
   // Helper methods
   isActive(): boolean {
@@ -174,5 +200,34 @@ export class AIWorkerTask {
     const ecsCost = (this.ecsTaskSeconds / 3600) * 0.04;
 
     return claudeCost + ecsCost;
+  }
+
+  // Self-recovery helper methods
+  isStuck(): boolean {
+    if (!this.isActive() || !this.lastHeartbeatAt) return false;
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    return this.lastHeartbeatAt < fifteenMinutesAgo;
+  }
+
+  isGloballyTimedOut(): boolean {
+    if (!this.globalTimeoutAt) return false;
+    return new Date() > this.globalTimeoutAt;
+  }
+
+  isReadyForRetry(): boolean {
+    if (!this.nextRetryAt) return false;
+    return new Date() >= this.nextRetryAt && this.canRetry();
+  }
+
+  getNextBackoffSeconds(): number {
+    // Exponential backoff: 60s, 120s, 240s, 480s, 960s, 1920s, 3600s (max 1hr)
+    const nextBackoff = this.retryBackoffSeconds * 2;
+    return Math.min(nextBackoff, 3600); // Cap at 1 hour
+  }
+
+  scheduleRetry(): { nextRetryAt: Date; backoffSeconds: number } {
+    const backoffSeconds = this.getNextBackoffSeconds();
+    const nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
+    return { nextRetryAt, backoffSeconds };
   }
 }

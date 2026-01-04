@@ -414,3 +414,170 @@ resource "aws_ecs_task_definition" "executor" {
     Component   = "ai-workers"
   }
 }
+
+# =============================================================================
+# AI Worker Watcher Lambda (Self-Recovery System)
+# =============================================================================
+
+resource "aws_cloudwatch_log_group" "watcher" {
+  count             = var.enable_watcher ? 1 : 0
+  name              = "/aws/lambda/${local.name_prefix}-ai-worker-watcher"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-watcher-logs"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+resource "aws_iam_role" "watcher_lambda" {
+  count       = var.enable_watcher ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-watcher-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-watcher-role"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+resource "aws_iam_role_policy" "watcher_lambda" {
+  count       = var.enable_watcher ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-watcher-"
+  role        = aws_iam_role.watcher_lambda[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.name_prefix}-ai-worker-watcher:*"
+      },
+      # ECS - Stop stuck tasks
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:StopTask",
+          "ecs:DescribeTasks"
+        ]
+        Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${var.ecs_cluster_name}/*"
+      },
+      # SQS - Send retry messages
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:GetQueueUrl"
+        ]
+        Resource = aws_sqs_queue.ai_worker_tasks.arn
+      },
+      # Secrets Manager - Database credentials
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = var.database_secret_arn != "" ? [var.database_secret_arn] : []
+      },
+      # VPC access (for RDS in private subnet)
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Lambda function - Note: The actual code deployment is handled separately
+# This creates the Lambda configuration, but the code needs to be built and uploaded
+resource "aws_lambda_function" "watcher" {
+  count         = var.enable_watcher ? 1 : 0
+  function_name = "${local.name_prefix}-ai-worker-watcher"
+  description   = "AI Worker Watcher - detects stuck tasks, handles retries, and enforces timeouts"
+  role          = aws_iam_role.watcher_lambda[0].arn
+  handler       = "ai-worker-watcher.handler"
+  runtime       = "nodejs18.x"
+  timeout       = 60
+  memory_size   = 256
+
+  # Placeholder - actual code is deployed via CI/CD
+  filename         = "${path.module}/placeholder.zip"
+  source_code_hash = filebase64sha256("${path.module}/placeholder.zip")
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = var.security_group_ids
+  }
+
+  environment {
+    variables = {
+      AWS_REGION           = var.aws_region
+      ECS_CLUSTER_NAME     = var.ecs_cluster_name
+      AI_WORKER_QUEUE_URL  = aws_sqs_queue.ai_worker_tasks.url
+      DATABASE_SECRET_ARN  = var.database_secret_arn
+    }
+  }
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-watcher"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+
+  depends_on = [aws_cloudwatch_log_group.watcher]
+}
+
+# CloudWatch Events Rule - Trigger every 5 minutes
+resource "aws_cloudwatch_event_rule" "watcher_schedule" {
+  count               = var.enable_watcher ? 1 : 0
+  name                = "${local.name_prefix}-ai-worker-watcher-schedule"
+  description         = "Trigger AI Worker Watcher Lambda every 5 minutes"
+  schedule_expression = var.watcher_schedule
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-watcher-schedule"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "watcher" {
+  count     = var.enable_watcher ? 1 : 0
+  rule      = aws_cloudwatch_event_rule.watcher_schedule[0].name
+  target_id = "ai-worker-watcher"
+  arn       = aws_lambda_function.watcher[0].arn
+}
+
+resource "aws_lambda_permission" "watcher_cloudwatch" {
+  count         = var.enable_watcher ? 1 : 0
+  statement_id  = "AllowCloudWatchEventsInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.watcher[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.watcher_schedule[0].arn
+}

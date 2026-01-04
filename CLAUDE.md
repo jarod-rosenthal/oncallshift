@@ -38,6 +38,44 @@ OnCallShift is a production incident management platform deployed at https://onc
 3. **Background agents**: Use `run_in_background: true` for long-running tasks
 4. **Collect results**: Use `TaskOutput` to gather parallel agent results before proceeding
 
+### Progress Tracking for Long Tasks
+
+**CRITICAL: For multi-phase implementations, track progress in a markdown file.**
+
+When working on large features that span multiple files or may be interrupted:
+
+1. **Create a progress file** at `.claude/progress/<feature-name>.md`
+2. **Update after each phase** with:
+   - Completed items (checked boxes)
+   - Current status
+   - Next steps
+   - Any blockers or issues encountered
+3. **Reference the plan file** if one exists in `docs/` or `.claude/plans/`
+
+**Progress file template:**
+```markdown
+# Feature: <name>
+**Plan:** docs/<plan-file>.md
+**Started:** YYYY-MM-DD
+**Status:** In Progress | Blocked | Complete
+
+## Completed
+- [x] Phase 1: Database migration
+- [x] Phase 2: API endpoints
+
+## In Progress
+- [ ] Phase 3: Frontend UI
+
+## Next Steps
+1. Create TaskDetailModal component
+2. Add action buttons to Control Center
+
+## Issues/Blockers
+- None currently
+```
+
+This ensures work can be resumed if the session is interrupted.
+
 ## Slash Commands
 
 **Use slash commands for common workflows.** Commands are in `.claude/commands/` and pre-compute context for efficiency.

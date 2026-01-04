@@ -69,3 +69,4 @@ export * from './AIWorkerInstance';
 export * from './AIWorkerTaskLog';
 export * from './AIWorkerConversation';
 export * from './AIWorkerApproval';
+export * from './AIWorkerTaskRun';
