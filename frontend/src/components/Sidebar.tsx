@@ -214,7 +214,6 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
         { path: '/runbooks', label: 'Runbooks', icon: <Icons.Book />, adminOnly: true },
         { path: '/routing-rules', label: 'Routing Rules', icon: <Icons.ArrowUp />, adminOnly: true },
         { path: '/workflows', label: 'Workflows', icon: <Icons.Settings />, adminOnly: true },
-        { path: '/ai-workers', label: 'AI Workers', icon: <Icons.Robot />, adminOnly: true },
       ],
     },
     {

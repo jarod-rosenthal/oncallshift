@@ -1,184 +1,257 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
-import { Organization } from './Organization';
-import { AIWorkerInstance } from './AIWorkerInstance';
-import { AIWorkerTaskLog } from './AIWorkerTaskLog';
-import { AIWorkerConversation } from './AIWorkerConversation';
-import { AIWorkerApproval } from './AIWorkerApproval';
-import { AIWorkerTaskRun } from './AIWorkerTaskRun';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+} from "typeorm";
+import { Organization } from "./Organization";
+import { AIWorkerInstance } from "./AIWorkerInstance";
+import { AIWorkerTaskLog } from "./AIWorkerTaskLog";
+import { AIWorkerConversation } from "./AIWorkerConversation";
+import { AIWorkerApproval } from "./AIWorkerApproval";
+import { AIWorkerTaskRun } from "./AIWorkerTaskRun";
 
-export type AIWorkerPersona = 'developer' | 'qa_engineer' | 'devops' | 'tech_writer' | 'support' | 'pm';
+export type AIWorkerPersona =
+  | "frontend_developer"
+  | "backend_developer"
+  | "devops_engineer"
+  | "security_engineer"
+  | "qa_engineer"
+  | "tech_writer"
+  | "project_manager";
 
 export type AIWorkerTaskStatus =
-  | 'queued'           // Waiting in queue
-  | 'claimed'          // Worker picked up task
-  | 'environment_setup' // Fargate task starting
-  | 'executing'        // Claude agent running
-  | 'pr_created'       // PR created, awaiting review
-  | 'review_pending'   // Waiting for human approval
-  | 'review_approved'  // Approved, merging
-  | 'review_rejected'  // Rejected, needs changes
-  | 'completed'        // Successfully finished
-  | 'failed'           // Error occurred
-  | 'blocked'          // Cannot proceed (missing info, etc.)
-  | 'cancelled';       // Manually cancelled
+  | "queued" // Waiting in queue
+  | "claimed" // Worker picked up task
+  | "environment_setup" // Fargate task starting
+  | "executing" // Claude agent running
+  | "pr_created" // PR created, awaiting review
+  | "manager_review" // Virtual Manager reviewing PR
+  | "revision_needed" // Manager requested changes, worker picks back up
+  | "review_pending" // Waiting for human approval (fallback)
+  | "review_approved" // Approved, merging
+  | "review_rejected" // Rejected, needs changes
+  | "completed" // Successfully finished
+  | "failed" // Error occurred
+  | "blocked" // Cannot proceed (missing info, etc.)
+  | "cancelled"; // Manually cancelled
 
-@Entity('ai_worker_tasks')
+@Entity("ai_worker_tasks")
 export class AIWorkerTask {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
-  @Column({ name: 'org_id', type: 'uuid' })
+  @Column({ name: "org_id", type: "uuid" })
   orgId: string;
 
   // Jira task reference
-  @Column({ name: 'jira_issue_key', type: 'varchar', length: 50 })
-  jiraIssueKey: string;  // e.g., "OCS-123"
+  @Column({ name: "jira_issue_key", type: "varchar", length: 50 })
+  jiraIssueKey: string; // e.g., "OCS-123"
 
-  @Column({ name: 'jira_issue_id', type: 'varchar', length: 50 })
+  @Column({ name: "jira_issue_id", type: "varchar", length: 50 })
   jiraIssueId: string;
 
-  @Column({ name: 'jira_project_key', type: 'varchar', length: 20 })
+  @Column({ name: "jira_project_key", type: "varchar", length: 20 })
   jiraProjectKey: string;
 
-  @Column({ name: 'jira_project_type', type: 'varchar', length: 50 })
+  @Column({ name: "jira_project_type", type: "varchar", length: 50 })
   jiraProjectType: string; // 'software', 'service_desk', 'business'
 
-  @Column({ name: 'jira_issue_type', type: 'varchar', length: 50 })
-  jiraIssueType: string;  // 'Story', 'Bug', 'Task', 'Epic', etc.
+  @Column({ name: "jira_issue_type", type: "varchar", length: 50 })
+  jiraIssueType: string; // 'Story', 'Bug', 'Task', 'Epic', etc.
 
   // Task content from Jira
-  @Column({ type: 'varchar', length: 500 })
+  @Column({ type: "varchar", length: 500 })
   summary: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   description: string | null;
 
-  @Column({ name: 'jira_fields', type: 'jsonb', default: '{}' })
-  jiraFields: Record<string, any>;  // Full Jira issue fields
+  @Column({ name: "jira_fields", type: "jsonb", default: "{}" })
+  jiraFields: Record<string, any>; // Full Jira issue fields
 
   // Worker assignment
-  @Column({ name: 'worker_persona', type: 'varchar', length: 50 })
+  @Column({ name: "worker_persona", type: "varchar", length: 50 })
   workerPersona: AIWorkerPersona;
 
-  @Column({ name: 'assigned_worker_id', type: 'uuid', nullable: true })
+  @Column({ name: "assigned_worker_id", type: "uuid", nullable: true })
   assignedWorkerId: string | null;
 
   // Execution state
-  @Column({ type: 'varchar', length: 30, default: 'queued' })
+  @Column({ type: "varchar", length: 30, default: "queued" })
   status: AIWorkerTaskStatus;
 
-  @Column({ type: 'int', default: 3 })
-  priority: number;  // 1=highest, 5=lowest
+  @Column({ type: "int", default: 3 })
+  priority: number; // 1=highest, 5=lowest
 
   // GitHub integration
-  @Column({ name: 'github_repo', type: 'varchar', length: 255 })
-  githubRepo: string;  // e.g., "owner/repo"
+  @Column({ name: "github_repo", type: "varchar", length: 255 })
+  githubRepo: string; // e.g., "owner/repo"
 
-  @Column({ name: 'github_branch', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: "github_branch",
+    type: "varchar",
+    length: 255,
+    nullable: true,
+  })
   githubBranch: string | null;
 
-  @Column({ name: 'github_pr_number', type: 'int', nullable: true })
+  @Column({ name: "github_pr_number", type: "int", nullable: true })
   githubPrNumber: number | null;
 
-  @Column({ name: 'github_pr_url', type: 'varchar', length: 500, nullable: true })
+  @Column({
+    name: "github_pr_url",
+    type: "varchar",
+    length: 500,
+    nullable: true,
+  })
   githubPrUrl: string | null;
 
   // ECS task tracking (replaces Codespace)
-  @Column({ name: 'ecs_task_arn', type: 'varchar', length: 500, nullable: true })
+  @Column({
+    name: "ecs_task_arn",
+    type: "varchar",
+    length: 500,
+    nullable: true,
+  })
   ecsTaskArn: string | null;
 
-  @Column({ name: 'ecs_task_id', type: 'varchar', length: 100, nullable: true })
+  @Column({ name: "ecs_task_id", type: "varchar", length: 100, nullable: true })
   ecsTaskId: string | null;
 
   // Cost tracking
-  @Column({ name: 'claude_input_tokens', type: 'int', default: 0 })
+  @Column({ name: "claude_input_tokens", type: "int", default: 0 })
   claudeInputTokens: number;
 
-  @Column({ name: 'claude_output_tokens', type: 'int', default: 0 })
+  @Column({ name: "claude_output_tokens", type: "int", default: 0 })
   claudeOutputTokens: number;
 
-  @Column({ name: 'ecs_task_seconds', type: 'int', default: 0 })
+  @Column({ name: "ecs_task_seconds", type: "int", default: 0 })
   ecsTaskSeconds: number;
 
-  @Column({ name: 'estimated_cost_usd', type: 'decimal', precision: 10, scale: 4, default: 0 })
+  @Column({
+    name: "estimated_cost_usd",
+    type: "decimal",
+    precision: 10,
+    scale: 4,
+    default: 0,
+  })
   estimatedCostUsd: number;
 
   // Execution metadata
-  @Column({ name: 'started_at', type: 'timestamp', nullable: true })
+  @Column({ name: "started_at", type: "timestamp", nullable: true })
   startedAt: Date | null;
 
-  @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
+  @Column({ name: "completed_at", type: "timestamp", nullable: true })
   completedAt: Date | null;
 
-  @Column({ name: 'error_message', type: 'text', nullable: true })
+  @Column({ name: "error_message", type: "text", nullable: true })
   errorMessage: string | null;
 
-  @Column({ name: 'retry_count', type: 'int', default: 0 })
+  @Column({ name: "retry_count", type: "int", default: 0 })
   retryCount: number;
 
-  @Column({ name: 'max_retries', type: 'int', default: 3 })
+  @Column({ name: "max_retries", type: "int", default: 3 })
   maxRetries: number;
 
   // Self-recovery fields
-  @Column({ name: 'last_heartbeat_at', type: 'timestamp', nullable: true })
+  @Column({ name: "last_heartbeat_at", type: "timestamp", nullable: true })
   lastHeartbeatAt: Date | null;
 
-  @Column({ name: 'previous_run_context', type: 'text', nullable: true })
+  @Column({ name: "previous_run_context", type: "text", nullable: true })
   previousRunContext: string | null;
 
-  @Column({ name: 'global_timeout_at', type: 'timestamp', nullable: true })
+  @Column({ name: "global_timeout_at", type: "timestamp", nullable: true })
   globalTimeoutAt: Date | null;
 
-  @Column({ name: 'next_retry_at', type: 'timestamp', nullable: true })
+  @Column({ name: "next_retry_at", type: "timestamp", nullable: true })
   nextRetryAt: Date | null;
 
-  @Column({ name: 'retry_backoff_seconds', type: 'int', default: 60 })
+  @Column({ name: "retry_backoff_seconds", type: "int", default: 60 })
   retryBackoffSeconds: number;
 
-  @Column({ name: 'failure_category', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: "failure_category",
+    type: "varchar",
+    length: 50,
+    nullable: true,
+  })
   failureCategory: string | null;
 
-  @Column({ name: 'watcher_notes', type: 'text', nullable: true })
+  @Column({ name: "watcher_notes", type: "text", nullable: true })
   watcherNotes: string | null;
 
-  @CreateDateColumn({ name: 'created_at' })
+  // Virtual Manager review fields
+  @Column({ name: "review_requested_at", type: "timestamp", nullable: true })
+  reviewRequestedAt: Date | null;
+
+  @Column({ name: "reviewer_manager_id", type: "uuid", nullable: true })
+  reviewerManagerId: string | null;
+
+  @Column({ name: "review_feedback", type: "text", nullable: true })
+  reviewFeedback: string | null;
+
+  @Column({ name: "revision_count", type: "int", default: 0 })
+  revisionCount: number;
+
+  @Column({
+    name: "worker_model",
+    type: "varchar",
+    length: 50,
+    default: "claude-sonnet-4-20250514",
+  })
+  workerModel: string;
+
+  @Column({
+    name: "manager_review_model",
+    type: "varchar",
+    length: 50,
+    nullable: true,
+  })
+  managerReviewModel: string | null;
+
+  @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt: Date;
 
   // Relations
-  @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'org_id' })
+  @ManyToOne(() => Organization, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "org_id" })
   organization: Organization;
 
   @ManyToOne(() => AIWorkerInstance, { nullable: true })
-  @JoinColumn({ name: 'assigned_worker_id' })
+  @JoinColumn({ name: "assigned_worker_id" })
   assignedWorker: AIWorkerInstance | null;
 
-  @OneToMany(() => AIWorkerTaskLog, log => log.task)
+  @OneToMany(() => AIWorkerTaskLog, (log) => log.task)
   logs: AIWorkerTaskLog[];
 
-  @OneToMany(() => AIWorkerConversation, conv => conv.task)
+  @OneToMany(() => AIWorkerConversation, (conv) => conv.task)
   conversations: AIWorkerConversation[];
 
-  @OneToMany(() => AIWorkerApproval, approval => approval.task)
+  @OneToMany(() => AIWorkerApproval, (approval) => approval.task)
   approvals: AIWorkerApproval[];
 
-  @OneToMany(() => AIWorkerTaskRun, run => run.task)
+  @OneToMany(() => AIWorkerTaskRun, (run) => run.task)
   runs: AIWorkerTaskRun[];
 
   // Helper methods
   isActive(): boolean {
-    return ['claimed', 'environment_setup', 'executing'].includes(this.status);
+    return ["claimed", "environment_setup", "executing"].includes(this.status);
   }
 
   isComplete(): boolean {
-    return ['completed', 'failed', 'cancelled'].includes(this.status);
+    return ["completed", "failed", "cancelled"].includes(this.status);
   }
 
   canRetry(): boolean {
-    return this.status === 'failed' && this.retryCount < this.maxRetries;
+    return this.status === "failed" && this.retryCount < this.maxRetries;
   }
 
   canCancel(): boolean {
@@ -193,8 +266,9 @@ export class AIWorkerTask {
 
   calculateCost(): number {
     // Claude Sonnet pricing: $0.003/1K input, $0.015/1K output
-    const claudeCost = (this.claudeInputTokens / 1000) * 0.003 +
-                       (this.claudeOutputTokens / 1000) * 0.015;
+    const claudeCost =
+      (this.claudeInputTokens / 1000) * 0.003 +
+      (this.claudeOutputTokens / 1000) * 0.015;
 
     // Fargate Spot pricing: ~$0.04/hour for 2 vCPU, 4GB
     const ecsCost = (this.ecsTaskSeconds / 3600) * 0.04;
@@ -205,8 +279,9 @@ export class AIWorkerTask {
   // Self-recovery helper methods
   isStuck(): boolean {
     if (!this.isActive() || !this.lastHeartbeatAt) return false;
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-    return this.lastHeartbeatAt < fifteenMinutesAgo;
+    // 3-minute timeout for fast cleanup
+    const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
+    return this.lastHeartbeatAt < threeMinutesAgo;
   }
 
   isGloballyTimedOut(): boolean {
@@ -229,5 +304,42 @@ export class AIWorkerTask {
     const backoffSeconds = this.getNextBackoffSeconds();
     const nextRetryAt = new Date(Date.now() + backoffSeconds * 1000);
     return { nextRetryAt, backoffSeconds };
+  }
+
+  // Virtual Manager helper methods
+  needsManagerReview(): boolean {
+    return this.status === "pr_created" && this.githubPrUrl !== null;
+  }
+
+  isUnderManagerReview(): boolean {
+    return this.status === "manager_review";
+  }
+
+  needsRevision(): boolean {
+    return this.status === "revision_needed";
+  }
+
+  requestManagerReview(): void {
+    this.status = "manager_review";
+    this.reviewRequestedAt = new Date();
+  }
+
+  approveByManager(managerId: string, feedback: string): void {
+    this.status = "review_approved";
+    this.reviewerManagerId = managerId;
+    this.reviewFeedback = feedback;
+  }
+
+  requestRevision(managerId: string, feedback: string): void {
+    this.status = "revision_needed";
+    this.reviewerManagerId = managerId;
+    this.reviewFeedback = feedback;
+    this.revisionCount++;
+  }
+
+  rejectByManager(managerId: string, feedback: string): void {
+    this.status = "review_rejected";
+    this.reviewerManagerId = managerId;
+    this.reviewFeedback = feedback;
   }
 }

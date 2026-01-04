@@ -108,3 +108,41 @@ variable "watcher_schedule" {
   type        = string
   default     = "rate(5 minutes)"
 }
+
+variable "enable_manager" {
+  description = "Enable the AI Worker Manager Lambda (Virtual Manager for PR reviews)"
+  type        = bool
+  default     = true
+}
+
+variable "manager_schedule" {
+  description = "CloudWatch Events schedule expression for the Manager Lambda"
+  type        = string
+  default     = "rate(2 minutes)"
+}
+
+variable "anthropic_api_key" {
+  description = "Anthropic API key for the Manager Lambda (uses Opus for PR reviews)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_token" {
+  description = "GitHub token for fetching PR diffs"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "lambda_security_group_ids" {
+  description = "Security group IDs for Lambda functions in VPC"
+  type        = list(string)
+  default     = []
+}
+
+variable "jira_credentials_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing Jira API credentials (baseUrl, email, apiToken)"
+  type        = string
+  default     = ""
+}

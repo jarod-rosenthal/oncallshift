@@ -4,20 +4,26 @@
  * Manage AI worker tasks (Jira issues being processed)
  */
 
-import { Router, Request, Response } from 'express';
-import { body, param, query, validationResult } from 'express-validator';
-import { authenticateRequest } from '../../shared/auth/middleware';
-import { getDataSource } from '../../shared/db/data-source';
-import { AIWorkerTask, AIWorkerTaskStatus } from '../../shared/models/AIWorkerTask';
-import { AIWorkerTaskLog } from '../../shared/models/AIWorkerTaskLog';
-import { AIWorkerConversation } from '../../shared/models/AIWorkerConversation';
-import { AIWorkerInstance } from '../../shared/models/AIWorkerInstance';
-import { logger } from '../../shared/utils/logger';
-import { setLocationHeader } from '../../shared/utils/location-header';
-import { parsePaginationParams, paginatedResponse } from '../../shared/utils/pagination';
-import { paginationValidators } from '../../shared/validators/pagination';
-import { SQS, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { In } from 'typeorm';
+import { Router, Request, Response } from "express";
+import { body, param, query, validationResult } from "express-validator";
+import { authenticateRequest } from "../../shared/auth/middleware";
+import { getDataSource } from "../../shared/db/data-source";
+import {
+  AIWorkerTask,
+  AIWorkerTaskStatus,
+} from "../../shared/models/AIWorkerTask";
+import { AIWorkerTaskLog } from "../../shared/models/AIWorkerTaskLog";
+import { AIWorkerConversation } from "../../shared/models/AIWorkerConversation";
+import { AIWorkerInstance } from "../../shared/models/AIWorkerInstance";
+import { logger } from "../../shared/utils/logger";
+import { setLocationHeader } from "../../shared/utils/location-header";
+import {
+  parsePaginationParams,
+  paginatedResponse,
+} from "../../shared/utils/pagination";
+import { paginationValidators } from "../../shared/validators/pagination";
+import { SQS, SendMessageCommand } from "@aws-sdk/client-sqs";
+import { In } from "typeorm";
 
 const router = Router();
 
@@ -25,7 +31,7 @@ const router = Router();
 router.use(authenticateRequest);
 
 // Initialize SQS client
-const sqs = new SQS({ region: process.env.AWS_REGION || 'us-east-1' });
+const sqs = new SQS({ region: process.env.AWS_REGION || "us-east-1" });
 const queueUrl = process.env.AI_WORKER_QUEUE_URL;
 
 /**
@@ -33,7 +39,7 @@ const queueUrl = process.env.AI_WORKER_QUEUE_URL;
  * Get summary statistics for tasks
  * NOTE: This route MUST be defined before /:id to avoid "summary" being matched as a UUID
  */
-router.get('/summary', async (req: Request, res: Response) => {
+router.get("/summary", async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
 
@@ -43,110 +49,391 @@ router.get('/summary', async (req: Request, res: Response) => {
 
     // Count tasks by status
     const statusCounts = await taskRepo
-      .createQueryBuilder('task')
-      .select('task.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .where('task.org_id = :orgId', { orgId })
-      .groupBy('task.status')
+      .createQueryBuilder("task")
+      .select("task.status", "status")
+      .addSelect("COUNT(*)", "count")
+      .where("task.org_id = :orgId", { orgId })
+      .groupBy("task.status")
       .getRawMany();
 
     // Calculate total cost
     const costResult = await taskRepo
-      .createQueryBuilder('task')
-      .select('SUM(task.estimated_cost_usd)', 'totalCost')
-      .where('task.org_id = :orgId', { orgId })
+      .createQueryBuilder("task")
+      .select("SUM(task.estimated_cost_usd)", "totalCost")
+      .where("task.org_id = :orgId", { orgId })
       .getRawOne();
 
     // Get worker counts
     const workerCounts = await workerRepo
-      .createQueryBuilder('worker')
-      .select('worker.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .where('worker.org_id = :orgId', { orgId })
-      .groupBy('worker.status')
+      .createQueryBuilder("worker")
+      .select("worker.status", "status")
+      .addSelect("COUNT(*)", "count")
+      .where("worker.org_id = :orgId", { orgId })
+      .groupBy("worker.status")
       .getRawMany();
 
     return res.json({
       tasks: {
-        byStatus: statusCounts.reduce((acc, { status, count }) => {
-          acc[status] = parseInt(count, 10);
-          return acc;
-        }, {} as Record<string, number>),
-        totalCostUsd: parseFloat(costResult?.totalCost || '0'),
+        byStatus: statusCounts.reduce(
+          (acc, { status, count }) => {
+            acc[status] = parseInt(count, 10);
+            return acc;
+          },
+          {} as Record<string, number>,
+        ),
+        totalCostUsd: parseFloat(costResult?.totalCost || "0"),
       },
       workers: {
-        byStatus: workerCounts.reduce((acc, { status, count }) => {
-          acc[status] = parseInt(count, 10);
-          return acc;
-        }, {} as Record<string, number>),
+        byStatus: workerCounts.reduce(
+          (acc, { status, count }) => {
+            acc[status] = parseInt(count, 10);
+            return acc;
+          },
+          {} as Record<string, number>,
+        ),
       },
     });
   } catch (error) {
-    logger.error('Error fetching task summary:', error);
-    return res.status(500).json({ error: 'Failed to fetch task summary' });
+    logger.error("Error fetching task summary:", error);
+    return res.status(500).json({ error: "Failed to fetch task summary" });
   }
 });
+
+// Helper to fetch Jira issue details
+async function fetchJiraIssue(issueKey: string): Promise<{
+  id: string;
+  summary: string;
+  description: string | null;
+  issueType: string;
+  projectKey: string;
+  priority: string | null;
+  fields: Record<string, any>;
+} | null> {
+  try {
+    const jiraBaseUrl =
+      process.env.JIRA_BASE_URL || "https://oncallshift.atlassian.net";
+    const jiraEmail = process.env.JIRA_EMAIL;
+    const jiraApiToken = process.env.JIRA_API_TOKEN;
+
+    if (!jiraEmail || !jiraApiToken) {
+      logger.warn("Jira credentials not configured, using defaults");
+      return null;
+    }
+
+    const credentials = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString(
+      "base64",
+    );
+    const response = await fetch(
+      `${jiraBaseUrl}/rest/api/3/issue/${issueKey}`,
+      {
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    if (!response.ok) {
+      logger.warn(`Failed to fetch Jira issue ${issueKey}: ${response.status}`);
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      id: string;
+      fields: {
+        summary: string;
+        description?: { content?: any[] };
+        issuetype?: { name: string };
+        project?: { key: string };
+        priority?: { name: string };
+        [key: string]: any;
+      };
+    };
+
+    // Extract plain text from Atlassian Document Format
+    let description: string | null = null;
+    if (data.fields.description?.content) {
+      description = extractTextFromADF(data.fields.description.content);
+    }
+
+    return {
+      id: data.id,
+      summary: data.fields.summary,
+      description,
+      issueType: data.fields.issuetype?.name || "Task",
+      projectKey: data.fields.project?.key || issueKey.split("-")[0],
+      priority: data.fields.priority?.name || null,
+      fields: data.fields,
+    };
+  } catch (error) {
+    logger.error("Error fetching Jira issue:", error);
+    return null;
+  }
+}
+
+// Extract plain text from Atlassian Document Format
+function extractTextFromADF(content: any[]): string {
+  const parts: string[] = [];
+
+  for (const node of content) {
+    if (node.type === "paragraph" && node.content) {
+      for (const child of node.content) {
+        if (child.type === "text") {
+          parts.push(child.text);
+        }
+      }
+      parts.push("\n");
+    } else if (node.type === "bulletList" && node.content) {
+      for (const item of node.content) {
+        if (item.type === "listItem" && item.content) {
+          parts.push("• " + extractTextFromADF(item.content).trim());
+          parts.push("\n");
+        }
+      }
+    } else if (node.type === "orderedList" && node.content) {
+      let i = 1;
+      for (const item of node.content) {
+        if (item.type === "listItem" && item.content) {
+          parts.push(`${i}. ` + extractTextFromADF(item.content).trim());
+          parts.push("\n");
+          i++;
+        }
+      }
+    } else if (node.type === "heading" && node.content) {
+      const level = node.attrs?.level || 1;
+      parts.push("#".repeat(level) + " ");
+      for (const child of node.content) {
+        if (child.type === "text") {
+          parts.push(child.text);
+        }
+      }
+      parts.push("\n\n");
+    } else if (node.type === "codeBlock" && node.content) {
+      parts.push("```\n");
+      for (const child of node.content) {
+        if (child.type === "text") {
+          parts.push(child.text);
+        }
+      }
+      parts.push("\n```\n");
+    }
+  }
+
+  return parts.join("").trim();
+}
+
+// Priority mapping (Jira priority to 1-5 scale)
+const PRIORITY_MAPPING: Record<string, number> = {
+  Highest: 1,
+  High: 2,
+  Medium: 3,
+  Low: 4,
+  Lowest: 5,
+};
+
+/**
+ * POST /api/v1/ai-worker-tasks/trigger
+ * Quick trigger to create and queue a task from just a Jira issue key
+ * Fetches issue details from Jira automatically
+ */
+router.post(
+  "/trigger",
+  [
+    body("jiraIssueKey")
+      .isString()
+      .matches(/^[A-Z]+-\d+$/)
+      .withMessage("Invalid Jira issue key format (e.g., OCS-30)"),
+    body("workerPersona")
+      .optional()
+      .isIn([
+        "frontend_developer",
+        "backend_developer",
+        "devops_engineer",
+        "security_engineer",
+        "qa_engineer",
+        "tech_writer",
+        "project_manager",
+      ])
+      .withMessage("Invalid persona"),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const orgId = req.orgId!;
+      const { jiraIssueKey, workerPersona = "backend_developer" } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      // Check for existing active task
+      const existing = await taskRepo.findOne({
+        where: {
+          orgId,
+          jiraIssueKey,
+          status: In([
+            "queued",
+            "claimed",
+            "environment_setup",
+            "executing",
+            "pr_created",
+            "manager_review",
+            "revision_needed",
+          ]),
+        },
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: "Task already in progress for this Jira issue",
+          existingTaskId: existing.id,
+          status: existing.status,
+        });
+      }
+
+      // Fetch Jira issue details
+      const jiraIssue = await fetchJiraIssue(jiraIssueKey);
+
+      // Create the task with Jira details if available
+      const task = taskRepo.create({
+        orgId,
+        jiraIssueKey,
+        jiraIssueId: jiraIssue?.id || jiraIssueKey,
+        jiraProjectKey: jiraIssue?.projectKey || jiraIssueKey.split("-")[0],
+        jiraProjectType: "software",
+        jiraIssueType: jiraIssue?.issueType || "Task",
+        summary: jiraIssue?.summary || `Task for ${jiraIssueKey}`,
+        description: jiraIssue?.description || null,
+        jiraFields: jiraIssue?.fields || {},
+        workerPersona,
+        githubRepo: "jarod-rosenthal/pagerduty-lite",
+        priority: jiraIssue?.priority
+          ? PRIORITY_MAPPING[jiraIssue.priority] || 3
+          : 3,
+        status: "queued",
+      });
+
+      await taskRepo.save(task);
+
+      // Queue the task for execution
+      if (queueUrl) {
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: "execute" }),
+          }),
+        );
+        logger.info(`Task ${task.id} queued for execution`, {
+          jiraIssueKey,
+          workerPersona,
+        });
+      } else {
+        logger.warn("No queue URL configured, task created but not queued", {
+          taskId: task.id,
+        });
+      }
+
+      setLocationHeader(res, req, "/api/v1/ai-worker-tasks", task.id);
+      return res.status(201).json({
+        message: "Task created and queued",
+        taskId: task.id,
+        jiraIssueKey,
+        workerPersona,
+        status: task.status,
+      });
+    } catch (error) {
+      logger.error("Error triggering AI worker task:", error);
+      return res.status(500).json({ error: "Failed to trigger task" });
+    }
+  },
+);
 
 /**
  * GET /api/v1/ai-worker-tasks
  * List all AI worker tasks for the organization
  */
-router.get('/', [...paginationValidators], async (req: Request, res: Response) => {
-  try {
-    const orgId = req.orgId!;
-    const pagination = parsePaginationParams(req.query);
-    const sortField = pagination.sort || 'createdAt';
-    const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
+router.get(
+  "/",
+  [...paginationValidators],
+  async (req: Request, res: Response) => {
+    try {
+      const orgId = req.orgId!;
+      const pagination = parsePaginationParams(req.query);
+      const sortField = pagination.sort || "createdAt";
+      const sortOrder = pagination.order === "asc" ? "ASC" : "DESC";
 
-    // Filters
-    const status = req.query.status as AIWorkerTaskStatus | undefined;
-    const persona = req.query.persona as string | undefined;
-    const jiraProjectKey = req.query.project as string | undefined;
+      // Filters
+      const status = req.query.status as AIWorkerTaskStatus | undefined;
+      const persona = req.query.persona as string | undefined;
+      const jiraProjectKey = req.query.project as string | undefined;
 
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-    const where: any = { orgId };
-    if (status) where.status = status;
-    if (persona) where.workerPersona = persona;
-    if (jiraProjectKey) where.jiraProjectKey = jiraProjectKey;
+      const where: any = { orgId };
+      if (status) where.status = status;
+      if (persona) where.workerPersona = persona;
+      if (jiraProjectKey) where.jiraProjectKey = jiraProjectKey;
 
-    const [tasks, total] = await taskRepo.findAndCount({
-      where,
-      relations: ['assignedWorker'],
-      order: { [sortField]: sortOrder },
-      skip: pagination.offset,
-      take: pagination.limit,
-    });
+      const [tasks, total] = await taskRepo.findAndCount({
+        where,
+        relations: ["assignedWorker"],
+        order: { [sortField]: sortOrder },
+        skip: pagination.offset,
+        take: pagination.limit,
+      });
 
-    const lastItem = tasks[tasks.length - 1];
-    return res.json(paginatedResponse(
-      tasks.map(formatTask),
-      total,
-      pagination,
-      lastItem ? { id: lastItem.id, createdAt: lastItem.createdAt } : undefined,
-      'tasks'
-    ));
-  } catch (error) {
-    logger.error('Error fetching AI worker tasks:', error);
-    return res.status(500).json({ error: 'Failed to fetch AI worker tasks' });
-  }
-});
+      const lastItem = tasks[tasks.length - 1];
+      return res.json(
+        paginatedResponse(
+          tasks.map(formatTask),
+          total,
+          pagination,
+          lastItem
+            ? { id: lastItem.id, createdAt: lastItem.createdAt }
+            : undefined,
+          "tasks",
+        ),
+      );
+    } catch (error) {
+      logger.error("Error fetching AI worker tasks:", error);
+      return res.status(500).json({ error: "Failed to fetch AI worker tasks" });
+    }
+  },
+);
 
 /**
  * POST /api/v1/ai-worker-tasks
  * Manually create a task (bypassing Jira webhook)
  */
 router.post(
-  '/',
+  "/",
   [
-    body('jiraIssueKey').isString().matches(/^[A-Z]+-\d+$/).withMessage('Invalid Jira issue key format'),
-    body('summary').isString().isLength({ min: 1, max: 500 }).withMessage('Summary is required'),
-    body('description').optional().isString(),
-    body('workerPersona').isIn(['developer', 'qa_engineer', 'devops', 'tech_writer', 'support', 'pm'])
-      .withMessage('Invalid persona'),
-    body('githubRepo').isString().withMessage('GitHub repo is required'),
-    body('priority').optional().isInt({ min: 1, max: 5 }),
+    body("jiraIssueKey")
+      .isString()
+      .matches(/^[A-Z]+-\d+$/)
+      .withMessage("Invalid Jira issue key format"),
+    body("summary")
+      .isString()
+      .isLength({ min: 1, max: 500 })
+      .withMessage("Summary is required"),
+    body("description").optional().isString(),
+    body("workerPersona")
+      .isIn([
+        "frontend_developer",
+        "backend_developer",
+        "devops_engineer",
+        "security_engineer",
+        "qa_engineer",
+        "tech_writer",
+        "project_manager",
+      ])
+      .withMessage("Invalid persona"),
+    body("githubRepo").isString().withMessage("GitHub repo is required"),
+    body("priority").optional().isInt({ min: 1, max: 5 }),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -173,13 +460,20 @@ router.post(
         where: {
           orgId,
           jiraIssueKey,
-          status: In(['queued', 'claimed', 'environment_setup', 'executing', 'pr_created', 'awaiting_approval']),
+          status: In([
+            "queued",
+            "claimed",
+            "environment_setup",
+            "executing",
+            "pr_created",
+            "awaiting_approval",
+          ]),
         },
       });
 
       if (existing) {
         return res.status(409).json({
-          error: 'Task already exists for this Jira issue',
+          error: "Task already exists for this Jira issue",
           existingTaskId: existing.id,
         });
       }
@@ -188,34 +482,36 @@ router.post(
         orgId,
         jiraIssueKey,
         jiraIssueId: jiraIssueKey, // Placeholder when created manually
-        jiraProjectKey: jiraIssueKey.split('-')[0],
-        jiraProjectType: 'software',
-        jiraIssueType: 'Task',
+        jiraProjectKey: jiraIssueKey.split("-")[0],
+        jiraProjectType: "software",
+        jiraIssueType: "Task",
         summary,
         description,
         workerPersona,
         githubRepo,
         priority: priority || 3,
-        status: 'queued',
+        status: "queued",
       });
 
       await taskRepo.save(task);
 
       // Queue the task for execution
       if (queueUrl) {
-        await sqs.send(new SendMessageCommand({
-          QueueUrl: queueUrl,
-          MessageBody: JSON.stringify({ taskId: task.id, action: 'execute' }),
-        }));
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: "execute" }),
+          }),
+        );
       }
 
-      setLocationHeader(res, req, '/api/v1/ai-worker-tasks', task.id);
+      setLocationHeader(res, req, "/api/v1/ai-worker-tasks", task.id);
       return res.status(201).json(formatTask(task));
     } catch (error) {
-      logger.error('Error creating AI worker task:', error);
-      return res.status(500).json({ error: 'Failed to create AI worker task' });
+      logger.error("Error creating AI worker task:", error);
+      return res.status(500).json({ error: "Failed to create AI worker task" });
     }
-  }
+  },
 );
 
 /**
@@ -223,8 +519,8 @@ router.post(
  * Get a specific task
  */
 router.get(
-  '/:id',
-  [param('id').isUUID()],
+  "/:id",
+  [param("id").isUUID()],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
@@ -240,19 +536,19 @@ router.get(
 
       const task = await taskRepo.findOne({
         where: { id, orgId },
-        relations: ['assignedWorker', 'approvals'],
+        relations: ["assignedWorker", "approvals"],
       });
 
       if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: "Task not found" });
       }
 
       return res.json(formatTask(task));
     } catch (error) {
-      logger.error('Error fetching AI worker task:', error);
-      return res.status(500).json({ error: 'Failed to fetch AI worker task' });
+      logger.error("Error fetching AI worker task:", error);
+      return res.status(500).json({ error: "Failed to fetch AI worker task" });
     }
-  }
+  },
 );
 
 /**
@@ -260,11 +556,11 @@ router.get(
  * Get execution logs for a task
  */
 router.get(
-  '/:id/logs',
+  "/:id/logs",
   [
-    param('id').isUUID(),
-    query('type').optional().isString(),
-    query('severity').optional().isIn(['debug', 'info', 'warning', 'error']),
+    param("id").isUUID(),
+    query("type").optional().isString(),
+    query("severity").optional().isIn(["debug", "info", "warning", "error"]),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -287,7 +583,7 @@ router.get(
       });
 
       if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: "Task not found" });
       }
 
       const where: any = { taskId: id };
@@ -296,13 +592,13 @@ router.get(
 
       const logs = await logRepo.find({
         where,
-        order: { createdAt: 'ASC' },
+        order: { createdAt: "ASC" },
         take: 500, // Limit to 500 most recent logs
       });
 
       return res.json({
         taskId: id,
-        logs: logs.map(log => ({
+        logs: logs.map((log) => ({
           id: log.id,
           type: log.type,
           message: log.message,
@@ -318,10 +614,10 @@ router.get(
         })),
       });
     } catch (error) {
-      logger.error('Error fetching task logs:', error);
-      return res.status(500).json({ error: 'Failed to fetch task logs' });
+      logger.error("Error fetching task logs:", error);
+      return res.status(500).json({ error: "Failed to fetch task logs" });
     }
-  }
+  },
 );
 
 /**
@@ -329,8 +625,8 @@ router.get(
  * Get Claude conversation history for a task
  */
 router.get(
-  '/:id/conversation',
-  [param('id').isUUID()],
+  "/:id/conversation",
+  [param("id").isUUID()],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
@@ -351,12 +647,12 @@ router.get(
       });
 
       if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: "Task not found" });
       }
 
       const conversation = await conversationRepo.findOne({
         where: { taskId: id },
-        order: { createdAt: 'DESC' },
+        order: { createdAt: "DESC" },
       });
 
       if (!conversation) {
@@ -382,10 +678,12 @@ router.get(
         },
       });
     } catch (error) {
-      logger.error('Error fetching task conversation:', error);
-      return res.status(500).json({ error: 'Failed to fetch task conversation' });
+      logger.error("Error fetching task conversation:", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch task conversation" });
     }
-  }
+  },
 );
 
 /**
@@ -393,8 +691,8 @@ router.get(
  * Cancel a running task
  */
 router.post(
-  '/:id/cancel',
-  [param('id').isUUID()],
+  "/:id/cancel",
+  [param("id").isUUID()],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
@@ -413,27 +711,31 @@ router.post(
       });
 
       if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: "Task not found" });
       }
 
       if (!task.isActive()) {
-        return res.status(400).json({ error: 'Task is not active and cannot be cancelled' });
+        return res
+          .status(400)
+          .json({ error: "Task is not active and cannot be cancelled" });
       }
 
       // Send cancel message to orchestrator
       if (queueUrl) {
-        await sqs.send(new SendMessageCommand({
-          QueueUrl: queueUrl,
-          MessageBody: JSON.stringify({ taskId: task.id, action: 'cancel' }),
-        }));
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: "cancel" }),
+          }),
+        );
       }
 
-      return res.json({ message: 'Cancel request sent', taskId: task.id });
+      return res.json({ message: "Cancel request sent", taskId: task.id });
     } catch (error) {
-      logger.error('Error cancelling task:', error);
-      return res.status(500).json({ error: 'Failed to cancel task' });
+      logger.error("Error cancelling task:", error);
+      return res.status(500).json({ error: "Failed to cancel task" });
     }
-  }
+  },
 );
 
 /**
@@ -441,8 +743,8 @@ router.post(
  * Update task heartbeat timestamp (called by running ECS tasks)
  */
 router.post(
-  '/:id/heartbeat',
-  [param('id').isUUID()],
+  "/:id/heartbeat",
+  [param("id").isUUID()],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
@@ -461,14 +763,14 @@ router.post(
       });
 
       if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: "Task not found" });
       }
 
       // Update heartbeat timestamp
       task.lastHeartbeatAt = new Date();
       await taskRepo.save(task);
 
-      logger.debug('Heartbeat received for task', { taskId: id });
+      logger.debug("Heartbeat received for task", { taskId: id });
 
       return res.json({
         taskId: task.id,
@@ -476,10 +778,114 @@ router.post(
         status: task.status,
       });
     } catch (error) {
-      logger.error('Error updating task heartbeat:', error);
-      return res.status(500).json({ error: 'Failed to update heartbeat' });
+      logger.error("Error updating task heartbeat:", error);
+      return res.status(500).json({ error: "Failed to update heartbeat" });
     }
-  }
+  },
+);
+
+/**
+ * POST /api/v1/ai-worker-tasks/:id/usage
+ * Report token usage from Claude Code (called by running ECS tasks)
+ */
+router.post(
+  "/:id/usage",
+  [
+    param("id").isUUID(),
+    body("model").isString(),
+    body("inputTokens").isInt({ min: 0 }),
+    body("outputTokens").isInt({ min: 0 }),
+    body("reportedCost").optional().isFloat({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const orgId = req.orgId!;
+      const { id } = req.params;
+      const { model, inputTokens, outputTokens, reportedCost } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({
+        where: { id, orgId },
+      });
+
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Update token counts (accumulate if called multiple times)
+      task.claudeInputTokens += inputTokens;
+      task.claudeOutputTokens += outputTokens;
+      task.workerModel = model;
+
+      // Calculate Claude API cost based on model
+      // Pricing as of 2024:
+      // - claude-3-5-haiku: $0.001/1K input, $0.005/1K output
+      // - claude-sonnet-4: $0.003/1K input, $0.015/1K output
+      // - claude-opus-4: $0.015/1K input, $0.075/1K output
+      const modelPricing: Record<string, { input: number; output: number }> = {
+        haiku: { input: 0.001, output: 0.005 },
+        "claude-3-5-haiku": { input: 0.001, output: 0.005 },
+        "claude-3-5-haiku-20241022": { input: 0.001, output: 0.005 },
+        sonnet: { input: 0.003, output: 0.015 },
+        "claude-sonnet-4": { input: 0.003, output: 0.015 },
+        "claude-sonnet-4-20250514": { input: 0.003, output: 0.015 },
+        opus: { input: 0.015, output: 0.075 },
+        "claude-opus-4": { input: 0.015, output: 0.075 },
+        "claude-opus-4-5-20251101": { input: 0.015, output: 0.075 },
+      };
+
+      const pricing = modelPricing[model] || modelPricing["sonnet"]; // Default to sonnet pricing
+      const claudeCost =
+        (task.claudeInputTokens / 1000) * pricing.input +
+        (task.claudeOutputTokens / 1000) * pricing.output;
+
+      // Calculate ECS cost from duration
+      let ecsCost = 0;
+      if (task.startedAt) {
+        const durationSeconds = Math.floor(
+          (Date.now() - task.startedAt.getTime()) / 1000,
+        );
+        task.ecsTaskSeconds = durationSeconds;
+        ecsCost = (durationSeconds / 3600) * 0.015; // Fargate Spot rate
+      }
+
+      // Total cost = Claude API + ECS
+      task.estimatedCostUsd = claudeCost + ecsCost;
+
+      await taskRepo.save(task);
+
+      logger.info("Token usage reported for task", {
+        taskId: id,
+        model,
+        inputTokens,
+        outputTokens,
+        claudeCost: claudeCost.toFixed(4),
+        ecsCost: ecsCost.toFixed(4),
+        totalCost: task.estimatedCostUsd.toFixed(4),
+        reportedCost: reportedCost ?? null, // Claude CLI reported cost for comparison
+      });
+
+      return res.json({
+        taskId: task.id,
+        model: task.workerModel,
+        claudeInputTokens: task.claudeInputTokens,
+        claudeOutputTokens: task.claudeOutputTokens,
+        claudeCost: claudeCost,
+        ecsCost: ecsCost,
+        estimatedCostUsd: task.estimatedCostUsd,
+      });
+    } catch (error) {
+      logger.error("Error reporting token usage:", error);
+      return res.status(500).json({ error: "Failed to report token usage" });
+    }
+  },
 );
 
 /**
@@ -487,8 +893,8 @@ router.post(
  * Retry a failed task
  */
 router.post(
-  '/:id/retry',
-  [param('id').isUUID()],
+  "/:id/retry",
+  [param("id").isUUID()],
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
@@ -507,16 +913,18 @@ router.post(
       });
 
       if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
+        return res.status(404).json({ error: "Task not found" });
       }
 
-      if (task.status !== 'failed' && task.status !== 'cancelled') {
-        return res.status(400).json({ error: 'Only failed or cancelled tasks can be retried' });
+      if (task.status !== "failed" && task.status !== "cancelled") {
+        return res
+          .status(400)
+          .json({ error: "Only failed or cancelled tasks can be retried" });
       }
 
       if (!task.canRetry()) {
         return res.status(400).json({
-          error: 'Maximum retries exceeded',
+          error: "Maximum retries exceeded",
           retryCount: task.retryCount,
           maxRetries: task.maxRetries,
         });
@@ -524,18 +932,20 @@ router.post(
 
       // Send retry message to orchestrator
       if (queueUrl) {
-        await sqs.send(new SendMessageCommand({
-          QueueUrl: queueUrl,
-          MessageBody: JSON.stringify({ taskId: task.id, action: 'retry' }),
-        }));
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: "retry" }),
+          }),
+        );
       }
 
-      return res.json({ message: 'Retry request sent', taskId: task.id });
+      return res.json({ message: "Retry request sent", taskId: task.id });
     } catch (error) {
-      logger.error('Error retrying task:', error);
-      return res.status(500).json({ error: 'Failed to retry task' });
+      logger.error("Error retrying task:", error);
+      return res.status(500).json({ error: "Failed to retry task" });
     }
-  }
+  },
 );
 
 // Helper function to format task response
@@ -553,11 +963,13 @@ function formatTask(task: AIWorkerTask) {
     jiraFields: task.jiraFields,
     workerPersona: task.workerPersona,
     assignedWorkerId: task.assignedWorkerId,
-    assignedWorker: task.assignedWorker ? {
-      id: task.assignedWorker.id,
-      displayName: task.assignedWorker.displayName,
-      persona: task.assignedWorker.persona,
-    } : null,
+    assignedWorker: task.assignedWorker
+      ? {
+          id: task.assignedWorker.id,
+          displayName: task.assignedWorker.displayName,
+          persona: task.assignedWorker.persona,
+        }
+      : null,
     status: task.status,
     priority: task.priority,
     githubRepo: task.githubRepo,
@@ -585,7 +997,7 @@ function formatTask(task: AIWorkerTask) {
     watcherNotes: task.watcherNotes,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
-    approvals: task.approvals?.map(a => ({
+    approvals: task.approvals?.map((a) => ({
       id: a.id,
       approvalType: a.approvalType,
       status: a.status,

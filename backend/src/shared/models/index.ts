@@ -70,3 +70,4 @@ export * from './AIWorkerTaskLog';
 export * from './AIWorkerConversation';
 export * from './AIWorkerApproval';
 export * from './AIWorkerTaskRun';
+export * from './AIWorkerReview';

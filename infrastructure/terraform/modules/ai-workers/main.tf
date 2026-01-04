@@ -473,14 +473,28 @@ resource "aws_iam_role_policy" "watcher_lambda" {
         ]
         Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.name_prefix}-ai-worker-watcher:*"
       },
-      # ECS - Stop stuck tasks
+      # ECS - Stop stuck tasks AND run new executor tasks
       {
         Effect = "Allow"
         Action = [
+          "ecs:RunTask",
           "ecs:StopTask",
-          "ecs:DescribeTasks"
+          "ecs:DescribeTasks",
+          "ecs:TagResource"
         ]
-        Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${var.ecs_cluster_name}/*"
+        Resource = [
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${var.ecs_cluster_name}/*",
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${local.name_prefix}-ai-worker-executor:*"
+        ]
+      },
+      # IAM PassRole for ECS task execution
+      {
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = [
+          aws_iam_role.executor_execution_role.arn,
+          aws_iam_role.executor_task_role.arn
+        ]
       },
       # SQS - Send retry messages
       {
@@ -491,13 +505,17 @@ resource "aws_iam_role_policy" "watcher_lambda" {
         ]
         Resource = aws_sqs_queue.ai_worker_tasks.arn
       },
-      # Secrets Manager - Database credentials
+      # Secrets Manager - Database credentials, API keys for task dispatch
       {
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = var.database_secret_arn != "" ? [var.database_secret_arn] : []
+        Resource = compact([
+          var.database_secret_arn != "" ? var.database_secret_arn : null,
+          var.github_token_secret_arn != "" ? var.github_token_secret_arn : null,
+          var.anthropic_api_key_secret_arn != "" ? var.anthropic_api_key_secret_arn : null,
+        ])
       },
       # VPC access (for RDS in private subnet)
       {
@@ -536,10 +554,15 @@ resource "aws_lambda_function" "watcher" {
 
   environment {
     variables = {
-      AWS_REGION           = var.aws_region
-      ECS_CLUSTER_NAME     = var.ecs_cluster_name
-      AI_WORKER_QUEUE_URL  = aws_sqs_queue.ai_worker_tasks.url
-      DATABASE_SECRET_ARN  = var.database_secret_arn
+      REGION                        = var.aws_region
+      ECS_CLUSTER_NAME              = var.ecs_cluster_name
+      AI_WORKER_QUEUE_URL           = aws_sqs_queue.ai_worker_tasks.url
+      DATABASE_SECRET_ARN           = var.database_secret_arn
+      ANTHROPIC_API_KEY_SECRET_ARN  = var.anthropic_api_key_secret_arn
+      GITHUB_TOKEN_SECRET_ARN       = var.github_token_secret_arn
+      EXECUTOR_TASK_DEFINITION      = aws_ecs_task_definition.executor.family
+      EXECUTOR_SUBNET_IDS           = join(",", var.private_subnet_ids)
+      EXECUTOR_SECURITY_GROUP_IDS   = join(",", var.security_group_ids)
     }
   }
 
@@ -580,4 +603,162 @@ resource "aws_lambda_permission" "watcher_cloudwatch" {
   function_name = aws_lambda_function.watcher[0].function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.watcher_schedule[0].arn
+}
+
+# =============================================================================
+# AI Worker Manager Lambda (Virtual Manager for PR Reviews)
+# =============================================================================
+
+resource "aws_cloudwatch_log_group" "manager" {
+  count             = var.enable_manager ? 1 : 0
+  name              = "/aws/lambda/${local.name_prefix}-ai-worker-manager"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager-logs"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+resource "aws_iam_role" "manager_lambda" {
+  count       = var.enable_manager ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-manager-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager-role"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+resource "aws_iam_role_policy" "manager_lambda" {
+  count       = var.enable_manager ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-manager-"
+  role        = aws_iam_role.manager_lambda[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # CloudWatch Logs
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${local.name_prefix}-ai-worker-manager:*"
+      },
+      # Secrets Manager - Database credentials, API keys, and Jira credentials
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = compact([
+          var.database_secret_arn != "" ? var.database_secret_arn : null,
+          var.github_token_secret_arn != "" ? var.github_token_secret_arn : null,
+          var.anthropic_api_key_secret_arn != "" ? var.anthropic_api_key_secret_arn : null,
+          var.jira_credentials_secret_arn != "" ? var.jira_credentials_secret_arn : null,
+        ])
+      },
+      # VPC access for Lambda (required to connect to RDS in private subnet)
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface",
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:UnassignPrivateIpAddresses"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_lambda_function" "manager" {
+  count         = var.enable_manager ? 1 : 0
+  function_name = "${local.name_prefix}-ai-worker-manager"
+  role          = aws_iam_role.manager_lambda[0].arn
+  runtime       = "nodejs20.x"
+  handler       = "ai-worker-manager.handler"
+  timeout       = 300  # 5 minutes (PR review takes longer)
+  memory_size   = 512
+
+  # Placeholder - real code deployed via CI/CD
+  filename         = "${path.module}/placeholder-lambda.zip"
+  source_code_hash = filebase64sha256("${path.module}/placeholder-lambda.zip")
+
+  environment {
+    variables = {
+      REGION                        = var.aws_region
+      ECS_CLUSTER_NAME              = var.ecs_cluster_name
+      DATABASE_SECRET_ARN           = var.database_secret_arn
+      ANTHROPIC_API_KEY_SECRET_ARN  = var.anthropic_api_key_secret_arn
+      GITHUB_TOKEN_SECRET_ARN       = var.github_token_secret_arn
+      JIRA_CREDENTIALS_SECRET_ARN   = var.jira_credentials_secret_arn
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = var.lambda_security_group_ids
+  }
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.manager,
+    aws_iam_role_policy.manager_lambda  # Wait for VPC permissions to propagate
+  ]
+}
+
+# CloudWatch Events Rule - Trigger every 2 minutes
+resource "aws_cloudwatch_event_rule" "manager_schedule" {
+  count               = var.enable_manager ? 1 : 0
+  name                = "${local.name_prefix}-ai-worker-manager-schedule"
+  description         = "Trigger AI Worker Manager Lambda every 2 minutes"
+  schedule_expression = var.manager_schedule
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager-schedule"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "manager" {
+  count     = var.enable_manager ? 1 : 0
+  rule      = aws_cloudwatch_event_rule.manager_schedule[0].name
+  target_id = "ai-worker-manager"
+  arn       = aws_lambda_function.manager[0].arn
+}
+
+resource "aws_lambda_permission" "manager_cloudwatch" {
+  count         = var.enable_manager ? 1 : 0
+  statement_id  = "AllowCloudWatchEventsInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.manager[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.manager_schedule[0].arn
 }

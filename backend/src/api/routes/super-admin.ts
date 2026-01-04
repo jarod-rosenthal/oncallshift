@@ -5,44 +5,61 @@
  * Only accessible by users with role='super_admin'
  */
 
-import { Router, Request, Response } from 'express';
-import { authenticateRequest } from '../../shared/auth/middleware';
-import { getDataSource } from '../../shared/db/data-source';
-import { AIWorkerInstance } from '../../shared/models/AIWorkerInstance';
-import { AIWorkerTask, AIWorkerTaskStatus } from '../../shared/models/AIWorkerTask';
-import { AIWorkerTaskLog } from '../../shared/models/AIWorkerTaskLog';
-import { AIWorkerTaskRun } from '../../shared/models/AIWorkerTaskRun';
-import { AIWorkerConversation } from '../../shared/models/AIWorkerConversation';
-import { logger } from '../../shared/utils/logger';
-import { SQS, GetQueueAttributesCommand, SendMessageCommand } from '@aws-sdk/client-sqs';
-import { ECS, StopTaskCommand } from '@aws-sdk/client-ecs';
-import { MoreThan, In } from 'typeorm';
-import { body, param, query, validationResult } from 'express-validator';
+import { Router, Request, Response } from "express";
+import { authenticateRequest } from "../../shared/auth/middleware";
+import { getDataSource } from "../../shared/db/data-source";
+import { AIWorkerInstance } from "../../shared/models/AIWorkerInstance";
+import {
+  AIWorkerTask,
+  AIWorkerTaskStatus,
+} from "../../shared/models/AIWorkerTask";
+import { AIWorkerTaskLog } from "../../shared/models/AIWorkerTaskLog";
+import { AIWorkerTaskRun } from "../../shared/models/AIWorkerTaskRun";
+import { AIWorkerConversation } from "../../shared/models/AIWorkerConversation";
+import { AIWorkerReview } from "../../shared/models/AIWorkerReview";
+import { logger } from "../../shared/utils/logger";
+import {
+  SQS,
+  GetQueueAttributesCommand,
+  SendMessageCommand,
+} from "@aws-sdk/client-sqs";
+import { ECS, StopTaskCommand } from "@aws-sdk/client-ecs";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { MoreThan, In } from "typeorm";
+import { body, param, query, validationResult } from "express-validator";
 
 const router = Router();
 
 // Initialize AWS clients
-const awsRegion = process.env.AWS_REGION || 'us-east-1';
+const awsRegion = process.env.AWS_REGION || "us-east-1";
 const sqs = new SQS({ region: awsRegion });
 const ecs = new ECS({ region: awsRegion });
+const lambda = new LambdaClient({ region: awsRegion });
 const queueUrl = process.env.AI_WORKER_QUEUE_URL;
-const ecsCluster = process.env.ECS_CLUSTER_NAME || 'pagerduty-lite-dev';
+const ecsCluster = process.env.ECS_CLUSTER_NAME || "pagerduty-lite-dev";
+const managerLambdaName =
+  process.env.AI_WORKER_MANAGER_LAMBDA ||
+  "pagerduty-lite-dev-ai-worker-manager";
 
 // Middleware to check super admin role
 // Supports both user JWT auth (req.user) and org API key auth (req.orgId)
-const requireSuperAdmin = async (req: Request, res: Response, next: Function): Promise<void> => {
+const requireSuperAdmin = async (
+  req: Request,
+  res: Response,
+  next: Function,
+): Promise<void> => {
   // If authenticated via org API key, allow access (org admins can use control center)
-  if (req.authMethod === 'api_key' && req.orgId) {
+  if (req.authMethod === "api_key" && req.orgId) {
     return next();
   }
 
   // If authenticated via user JWT, check for super_admin role
   if (!req.user) {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  if (req.user.role !== 'super_admin') {
-    res.status(403).json({ error: 'Super admin access required' });
+  if (req.user.role !== "super_admin") {
+    res.status(403).json({ error: "Super admin access required" });
     return;
   }
   next();
@@ -56,7 +73,7 @@ router.use(requireSuperAdmin);
  * GET /api/v1/super-admin/control-center
  * Get aggregated data for the AI Workers Control Center
  */
-router.get('/control-center', async (_req: Request, res: Response) => {
+router.get("/control-center", async (_req: Request, res: Response) => {
   try {
     const dataSource = await getDataSource();
     const workerRepo = dataSource.getRepository(AIWorkerInstance);
@@ -70,58 +87,86 @@ router.get('/control-center', async (_req: Request, res: Response) => {
 
     // Get all workers
     const workers = await workerRepo.find({
-      order: { displayName: 'ASC' },
+      order: { displayName: "ASC" },
     });
 
     // Get active tasks (not completed/failed/cancelled)
     const activeTasks = await taskRepo.find({
       where: {
-        status: In(['queued', 'claimed', 'environment_setup', 'executing', 'pr_created', 'review_pending']),
+        status: In([
+          "queued",
+          "claimed",
+          "environment_setup",
+          "executing",
+          "pr_created",
+          "review_pending",
+        ]),
       },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
     });
 
     // Get recent completed tasks (today)
     const recentCompleted = await taskRepo.find({
       where: {
-        status: In(['completed', 'failed', 'cancelled']),
+        status: In(["completed", "failed", "cancelled"]),
         completedAt: MoreThan(todayStart),
       },
-      order: { completedAt: 'DESC' },
+      order: { completedAt: "DESC" },
       take: 10,
     });
 
-    // Calculate today's cost
+    // Calculate today's cost (use dynamic calculation if estimatedCostUsd is 0)
     const todayTasks = await taskRepo.find({
       where: {
         createdAt: MoreThan(todayStart),
       },
     });
-    const todayCost = todayTasks.reduce((sum, t) => sum + Number(t.estimatedCostUsd || 0), 0);
+    const todayCost = todayTasks.reduce((sum, t) => {
+      // If we have a stored cost, use it
+      if (Number(t.estimatedCostUsd) > 0) {
+        return sum + Number(t.estimatedCostUsd);
+      }
+      // Otherwise calculate from duration if available
+      if (t.startedAt) {
+        const endTime = t.completedAt || new Date();
+        const durationSeconds = Math.floor(
+          (endTime.getTime() - t.startedAt.getTime()) / 1000,
+        );
+        // Fargate Spot: ~$0.015/hour
+        const ecsCost = (durationSeconds / 3600) * 0.015;
+        return sum + ecsCost;
+      }
+      return sum;
+    }, 0);
 
     // Get queue depth from SQS
     let queueDepth = 0;
     if (queueUrl) {
       try {
-        const queueAttrs = await sqs.send(new GetQueueAttributesCommand({
-          QueueUrl: queueUrl,
-          AttributeNames: ['ApproximateNumberOfMessages'],
-        }));
-        queueDepth = parseInt(queueAttrs.Attributes?.ApproximateNumberOfMessages || '0', 10);
+        const queueAttrs = await sqs.send(
+          new GetQueueAttributesCommand({
+            QueueUrl: queueUrl,
+            AttributeNames: ["ApproximateNumberOfMessages"],
+          }),
+        );
+        queueDepth = parseInt(
+          queueAttrs.Attributes?.ApproximateNumberOfMessages || "0",
+          10,
+        );
       } catch (err) {
-        logger.warn('Failed to get SQS queue depth:', err);
+        logger.warn("Failed to get SQS queue depth:", err);
       }
     }
 
     // Get logs for active tasks
-    const activeTaskIds = activeTasks.map(t => t.id);
+    const activeTaskIds = activeTasks.map((t) => t.id);
     let taskLogs: AIWorkerTaskLog[] = [];
     if (activeTaskIds.length > 0) {
       taskLogs = await logRepo.find({
         where: {
           taskId: In(activeTaskIds),
         },
-        order: { createdAt: 'DESC' },
+        order: { createdAt: "DESC" },
         take: 100, // Last 100 logs across all active tasks
       });
     }
@@ -139,17 +184,19 @@ router.get('/control-center', async (_req: Request, res: Response) => {
     // Build response
     const stats = {
       totalWorkers: workers.length,
-      activeWorkers: workers.filter(w => w.status === 'working').length,
+      activeWorkers: workers.filter((w) => w.status === "working").length,
       queueDepth,
       todayCost: Math.round(todayCost * 100) / 100,
-      todayCompleted: todayTasks.filter(t => t.status === 'completed').length,
-      todayFailed: todayTasks.filter(t => t.status === 'failed').length,
+      todayCompleted: todayTasks.filter((t) => t.status === "completed").length,
+      todayFailed: todayTasks.filter((t) => t.status === "failed").length,
     };
 
     // Map workers with current task info
-    const workersData = workers.map(w => {
-      const currentTask = activeTasks.find(t => t.assignedWorkerId === w.id);
-      const conversation = currentTask ? conversations.find(c => c.taskId === currentTask.id) : null;
+    const workersData = workers.map((w) => {
+      const currentTask = activeTasks.find((t) => t.assignedWorkerId === w.id);
+      const conversation = currentTask
+        ? conversations.find((c) => c.taskId === currentTask.id)
+        : null;
 
       return {
         id: w.id,
@@ -159,22 +206,24 @@ router.get('/control-center', async (_req: Request, res: Response) => {
         tasksCompleted: w.tasksCompleted,
         tasksFailed: w.tasksFailed,
         totalCostUsd: Number(w.totalCostUsd),
-        currentTask: currentTask ? {
-          id: currentTask.id,
-          jiraKey: currentTask.jiraIssueKey,
-          summary: currentTask.summary,
-          status: currentTask.status,
-          turnCount: conversation?.turnCount || 0,
-          maxTurns: 50, // Default max turns
-        } : null,
+        currentTask: currentTask
+          ? {
+              id: currentTask.id,
+              jiraKey: currentTask.jiraIssueKey,
+              summary: currentTask.summary,
+              status: currentTask.status,
+              turnCount: conversation?.turnCount || 0,
+              maxTurns: 50, // Default max turns
+            }
+          : null,
       };
     });
 
     // Map active tasks with logs and progress
-    const activeTasksData = activeTasks.map(t => {
-      const worker = workers.find(w => w.id === t.assignedWorkerId);
-      const conversation = conversations.find(c => c.taskId === t.id);
-      const logs = taskLogs.filter(l => l.taskId === t.id).slice(0, 10);
+    const activeTasksData = activeTasks.map((t) => {
+      const worker = workers.find((w) => w.id === t.assignedWorkerId);
+      const conversation = conversations.find((c) => c.taskId === t.id);
+      const logs = taskLogs.filter((l) => l.taskId === t.id).slice(0, 10);
 
       // Calculate step progress
       const steps = getTaskSteps(t.status);
@@ -184,13 +233,13 @@ router.get('/control-center', async (_req: Request, res: Response) => {
         jiraIssueKey: t.jiraIssueKey,
         summary: t.summary,
         status: t.status,
-        workerName: worker?.displayName || 'Unassigned',
+        workerName: worker?.displayName || "Unassigned",
         workerPersona: t.workerPersona,
         turnCount: conversation?.turnCount || 0,
         maxTurns: 50,
         estimatedCostUsd: Number(t.estimatedCostUsd),
         startedAt: t.startedAt,
-        recentLogs: logs.map(l => ({
+        recentLogs: logs.map((l) => ({
           timestamp: l.createdAt,
           message: l.message,
           type: l.type,
@@ -200,19 +249,33 @@ router.get('/control-center', async (_req: Request, res: Response) => {
       };
     });
 
-    // Map recent completed tasks
-    const recentCompletedData = recentCompleted.map(t => ({
-      id: t.id,
-      jiraIssueKey: t.jiraIssueKey,
-      summary: t.summary,
-      status: t.status,
-      costUsd: Number(t.estimatedCostUsd),
-      durationMinutes: t.completedAt && t.startedAt
-        ? Math.round((t.completedAt.getTime() - t.startedAt.getTime()) / 60000)
-        : null,
-      completedAt: t.completedAt,
-      githubPrUrl: t.githubPrUrl,
-    }));
+    // Map recent completed tasks (with dynamic cost calculation)
+    const recentCompletedData = recentCompleted.map((t) => {
+      let costUsd = Number(t.estimatedCostUsd);
+      // Calculate cost dynamically if not stored
+      if (costUsd === 0 && t.startedAt) {
+        const endTime = t.completedAt || new Date();
+        const durationSeconds = Math.floor(
+          (endTime.getTime() - t.startedAt.getTime()) / 1000,
+        );
+        costUsd = (durationSeconds / 3600) * 0.015; // Fargate Spot rate
+      }
+      return {
+        id: t.id,
+        jiraIssueKey: t.jiraIssueKey,
+        summary: t.summary,
+        status: t.status,
+        costUsd,
+        durationMinutes:
+          t.completedAt && t.startedAt
+            ? Math.round(
+                (t.completedAt.getTime() - t.startedAt.getTime()) / 60000,
+              )
+            : null,
+        completedAt: t.completedAt,
+        githubPrUrl: t.githubPrUrl,
+      };
+    });
 
     return res.json({
       stats,
@@ -221,8 +284,10 @@ router.get('/control-center', async (_req: Request, res: Response) => {
       recentCompleted: recentCompletedData,
     });
   } catch (error) {
-    logger.error('Error fetching control center data:', error);
-    return res.status(500).json({ error: 'Failed to fetch control center data' });
+    logger.error("Error fetching control center data:", error);
+    return res
+      .status(500)
+      .json({ error: "Failed to fetch control center data" });
   }
 });
 
@@ -230,425 +295,891 @@ router.get('/control-center', async (_req: Request, res: Response) => {
  * GET /api/v1/super-admin/control-center/logs/:taskId
  * Stream logs for a specific task (for CLI tool)
  */
-router.get('/control-center/logs/:taskId', async (req: Request, res: Response) => {
-  try {
-    const { taskId } = req.params;
-    const since = req.query.since ? new Date(req.query.since as string) : undefined;
-    const limit = parseInt(req.query.limit as string) || 100;
+router.get(
+  "/control-center/logs/:taskId",
+  async (req: Request, res: Response) => {
+    try {
+      const { taskId } = req.params;
+      const since = req.query.since
+        ? new Date(req.query.since as string)
+        : undefined;
+      const limit = parseInt(req.query.limit as string) || 100;
 
-    const dataSource = await getDataSource();
-    const logRepo = dataSource.getRepository(AIWorkerTaskLog);
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const dataSource = await getDataSource();
+      const logRepo = dataSource.getRepository(AIWorkerTaskLog);
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-    // Verify task exists
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
+      // Verify task exists
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Get logs
+      const whereClause: any = { taskId };
+      if (since) {
+        whereClause.createdAt = MoreThan(since);
+      }
+
+      const logs = await logRepo.find({
+        where: whereClause,
+        order: { createdAt: "DESC" },
+        take: limit,
+      });
+
+      return res.json({
+        taskId,
+        taskStatus: task.status,
+        logs: logs.reverse().map((l) => ({
+          id: l.id,
+          timestamp: l.createdAt,
+          type: l.type,
+          message: l.message,
+          severity: l.severity,
+          command: l.command,
+          exitCode: l.exitCode,
+          filePath: l.filePath,
+          durationMs: l.durationMs,
+        })),
+      });
+    } catch (error) {
+      logger.error("Error fetching task logs:", error);
+      return res.status(500).json({ error: "Failed to fetch task logs" });
     }
-
-    // Get logs
-    const whereClause: any = { taskId };
-    if (since) {
-      whereClause.createdAt = MoreThan(since);
-    }
-
-    const logs = await logRepo.find({
-      where: whereClause,
-      order: { createdAt: 'DESC' },
-      take: limit,
-    });
-
-    return res.json({
-      taskId,
-      taskStatus: task.status,
-      logs: logs.reverse().map(l => ({
-        id: l.id,
-        timestamp: l.createdAt,
-        type: l.type,
-        message: l.message,
-        severity: l.severity,
-        command: l.command,
-        exitCode: l.exitCode,
-        filePath: l.filePath,
-        durationMs: l.durationMs,
-      })),
-    });
-  } catch (error) {
-    logger.error('Error fetching task logs:', error);
-    return res.status(500).json({ error: 'Failed to fetch task logs' });
-  }
-});
+  },
+);
 
 /**
  * GET /api/v1/super-admin/control-center/tasks
  * List tasks with filtering and pagination
  */
-router.get('/control-center/tasks', [
-  query('status').optional().isIn(['queued', 'claimed', 'environment_setup', 'executing', 'pr_created', 'review_pending', 'review_approved', 'review_rejected', 'completed', 'failed', 'blocked', 'cancelled']),
-  query('search').optional().isString(),
-  query('limit').optional().isInt({ min: 1, max: 100 }),
-  query('offset').optional().isInt({ min: 0 }),
-], async (req: Request, res: Response) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+router.get(
+  "/control-center/tasks",
+  [
+    query("status")
+      .optional()
+      .isIn([
+        "queued",
+        "claimed",
+        "environment_setup",
+        "executing",
+        "pr_created",
+        "review_pending",
+        "review_approved",
+        "review_rejected",
+        "completed",
+        "failed",
+        "blocked",
+        "cancelled",
+      ]),
+    query("search").optional().isString(),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("offset").optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
 
-    const status = req.query.status as AIWorkerTaskStatus | undefined;
-    const search = req.query.search as string | undefined;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = parseInt(req.query.offset as string) || 0;
+      const status = req.query.status as AIWorkerTaskStatus | undefined;
+      const search = req.query.search as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const offset = parseInt(req.query.offset as string) || 0;
 
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-    const queryBuilder = taskRepo.createQueryBuilder('task')
-      .leftJoinAndSelect('task.assignedWorker', 'worker')
-      .orderBy('task.createdAt', 'DESC')
-      .take(limit)
-      .skip(offset);
+      const queryBuilder = taskRepo
+        .createQueryBuilder("task")
+        .leftJoinAndSelect("task.assignedWorker", "worker")
+        .orderBy("task.createdAt", "DESC")
+        .take(limit)
+        .skip(offset);
 
-    if (status) {
-      queryBuilder.andWhere('task.status = :status', { status });
-    }
+      if (status) {
+        queryBuilder.andWhere("task.status = :status", { status });
+      }
 
-    if (search) {
-      queryBuilder.andWhere('(task.jiraIssueKey ILIKE :search OR task.summary ILIKE :search)', {
-        search: `%${search}%`,
+      if (search) {
+        queryBuilder.andWhere(
+          "(task.jiraIssueKey ILIKE :search OR task.summary ILIKE :search)",
+          {
+            search: `%${search}%`,
+          },
+        );
+      }
+
+      const [tasks, total] = await queryBuilder.getManyAndCount();
+
+      return res.json({
+        tasks: tasks.map((t) => ({
+          id: t.id,
+          jiraIssueKey: t.jiraIssueKey,
+          summary: t.summary,
+          status: t.status,
+          workerPersona: t.workerPersona,
+          workerName: t.assignedWorker?.displayName || "Unassigned",
+          retryCount: t.retryCount,
+          maxRetries: t.maxRetries,
+          estimatedCostUsd: Number(t.estimatedCostUsd),
+          startedAt: t.startedAt,
+          completedAt: t.completedAt,
+          errorMessage: t.errorMessage,
+          failureCategory: t.failureCategory,
+          lastHeartbeatAt: t.lastHeartbeatAt,
+          nextRetryAt: t.nextRetryAt,
+          globalTimeoutAt: t.globalTimeoutAt,
+          retryBackoffSeconds: t.retryBackoffSeconds,
+          watcherNotes: t.watcherNotes,
+          ecsTaskArn: t.ecsTaskArn,
+          githubPrUrl: t.githubPrUrl,
+          githubPrNumber: t.githubPrNumber,
+          githubBranch: t.githubBranch,
+          createdAt: t.createdAt,
+        })),
+        total,
+        limit,
+        offset,
       });
+    } catch (error) {
+      logger.error("Error fetching tasks:", error);
+      return res.status(500).json({ error: "Failed to fetch tasks" });
     }
-
-    const [tasks, total] = await queryBuilder.getManyAndCount();
-
-    return res.json({
-      tasks: tasks.map(t => ({
-        id: t.id,
-        jiraIssueKey: t.jiraIssueKey,
-        summary: t.summary,
-        status: t.status,
-        workerPersona: t.workerPersona,
-        workerName: t.assignedWorker?.displayName || 'Unassigned',
-        retryCount: t.retryCount,
-        maxRetries: t.maxRetries,
-        estimatedCostUsd: Number(t.estimatedCostUsd),
-        startedAt: t.startedAt,
-        completedAt: t.completedAt,
-        errorMessage: t.errorMessage,
-        failureCategory: t.failureCategory,
-        lastHeartbeatAt: t.lastHeartbeatAt,
-        nextRetryAt: t.nextRetryAt,
-        globalTimeoutAt: t.globalTimeoutAt,
-        githubPrUrl: t.githubPrUrl,
-        createdAt: t.createdAt,
-      })),
-      total,
-      limit,
-      offset,
-    });
-  } catch (error) {
-    logger.error('Error fetching tasks:', error);
-    return res.status(500).json({ error: 'Failed to fetch tasks' });
-  }
-});
+  },
+);
 
 /**
  * GET /api/v1/super-admin/control-center/tasks/:id/runs
  * Get all run attempts for a task
  */
-router.get('/control-center/tasks/:taskId/runs', [
-  param('taskId').isUUID(),
-], async (req: Request, res: Response) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+router.get(
+  "/control-center/tasks/:taskId/runs",
+  [param("taskId").isUUID()],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const runRepo = dataSource.getRepository(AIWorkerTaskRun);
+
+      // Verify task exists
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Get all runs
+      const runs = await runRepo.find({
+        where: { taskId },
+        order: { runNumber: "ASC" },
+      });
+
+      return res.json({
+        taskId,
+        taskStatus: task.status,
+        runs: runs.map((r) => ({
+          id: r.id,
+          runNumber: r.runNumber,
+          outcome: r.outcome,
+          startedAt: r.startedAt,
+          endedAt: r.endedAt,
+          durationSeconds: r.durationSeconds,
+          errorMessage: r.errorMessage,
+          errorCategory: r.errorCategory,
+          ecsTaskId: r.ecsTaskId,
+          claudeInputTokens: r.claudeInputTokens,
+          claudeOutputTokens: r.claudeOutputTokens,
+          estimatedCostUsd: Number(r.estimatedCostUsd),
+          filesModified: r.filesModified,
+          gitBranch: r.gitBranch,
+          gitCommitSha: r.gitCommitSha,
+        })),
+      });
+    } catch (error) {
+      logger.error("Error fetching task runs:", error);
+      return res.status(500).json({ error: "Failed to fetch task runs" });
     }
-
-    const { taskId } = req.params;
-
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
-    const runRepo = dataSource.getRepository(AIWorkerTaskRun);
-
-    // Verify task exists
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-
-    // Get all runs
-    const runs = await runRepo.find({
-      where: { taskId },
-      order: { runNumber: 'ASC' },
-    });
-
-    return res.json({
-      taskId,
-      taskStatus: task.status,
-      runs: runs.map(r => ({
-        id: r.id,
-        runNumber: r.runNumber,
-        outcome: r.outcome,
-        startedAt: r.startedAt,
-        endedAt: r.endedAt,
-        durationSeconds: r.durationSeconds,
-        errorMessage: r.errorMessage,
-        errorCategory: r.errorCategory,
-        ecsTaskId: r.ecsTaskId,
-        claudeInputTokens: r.claudeInputTokens,
-        claudeOutputTokens: r.claudeOutputTokens,
-        estimatedCostUsd: Number(r.estimatedCostUsd),
-        filesModified: r.filesModified,
-        gitBranch: r.gitBranch,
-        gitCommitSha: r.gitCommitSha,
-      })),
-    });
-  } catch (error) {
-    logger.error('Error fetching task runs:', error);
-    return res.status(500).json({ error: 'Failed to fetch task runs' });
-  }
-});
+  },
+);
 
 /**
  * POST /api/v1/super-admin/control-center/tasks/:id/retry
  * Enhanced retry with options to reset retry count and provide custom context
  */
-router.post('/control-center/tasks/:taskId/retry', [
-  param('taskId').isUUID(),
-  body('resetRetryCount').optional().isBoolean(),
-  body('customContext').optional().isString().isLength({ max: 10000 }),
-], async (req: Request, res: Response) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+router.post(
+  "/control-center/tasks/:taskId/retry",
+  [
+    param("taskId").isUUID(),
+    body("resetRetryCount").optional().isBoolean(),
+    body("customContext").optional().isString().isLength({ max: 10000 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+      const { resetRetryCount, customContext } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      if (!["failed", "cancelled", "blocked"].includes(task.status)) {
+        return res
+          .status(400)
+          .json({
+            error: "Only failed, cancelled, or blocked tasks can be retried",
+          });
+      }
+
+      // Reset retry count if requested
+      if (resetRetryCount) {
+        task.retryCount = 0;
+        task.retryBackoffSeconds = 60;
+      }
+
+      // Add custom context if provided
+      if (customContext) {
+        const existingContext = task.previousRunContext || "";
+        task.previousRunContext =
+          existingContext + "\n\n## Manual Retry Context\n" + customContext;
+      }
+
+      // Set global timeout if not already set (4 hours from now)
+      if (!task.globalTimeoutAt) {
+        task.globalTimeoutAt = new Date(Date.now() + 4 * 60 * 60 * 1000);
+      }
+
+      // Update task state for retry
+      task.status = "queued";
+      task.errorMessage = null;
+      task.failureCategory = null;
+      task.nextRetryAt = null;
+      task.watcherNotes =
+        (task.watcherNotes || "") +
+        `\n[${new Date().toISOString()}] Manual retry triggered`;
+
+      await taskRepo.save(task);
+
+      // Send retry message to queue
+      if (queueUrl) {
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: "retry" }),
+          }),
+        );
+      }
+
+      logger.info("Manual retry triggered for task", {
+        taskId,
+        resetRetryCount,
+        hasCustomContext: !!customContext,
+      });
+
+      return res.json({
+        message: "Retry initiated",
+        taskId: task.id,
+        retryCount: task.retryCount,
+        globalTimeoutAt: task.globalTimeoutAt,
+      });
+    } catch (error) {
+      logger.error("Error retrying task:", error);
+      return res.status(500).json({ error: "Failed to retry task" });
     }
+  },
+);
 
-    const { taskId } = req.params;
-    const { resetRetryCount, customContext } = req.body;
+/**
+ * POST /api/v1/super-admin/control-center/tasks/reset-by-key
+ * Reset a failed task back to queued status by Jira key
+ */
+router.post(
+  "/control-center/tasks/reset-by-key",
+  [body("jiraKey").isString().notEmpty()],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
 
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const { jiraKey } = req.body;
 
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-    if (!['failed', 'cancelled', 'blocked'].includes(task.status)) {
-      return res.status(400).json({ error: 'Only failed, cancelled, or blocked tasks can be retried' });
-    }
+      // Find the most recent task for this Jira key
+      const task = await taskRepo.findOne({
+        where: { jiraIssueKey: jiraKey },
+        order: { createdAt: "DESC" },
+      });
 
-    // Reset retry count if requested
-    if (resetRetryCount) {
+      if (!task) {
+        return res.status(404).json({ error: `Task not found for ${jiraKey}` });
+      }
+
+      if (!["failed", "cancelled", "blocked"].includes(task.status)) {
+        return res.status(400).json({
+          error: `Task is in ${task.status} status, can only reset failed/cancelled/blocked tasks`,
+        });
+      }
+
+      // Reset the task
+      task.status = "queued";
+      task.errorMessage = null;
+      task.ecsTaskArn = null;
+      task.ecsTaskId = null;
+      task.startedAt = null;
+      task.lastHeartbeatAt = null;
+      task.nextRetryAt = null;
       task.retryCount = 0;
       task.retryBackoffSeconds = 60;
+      await taskRepo.save(task);
+
+      logger.info(`Reset task ${jiraKey} (${task.id}) to queued`);
+      return res.json({
+        message: `Task ${jiraKey} reset to queued`,
+        taskId: task.id,
+        previousStatus: task.status,
+      });
+    } catch (error) {
+      logger.error("Error resetting task:", error);
+      return res.status(500).json({ error: "Failed to reset task" });
     }
-
-    // Add custom context if provided
-    if (customContext) {
-      const existingContext = task.previousRunContext || '';
-      task.previousRunContext = existingContext + '\n\n## Manual Retry Context\n' + customContext;
-    }
-
-    // Set global timeout if not already set (4 hours from now)
-    if (!task.globalTimeoutAt) {
-      task.globalTimeoutAt = new Date(Date.now() + 4 * 60 * 60 * 1000);
-    }
-
-    // Update task state for retry
-    task.status = 'queued';
-    task.errorMessage = null;
-    task.failureCategory = null;
-    task.nextRetryAt = null;
-    task.watcherNotes = (task.watcherNotes || '') + `\n[${new Date().toISOString()}] Manual retry triggered`;
-
-    await taskRepo.save(task);
-
-    // Send retry message to queue
-    if (queueUrl) {
-      await sqs.send(new SendMessageCommand({
-        QueueUrl: queueUrl,
-        MessageBody: JSON.stringify({ taskId: task.id, action: 'retry' }),
-      }));
-    }
-
-    logger.info('Manual retry triggered for task', { taskId, resetRetryCount, hasCustomContext: !!customContext });
-
-    return res.json({
-      message: 'Retry initiated',
-      taskId: task.id,
-      retryCount: task.retryCount,
-      globalTimeoutAt: task.globalTimeoutAt,
-    });
-  } catch (error) {
-    logger.error('Error retrying task:', error);
-    return res.status(500).json({ error: 'Failed to retry task' });
-  }
-});
+  },
+);
 
 /**
  * POST /api/v1/super-admin/control-center/tasks/:id/cancel
  * Cancel a running task with reason
  */
-router.post('/control-center/tasks/:taskId/cancel', [
-  param('taskId').isUUID(),
-  body('reason').optional().isString().isLength({ max: 500 }),
-], async (req: Request, res: Response) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { taskId } = req.params;
-    const { reason } = req.body;
-
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
-
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
-
-    if (['completed', 'failed', 'cancelled'].includes(task.status)) {
-      return res.status(400).json({ error: 'Task is already finished' });
-    }
-
-    // Stop ECS task if running
-    if (task.ecsTaskArn) {
-      try {
-        await ecs.send(new StopTaskCommand({
-          cluster: ecsCluster,
-          task: task.ecsTaskArn,
-          reason: reason || 'Cancelled via Control Center',
-        }));
-        logger.info('Stopped ECS task', { taskId, ecsTaskArn: task.ecsTaskArn });
-      } catch (err) {
-        logger.warn('Failed to stop ECS task (may already be stopped):', err);
+router.post(
+  "/control-center/tasks/:taskId/cancel",
+  [
+    param("taskId").isUUID(),
+    body("reason").optional().isString().isLength({ max: 500 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
       }
+
+      const { taskId } = req.params;
+      const { reason } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      if (["completed", "failed", "cancelled"].includes(task.status)) {
+        return res.status(400).json({ error: "Task is already finished" });
+      }
+
+      // Stop ECS task if running
+      if (task.ecsTaskArn) {
+        try {
+          await ecs.send(
+            new StopTaskCommand({
+              cluster: ecsCluster,
+              task: task.ecsTaskArn,
+              reason: reason || "Cancelled via Control Center",
+            }),
+          );
+          logger.info("Stopped ECS task", {
+            taskId,
+            ecsTaskArn: task.ecsTaskArn,
+          });
+        } catch (err) {
+          logger.warn("Failed to stop ECS task (may already be stopped):", err);
+        }
+      }
+
+      // Update task state
+      task.status = "cancelled";
+      task.completedAt = new Date();
+      task.errorMessage = reason || "Cancelled via Control Center";
+      task.watcherNotes =
+        (task.watcherNotes || "") +
+        `\n[${new Date().toISOString()}] Cancelled: ${reason || "No reason provided"}`;
+
+      // Calculate cost from duration
+      if (task.startedAt) {
+        task.ecsTaskSeconds = Math.floor(
+          (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
+        );
+        task.estimatedCostUsd = task.calculateCost();
+      }
+
+      await taskRepo.save(task);
+
+      logger.info("Task cancelled via Control Center", { taskId, reason });
+
+      return res.json({
+        message: "Task cancelled",
+        taskId: task.id,
+        status: task.status,
+      });
+    } catch (error) {
+      logger.error("Error cancelling task:", error);
+      return res.status(500).json({ error: "Failed to cancel task" });
     }
-
-    // Update task state
-    task.status = 'cancelled';
-    task.completedAt = new Date();
-    task.errorMessage = reason || 'Cancelled via Control Center';
-    task.watcherNotes = (task.watcherNotes || '') + `\n[${new Date().toISOString()}] Cancelled: ${reason || 'No reason provided'}`;
-
-    await taskRepo.save(task);
-
-    logger.info('Task cancelled via Control Center', { taskId, reason });
-
-    return res.json({
-      message: 'Task cancelled',
-      taskId: task.id,
-      status: task.status,
-    });
-  } catch (error) {
-    logger.error('Error cancelling task:', error);
-    return res.status(500).json({ error: 'Failed to cancel task' });
-  }
-});
+  },
+);
 
 /**
  * GET /api/v1/super-admin/control-center/watcher/status
  * Get watcher Lambda status and metrics
  */
-router.get('/control-center/watcher/status', async (_req: Request, res: Response) => {
-  try {
-    const dataSource = await getDataSource();
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
+router.get(
+  "/control-center/watcher/status",
+  async (_req: Request, res: Response) => {
+    try {
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-    // Count tasks in various states that watcher monitors
-    const stuckThreshold = new Date(Date.now() - 15 * 60 * 1000); // 15 mins ago
+      // Count tasks in various states that watcher monitors
+      const stuckThreshold = new Date(Date.now() - 3 * 60 * 1000); // 3 mins ago (fast cleanup)
 
-    const [
-      monitoringCount,
-      stuckCount,
-      pendingRetryCount,
-      globalTimeoutCount,
-    ] = await Promise.all([
-      // Active tasks being monitored
-      taskRepo.count({
-        where: { status: In(['executing', 'environment_setup']) },
-      }),
-      // Stuck tasks (no heartbeat for 15+ mins)
-      taskRepo.createQueryBuilder('task')
-        .where('task.status IN (:...statuses)', { statuses: ['executing', 'environment_setup'] })
-        .andWhere('task.lastHeartbeatAt < :threshold', { threshold: stuckThreshold })
-        .getCount(),
-      // Tasks pending retry
-      taskRepo.count({
-        where: {
-          status: In(['failed', 'blocked']),
-          nextRetryAt: MoreThan(new Date()),
-        },
-      }),
-      // Tasks approaching global timeout
-      taskRepo.createQueryBuilder('task')
-        .where('task.globalTimeoutAt IS NOT NULL')
-        .andWhere('task.globalTimeoutAt < :soon', { soon: new Date(Date.now() + 30 * 60 * 1000) })
-        .andWhere('task.status NOT IN (:...statuses)', { statuses: ['completed', 'failed', 'cancelled'] })
-        .getCount(),
-    ]);
+      const [
+        monitoringCount,
+        stuckCount,
+        pendingRetryCount,
+        globalTimeoutCount,
+        loopCount,
+      ] = await Promise.all([
+        // Active tasks being monitored
+        taskRepo.count({
+          where: { status: In(["executing", "environment_setup"]) },
+        }),
+        // Stuck tasks (no heartbeat for 15+ mins)
+        taskRepo
+          .createQueryBuilder("task")
+          .where("task.status IN (:...statuses)", {
+            statuses: ["executing", "environment_setup"],
+          })
+          .andWhere("task.lastHeartbeatAt < :threshold", {
+            threshold: stuckThreshold,
+          })
+          .getCount(),
+        // Tasks pending retry
+        taskRepo.count({
+          where: {
+            status: In(["failed", "blocked"]),
+            nextRetryAt: MoreThan(new Date()),
+          },
+        }),
+        // Tasks that hit global timeout
+        taskRepo.count({
+          where: {
+            failureCategory: "timeout",
+          },
+        }),
+        // Tasks with loop detection
+        taskRepo.count({
+          where: {
+            failureCategory: "loop",
+          },
+        }),
+      ]);
 
-    return res.json({
-      status: 'operational',
-      monitoring: {
-        activeTasks: monitoringCount,
+      // Return in format frontend expects
+      return res.json({
+        enabled: true,
+        lastRunAt: null, // Would need CloudWatch Logs API to get this
         stuckTasks: stuckCount,
         pendingRetries: pendingRetryCount,
-        approachingTimeout: globalTimeoutCount,
-      },
-      config: {
-        heartbeatInterval: 60,
-        stuckThresholdMinutes: 15,
-        maxBackoffSeconds: 3600,
-        globalTimeoutHours: 4,
-      },
-    });
-  } catch (error) {
-    logger.error('Error fetching watcher status:', error);
-    return res.status(500).json({ error: 'Failed to fetch watcher status' });
-  }
-});
+        loopsDetected: loopCount,
+        globalTimeouts: globalTimeoutCount,
+        tasksMonitored: monitoringCount,
+      });
+    } catch (error) {
+      logger.error("Error fetching watcher status:", error);
+      return res.status(500).json({ error: "Failed to fetch watcher status" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/manager/status
+ * Get Virtual Manager status and metrics
+ */
+router.get(
+  "/control-center/manager/status",
+  async (_req: Request, res: Response) => {
+    try {
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const reviewRepo = dataSource.getRepository(AIWorkerReview);
+      const instanceRepo = dataSource.getRepository(AIWorkerInstance);
+
+      // Get manager instances
+      const managers = await instanceRepo.find({
+        where: { role: "manager" },
+      });
+
+      // Count tasks in manager review states
+      const [awaitingReviewCount, underReviewCount, revisionNeededCount] =
+        await Promise.all([
+          taskRepo.count({
+            where: { status: "pr_created" as AIWorkerTaskStatus },
+          }),
+          taskRepo.count({
+            where: { status: "manager_review" as AIWorkerTaskStatus },
+          }),
+          taskRepo.count({
+            where: { status: "revision_needed" as AIWorkerTaskStatus },
+          }),
+        ]);
+
+      // Get recent reviews (last 24 hours)
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recentReviews = await reviewRepo.find({
+        where: { createdAt: MoreThan(oneDayAgo) },
+        order: { createdAt: "DESC" },
+      });
+
+      // Calculate review stats
+      const approvedCount = recentReviews.filter(
+        (r) => r.decision === "approved",
+      ).length;
+      const rejectedCount = recentReviews.filter(
+        (r) => r.decision === "rejected",
+      ).length;
+      const revisionRequestedCount = recentReviews.filter(
+        (r) => r.decision === "revision_needed",
+      ).length;
+      const totalReviewCost = recentReviews.reduce(
+        (sum, r) => sum + Number(r.estimatedCostUsd),
+        0,
+      );
+      const avgReviewDuration =
+        recentReviews.length > 0
+          ? recentReviews.reduce(
+              (sum, r) => sum + (r.durationSeconds || 0),
+              0,
+            ) / recentReviews.length
+          : 0;
+
+      return res.json({
+        enabled: true,
+        managers: managers.map((m) => ({
+          id: m.id,
+          displayName: m.displayName,
+          modelId: m.modelId,
+          status: m.status,
+          reviewCount: m.reviewCount,
+          approvalsCount: m.approvalsCount,
+          rejectionsCount: m.rejectionsCount,
+          revisionsRequestedCount: m.revisionsRequestedCount,
+          approvalRate: m.getApprovalRate(),
+        })),
+        queue: {
+          awaitingReview: awaitingReviewCount,
+          underReview: underReviewCount,
+          revisionNeeded: revisionNeededCount,
+        },
+        last24Hours: {
+          totalReviews: recentReviews.length,
+          approved: approvedCount,
+          rejected: rejectedCount,
+          revisionsRequested: revisionRequestedCount,
+          totalCost: Math.round(totalReviewCost * 100) / 100,
+          avgDurationSeconds: Math.round(avgReviewDuration),
+        },
+      });
+    } catch (error) {
+      logger.error("Error fetching manager status:", error);
+      return res.status(500).json({ error: "Failed to fetch manager status" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/reviews
+ * List recent PR reviews
+ */
+router.get(
+  "/control-center/reviews",
+  [
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("offset").optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 20;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const dataSource = await getDataSource();
+      const reviewRepo = dataSource.getRepository(AIWorkerReview);
+
+      const [reviews, total] = await reviewRepo.findAndCount({
+        relations: ["task", "manager"],
+        order: { createdAt: "DESC" },
+        take: limit,
+        skip: offset,
+      });
+
+      return res.json({
+        reviews: reviews.map((r) => ({
+          id: r.id,
+          taskId: r.taskId,
+          jiraIssueKey: r.task?.jiraIssueKey,
+          managerId: r.managerId,
+          managerName: r.manager?.displayName,
+          reviewNumber: r.reviewNumber,
+          decision: r.decision,
+          feedback: r.feedback,
+          codeQualityScore: r.codeQualityScore,
+          durationSeconds: r.durationSeconds,
+          estimatedCostUsd: Number(r.estimatedCostUsd),
+          createdAt: r.createdAt,
+        })),
+        total,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      logger.error("Error fetching reviews:", error);
+      return res.status(500).json({ error: "Failed to fetch reviews" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/tasks/:taskId/reviews
+ * Get all reviews for a specific task
+ */
+router.get(
+  "/control-center/tasks/:taskId/reviews",
+  [param("taskId").isUUID()],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const reviewRepo = dataSource.getRepository(AIWorkerReview);
+
+      // Verify task exists
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      const reviews = await reviewRepo.find({
+        where: { taskId },
+        relations: ["manager"],
+        order: { reviewNumber: "ASC" },
+      });
+
+      return res.json({
+        taskId,
+        jiraIssueKey: task.jiraIssueKey,
+        revisionCount: task.revisionCount,
+        currentStatus: task.status,
+        reviews: reviews.map((r) => ({
+          id: r.id,
+          reviewNumber: r.reviewNumber,
+          decision: r.decision,
+          feedback: r.feedback,
+          managerName: r.manager?.displayName,
+          codeQualityScore: r.codeQualityScore,
+          testCoverageAssessment: r.testCoverageAssessment,
+          securityConcerns: r.securityConcerns,
+          styleIssues: r.styleIssues,
+          filesReviewed: r.filesReviewed,
+          durationSeconds: r.durationSeconds,
+          estimatedCostUsd: Number(r.estimatedCostUsd),
+          createdAt: r.createdAt,
+        })),
+      });
+    } catch (error) {
+      logger.error("Error fetching task reviews:", error);
+      return res.status(500).json({ error: "Failed to fetch task reviews" });
+    }
+  },
+);
 
 /**
  * Helper: Get task step progress based on status
  */
-function getTaskSteps(status: string): Array<{ name: string; status: 'done' | 'active' | 'pending' }> {
+function getTaskSteps(
+  status: string,
+): Array<{ name: string; status: "done" | "active" | "pending" }> {
   const statusOrder = [
-    'queued',
-    'claimed',
-    'environment_setup',
-    'executing',
-    'pr_created',
-    'review_pending',
-    'review_approved',
-    'completed',
+    "queued",
+    "claimed",
+    "environment_setup",
+    "executing",
+    "pr_created",
+    "review_pending",
+    "review_approved",
+    "completed",
   ];
 
   const statusIndex = statusOrder.indexOf(status);
   const steps = [
-    { name: 'Queued', statuses: ['queued'] },
-    { name: 'Claimed', statuses: ['claimed'] },
-    { name: 'Environment Setup', statuses: ['environment_setup'] },
-    { name: 'Executing', statuses: ['executing'] },
-    { name: 'PR Created', statuses: ['pr_created', 'review_pending', 'review_approved'] },
-    { name: 'Completed', statuses: ['completed'] },
+    { name: "Queued", statuses: ["queued"] },
+    { name: "Claimed", statuses: ["claimed"] },
+    { name: "Environment Setup", statuses: ["environment_setup"] },
+    { name: "Executing", statuses: ["executing"] },
+    {
+      name: "PR Created",
+      statuses: ["pr_created", "review_pending", "review_approved"],
+    },
+    { name: "Completed", statuses: ["completed"] },
   ];
 
-  return steps.map(step => {
+  return steps.map((step) => {
     const isActive = step.statuses.includes(status);
-    const isDone = !isActive && statusOrder.indexOf(step.statuses[0]) < statusIndex;
+    const isDone =
+      !isActive && statusOrder.indexOf(step.statuses[0]) < statusIndex;
 
     return {
       name: step.name,
-      status: isActive ? 'active' as const : isDone ? 'done' as const : 'pending' as const,
+      status: isActive
+        ? ("active" as const)
+        : isDone
+          ? ("done" as const)
+          : ("pending" as const),
     };
   });
 }
+
+/**
+ * PATCH /api/v1/super-admin/control-center/tasks/:taskId/complete
+ * Mark a task as completed with PR info (for when orchestrator isn't running)
+ */
+router.patch(
+  "/control-center/tasks/:taskId/complete",
+  [
+    param("taskId").isUUID(),
+    body("status").isIn(["pr_created", "completed", "failed"]),
+    body("githubPrUrl").optional().isURL(),
+    body("githubPrNumber").optional().isInt(),
+    body("githubBranch").optional().isString(),
+    body("errorMessage").optional().isString(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+      const {
+        status,
+        githubPrUrl,
+        githubPrNumber,
+        githubBranch,
+        errorMessage,
+      } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Update task
+      task.status = status as AIWorkerTaskStatus;
+      if (githubPrUrl) task.githubPrUrl = githubPrUrl;
+      if (githubPrNumber) task.githubPrNumber = githubPrNumber;
+      if (githubBranch) task.githubBranch = githubBranch;
+      if (errorMessage) task.errorMessage = errorMessage;
+      if (status === "completed" || status === "failed") {
+        task.completedAt = new Date();
+
+        // Calculate cost from duration
+        if (task.startedAt) {
+          task.ecsTaskSeconds = Math.floor(
+            (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
+          );
+          // Use the model's calculateCost method which factors in ECS time
+          task.estimatedCostUsd = task.calculateCost();
+        }
+      }
+
+      await taskRepo.save(task);
+
+      logger.info("Task status updated via control center", { taskId, status });
+
+      // If status is pr_created, invoke the Manager Lambda to review immediately
+      let managerInvoked = false;
+      if (status === "pr_created") {
+        try {
+          logger.info("Invoking Manager Lambda for PR review", {
+            taskId,
+            managerLambdaName,
+          });
+          await lambda.send(
+            new InvokeCommand({
+              FunctionName: managerLambdaName,
+              InvocationType: "Event", // Async invocation
+              Payload: Buffer.from(JSON.stringify({ taskId })),
+            }),
+          );
+          managerInvoked = true;
+          logger.info("Manager Lambda invoked successfully", { taskId });
+        } catch (lambdaError) {
+          // Log but don't fail - the sweep Lambda will catch it
+          logger.warn("Failed to invoke Manager Lambda (sweep will catch it)", {
+            taskId,
+            error:
+              lambdaError instanceof Error
+                ? lambdaError.message
+                : "Unknown error",
+          });
+        }
+      }
+
+      return res.json({
+        id: task.id,
+        status: task.status,
+        githubPrUrl: task.githubPrUrl,
+        githubPrNumber: task.githubPrNumber,
+        managerInvoked,
+      });
+    } catch (error) {
+      logger.error("Error updating task status:", error);
+      return res.status(500).json({ error: "Failed to update task status" });
+    }
+  },
+);
 
 export default router;

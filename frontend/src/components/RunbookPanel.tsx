@@ -361,14 +361,14 @@ export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
       try {
         // First try service-specific runbooks
         const response = await runbooksAPI.listForService(incident.service.id);
-        let serviceRunbooks = response.runbooks;
+        let serviceRunbooks = response?.runbooks || [];
 
         // If no service-specific runbooks, try ALL org runbooks with automated steps
         if (serviceRunbooks.length === 0) {
           try {
             const allResponse = await runbooksAPI.list();
             // Filter to runbooks that have automated steps
-            serviceRunbooks = allResponse.runbooks.filter((rb: any) =>
+            serviceRunbooks = (allResponse?.runbooks || []).filter((rb: any) =>
               rb.steps?.some((s: any) => s.type === 'automated')
             );
           } catch (e) {

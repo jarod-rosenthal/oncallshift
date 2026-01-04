@@ -68,7 +68,7 @@ export function RunbookAutomationPanel({ incident }: RunbookAutomationPanelProps
     const loadRunbooks = async () => {
       try {
         const response = await runbooksAPI.listForService(incident.service.id);
-        const filtered = response.runbooks.filter((rb: any) => {
+        const filtered = (response?.runbooks || []).filter((rb: any) => {
           // Show runbooks that match severity or have automation
           const matchesSeverity = rb.severity.length === 0 || rb.severity.includes(incident.severity);
           const hasAutomation = rb.steps.some((s: any) => s.type === 'automated');

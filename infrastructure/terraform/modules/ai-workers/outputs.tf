@@ -82,3 +82,18 @@ output "watcher_log_group_name" {
   description = "Name of the watcher CloudWatch log group"
   value       = var.enable_watcher ? aws_cloudwatch_log_group.watcher[0].name : null
 }
+
+output "manager_lambda_arn" {
+  description = "ARN of the AI Worker Manager Lambda function"
+  value       = var.enable_manager ? aws_lambda_function.manager[0].arn : null
+}
+
+output "manager_lambda_name" {
+  description = "Name of the AI Worker Manager Lambda function"
+  value       = var.enable_manager ? aws_lambda_function.manager[0].function_name : null
+}
+
+output "manager_log_group_name" {
+  description = "Name of the manager CloudWatch log group"
+  value       = var.enable_manager ? aws_cloudwatch_log_group.manager[0].name : null
+}

@@ -59,12 +59,11 @@ export function Landing() {
 
           {/* Subheadline */}
           <p className="relative text-xl md:text-2xl text-slate-400 mb-4 leading-relaxed">
-            The AI-native incident management platform
+            Incident management for people who've carried the pager.
           </p>
 
           <p className="relative text-lg text-slate-500 mb-12 max-w-lg mx-auto">
-            On-call scheduling, escalation policies, and intelligent incident response.
-            Built by DevOps and SRE engineers who've been at the tip of the spear in high‑stress outages, when muscle memory and good tooling are all you have.
+            At 3am, muscle memory and good tooling make all the difference.
           </p>
 
           {/* Email Signup */}

@@ -10,6 +10,44 @@ OnCallShift is a production incident management platform deployed at https://onc
 - Mobile app (React Native + Expo)
 - AWS infrastructure managed by Terraform
 
+## Communication Style
+
+**Be transparent and narrate your work.** Don't just silently execute - share your thinking.
+
+### What to Communicate
+
+1. **Before starting**: State what you're about to do and why
+   - "I'm checking the current codebase for existing implementations before creating this feature..."
+   - "Looking at the database schema to understand the data model..."
+
+2. **During exploration**: Share what you're finding
+   - "Found rate-limiter.ts with tiered limits already implemented, but it's in-memory only..."
+   - "The AIWorkerTask model has heartbeat fields but I need to verify if they're being used..."
+
+3. **When making decisions**: Explain your reasoning
+   - "Using cursor pagination here because this endpoint could return 10K+ records..."
+   - "Adding [VERIFY] prefix because this code exists but needs testing..."
+
+4. **After completing work**: Summarize what was done
+   - "Created OCS-59 through OCS-65 covering auto-investigation, similar incidents, and worker verification..."
+
+### Don't Ask, Just Share
+
+You don't need to stop and ask for approval on routine decisions. Just communicate what you're doing:
+
+❌ "Should I check the existing implementation first?"
+✅ "Checking existing implementation... Found partial work in backend/src/workers/..."
+
+❌ "Would you like me to create this as a [GAP] story?"
+✅ "Creating as [GAP] story since the feature is partially implemented..."
+
+### Level of Detail
+
+- **Exploration**: Name the files you're reading and what you found
+- **Code changes**: Mention which files you're modifying and why
+- **Jira tickets**: Share ticket numbers as you create them
+- **Decisions**: Brief explanation of trade-offs considered
+
 ## Agent Workflow Guidelines
 
 **Always consider spawning parallel agents to maximize efficiency.** This is a full-stack monorepo where work can often be parallelized across backend, frontend, and mobile.
@@ -75,6 +113,183 @@ When working on large features that span multiple files or may be interrupted:
 ```
 
 This ensures work can be resumed if the session is interrupted.
+
+## Jira Ticket Standards
+
+**All Jira tickets must follow these standards.** See `docs/JIRA_MIGRATION_TRACKER.md` for the full reference.
+
+### User Story Format (Required)
+
+Every ticket MUST include a user story:
+
+```
+As a [role],
+I want [capability],
+So that [benefit].
+```
+
+**Roles:**
+- `on-call engineer` - Primary incident responder
+- `team lead` - Manages team schedules and policies
+- `platform admin` - Organization administrator
+- `super admin` - OnCallShift internal admin
+- `developer` - Building integrations with OnCallShift
+
+### Definition of Done (Required)
+
+Every ticket is complete when ALL of the following are met:
+
+- [ ] Code passes TypeScript type checking (`npx tsc --noEmit`)
+- [ ] Code follows existing patterns in the codebase
+- [ ] Tests written for new functionality (80%+ coverage on critical paths)
+- [ ] No security vulnerabilities introduced (OWASP Top 10 compliance)
+- [ ] Terraform state remains synchronized (no drift)
+- [ ] Database migrations are reversible
+- [ ] API changes are backwards compatible (or properly versioned)
+- [ ] PR filled out with Summary, Test Plan, and screenshots (if UI)
+- [ ] Code reviewed and approved
+
+### Acceptance Criteria Format (Required)
+
+Use Gherkin-style format:
+
+```
+GIVEN [initial context]
+WHEN [action is taken]
+THEN [expected outcome]
+```
+
+### Required Ticket Sections
+
+| Section | Required | Description |
+|---------|----------|-------------|
+| Summary | Yes | One-line description |
+| User Story | Yes | Who/What/Why format |
+| Description | Yes | Detailed context and requirements |
+| Acceptance Criteria | Yes | Gherkin-style testable criteria |
+| Technical Notes | Optional | Implementation hints, code snippets, naming conventions |
+| Dependencies | Optional | Blocked by / Blocks |
+| Out of Scope | Optional | Explicit exclusions |
+| References | Optional | Links to docs, designs, related tickets |
+
+### Story Prefixes
+
+Use prefixes to indicate work type:
+
+| Prefix | Meaning |
+|--------|---------|
+| `[GAP]` | Missing functionality that needs implementation |
+| `[VERIFY]` | Existing implementation needs verification/testing |
+| `[FIX]` | Bug fix or correction to existing code |
+| `[REFACTOR]` | Code improvement without behavior change |
+
+### Before Creating a Ticket
+
+**CRITICAL: Always check the current codebase state first.**
+
+1. Search for existing implementations using Grep/Glob
+2. If feature exists, create `[VERIFY]` story to validate it works correctly
+3. If feature is partial, create `[GAP]` story documenting what's missing
+4. Include "Current State" section showing what already exists
+5. Include "Implementation Required" section showing only the actual gaps
+
+### Priority Definitions
+
+| Priority | Meaning | Response Time |
+|----------|---------|---------------|
+| Highest | Production blocker, security issue | Immediate |
+| High | Critical path for next milestone | This sprint |
+| Medium | Important but not blocking | Next 2-4 sprints |
+| Low | Nice to have, backlog grooming | When capacity allows |
+| Lowest | Future consideration | Unscheduled |
+
+### Story Point Guidelines
+
+| Points | Complexity | Examples |
+|--------|------------|----------|
+| 1 | Trivial | Config change, typo fix |
+| 2 | Simple | Single file change, add field |
+| 3 | Small | New endpoint, new component |
+| 5 | Medium | Feature spanning 3-5 files |
+| 8 | Large | Multi-service feature, new integration |
+| 13 | Epic-sized | Break down further |
+
+### Task Completion Reporting
+
+**After completing a ticket, update Jira with a completion comment.** This helps the team learn from each task.
+
+**Required in completion comment:**
+
+1. **What was done** - Brief summary of changes made
+2. **Files modified** - List key files changed (not every file, just the important ones)
+3. **New artifacts** - Any new files, migrations, or resources created
+4. **Tools installed** - Any new dependencies or CLI tools that were needed
+5. **Blockers encountered** - Issues faced and how they were resolved
+6. **Follow-up needed** - Any related work discovered that needs separate tickets
+7. **Testing performed** - How the changes were verified
+
+**Example completion comment:**
+```
+## Completion Summary
+
+### What was done
+Implemented RDS Proxy for connection pooling. Added Terraform module and updated ECS task definitions to use the proxy endpoint.
+
+### Files modified
+- infrastructure/terraform/modules/database/rds-proxy.tf (new)
+- infrastructure/terraform/modules/ecs/variables.tf
+- backend/src/shared/db/data-source.ts
+
+### New artifacts
+- Migration 052: Added connection pool settings table
+- New Terraform module: modules/database/rds-proxy
+
+### Tools installed
+- None required
+
+### Blockers encountered
+- RDS Proxy requires IAM auth - had to add IAM policy for ECS task role
+- Initial connection timeout was too low - increased to 30s
+
+### Follow-up needed
+- OCS-XX: Add connection pool metrics to CloudWatch dashboard
+
+### Testing performed
+- Ran `terraform plan` - no drift
+- Deployed to dev, verified API connects through proxy
+- Load tested with 100 concurrent connections - no errors
+```
+
+**Update Jira via API or UI** - Workers should add this as a comment on the ticket before marking it Done.
+
+### Branch Naming Convention
+
+**Every story MUST have a linked branch.** Use this naming pattern:
+
+```
+<type>/OCS-<number>-<short-description>
+```
+
+**Types:**
+| Type | Usage |
+|------|-------|
+| `feature/` | New functionality |
+| `fix/` | Bug fixes |
+| `refactor/` | Code improvements |
+| `infra/` | Infrastructure changes |
+| `security/` | Security fixes |
+
+**Examples:**
+- `feature/OCS-53-rds-proxy`
+- `fix/OCS-55-cors-wildcard`
+- `security/OCS-56-webhook-signatures`
+- `infra/OCS-54-rds-multi-az`
+
+**Workflow:**
+1. Create branch from `main` using the naming convention
+2. Link branch to Jira ticket (Development panel)
+3. Create PR referencing the ticket: `OCS-XXX: Description`
+4. PR must include Summary, Test Plan, and screenshots (if UI)
 
 ## Slash Commands
 

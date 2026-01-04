@@ -154,7 +154,7 @@ export function EscalationStatusPanel({ escalation, onEscalateNow }: EscalationS
         )}
 
         {/* Current Targets */}
-        {escalation.currentTargets.length > 0 && (
+        {escalation.currentTargets && escalation.currentTargets.length > 0 && (
           <div>
             <p className="text-sm text-muted-foreground mb-2">Currently Notifying</p>
             <div className="space-y-2">

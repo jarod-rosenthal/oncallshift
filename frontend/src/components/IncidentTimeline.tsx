@@ -75,7 +75,7 @@ export function IncidentTimeline({ events, isLoading }: IncidentTimelineProps) {
         <CardTitle className="text-lg">Timeline</CardTitle>
       </CardHeader>
       <CardContent>
-        {events.length === 0 ? (
+        {!events || events.length === 0 ? (
           <p className="text-muted-foreground text-sm">No events yet</p>
         ) : (
           <div className="relative">

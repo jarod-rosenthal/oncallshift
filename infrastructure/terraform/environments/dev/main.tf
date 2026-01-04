@@ -617,9 +617,13 @@ module "api_service" {
     GITHUB_TOKEN = aws_secretsmanager_secret.github_token.arn
     SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
     JIRA_WEBHOOK_SECRET = data.aws_secretsmanager_secret.jira_webhook_secret.arn
+    # Jira API credentials for task trigger
+    JIRA_BASE_URL  = "${data.aws_secretsmanager_secret.jira_integration.arn}:base_url::"
+    JIRA_EMAIL     = "${data.aws_secretsmanager_secret.jira_integration.arn}:email::"
+    JIRA_API_TOKEN = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.jira_integration.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -913,6 +917,13 @@ module "ai_workers" {
 
   log_retention_days = var.log_retention_days
   enable_spot        = var.use_fargate_spot
+
+  # Virtual Manager Lambda
+  enable_manager              = true
+  database_secret_arn         = module.database.secret_arn
+  manager_schedule            = "rate(30 minutes)"  # Sweep every 30 mins for any missed tasks
+  lambda_security_group_ids   = [module.networking.ecs_security_group_id]
+  jira_credentials_secret_arn = data.aws_secretsmanager_secret.jira_integration.arn
 }
 
 # AI Worker Orchestrator Service
