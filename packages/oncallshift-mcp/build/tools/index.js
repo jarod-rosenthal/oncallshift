@@ -111,6 +111,82 @@ export const ConnectIntegrationSchema = z.object({
     configuration: z.record(z.unknown()).optional()
         .describe('Integration-specific configuration options'),
 });
+// PagerDuty-compatible tool schemas
+export const ListUsersSchema = z.object({
+    team_id: z.string().optional().describe('Filter users by team ID'),
+    limit: z.number().min(1).max(100).optional().default(25)
+        .describe('Maximum number of users to return'),
+});
+export const GetUserSchema = z.object({
+    user_id: z.string().describe('The ID of the user to retrieve'),
+});
+export const ListEscalationPoliciesSchema = z.object({
+    limit: z.number().min(1).max(100).optional().default(25)
+        .describe('Maximum number of escalation policies to return'),
+});
+export const GetEscalationPolicySchema = z.object({
+    escalation_policy_id: z.string().describe('The ID of the escalation policy to retrieve'),
+});
+export const AddTeamMemberSchema = z.object({
+    team_id: z.string().describe('The ID of the team'),
+    user_id: z.string().describe('The ID of the user to add'),
+    role: z.enum(['manager', 'member']).default('member')
+        .describe('Role for the user in this team'),
+});
+export const RemoveTeamMemberSchema = z.object({
+    team_id: z.string().describe('The ID of the team'),
+    user_id: z.string().describe('The ID of the user to remove'),
+});
+export const CreateScheduleOverrideSchema = z.object({
+    schedule_id: z.string().describe('The ID of the schedule'),
+    user_id: z.string().describe('The user who will be on-call during the override'),
+    start_time: z.string().describe('Start time of the override (ISO 8601)'),
+    end_time: z.string().describe('End time of the override (ISO 8601)'),
+});
+export const CreateIncidentSchema = z.object({
+    title: z.string().min(1).max(500).describe('Title/summary of the incident'),
+    service_id: z.string().describe('ID of the service this incident is for'),
+    severity: z.enum(['critical', 'error', 'warning', 'info']).default('error')
+        .describe('Severity level of the incident'),
+    description: z.string().optional().describe('Detailed description of the incident'),
+});
+export const AddRespondersSchema = z.object({
+    incident_id: z.string().describe('The ID of the incident'),
+    user_ids: z.array(z.string()).min(1).describe('User IDs to add as responders'),
+    message: z.string().optional().describe('Optional message to include with the request'),
+});
+// Migration tool schemas
+export const TestPagerDutyConnectionSchema = z.object({
+    api_key: z.string().describe('PagerDuty API key to test'),
+});
+export const TestOpsgenieConnectionSchema = z.object({
+    api_key: z.string().describe('Opsgenie API key to test'),
+    region: z.enum(['us', 'eu']).default('us').describe('Opsgenie region'),
+});
+export const FetchPagerDutyConfigSchema = z.object({
+    api_key: z.string().describe('PagerDuty API key'),
+    include: z.array(z.enum(['users', 'teams', 'schedules', 'escalation_policies', 'services'])).optional()
+        .describe('Which entities to fetch (defaults to all)'),
+});
+export const FetchOpsgenieConfigSchema = z.object({
+    api_key: z.string().describe('Opsgenie API key'),
+    region: z.enum(['us', 'eu']).default('us').describe('Opsgenie region'),
+});
+export const MigrateFromMcpSchema = z.object({
+    source: z.enum(['pagerduty', 'opsgenie']).describe('Source platform'),
+    data: z.object({
+        users: z.array(z.unknown()).optional(),
+        teams: z.array(z.unknown()).optional(),
+        schedules: z.array(z.unknown()).optional(),
+        escalation_policies: z.array(z.unknown()).optional(),
+        services: z.array(z.unknown()).optional(),
+    }).describe('Data from source platform MCP tools'),
+    options: z.object({
+        dry_run: z.boolean().default(false),
+        invite_users: z.boolean().default(true),
+        preserve_ids: z.boolean().default(true),
+    }).optional(),
+});
 // ============================================
 // Tool Definitions
 // ============================================
@@ -348,6 +424,194 @@ export const TOOL_DEFINITIONS = [
             required: ['integration_type', 'name'],
         },
     },
+    // PagerDuty-compatible tools for full parity
+    {
+        name: 'list_users',
+        description: 'List all users in the organization. Can filter by team.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                team_id: { type: 'string', description: 'Filter users by team ID' },
+                limit: { type: 'number', description: 'Maximum number of users to return (1-100)' },
+            },
+        },
+    },
+    {
+        name: 'get_user',
+        description: 'Get detailed information about a specific user.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                user_id: { type: 'string', description: 'The ID of the user to retrieve' },
+            },
+            required: ['user_id'],
+        },
+    },
+    {
+        name: 'list_escalation_policies',
+        description: 'List all escalation policies in the organization.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                limit: { type: 'number', description: 'Maximum number of policies to return (1-100)' },
+            },
+        },
+    },
+    {
+        name: 'get_escalation_policy',
+        description: 'Get detailed information about a specific escalation policy.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                escalation_policy_id: { type: 'string', description: 'The ID of the escalation policy' },
+            },
+            required: ['escalation_policy_id'],
+        },
+    },
+    {
+        name: 'add_team_member',
+        description: 'Add a user to a team with a specific role.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                team_id: { type: 'string', description: 'The ID of the team' },
+                user_id: { type: 'string', description: 'The ID of the user to add' },
+                role: { type: 'string', enum: ['manager', 'member'], description: 'Role for the user in this team' },
+            },
+            required: ['team_id', 'user_id'],
+        },
+    },
+    {
+        name: 'remove_team_member',
+        description: 'Remove a user from a team.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                team_id: { type: 'string', description: 'The ID of the team' },
+                user_id: { type: 'string', description: 'The ID of the user to remove' },
+            },
+            required: ['team_id', 'user_id'],
+        },
+    },
+    {
+        name: 'create_schedule_override',
+        description: 'Create a temporary override on a schedule to assign a different user.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                schedule_id: { type: 'string', description: 'The ID of the schedule' },
+                user_id: { type: 'string', description: 'The user who will be on-call during the override' },
+                start_time: { type: 'string', description: 'Start time of the override (ISO 8601)' },
+                end_time: { type: 'string', description: 'End time of the override (ISO 8601)' },
+            },
+            required: ['schedule_id', 'user_id', 'start_time', 'end_time'],
+        },
+    },
+    {
+        name: 'create_incident',
+        description: 'Create a new incident manually. Useful for testing or creating incidents from external sources.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                title: { type: 'string', description: 'Title/summary of the incident' },
+                service_id: { type: 'string', description: 'ID of the service this incident is for' },
+                severity: { type: 'string', enum: ['critical', 'error', 'warning', 'info'], description: 'Severity level' },
+                description: { type: 'string', description: 'Detailed description of the incident' },
+            },
+            required: ['title', 'service_id'],
+        },
+    },
+    {
+        name: 'add_responders',
+        description: 'Add additional responders to an incident.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                incident_id: { type: 'string', description: 'The ID of the incident' },
+                user_ids: { type: 'array', items: { type: 'string' }, description: 'User IDs to add as responders' },
+                message: { type: 'string', description: 'Optional message to include with the request' },
+            },
+            required: ['incident_id', 'user_ids'],
+        },
+    },
+    // Migration tools for platform switching
+    {
+        name: 'test_pagerduty_connection',
+        description: 'Test connection to PagerDuty API with provided credentials. Use this before migrating.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                api_key: { type: 'string', description: 'PagerDuty API key to test' },
+            },
+            required: ['api_key'],
+        },
+    },
+    {
+        name: 'test_opsgenie_connection',
+        description: 'Test connection to Opsgenie API with provided credentials. Use this before migrating.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                api_key: { type: 'string', description: 'Opsgenie API key to test' },
+                region: { type: 'string', enum: ['us', 'eu'], description: 'Opsgenie region' },
+            },
+            required: ['api_key'],
+        },
+    },
+    {
+        name: 'fetch_pagerduty_config',
+        description: 'Fetch all configuration from a PagerDuty account. Returns users, teams, schedules, escalation policies, and services.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                api_key: { type: 'string', description: 'PagerDuty API key' },
+                include: { type: 'array', items: { type: 'string', enum: ['users', 'teams', 'schedules', 'escalation_policies', 'services'] }, description: 'Which entities to fetch (defaults to all)' },
+            },
+            required: ['api_key'],
+        },
+    },
+    {
+        name: 'fetch_opsgenie_config',
+        description: 'Fetch all configuration from an Opsgenie account. Returns users, teams, schedules, escalation policies, and services.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                api_key: { type: 'string', description: 'Opsgenie API key' },
+                region: { type: 'string', enum: ['us', 'eu'], description: 'Opsgenie region' },
+            },
+            required: ['api_key'],
+        },
+    },
+    {
+        name: 'migrate_from_mcp',
+        description: 'Migrate configuration from PagerDuty or Opsgenie MCP data. Use this with data fetched from the source platform\'s MCP tools (list_users, list_teams, etc.).',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                source: { type: 'string', enum: ['pagerduty', 'opsgenie'], description: 'Source platform' },
+                data: {
+                    type: 'object',
+                    description: 'Data collected from source platform MCP tools',
+                    properties: {
+                        users: { type: 'array', description: 'Users from list_users' },
+                        teams: { type: 'array', description: 'Teams from list_teams' },
+                        schedules: { type: 'array', description: 'Schedules from list_schedules' },
+                        escalation_policies: { type: 'array', description: 'Policies from list_escalation_policies' },
+                        services: { type: 'array', description: 'Services from list_services' },
+                    },
+                },
+                options: {
+                    type: 'object',
+                    properties: {
+                        dry_run: { type: 'boolean', description: 'Preview migration without making changes' },
+                        invite_users: { type: 'boolean', description: 'Send invitation emails to users' },
+                        preserve_ids: { type: 'boolean', description: 'Try to preserve original IDs where possible' },
+                    },
+                },
+            },
+            required: ['source', 'data'],
+        },
+    },
 ];
 // ============================================
 // Helper Functions
@@ -509,6 +773,59 @@ function getStatusIcon(status) {
         case 'resolved': return '+';
         default: return ' ';
     }
+}
+function formatUsers(users) {
+    const lines = [`Found ${users.length} user(s):`, ''];
+    for (const user of users) {
+        lines.push(`- ${user.fullName || user.email} [${user.id}]`);
+        lines.push(`  Email: ${user.email}`);
+        if (user.role)
+            lines.push(`  Role: ${user.role}`);
+        lines.push('');
+    }
+    return lines.join('\n');
+}
+function formatUserDetail(user) {
+    const lines = [
+        `User: ${user.fullName || user.email}`,
+        `ID: ${user.id}`,
+        `Email: ${user.email}`,
+    ];
+    if (user.role)
+        lines.push(`Role: ${user.role}`);
+    if (user.phoneNumber)
+        lines.push(`Phone: ${user.phoneNumber}`);
+    if (user.timezone)
+        lines.push(`Timezone: ${user.timezone}`);
+    return lines.join('\n');
+}
+function formatEscalationPolicies(policies) {
+    const lines = [`Found ${policies.length} escalation policy(ies):`, ''];
+    for (const policy of policies) {
+        lines.push(`- ${policy.name} [${policy.id}]`);
+        if (policy.description)
+            lines.push(`  ${policy.description}`);
+        if (policy.numSteps !== undefined)
+            lines.push(`  Steps: ${policy.numSteps}`);
+        lines.push('');
+    }
+    return lines.join('\n');
+}
+function formatEscalationPolicyDetail(policy) {
+    const lines = [
+        `Escalation Policy: ${policy.name}`,
+        `ID: ${policy.id}`,
+    ];
+    if (policy.description)
+        lines.push(`Description: ${policy.description}`);
+    if (policy.steps && policy.steps.length > 0) {
+        lines.push('', 'Steps:');
+        for (let i = 0; i < policy.steps.length; i++) {
+            const step = policy.steps[i];
+            lines.push(`  ${i + 1}. After ${step.delayMinutes} min → ${step.targets.map(t => t.name || t.type).join(', ')}`);
+        }
+    }
+    return lines.join('\n');
 }
 // ============================================
 // Tool Handlers
@@ -715,6 +1032,293 @@ export const TOOL_HANDLERS = {
         const integrationData = result.data;
         let text = `Integration "${params.name}" (${params.integration_type}) created!\nID: ${integrationData.integration.id}\nStatus: ${integrationData.integration.status}\n\n`;
         text += getIntegrationInstructions(params.integration_type);
+        return { content: [{ type: 'text', text }] };
+    },
+    // PagerDuty-compatible tool handlers
+    list_users: async (client, args) => {
+        const params = ListUsersSchema.parse(args);
+        const result = await client.listUsers(params);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        const users = result.data?.users || [];
+        if (users.length === 0)
+            return { content: [{ type: 'text', text: 'No users found.' }] };
+        return { content: [{ type: 'text', text: formatUsers(users) }] };
+    },
+    get_user: async (client, args) => {
+        const params = GetUserSchema.parse(args);
+        const result = await client.getUser(params.user_id);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        return { content: [{ type: 'text', text: formatUserDetail(result.data) }] };
+    },
+    list_escalation_policies: async (client, args) => {
+        const params = ListEscalationPoliciesSchema.parse(args);
+        const result = await client.listEscalationPolicies(params);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        const policies = result.data?.escalationPolicies || [];
+        if (policies.length === 0)
+            return { content: [{ type: 'text', text: 'No escalation policies found.' }] };
+        return { content: [{ type: 'text', text: formatEscalationPolicies(policies) }] };
+    },
+    get_escalation_policy: async (client, args) => {
+        const params = GetEscalationPolicySchema.parse(args);
+        const result = await client.getEscalationPolicy(params.escalation_policy_id);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        return { content: [{ type: 'text', text: formatEscalationPolicyDetail(result.data) }] };
+    },
+    add_team_member: async (client, args) => {
+        const params = AddTeamMemberSchema.parse(args);
+        const result = await client.addTeamMember(params.team_id, params.user_id, params.role);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        return { content: [{ type: 'text', text: `User added to team as ${params.role}.` }] };
+    },
+    remove_team_member: async (client, args) => {
+        const params = RemoveTeamMemberSchema.parse(args);
+        const result = await client.removeTeamMember(params.team_id, params.user_id);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        return { content: [{ type: 'text', text: 'User removed from team.' }] };
+    },
+    create_schedule_override: async (client, args) => {
+        const params = CreateScheduleOverrideSchema.parse(args);
+        const result = await client.createScheduleOverride(params.schedule_id, {
+            user_id: params.user_id,
+            start_time: params.start_time,
+            end_time: params.end_time,
+        });
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        const overrideData = result.data;
+        return { content: [{ type: 'text', text: `Schedule override created${overrideData.id ? ` with ID: ${overrideData.id}` : ''}.` }] };
+    },
+    create_incident: async (client, args) => {
+        const params = CreateIncidentSchema.parse(args);
+        const result = await client.createIncident({
+            title: params.title,
+            service_id: params.service_id,
+            severity: params.severity,
+            description: params.description,
+        });
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        const incidentData = result.data;
+        return { content: [{ type: 'text', text: `Incident created!\nID: ${incidentData.incident?.id}\nNumber: #${incidentData.incident?.incidentNumber}` }] };
+    },
+    add_responders: async (client, args) => {
+        const params = AddRespondersSchema.parse(args);
+        const result = await client.addResponders(params.incident_id, params.user_ids, params.message);
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Error: ${result.error}` }] };
+        return { content: [{ type: 'text', text: `Added ${params.user_ids.length} responder(s) to incident.` }] };
+    },
+    // Migration tool handlers
+    test_pagerduty_connection: async (_client, args) => {
+        const params = TestPagerDutyConnectionSchema.parse(args);
+        try {
+            const response = await fetch('https://api.pagerduty.com/users/me', {
+                headers: { 'Authorization': `Token token=${params.api_key}`, 'Content-Type': 'application/json' },
+            });
+            if (!response.ok) {
+                return { isError: true, content: [{ type: 'text', text: `Connection failed: ${response.status} ${response.statusText}` }] };
+            }
+            const data = await response.json();
+            return { content: [{ type: 'text', text: `Connection successful!\nAuthenticated as: ${data.user?.name} (${data.user?.email})` }] };
+        }
+        catch (error) {
+            return { isError: true, content: [{ type: 'text', text: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}` }] };
+        }
+    },
+    test_opsgenie_connection: async (_client, args) => {
+        const params = TestOpsgenieConnectionSchema.parse(args);
+        const baseUrl = params.region === 'eu' ? 'https://api.eu.opsgenie.com' : 'https://api.opsgenie.com';
+        try {
+            const response = await fetch(`${baseUrl}/v2/account`, {
+                headers: { 'Authorization': `GenieKey ${params.api_key}` },
+            });
+            if (!response.ok) {
+                return { isError: true, content: [{ type: 'text', text: `Connection failed: ${response.status} ${response.statusText}` }] };
+            }
+            const data = await response.json();
+            return { content: [{ type: 'text', text: `Connection successful!\nAccount: ${data.data?.name}` }] };
+        }
+        catch (error) {
+            return { isError: true, content: [{ type: 'text', text: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}` }] };
+        }
+    },
+    fetch_pagerduty_config: async (_client, args) => {
+        const params = FetchPagerDutyConfigSchema.parse(args);
+        const include = params.include || ['users', 'teams', 'schedules', 'escalation_policies', 'services'];
+        const headers = { 'Authorization': `Token token=${params.api_key}`, 'Content-Type': 'application/json' };
+        const config = {};
+        const errors = [];
+        try {
+            if (include.includes('users')) {
+                const res = await fetch('https://api.pagerduty.com/users?limit=100', { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    config.users = data.users || [];
+                }
+                else
+                    errors.push(`users: ${res.status}`);
+            }
+            if (include.includes('teams')) {
+                const res = await fetch('https://api.pagerduty.com/teams?limit=100', { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    config.teams = data.teams || [];
+                }
+                else
+                    errors.push(`teams: ${res.status}`);
+            }
+            if (include.includes('schedules')) {
+                const res = await fetch('https://api.pagerduty.com/schedules?limit=100', { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    config.schedules = data.schedules || [];
+                }
+                else
+                    errors.push(`schedules: ${res.status}`);
+            }
+            if (include.includes('escalation_policies')) {
+                const res = await fetch('https://api.pagerduty.com/escalation_policies?limit=100', { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    config.escalation_policies = data.escalation_policies || [];
+                }
+                else
+                    errors.push(`escalation_policies: ${res.status}`);
+            }
+            if (include.includes('services')) {
+                const res = await fetch('https://api.pagerduty.com/services?limit=100', { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    config.services = data.services || [];
+                }
+                else
+                    errors.push(`services: ${res.status}`);
+            }
+            const summary = Object.entries(config).map(([k, v]) => `${k}: ${v.length}`).join(', ');
+            let text = `Fetched PagerDuty configuration:\n${summary}`;
+            if (errors.length > 0)
+                text += `\n\nErrors: ${errors.join(', ')}`;
+            text += '\n\nUse migrate_from_mcp to import this data into OnCallShift.';
+            return { content: [{ type: 'text', text }] };
+        }
+        catch (error) {
+            return { isError: true, content: [{ type: 'text', text: `Fetch error: ${error instanceof Error ? error.message : 'Unknown error'}` }] };
+        }
+    },
+    fetch_opsgenie_config: async (_client, args) => {
+        const params = FetchOpsgenieConfigSchema.parse(args);
+        const baseUrl = params.region === 'eu' ? 'https://api.eu.opsgenie.com' : 'https://api.opsgenie.com';
+        const headers = { 'Authorization': `GenieKey ${params.api_key}` };
+        const config = {};
+        const errors = [];
+        try {
+            // Users
+            const usersRes = await fetch(`${baseUrl}/v2/users?limit=100`, { headers });
+            if (usersRes.ok) {
+                const data = await usersRes.json();
+                config.users = data.data || [];
+            }
+            else
+                errors.push(`users: ${usersRes.status}`);
+            // Teams
+            const teamsRes = await fetch(`${baseUrl}/v2/teams?limit=100`, { headers });
+            if (teamsRes.ok) {
+                const data = await teamsRes.json();
+                config.teams = data.data || [];
+            }
+            else
+                errors.push(`teams: ${teamsRes.status}`);
+            // Schedules
+            const schedulesRes = await fetch(`${baseUrl}/v2/schedules?limit=100`, { headers });
+            if (schedulesRes.ok) {
+                const data = await schedulesRes.json();
+                config.schedules = data.data || [];
+            }
+            else
+                errors.push(`schedules: ${schedulesRes.status}`);
+            // Escalations
+            const escalationsRes = await fetch(`${baseUrl}/v2/escalations?limit=100`, { headers });
+            if (escalationsRes.ok) {
+                const data = await escalationsRes.json();
+                config.escalation_policies = data.data || [];
+            }
+            else
+                errors.push(`escalation_policies: ${escalationsRes.status}`);
+            // Services (integrations in Opsgenie)
+            const servicesRes = await fetch(`${baseUrl}/v2/services?limit=100`, { headers });
+            if (servicesRes.ok) {
+                const data = await servicesRes.json();
+                config.services = data.data || [];
+            }
+            else
+                errors.push(`services: ${servicesRes.status}`);
+            const summary = Object.entries(config).map(([k, v]) => `${k}: ${v.length}`).join(', ');
+            let text = `Fetched Opsgenie configuration:\n${summary}`;
+            if (errors.length > 0)
+                text += `\n\nErrors: ${errors.join(', ')}`;
+            text += '\n\nUse migrate_from_mcp to import this data into OnCallShift.';
+            return { content: [{ type: 'text', text }] };
+        }
+        catch (error) {
+            return { isError: true, content: [{ type: 'text', text: `Fetch error: ${error instanceof Error ? error.message : 'Unknown error'}` }] };
+        }
+    },
+    migrate_from_mcp: async (client, args) => {
+        const params = MigrateFromMcpSchema.parse(args);
+        const { source, data, options } = params;
+        // Transform data to import format
+        const importData = {};
+        if (data.users)
+            importData.users = data.users;
+        if (data.teams)
+            importData.teams = data.teams;
+        if (data.schedules)
+            importData.schedules = data.schedules;
+        if (data.escalation_policies)
+            importData.escalation_policies = data.escalation_policies;
+        if (data.services)
+            importData.services = data.services;
+        if (options?.dry_run) {
+            // Preview mode - validate without importing
+            const validateResult = await client.validateImport(source, importData);
+            if (!validateResult.success)
+                return { isError: true, content: [{ type: 'text', text: `Validation Error: ${validateResult.error}` }] };
+            const validationData = validateResult.data;
+            let text = `Migration Preview (Dry Run) from ${source}:\n`;
+            text += `Status: ${validationData.isValid ? 'READY' : 'HAS ISSUES'}\n\n`;
+            text += 'What will be created:\n';
+            for (const [entity, stats] of Object.entries(validationData.summary || {})) {
+                text += `  ${entity}: ${stats.willCreate} new, ${stats.willSkip} skipped\n`;
+            }
+            text += '\nRun migrate_from_mcp again without dry_run to complete migration.';
+            return { content: [{ type: 'text', text }] };
+        }
+        // Perform actual import
+        const result = await client.importFromPlatform(source, importData, {
+            preserve_keys: options?.preserve_ids ?? true,
+        });
+        if (!result.success)
+            return { isError: true, content: [{ type: 'text', text: `Migration Error: ${result.error}` }] };
+        const importResult = result.data;
+        let text = `Migration from ${source} completed!\n\nImported:\n`;
+        for (const [entity, count] of Object.entries(importResult.imported || {})) {
+            if (count > 0)
+                text += `  ${entity}: ${count}\n`;
+        }
+        if (options?.invite_users !== false) {
+            text += '\nUser invitations have been sent.';
+        }
+        text += '\n\nNext steps:\n';
+        text += '1. Users should check their email for invitations\n';
+        text += '2. Configure webhook forwarding from ' + source + ' to OnCallShift\n';
+        text += '3. Test by triggering a test alert';
         return { content: [{ type: 'text', text }] };
     },
 };

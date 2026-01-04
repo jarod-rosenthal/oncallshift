@@ -231,7 +231,8 @@ resource "aws_iam_role_policy" "orchestrator_task_policy" {
         Action = [
           "ecs:RunTask",
           "ecs:StopTask",
-          "ecs:DescribeTasks"
+          "ecs:DescribeTasks",
+          "ecs:TagResource"
         ]
         Resource = [
           "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${local.name_prefix}-ai-worker-executor:*",
@@ -377,7 +378,7 @@ resource "aws_ecs_task_definition" "executor" {
   container_definitions = jsonencode([
     {
       name      = "ai-worker-executor"
-      image     = "${aws_ecr_repository.ai_worker.repository_url}:latest"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v5"
       essential = true
 
       environment = [

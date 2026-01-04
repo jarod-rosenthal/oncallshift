@@ -2,19 +2,16 @@ import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth-store';
 import { ProtectedRoute } from './ProtectedRoute';
 
-interface AdminRouteProps {
+interface SuperAdminRouteProps {
   children: React.ReactNode;
 }
 
-export function AdminRoute({ children }: AdminRouteProps) {
+export function SuperAdminRoute({ children }: SuperAdminRouteProps) {
   const user = useAuthStore((state) => state.user);
-
-  // super_admin has all admin privileges plus more
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   return (
     <ProtectedRoute>
-      {isAdmin ? (
+      {user?.role === 'super_admin' ? (
         children
       ) : (
         <Navigate to="/dashboard" replace />

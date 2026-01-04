@@ -10,10 +10,11 @@
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ListPromptsRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
 import { OnCallShiftClient } from './client.js';
 import { TOOL_DEFINITIONS, TOOL_HANDLERS } from './tools/index.js';
 import { ANALYTICS_TOOL_DEFINITIONS, ANALYTICS_TOOL_HANDLERS } from './tools/analytics.js';
+import { PROMPT_DEFINITIONS, getPromptContent } from './prompts.js';
 // Combine all tool definitions and handlers
 const ALL_TOOL_DEFINITIONS = [...TOOL_DEFINITIONS, ...ANALYTICS_TOOL_DEFINITIONS];
 const ALL_TOOL_HANDLERS = { ...TOOL_HANDLERS, ...ANALYTICS_TOOL_HANDLERS };
@@ -110,14 +111,33 @@ function registerResourceHandlers(server) {
     });
 }
 /**
- * Register prompt handlers (for future expansion)
+ * Register prompt handlers for guided workflows
  */
 function registerPromptHandlers(server) {
+    // List available prompts
     server.setRequestHandler(ListPromptsRequestSchema, async () => {
-        // Prompts can be added here in the future
-        // Examples: incident triage prompt, escalation decision prompt
         return {
-            prompts: [],
+            prompts: PROMPT_DEFINITIONS,
+        };
+    });
+    // Get prompt content
+    server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+        const { name, arguments: args } = request.params;
+        const prompt = PROMPT_DEFINITIONS.find(p => p.name === name);
+        if (!prompt) {
+            throw new Error(`Unknown prompt: ${name}`);
+        }
+        const content = getPromptContent(name, args || {});
+        return {
+            messages: [
+                {
+                    role: 'user',
+                    content: {
+                        type: 'text',
+                        text: content,
+                    },
+                },
+            ],
         };
     });
 }

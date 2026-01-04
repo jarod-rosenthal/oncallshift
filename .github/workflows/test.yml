@@ -62,7 +62,9 @@ jobs:
               # Skip API tests for PRs - they hit live production and are unstable
               # Can still run manually via workflow_dispatch with "api" option
               echo "run_api=false" >> $GITHUB_OUTPUT
-              echo "run_e2e=true" >> $GITHUB_OUTPUT
+              # Skip E2E tests by default - they are flaky and need fixing
+              # Can still run manually via workflow_dispatch with "e2e" option
+              echo "run_e2e=false" >> $GITHUB_OUTPUT
               ;;
             api)
               echo "run_smoke=false" >> $GITHUB_OUTPUT

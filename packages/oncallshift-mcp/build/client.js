@@ -112,6 +112,26 @@ export class OnCallShiftClient {
     async addIncidentNote(incidentId, content) {
         return this.request('POST', `/incidents/${incidentId}/notes`, { content });
     }
+    /**
+     * Create a new incident
+     */
+    async createIncident(incident) {
+        return this.request('POST', '/incidents', {
+            summary: incident.title,
+            serviceId: incident.service_id,
+            severity: incident.severity || 'error',
+            details: incident.description,
+        });
+    }
+    /**
+     * Add responders to an incident
+     */
+    async addResponders(incidentId, userIds, message) {
+        return this.request('POST', `/incidents/${incidentId}/responders`, {
+            user_ids: userIds,
+            message,
+        });
+    }
     // ============================================
     // Services
     // ============================================
@@ -170,6 +190,18 @@ export class OnCallShiftClient {
     async createTeam(team) {
         return this.request('POST', '/teams', team);
     }
+    /**
+     * Add a user to a team
+     */
+    async addTeamMember(teamId, userId, role = 'member') {
+        return this.request('POST', `/teams/${teamId}/members`, { user_id: userId, role });
+    }
+    /**
+     * Remove a user from a team
+     */
+    async removeTeamMember(teamId, userId) {
+        return this.request('DELETE', `/teams/${teamId}/members/${userId}`);
+    }
     // ============================================
     // Schedules
     // ============================================
@@ -206,6 +238,12 @@ export class OnCallShiftClient {
     async getOnCallForSchedule(scheduleId) {
         return this.request('GET', `/schedules/${scheduleId}/oncall`);
     }
+    /**
+     * Create a schedule override (temporary assignment)
+     */
+    async createScheduleOverride(scheduleId, override) {
+        return this.request('POST', `/schedules/${scheduleId}/overrides`, override);
+    }
     // ============================================
     // On-Call
     // ============================================
@@ -238,6 +276,12 @@ export class OnCallShiftClient {
      */
     async getCurrentUser() {
         return this.request('GET', '/users/me');
+    }
+    /**
+     * Get a specific user by ID
+     */
+    async getUser(userId) {
+        return this.request('GET', `/users/${userId}`);
     }
     // ============================================
     // Escalation Policies

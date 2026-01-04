@@ -552,6 +552,28 @@ resource "aws_secretsmanager_secret_version" "credential_encryption_key" {
   secret_string = random_password.credential_encryption_key.result
 }
 
+# Secrets Manager secret for GitHub PAT (for AI Workers to clone repos and create PRs)
+# NOTE: After terraform apply, you need to set the actual token value:
+# aws secretsmanager put-secret-value --secret-id pagerduty-lite-dev-github-token --secret-string "ghp_your-token-here" --region us-east-1
+resource "aws_secretsmanager_secret" "github_token" {
+  name        = "${var.project_name}-${var.environment}-github-token"
+  description = "GitHub Personal Access Token for AI Workers to clone repos and create PRs"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-github-token"
+  }
+}
+
+# Jira webhook secret (created manually, imported via data source)
+data "aws_secretsmanager_secret" "jira_webhook_secret" {
+  name = "${var.project_name}-${var.environment}-jira-webhook-secret"
+}
+
+# Jira API integration secret (created manually for AI worker Jira sync)
+data "aws_secretsmanager_secret" "jira_integration" {
+  name = "oncallshift/jira-integration"
+}
+
 # API Service
 module "api_service" {
   source = "../../modules/ecs-service"
@@ -579,6 +601,7 @@ module "api_service" {
     AWS_REGION = var.aws_region
     ALERTS_QUEUE_URL = aws_sqs_queue.alerts.url
     NOTIFICATIONS_QUEUE_URL = aws_sqs_queue.notifications.url
+    AI_WORKER_QUEUE_URL = module.ai_workers.sqs_queue_url
     FCM_PLATFORM_APP_ARN = var.fcm_server_key != null ? aws_sns_platform_application.fcm[0].arn : ""
     APNS_PLATFORM_APP_ARN = var.apns_certificate != null ? aws_sns_platform_application.apns[0].arn : ""
     COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
@@ -591,14 +614,17 @@ module "api_service" {
     DATABASE_URL = module.database.secret_arn
     ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
     CREDENTIAL_ENCRYPTION_KEY = aws_secretsmanager_secret.credential_encryption_key.arn
+    GITHUB_TOKEN = aws_secretsmanager_secret.github_token.arn
     SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
+    JIRA_WEBHOOK_SECRET = data.aws_secretsmanager_secret.jira_webhook_secret.arn
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, data.aws_secretsmanager_secret.sentry_dsn.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
-    aws_sqs_queue.notifications.arn
+    aws_sqs_queue.notifications.arn,
+    module.ai_workers.sqs_queue_arn
   ]
 
   sns_topic_arns = [
@@ -855,6 +881,142 @@ module "escalation_timer" {
 
   use_fargate_spot         = var.use_fargate_spot
   fargate_spot_percentage  = var.fargate_spot_percentage
+
+  log_retention_days = var.log_retention_days
+}
+
+# =============================================================================
+# AI Workers Infrastructure
+# =============================================================================
+# AI Workers are autonomous AI "employees" that pick up tasks from Jira and execute
+# them using Claude Code CLI in ephemeral ECS Fargate containers.
+
+module "ai_workers" {
+  source = "../../modules/ai-workers"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  aws_region       = var.aws_region
+  ecs_cluster_arn  = aws_ecs_cluster.main.arn
+  ecs_cluster_name = aws_ecs_cluster.main.name
+  vpc_id           = module.networking.vpc_id
+  private_subnet_ids = module.networking.private_subnet_ids
+  security_group_ids = [module.networking.ecs_security_group_id]
+
+  github_token_secret_arn      = aws_secretsmanager_secret.github_token.arn
+  anthropic_api_key_secret_arn = aws_secretsmanager_secret.anthropic_api_key.arn
+  secrets_arns = [
+    aws_secretsmanager_secret.github_token.arn,
+    aws_secretsmanager_secret.anthropic_api_key.arn,
+    module.database.secret_arn
+  ]
+
+  log_retention_days = var.log_retention_days
+  enable_spot        = var.use_fargate_spot
+}
+
+# AI Worker Orchestrator Service
+# NOTE: Uses same Docker image as API - shares ECR repository
+module "ai_worker_orchestrator" {
+  source = "../../modules/ecs-service"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  aws_region         = var.aws_region
+  service_name       = "aiw-orch"
+  ecs_cluster_id     = aws_ecs_cluster.main.id
+  private_subnet_ids = module.networking.private_subnet_ids
+  security_group_id  = module.networking.ecs_security_group_id
+
+  # Use API's ECR repository - all services share the same Docker image
+  ecr_repository_url = module.api_service.ecr_repository_url
+
+  task_cpu    = "512"
+  task_memory = "1024"
+
+  desired_count  = 1  # Only one orchestrator needed
+  container_port = null  # Worker service, no HTTP port
+
+  # Override Docker CMD to run AI worker orchestrator
+  command = ["node", "dist/workers/ai-worker-orchestrator.js"]
+
+  environment_variables = {
+    NODE_ENV                = var.environment
+    AWS_REGION              = var.aws_region
+    AI_WORKER_QUEUE_URL     = module.ai_workers.sqs_queue_url
+    ECS_CLUSTER_NAME        = aws_ecs_cluster.main.name
+    EXECUTOR_TASK_DEFINITION = module.ai_workers.executor_task_definition_family
+    EXECUTOR_SUBNET_IDS     = join(",", module.networking.private_subnet_ids)
+    EXECUTOR_SECURITY_GROUP_IDS = module.networking.ecs_security_group_id
+    SENTRY_ENABLED          = tostring(var.sentry_enabled)
+    SENTRY_ENVIRONMENT      = var.environment
+  }
+
+  secrets = {
+    DATABASE_URL      = module.database.secret_arn
+    GITHUB_TOKEN      = aws_secretsmanager_secret.github_token.arn
+    ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
+    SENTRY_DSN        = data.aws_secretsmanager_secret.sentry_dsn.arn
+    # Jira integration credentials (from JSON secret)
+    JIRA_BASE_URL     = "${data.aws_secretsmanager_secret.jira_integration.arn}:base_url::"
+    JIRA_EMAIL        = "${data.aws_secretsmanager_secret.jira_integration.arn}:email::"
+    JIRA_API_TOKEN    = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
+    JIRA_PROJECT_KEY  = "${data.aws_secretsmanager_secret.jira_integration.arn}:project_key::"
+  }
+
+  secrets_arns = [
+    module.database.secret_arn,
+    aws_secretsmanager_secret.github_token.arn,
+    aws_secretsmanager_secret.anthropic_api_key.arn,
+    data.aws_secretsmanager_secret.sentry_dsn.arn,
+    data.aws_secretsmanager_secret.jira_integration.arn
+  ]
+
+  sqs_queue_arns = [
+    module.ai_workers.sqs_queue_arn
+  ]
+
+  sns_topic_arns = [
+    aws_sns_topic.push_events.arn
+  ]
+
+  additional_task_policy_statements = [
+    # ECS RunTask for spawning executor tasks
+    {
+      Effect = "Allow"
+      Action = [
+        "ecs:RunTask",
+        "ecs:StopTask",
+        "ecs:DescribeTasks",
+        "ecs:TagResource"
+      ]
+      Resource = [
+        "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${var.project_name}-${var.environment}-ai-worker-executor:*",
+        "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${aws_ecs_cluster.main.name}/*"
+      ]
+    },
+    # IAM PassRole for task execution
+    {
+      Effect   = "Allow"
+      Action   = ["iam:PassRole"]
+      Resource = [
+        module.ai_workers.executor_execution_role_arn,
+        module.ai_workers.executor_task_role_arn
+      ]
+    },
+    # CloudWatch Logs for streaming task output
+    {
+      Effect = "Allow"
+      Action = [
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents"
+      ]
+      Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-${var.environment}/ai-worker-executor:*"]
+    }
+  ]
+
+  use_fargate_spot        = var.use_fargate_spot
+  fargate_spot_percentage = var.fargate_spot_percentage
 
   log_retention_days = var.log_retention_days
 }

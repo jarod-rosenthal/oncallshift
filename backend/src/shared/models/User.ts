@@ -25,7 +25,7 @@ export class User {
   fullName: string | null;
 
   @Column({ type: 'varchar', length: 50, default: 'member' })
-  role: 'admin' | 'member'; // DEPRECATED: Use base_role instead
+  role: 'super_admin' | 'admin' | 'member'; // super_admin for Control Center access
 
   @Column({ name: 'base_role', type: 'varchar', length: 30, default: 'responder' })
   baseRole: BaseRole;
@@ -116,6 +116,13 @@ export class User {
    */
   isAdmin(): boolean {
     return this.baseRole === 'admin';
+  }
+
+  /**
+   * Check if user is a super admin (has access to Control Center)
+   */
+  isSuperAdmin(): boolean {
+    return this.role === 'super_admin';
   }
 
   /**

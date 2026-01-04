@@ -199,6 +199,19 @@ export declare class OnCallShiftClient {
      */
     addIncidentNote(incidentId: string, content: string): Promise<ApiResponse>;
     /**
+     * Create a new incident
+     */
+    createIncident(incident: {
+        title: string;
+        service_id: string;
+        severity?: 'critical' | 'error' | 'warning' | 'info';
+        description?: string;
+    }): Promise<ApiResponse>;
+    /**
+     * Add responders to an incident
+     */
+    addResponders(incidentId: string, userIds: string[], message?: string): Promise<ApiResponse>;
+    /**
      * List all services
      */
     listServices(params?: ListServicesParams): Promise<ApiResponse>;
@@ -223,6 +236,14 @@ export declare class OnCallShiftClient {
      */
     createTeam(team: CreateTeamPayload): Promise<ApiResponse>;
     /**
+     * Add a user to a team
+     */
+    addTeamMember(teamId: string, userId: string, role?: 'manager' | 'member'): Promise<ApiResponse>;
+    /**
+     * Remove a user from a team
+     */
+    removeTeamMember(teamId: string, userId: string): Promise<ApiResponse>;
+    /**
      * List all schedules
      */
     listSchedules(params?: ListSchedulesParams): Promise<ApiResponse>;
@@ -239,6 +260,14 @@ export declare class OnCallShiftClient {
      */
     getOnCallForSchedule(scheduleId: string): Promise<ApiResponse>;
     /**
+     * Create a schedule override (temporary assignment)
+     */
+    createScheduleOverride(scheduleId: string, override: {
+        user_id: string;
+        start_time: string;
+        end_time: string;
+    }): Promise<ApiResponse>;
+    /**
      * Get all currently on-call users across all schedules/services
      */
     getOnCallNow(): Promise<ApiResponse>;
@@ -250,6 +279,10 @@ export declare class OnCallShiftClient {
      * Get current authenticated user
      */
     getCurrentUser(): Promise<ApiResponse>;
+    /**
+     * Get a specific user by ID
+     */
+    getUser(userId: string): Promise<ApiResponse>;
     /**
      * List all escalation policies
      */

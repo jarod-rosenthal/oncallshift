@@ -12,7 +12,7 @@ import { useAuthStore } from '../store/auth-store';
 export function TeamDetail() {
   const { id } = useParams<{ id: string }>();
   const currentUser = useAuthStore((state) => state.user);
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
 
   const [team, setTeam] = useState<Team | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);

@@ -175,7 +175,8 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['People']));
   const [showQuickActions, setShowQuickActions] = useState(true);
 
-  const isAdmin = user?.role === 'admin';
+  // super_admin should have all admin privileges for normal site interaction
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');

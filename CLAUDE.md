@@ -38,6 +38,60 @@ OnCallShift is a production incident management platform deployed at https://onc
 3. **Background agents**: Use `run_in_background: true` for long-running tasks
 4. **Collect results**: Use `TaskOutput` to gather parallel agent results before proceeding
 
+## Slash Commands
+
+**Use slash commands for common workflows.** Commands are in `.claude/commands/` and pre-compute context for efficiency.
+
+### Available Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/deploy` | Deploy frontend + backend to production |
+| `/typecheck` | Run TypeScript checks on all projects in parallel |
+| `/commit-push-pr` | Stage, commit, push, and create PR in one flow |
+| `/test` | Run tests based on changed files |
+| `/build` | Build frontend and/or backend for production |
+| `/fix-types` | Iteratively fix TypeScript errors until clean |
+| `/logs` | View ECS service logs for debugging |
+| `/status` | Quick overview of git state and open PRs |
+| `/mobile-update` | Push OTA update to mobile app |
+| `/verify` | Verify work is complete (types, tests, lint) |
+
+### When to Use Commands
+
+- **After code changes**: `/typecheck` then `/deploy`
+- **Ready to merge**: `/commit-push-pr`
+- **Debugging production**: `/logs`
+- **Before starting work**: `/status`
+- **Mobile UI changes**: `/mobile-update`
+- **Verify long task**: `/verify` (run as background agent)
+
+## Hooks
+
+Auto-formatting is configured in `.claude/settings.json`. After any Write/Edit to `.ts`/`.tsx`/`.js`/`.jsx` files, Prettier runs automatically.
+
+### PostToolUse Hook (Auto-format)
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{
+        "type": "command",
+        "command": "npx prettier --write \"$CLAUDE_FILE_PATHS\""
+      }]
+    }]
+  }
+}
+```
+
+### Verification Pattern for Long Tasks
+For complex multi-step tasks, spawn a background verification agent when done:
+```
+After completing the main work, use the Task tool with run_in_background: true
+to spawn a verification agent that runs /verify
+```
+
 ### Tool Installation Policy
 
 **Always install tools that improve quality rather than wasting time on workarounds.**
@@ -51,6 +105,103 @@ OnCallShift is a production incident management platform deployed at https://onc
   - `Hashicorp.Terraform` - For infrastructure
 
 **Example**: If you need to create a PR and `gh` isn't installed, install it rather than telling the user to do it manually.
+
+## Windows/Git Bash Environment Issues
+
+**This repository is developed on Windows with Git Bash.** Several environment issues can cause unexpected failures.
+
+### When to Use WSL Instead of Git Bash
+
+**CRITICAL: The Bash tool runs in Git Bash on Windows, which has severe shell parsing limitations. When commands fail with syntax errors, IMMEDIATELY spawn a Task agent - don't waste time debugging Git Bash quirks.**
+
+Git Bash fails on:
+- Command substitution `$(...)` in complex commands
+- Variable expansion in URLs (e.g., `https://${TOKEN}@github.com/...`)
+- Multi-line commands with special characters
+- Basically anything beyond simple single-line commands
+
+**The Task tool spawns agents that run in WSL where these issues don't exist:**
+```
+Task tool with subagent_type="general-purpose":
+"Test the GitHub token by running:
+GH_TOKEN=$(aws secretsmanager get-secret-value --secret-id pagerduty-lite-dev-github-token --query SecretString --output text)
+git clone https://${GH_TOKEN}@github.com/jarosenthal/pagerduty-lite.git /tmp/test"
+```
+
+**Signs you should immediately delegate to a Task agent:**
+- Bash tool returns syntax errors with `$(` or variable expansion
+- Commands that worked before suddenly fail with parsing errors
+- You've tried the same command 2+ times with different escaping
+
+**Don't:** Spend an hour trying different escaping strategies in Git Bash
+**Do:** Spawn a Task agent on the first shell parsing failure
+
+### Verify Assumptions Early
+
+Before debugging complex issues, verify basic assumptions:
+```bash
+# Check the actual repo remote - don't assume the username
+git remote -v
+```
+
+**Example failure:** AI worker failed to clone `jarosenthal/pagerduty-lite` - the actual repo is `jarod-rosenthal/pagerduty-lite` (note the 'd'). An hour was wasted on encoding/shell issues when a simple `git remote -v` would have revealed the typo.
+
+### AWS CLI Encoding Issues
+
+When using `aws logs get-log-events` or similar commands that return Unicode/emoji content, the AWS CLI may fail with:
+```
+'charmap' codec can't encode character '\U0001f916'
+```
+
+**Root cause**: Windows console encoding doesn't support UTF-8 emojis by default.
+
+**Workarounds**:
+- Set `PYTHONIOENCODING=utf-8` before running AWS CLI commands
+- Use `--output text` instead of JSON
+- Pipe through `iconv -c -f UTF-8 -t ASCII//TRANSLIT`
+- **Best fix**: Avoid emojis in container/script output entirely
+
+### Terraform PATH Issues in Git Bash
+
+Terraform installed via `winget` isn't in Git Bash's PATH by default.
+
+**Solution**: Add the path explicitly:
+```bash
+export PATH="$PATH:/c/Users/jarod/AppData/Local/Microsoft/WinGet/Packages/Hashicorp.Terraform_Microsoft.Winget.Source_8wekyb3d8bbwe"
+terraform.exe apply ...
+```
+
+### MSYS Path Conversion
+
+Git Bash automatically converts paths like `/foo/bar` to Windows paths, which breaks AWS CLI commands:
+```
+# This fails - Git Bash converts /ecs to C:/Program Files/Git/ecs
+aws logs describe-log-streams --log-group-name /ecs/pagerduty-lite-dev/...
+
+# This works - MSYS_NO_PATHCONV disables path conversion
+MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name "/ecs/..."
+```
+
+### Docker Container Encoding
+
+When building Docker containers that output to CloudWatch Logs:
+- **Avoid emojis in shell scripts** - They cause encoding failures even with UTF-8 locale
+- Use text prefixes like `[INFO]`, `[ERROR]`, `[SUCCESS]` instead of emojis
+- Set locale in Dockerfile if Unicode is needed:
+```dockerfile
+RUN apt-get install -y locales && \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen
+ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+```
+
+### ECS Image Caching
+
+When pushing new Docker images with the same tag (e.g., `:latest`), Fargate may use cached image layers:
+- **Solution**: Use versioned tags like `:v1`, `:v2`, etc.
+- Update the ECS task definition to reference the new tag
+- Run `terraform apply` to create a new task definition revision
+- Verify the correct digest is pulled with `aws ecs describe-tasks --query 'tasks[0].containers[0].imageDigest'`
 
 ## Local LLM Usage (Ollama MCP)
 
@@ -356,10 +507,34 @@ terraform apply
 - **Runbook Automation**: `backend/src/api/routes/runbook-automation.ts` - Claude AI-powered automated runbook execution with sandboxed environments
 - **AI Assistant**: `backend/src/api/routes/ai-assistant.ts` - Unified AI chat with org-specific API keys and cloud investigation
 - **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered incident analysis
+- **AI Workers Control Center**: `backend/src/api/routes/super-admin.ts` - Super admin dashboard for monitoring AI workers (see below)
 - **User Actions**: Reassign, escalate, snooze, add responders in `backend/src/api/routes/incidents.ts`
 - **Setup Wizard**: `frontend/src/pages/SetupWizard.tsx` and `mobile/src/screens/SetupWizardScreen.tsx`
 - **Notification Tracking**: Delivery status per user/channel
 - **Cloud Credentials**: `backend/src/api/routes/cloud-credentials.ts` - AWS/GCP/Azure credential management for investigation
+
+### AI Workers Control Center
+
+A super admin feature for monitoring and managing AI workers. Requires `super_admin` role or org API key authentication.
+
+**Key Files:**
+- `backend/src/api/routes/super-admin.ts` - API endpoints for control center data
+- `frontend/src/pages/SuperAdminControlCenter.tsx` - Web dashboard (htop-style worker overview)
+- `backend/scripts/ai-worker-cli.ts` - CLI tool for terminal-based monitoring
+- `.claude/plans/effervescent-brewing-cloud.md` - Implementation plan
+
+**API Endpoints:**
+- `GET /api/v1/super-admin/control-center` - Aggregated worker/task data
+- `GET /api/v1/super-admin/control-center/logs/:taskId` - Stream logs for a task
+
+**CLI Tool:**
+```bash
+cd backend
+npx ts-node scripts/ai-worker-cli.ts          # Watch all active tasks
+npx ts-node scripts/ai-worker-cli.ts <taskId> # Watch specific task
+```
+
+**Authentication:** Supports both user JWT (super_admin role) and org API keys (`Bearer org_*`)
 
 ### Data Flow
 1. **Alert Ingestion**: Webhook → API → SQS → Alert Processor → Incident created → Escalation starts
@@ -403,6 +578,21 @@ npx playwright show-report                  # View results
 ### API Routes
 Routes in `backend/src/api/routes/` follow RESTful patterns. Auth middleware protects authenticated endpoints.
 
+### Authentication Middleware
+
+The `backend/src/shared/auth/middleware.ts` provides multiple authentication methods:
+
+| Middleware | Use Case | Auth Header |
+|------------|----------|-------------|
+| `authenticateUser` | Cognito JWT only | `Bearer <jwt>` |
+| `authenticateApiKey` | Service API key | `X-API-Key: svc_*` |
+| `authenticateOrgApiKey` | Org API key | `Bearer org_*` |
+| `authenticateRequest` | **All methods** (recommended) | Any of above |
+
+**Important:** Always use `authenticateRequest` for new routes unless you specifically need to restrict to one auth method. Routes using `authenticateUser` directly will reject org API keys.
+
+**Bug Fix Note:** `conference-bridges.ts` was changed from `authenticateUser` to `authenticateRequest` because it was intercepting all `/api/v1/*` requests and blocking org API key authentication for other routes.
+
 ### Multi-Tenancy
 All queries scoped by `org_id`. Users belong to organizations.
 
@@ -438,6 +628,27 @@ npm run build        # Build TypeScript
 npm run dev          # Development mode
 npm run typecheck    # Type checking
 ```
+
+**Configuration (`.mcp.json` in project root):**
+```json
+{
+  "mcpServers": {
+    "oncallshift": {
+      "command": "node",
+      "args": ["./packages/oncallshift-mcp/build/server.js"],
+      "env": {
+        "ONCALLSHIFT_API_KEY": "org_<your-api-key>"
+      }
+    }
+  }
+}
+```
+
+**Cross-Platform Path:** Uses relative path `./packages/oncallshift-mcp/build/server.js` which works in both Windows (PowerShell/Git Bash) and WSL when Claude Code is started from the project directory.
+
+**API Key:** Create an org API key at https://oncallshift.com Settings > API Keys. The key format is `org_<uuid>`.
+
+**Important:** After modifying `.mcp.json`, restart Claude Code to reload the MCP server configuration.
 
 ### Terraform Provider
 The `packages/terraform-provider-oncallshift/` provides a Terraform provider for managing OnCallShift resources as infrastructure-as-code.
@@ -605,3 +816,4 @@ Main API routes include:
 - `/api/v1/status-pages` - Public/private status pages
 - `/api/v1/import`, `/api/v1/export` - Platform migration tools
 - `/api/v1/semantic-import` - AI-powered screenshot/text import (Claude Vision)
+- `/api/v1/super-admin/control-center` - AI Workers monitoring (super_admin or org API key)

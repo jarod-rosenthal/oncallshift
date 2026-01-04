@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
-import { authenticateUser } from '../../shared/auth/middleware';
+import { authenticateRequest } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { ConferenceBridge, Incident, Organization, IncidentEvent } from '../../shared/models';
 import { conferenceBridgeService, ConferenceBridgeConfig } from '../../shared/services/conference-bridge';
@@ -8,7 +8,7 @@ import { logger } from '../../shared/utils/logger';
 
 const router = Router();
 
-router.use(authenticateUser);
+router.use(authenticateRequest);
 
 /**
  * GET /api/v1/incidents/:incidentId/conference-bridge

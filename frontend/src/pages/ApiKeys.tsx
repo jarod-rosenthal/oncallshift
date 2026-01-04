@@ -60,7 +60,8 @@ export function ApiKeys() {
     try {
       setIsLoading(true);
       const response = await apiClient.get('/api-keys');
-      setApiKeys(response.data.api_keys || []);
+      // Backend returns data in 'apiKeys' (camelCase) or 'data' array
+      setApiKeys(response.data.apiKeys || response.data.data || []);
     } catch (error) {
       console.error('Failed to load API keys:', error);
     } finally {

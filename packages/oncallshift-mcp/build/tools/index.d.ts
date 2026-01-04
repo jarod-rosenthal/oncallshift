@@ -245,6 +245,205 @@ export declare const ConnectIntegrationSchema: z.ZodObject<{
     integration_type: "slack" | "jira" | "datadog" | "cloudwatch" | "prometheus" | "github";
     configuration?: Record<string, unknown> | undefined;
 }>;
+export declare const ListUsersSchema: z.ZodObject<{
+    team_id: z.ZodOptional<z.ZodString>;
+    limit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+}, "strip", z.ZodTypeAny, {
+    limit: number;
+    team_id?: string | undefined;
+}, {
+    limit?: number | undefined;
+    team_id?: string | undefined;
+}>;
+export declare const GetUserSchema: z.ZodObject<{
+    user_id: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    user_id: string;
+}, {
+    user_id: string;
+}>;
+export declare const ListEscalationPoliciesSchema: z.ZodObject<{
+    limit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+}, "strip", z.ZodTypeAny, {
+    limit: number;
+}, {
+    limit?: number | undefined;
+}>;
+export declare const GetEscalationPolicySchema: z.ZodObject<{
+    escalation_policy_id: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    escalation_policy_id: string;
+}, {
+    escalation_policy_id: string;
+}>;
+export declare const AddTeamMemberSchema: z.ZodObject<{
+    team_id: z.ZodString;
+    user_id: z.ZodString;
+    role: z.ZodDefault<z.ZodEnum<["manager", "member"]>>;
+}, "strip", z.ZodTypeAny, {
+    team_id: string;
+    role: "manager" | "member";
+    user_id: string;
+}, {
+    team_id: string;
+    user_id: string;
+    role?: "manager" | "member" | undefined;
+}>;
+export declare const RemoveTeamMemberSchema: z.ZodObject<{
+    team_id: z.ZodString;
+    user_id: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    team_id: string;
+    user_id: string;
+}, {
+    team_id: string;
+    user_id: string;
+}>;
+export declare const CreateScheduleOverrideSchema: z.ZodObject<{
+    schedule_id: z.ZodString;
+    user_id: z.ZodString;
+    start_time: z.ZodString;
+    end_time: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    user_id: string;
+    schedule_id: string;
+    start_time: string;
+    end_time: string;
+}, {
+    user_id: string;
+    schedule_id: string;
+    start_time: string;
+    end_time: string;
+}>;
+export declare const CreateIncidentSchema: z.ZodObject<{
+    title: z.ZodString;
+    service_id: z.ZodString;
+    severity: z.ZodDefault<z.ZodEnum<["critical", "error", "warning", "info"]>>;
+    description: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    service_id: string;
+    severity: "error" | "critical" | "warning" | "info";
+    title: string;
+    description?: string | undefined;
+}, {
+    service_id: string;
+    title: string;
+    severity?: "error" | "critical" | "warning" | "info" | undefined;
+    description?: string | undefined;
+}>;
+export declare const AddRespondersSchema: z.ZodObject<{
+    incident_id: z.ZodString;
+    user_ids: z.ZodArray<z.ZodString, "many">;
+    message: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    incident_id: string;
+    user_ids: string[];
+    message?: string | undefined;
+}, {
+    incident_id: string;
+    user_ids: string[];
+    message?: string | undefined;
+}>;
+export declare const TestPagerDutyConnectionSchema: z.ZodObject<{
+    api_key: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    api_key: string;
+}, {
+    api_key: string;
+}>;
+export declare const TestOpsgenieConnectionSchema: z.ZodObject<{
+    api_key: z.ZodString;
+    region: z.ZodDefault<z.ZodEnum<["us", "eu"]>>;
+}, "strip", z.ZodTypeAny, {
+    api_key: string;
+    region: "us" | "eu";
+}, {
+    api_key: string;
+    region?: "us" | "eu" | undefined;
+}>;
+export declare const FetchPagerDutyConfigSchema: z.ZodObject<{
+    api_key: z.ZodString;
+    include: z.ZodOptional<z.ZodArray<z.ZodEnum<["users", "teams", "schedules", "escalation_policies", "services"]>, "many">>;
+}, "strip", z.ZodTypeAny, {
+    api_key: string;
+    include?: ("teams" | "users" | "schedules" | "escalation_policies" | "services")[] | undefined;
+}, {
+    api_key: string;
+    include?: ("teams" | "users" | "schedules" | "escalation_policies" | "services")[] | undefined;
+}>;
+export declare const FetchOpsgenieConfigSchema: z.ZodObject<{
+    api_key: z.ZodString;
+    region: z.ZodDefault<z.ZodEnum<["us", "eu"]>>;
+}, "strip", z.ZodTypeAny, {
+    api_key: string;
+    region: "us" | "eu";
+}, {
+    api_key: string;
+    region?: "us" | "eu" | undefined;
+}>;
+export declare const MigrateFromMcpSchema: z.ZodObject<{
+    source: z.ZodEnum<["pagerduty", "opsgenie"]>;
+    data: z.ZodObject<{
+        users: z.ZodOptional<z.ZodArray<z.ZodUnknown, "many">>;
+        teams: z.ZodOptional<z.ZodArray<z.ZodUnknown, "many">>;
+        schedules: z.ZodOptional<z.ZodArray<z.ZodUnknown, "many">>;
+        escalation_policies: z.ZodOptional<z.ZodArray<z.ZodUnknown, "many">>;
+        services: z.ZodOptional<z.ZodArray<z.ZodUnknown, "many">>;
+    }, "strip", z.ZodTypeAny, {
+        teams?: unknown[] | undefined;
+        users?: unknown[] | undefined;
+        schedules?: unknown[] | undefined;
+        escalation_policies?: unknown[] | undefined;
+        services?: unknown[] | undefined;
+    }, {
+        teams?: unknown[] | undefined;
+        users?: unknown[] | undefined;
+        schedules?: unknown[] | undefined;
+        escalation_policies?: unknown[] | undefined;
+        services?: unknown[] | undefined;
+    }>;
+    options: z.ZodOptional<z.ZodObject<{
+        dry_run: z.ZodDefault<z.ZodBoolean>;
+        invite_users: z.ZodDefault<z.ZodBoolean>;
+        preserve_ids: z.ZodDefault<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        dry_run: boolean;
+        invite_users: boolean;
+        preserve_ids: boolean;
+    }, {
+        dry_run?: boolean | undefined;
+        invite_users?: boolean | undefined;
+        preserve_ids?: boolean | undefined;
+    }>>;
+}, "strip", z.ZodTypeAny, {
+    data: {
+        teams?: unknown[] | undefined;
+        users?: unknown[] | undefined;
+        schedules?: unknown[] | undefined;
+        escalation_policies?: unknown[] | undefined;
+        services?: unknown[] | undefined;
+    };
+    source: "pagerduty" | "opsgenie";
+    options?: {
+        dry_run: boolean;
+        invite_users: boolean;
+        preserve_ids: boolean;
+    } | undefined;
+}, {
+    data: {
+        teams?: unknown[] | undefined;
+        users?: unknown[] | undefined;
+        schedules?: unknown[] | undefined;
+        escalation_policies?: unknown[] | undefined;
+        services?: unknown[] | undefined;
+    };
+    source: "pagerduty" | "opsgenie";
+    options?: {
+        dry_run?: boolean | undefined;
+        invite_users?: boolean | undefined;
+        preserve_ids?: boolean | undefined;
+    } | undefined;
+}>;
 export declare const TOOL_DEFINITIONS: ({
     name: string;
     description: string;
@@ -278,6 +477,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required?: undefined;
     };
@@ -321,6 +533,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required?: undefined;
     };
@@ -357,6 +582,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -396,6 +634,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required?: undefined;
     };
@@ -435,6 +686,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -474,6 +738,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -510,6 +787,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required?: undefined;
     };
@@ -565,6 +855,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -627,6 +930,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -672,6 +988,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -721,6 +1050,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -767,6 +1109,19 @@ export declare const TOOL_DEFINITIONS: ({
             dry_run?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -813,6 +1168,19 @@ export declare const TOOL_DEFINITIONS: ({
             team_ids?: undefined;
             integration_type?: undefined;
             configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
         };
         required: string[];
     };
@@ -856,6 +1224,649 @@ export declare const TOOL_DEFINITIONS: ({
             export_data?: undefined;
             preserve_keys?: undefined;
             dry_run?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            user_id: {
+                type: string;
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            escalation_policy_id: {
+                type: string;
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            team_id: {
+                type: string;
+                description: string;
+            };
+            user_id: {
+                type: string;
+                description: string;
+            };
+            role: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            team_id: {
+                type: string;
+                description: string;
+            };
+            user_id: {
+                type: string;
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            schedule_id: {
+                type: string;
+                description: string;
+            };
+            user_id: {
+                type: string;
+                description: string;
+            };
+            start_time: {
+                type: string;
+                description: string;
+            };
+            end_time: {
+                type: string;
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            title: {
+                type: string;
+                description: string;
+            };
+            service_id: {
+                type: string;
+                description: string;
+            };
+            severity: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            description: {
+                type: string;
+                description: string;
+            };
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            incident_id: {
+                type: string;
+                description: string;
+            };
+            user_ids: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
+            message: {
+                type: string;
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            api_key: {
+                type: string;
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            region?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            api_key: {
+                type: string;
+                description: string;
+            };
+            region: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            include?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            api_key: {
+                type: string;
+                description: string;
+            };
+            include: {
+                type: string;
+                items: {
+                    type: string;
+                    enum: string[];
+                };
+                description: string;
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            region?: undefined;
+            source?: undefined;
+            data?: undefined;
+            options?: undefined;
+        };
+        required: string[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: "object";
+        properties: {
+            source: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            data: {
+                type: string;
+                description: string;
+                properties: {
+                    users: {
+                        type: string;
+                        description: string;
+                    };
+                    teams: {
+                        type: string;
+                        description: string;
+                    };
+                    schedules: {
+                        type: string;
+                        description: string;
+                    };
+                    escalation_policies: {
+                        type: string;
+                        description: string;
+                    };
+                    services: {
+                        type: string;
+                        description: string;
+                    };
+                };
+            };
+            options: {
+                type: string;
+                properties: {
+                    dry_run: {
+                        type: string;
+                        description: string;
+                    };
+                    invite_users: {
+                        type: string;
+                        description: string;
+                    };
+                    preserve_ids: {
+                        type: string;
+                        description: string;
+                    };
+                };
+            };
+            service_id?: undefined;
+            status?: undefined;
+            limit?: undefined;
+            incident_id?: undefined;
+            team_id?: undefined;
+            content?: undefined;
+            name?: undefined;
+            description?: undefined;
+            timezone?: undefined;
+            rotation_type?: undefined;
+            user_ids?: undefined;
+            service_name?: undefined;
+            steps?: undefined;
+            escalation_policy_id?: undefined;
+            email?: undefined;
+            full_name?: undefined;
+            role?: undefined;
+            team_ids?: undefined;
+            platform?: undefined;
+            export_data?: undefined;
+            preserve_keys?: undefined;
+            dry_run?: undefined;
+            integration_type?: undefined;
+            configuration?: undefined;
+            user_id?: undefined;
+            schedule_id?: undefined;
+            start_time?: undefined;
+            end_time?: undefined;
+            title?: undefined;
+            severity?: undefined;
+            message?: undefined;
+            api_key?: undefined;
+            region?: undefined;
+            include?: undefined;
         };
         required: string[];
     };

@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [[ \"$CLAUDE_FILE_PATHS\" =~ \\.(ts|tsx|js|jsx)$ ]]; then npx prettier --write \"$CLAUDE_FILE_PATHS\" 2>/dev/null || true; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '✅ Session complete'"
+          }
+        ]
+      }
+    ]
+  }
+}
