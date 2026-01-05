@@ -567,8 +567,8 @@ CLAUDE_STDERR_FILE="/tmp/claude-stderr.log"
 # Log parser script path (inside Docker container)
 LOG_PARSER_SCRIPT="/app/scripts/log-parser.js"
 
-# Export env vars for log-parser.js
-export TASK_ID ORG_ID API_BASE_URL ORG_API_KEY
+# Export env vars for log-parser.js (including CLAUDE_MODEL for cost calculation)
+export TASK_ID ORG_ID API_BASE_URL ORG_API_KEY CLAUDE_MODEL
 
 # Check if log-parser exists
 if [ -f "${LOG_PARSER_SCRIPT}" ]; then
@@ -623,123 +623,37 @@ else
     send_log "error" "Claude Agent exited with code ${CLAUDE_EXIT_CODE}" "error"
 fi
 
-# Parse token usage from the stream-json output
-# Claude Code CLI outputs JSON lines - we need to sum up usage from all events
-# or find a final summary event
+# =============================================================================
+# Token Usage Tracking
+# =============================================================================
+# Token usage is now tracked by log-parser.js which:
+# 1. Parses usage from every JSON event in real-time
+# 2. Accumulates totals across all messages
+# 3. Reports to /api/v1/ai-worker-tasks/:id/usage when Claude exits
+#
+# This shell-based parsing is a simple fallback for Jira comments only.
+# The authoritative cost tracking is done by log-parser.js.
 
-INPUT_TOKENS="0"
-OUTPUT_TOKENS="0"
-CACHE_CREATION="0"
-CACHE_READ="0"
-
-if [ -f "${CLAUDE_OUTPUT_FILE}" ] && [ -s "${CLAUDE_OUTPUT_FILE}" ]; then
-    echo "[Tokens] Parsing token usage from ${CLAUDE_OUTPUT_FILE}..."
-
-    # Method 1: Look for result/summary event at the end
-    LAST_LINE=$(tail -1 "${CLAUDE_OUTPUT_FILE}")
-    if echo "${LAST_LINE}" | jq -e '.type == "result"' > /dev/null 2>&1; then
-        # Try different possible paths for usage data
-        INPUT_TOKENS=$(echo "${LAST_LINE}" | jq -r '.usage.input_tokens // .result.usage.input_tokens // .input_tokens // 0' 2>/dev/null || echo "0")
-        OUTPUT_TOKENS=$(echo "${LAST_LINE}" | jq -r '.usage.output_tokens // .result.usage.output_tokens // .output_tokens // 0' 2>/dev/null || echo "0")
-        CACHE_CREATION=$(echo "${LAST_LINE}" | jq -r '.usage.cache_creation_input_tokens // .result.usage.cache_creation_input_tokens // 0' 2>/dev/null || echo "0")
-        CACHE_READ=$(echo "${LAST_LINE}" | jq -r '.usage.cache_read_input_tokens // .result.usage.cache_read_input_tokens // 0' 2>/dev/null || echo "0")
-        echo "[Tokens] Found result event: in=${INPUT_TOKENS}, out=${OUTPUT_TOKENS}"
-    fi
-
-    # Method 2: If no result event or tokens are 0, sum from all assistant messages
-    if [ "${INPUT_TOKENS}" = "0" ] || [ "${INPUT_TOKENS}" = "null" ]; then
-        echo "[Tokens] No result event found, summing from assistant messages..."
-
-        # Sum input_tokens from all events that have usage
-        INPUT_TOKENS=$(cat "${CLAUDE_OUTPUT_FILE}" | jq -r 'select(.message.usage.input_tokens != null) | .message.usage.input_tokens' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-        OUTPUT_TOKENS=$(cat "${CLAUDE_OUTPUT_FILE}" | jq -r 'select(.message.usage.output_tokens != null) | .message.usage.output_tokens' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-        CACHE_CREATION=$(cat "${CLAUDE_OUTPUT_FILE}" | jq -r 'select(.message.usage.cache_creation_input_tokens != null) | .message.usage.cache_creation_input_tokens' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-        CACHE_READ=$(cat "${CLAUDE_OUTPUT_FILE}" | jq -r 'select(.message.usage.cache_read_input_tokens != null) | .message.usage.cache_read_input_tokens' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-
-        echo "[Tokens] Summed from messages: in=${INPUT_TOKENS}, out=${OUTPUT_TOKENS}"
-    fi
-
-    # Method 3: If still 0, try alternate paths (usage at root level)
-    if [ "${INPUT_TOKENS}" = "0" ] || [ "${INPUT_TOKENS}" = "" ]; then
-        echo "[Tokens] Trying alternate JSON paths..."
-        INPUT_TOKENS=$(cat "${CLAUDE_OUTPUT_FILE}" | jq -r 'select(.usage.input_tokens != null) | .usage.input_tokens' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-        OUTPUT_TOKENS=$(cat "${CLAUDE_OUTPUT_FILE}" | jq -r 'select(.usage.output_tokens != null) | .usage.output_tokens' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
-        echo "[Tokens] From alternate paths: in=${INPUT_TOKENS}, out=${OUTPUT_TOKENS}"
-    fi
-
-    # Method 4: Look for any line containing token counts (fallback regex)
-    if [ "${INPUT_TOKENS}" = "0" ] || [ "${INPUT_TOKENS}" = "" ]; then
-        echo "[Tokens] Fallback: searching for token patterns in text..."
-        # Look for patterns like "input_tokens": 12345 or input_tokens: 12345
-        INPUT_TOKENS=$(grep -oE '"?input_tokens"?\s*:\s*[0-9]+' "${CLAUDE_OUTPUT_FILE}" | grep -oE '[0-9]+' | awk '{sum += $1} END {print sum+0}')
-        OUTPUT_TOKENS=$(grep -oE '"?output_tokens"?\s*:\s*[0-9]+' "${CLAUDE_OUTPUT_FILE}" | grep -oE '[0-9]+' | awk '{sum += $1} END {print sum+0}')
-        echo "[Tokens] From regex patterns: in=${INPUT_TOKENS}, out=${OUTPUT_TOKENS}"
-    fi
-
-    # Debug: Show sample of output file for troubleshooting
-    echo "[Tokens] First 3 lines of output file:"
-    head -3 "${CLAUDE_OUTPUT_FILE}" | while read line; do
-        echo "  $(echo "$line" | head -c 200)..."
-    done
-    echo "[Tokens] Last line of output file:"
-    echo "  $(tail -1 "${CLAUDE_OUTPUT_FILE}" | head -c 300)..."
-fi
-
-# Ensure we have numeric values
-INPUT_TOKENS="${INPUT_TOKENS:-0}"
-OUTPUT_TOKENS="${OUTPUT_TOKENS:-0}"
-CACHE_CREATION="${CACHE_CREATION:-0}"
-CACHE_READ="${CACHE_READ:-0}"
-
-# Handle null/empty values
-[ "${INPUT_TOKENS}" = "null" ] || [ "${INPUT_TOKENS}" = "" ] && INPUT_TOKENS="0"
-[ "${OUTPUT_TOKENS}" = "null" ] || [ "${OUTPUT_TOKENS}" = "" ] && OUTPUT_TOKENS="0"
-[ "${CACHE_CREATION}" = "null" ] || [ "${CACHE_CREATION}" = "" ] && CACHE_CREATION="0"
-[ "${CACHE_READ}" = "null" ] || [ "${CACHE_READ}" = "" ] && CACHE_READ="0"
-
-# Calculate cost based on model pricing
-# Haiku: $0.25/M input, $1.25/M output, $0.30/M cache write, $0.03/M cache read
-# Sonnet: $3/M input, $15/M output, $3.75/M cache write, $0.30/M cache read
-if [ "${CLAUDE_MODEL}" = "haiku" ]; then
-    INPUT_RATE="0.00000025"
-    OUTPUT_RATE="0.00000125"
-    CACHE_WRITE_RATE="0.0000003"
-    CACHE_READ_RATE="0.00000003"
-else
-    # Default to Sonnet pricing
-    INPUT_RATE="0.000003"
-    OUTPUT_RATE="0.000015"
-    CACHE_WRITE_RATE="0.00000375"
-    CACHE_READ_RATE="0.0000003"
-fi
-
-CLAUDE_COST=$(echo "scale=4; ${INPUT_TOKENS} * ${INPUT_RATE} + ${OUTPUT_TOKENS} * ${OUTPUT_RATE} + ${CACHE_CREATION} * ${CACHE_WRITE_RATE} + ${CACHE_READ} * ${CACHE_READ_RATE}" | bc 2>/dev/null || echo "0")
-
+echo "[Tokens] Token usage tracked by log-parser.js (reports to API on completion)"
 echo "[Tokens] Model: ${CLAUDE_MODEL}"
-echo "[Tokens] Input: ${INPUT_TOKENS}, Output: ${OUTPUT_TOKENS}"
-echo "[Tokens] Cache: created=${CACHE_CREATION:-0}, read=${CACHE_READ:-0}"
-echo "[Tokens] Calculated cost: \$${CLAUDE_COST}"
 
-# Output token markers for orchestrator to parse
-echo "::input_tokens::${INPUT_TOKENS:-0}"
-echo "::output_tokens::${OUTPUT_TOKENS:-0}"
-echo "::cache_creation_tokens::${CACHE_CREATION:-0}"
-echo "::cache_read_tokens::${CACHE_READ:-0}"
-echo "::claude_cost::${CLAUDE_COST:-0}"
-echo "::model::${CLAUDE_MODEL}"
+# Simple fallback: extract from last line for Jira comment display
+CLAUDE_COST="0"
+if [ -f "${CLAUDE_OUTPUT_FILE}" ] && [ -s "${CLAUDE_OUTPUT_FILE}" ]; then
+    # Try to get usage from last JSON line (result event)
+    LAST_LINE=$(tail -1 "${CLAUDE_OUTPUT_FILE}" 2>/dev/null)
+    INPUT_TOKENS=$(echo "${LAST_LINE}" | jq -r '.usage.input_tokens // .message.usage.input_tokens // 0' 2>/dev/null || echo "0")
+    OUTPUT_TOKENS=$(echo "${LAST_LINE}" | jq -r '.usage.output_tokens // .message.usage.output_tokens // 0' 2>/dev/null || echo "0")
 
-# Report token usage to API
-if [ -n "${API_BASE_URL}" ] && [ -n "${ORG_API_KEY}" ]; then
-    echo "[API] Reporting token usage..."
-    curl -s -X POST "${API_BASE_URL}/api/v1/ai-worker-tasks/${TASK_ID}/usage" \
-        -H "Authorization: Bearer ${ORG_API_KEY}" \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"model\": \"${CLAUDE_MODEL}\",
-            \"inputTokens\": ${INPUT_TOKENS:-0},
-            \"outputTokens\": ${OUTPUT_TOKENS:-0},
-            \"reportedCost\": ${CLAUDE_COST:-0}
-        }" > /dev/null 2>&1 && echo "[API] Token usage reported" || echo "[API] Failed to report token usage"
+    # Quick cost estimate for Jira comment (log-parser.js has the accurate number)
+    if [ "${INPUT_TOKENS}" != "0" ] && [ "${INPUT_TOKENS}" != "null" ]; then
+        if [ "${CLAUDE_MODEL}" = "haiku" ]; then
+            CLAUDE_COST=$(echo "scale=4; ${INPUT_TOKENS} * 0.00000025 + ${OUTPUT_TOKENS} * 0.00000125" | bc 2>/dev/null || echo "0")
+        else
+            CLAUDE_COST=$(echo "scale=4; ${INPUT_TOKENS} * 0.000003 + ${OUTPUT_TOKENS} * 0.000015" | bc 2>/dev/null || echo "0")
+        fi
+        echo "[Tokens] Fallback estimate: ${INPUT_TOKENS} in / ${OUTPUT_TOKENS} out = \$${CLAUDE_COST}"
+    fi
 fi
 
 # Gather detailed info about changes for Jira
