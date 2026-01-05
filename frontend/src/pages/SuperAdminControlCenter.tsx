@@ -1652,13 +1652,6 @@ export default function SuperAdminControlCenter() {
             <Users className="w-5 h-5" />
             Workers
           </h2>
-          <button
-            onClick={() => setShowCreateWorkerModal(true)}
-            className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Worker
-          </button>
         </div>
 
         {data?.workers.map((worker) => {
