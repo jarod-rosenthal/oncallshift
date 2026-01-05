@@ -22,12 +22,20 @@ function generateApiKeyToken(): string {
   return `org_${uuid}`;
 }
 
+// Helper to mask API key showing only last 4 characters
+function maskApiKey(key: string): string {
+  if (key.length <= 4) {
+    return key; // If key is too short, return as-is
+  }
+  return '****' + key.slice(-4);
+}
+
 // Helper to format API key for response (never include token or hash)
 function formatApiKey(apiKey: OrganizationApiKey) {
   return {
     id: apiKey.id,
     name: apiKey.name,
-    key_prefix: apiKey.keyPrefix,
+    key_prefix: maskApiKey(apiKey.keyPrefix),
     scopes: apiKey.scopes,
     last_used_at: apiKey.lastUsedAt,
     expires_at: apiKey.expiresAt,
