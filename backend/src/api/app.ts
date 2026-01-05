@@ -349,9 +349,8 @@ export function createApp(): Express {
   app.use((req, res, next) => {
     if (req.path.startsWith('/api/')) {
       return notFound(res, 'API endpoint');
-    } else {
-      next();
     }
+    return next();
   });
 
   // Sentry error handler (must be before other error handlers)
