@@ -148,9 +148,8 @@ router.get(
       const sortField = validateSortField('escalationPolicies', pagination.sort, 'createdAt');
       const sortOrder = pagination.order === 'asc' ? 'ASC' : 'DESC';
 
-      // Map camelCase to snake_case for sorting
-      const snakeCaseSortField = sortField === 'createdAt' ? 'created_at' : sortField;
-      queryBuilder.orderBy(`policy.${snakeCaseSortField}`, sortOrder);
+      // Use camelCase property names - TypeORM handles translation to snake_case columns
+      queryBuilder.orderBy(`policy.${sortField}`, sortOrder);
 
       // Get total count before pagination
       const total = await queryBuilder.getCount();
