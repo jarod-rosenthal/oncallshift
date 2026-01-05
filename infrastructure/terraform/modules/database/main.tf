@@ -85,7 +85,7 @@ resource "aws_db_instance" "main" {
   copy_tags_to_snapshot        = true
   skip_final_snapshot          = var.environment != "prod"
   final_snapshot_identifier    = var.environment == "prod" ? "${var.project_name}-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
-  deletion_protection          = var.environment == "prod" ? true : false
+  deletion_protection          = var.deletion_protection
 
   # Performance Insights
   performance_insights_enabled          = var.enable_performance_insights

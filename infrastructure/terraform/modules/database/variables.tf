@@ -101,3 +101,9 @@ variable "alarm_sns_topic_arn" {
   type        = string
   default     = null
 }
+
+variable "deletion_protection" {
+  description = "Enable deletion protection for RDS instance"
+  type        = bool
+  default     = true
+}

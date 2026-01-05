@@ -58,6 +58,12 @@ variable "db_backup_retention_days" {
   default     = 7
 }
 
+variable "db_deletion_protection" {
+  description = "Enable deletion protection for RDS instance"
+  type        = bool
+  default     = true
+}
+
 variable "api_desired_count" {
   description = "Desired number of API tasks"
   type        = number
