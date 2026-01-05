@@ -61,8 +61,9 @@ export function Integrations() {
         integrationsAPI.list(),
         servicesAPI.list(),
       ]);
-      setIntegrations(integrationsRes.integrations);
-      setServices(servicesRes.services);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setIntegrations(integrationsRes.integrations || (integrationsRes as any).data || []);
+      setServices(servicesRes.services || (servicesRes as any).data || []);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load integrations');
     } finally {

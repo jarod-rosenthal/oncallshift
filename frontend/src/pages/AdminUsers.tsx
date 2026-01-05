@@ -30,9 +30,10 @@ export function AdminUsers() {
     try {
       setIsLoading(true);
       const response = await usersAPI.listAllUsers();
-      setUsers(response.users);
+      // Handle paginated response - prefer legacy key, fall back to data array
+      setUsers(response.users || (response as any).data || []);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load users');
+      setError(err.response?.data?.error || err.response?.data?.detail || 'Failed to load users');
     } finally {
       setIsLoading(false);
     }

@@ -79,8 +79,9 @@ export function StatusPageAdmin() {
         statusPagesAPI.list(),
         servicesAPI.list(),
       ]);
-      setStatusPages(pagesData.statusPages);
-      setServices(servicesData.services);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setStatusPages(pagesData.statusPages || (pagesData as any).data || []);
+      setServices(servicesData.services || (servicesData as any).data || []);
       setError(null);
     } catch (err) {
       console.error('Failed to load data:', err);

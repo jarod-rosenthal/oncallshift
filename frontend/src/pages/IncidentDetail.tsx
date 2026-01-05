@@ -22,6 +22,7 @@ import { StickyActionBar, StickyActionBarSpacer } from '../components/StickyActi
 import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
+import { notifyIncidentChanged } from '../lib/incident-events';
 import type { Incident, User, EscalationStatus, IncidentEvent } from '../types/api';
 
 export function IncidentDetail() {
@@ -129,6 +130,7 @@ export function IncidentDetail() {
     try {
       await incidentsAPI.acknowledge(id);
       showToast.acknowledge();
+      notifyIncidentChanged(); // Update sidebar badge immediately
       await refreshData();
     } catch {
       showToast.error('Failed to acknowledge incident');
@@ -143,6 +145,7 @@ export function IncidentDetail() {
       setShowResolveModal(false);
       showToast.resolve();
       triggerConfetti();
+      notifyIncidentChanged(); // Update sidebar badge immediately
       await refreshData();
     } catch {
       showToast.error('Failed to resolve incident');
@@ -156,6 +159,7 @@ export function IncidentDetail() {
     try {
       await incidentsAPI.unacknowledge(id);
       showToast.success('Incident unacknowledged');
+      notifyIncidentChanged(); // Update sidebar badge immediately
       await refreshData();
     } catch {
       showToast.error('Failed to unacknowledge incident');
@@ -167,6 +171,7 @@ export function IncidentDetail() {
     try {
       await incidentsAPI.unresolve(id);
       showToast.success('Incident reopened');
+      notifyIncidentChanged(); // Update sidebar badge immediately
       await refreshData();
     } catch {
       showToast.error('Failed to reopen incident');

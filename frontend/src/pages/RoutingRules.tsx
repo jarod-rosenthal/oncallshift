@@ -67,8 +67,9 @@ export function RoutingRules() {
         routingRulesAPI.list(),
         servicesAPI.list(),
       ]);
-      setRules(rulesRes.rules);
-      setServices(servicesRes.services);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setRules(rulesRes.rules || (rulesRes as any).data || []);
+      setServices(servicesRes.services || (servicesRes as any).data || []);
       setError(null);
     } catch (err) {
       setError('Failed to load routing rules');

@@ -101,8 +101,17 @@ COPY ai-worker/execution /app/execution
 # Create package.json for execution scripts and install dependencies
 RUN mkdir -p /app && \
     echo '{"name": "ai-worker-execution", "type": "module", "dependencies": {"typescript": "^5.0.0", "ts-node": "^10.9.0", "@types/node": "^20.0.0"}}' > /app/package.json && \
-    cd /app && npm install && \
-    chown -R aiworker:aiworker /app
+    cd /app && npm install
+
+# Create tsconfig.json for compilation
+RUN echo '{"compilerOptions": {"target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext", "outDir": "./execution-compiled", "rootDir": "./execution", "strict": true, "esModuleInterop": true, "skipLibCheck": true, "declaration": false}, "include": ["execution/**/*.ts"]}' > /app/tsconfig.json
+
+# Compile TypeScript execution scripts to JavaScript
+RUN cd /app && npx tsc && \
+    echo "[Build] Execution scripts compiled to /app/execution-compiled/"
+
+# Fix ownership
+RUN chown -R aiworker:aiworker /app
 
 # Switch to non-root user
 USER aiworker

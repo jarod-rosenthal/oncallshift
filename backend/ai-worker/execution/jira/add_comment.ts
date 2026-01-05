@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   const output: Output = { success: false };
 
   try {
-    const jiraKey = process.env.JIRA_KEY;
+    const jiraKey = process.env.JIRA_KEY || process.env.JIRA_ISSUE_KEY;
     const comment = process.env.COMMENT;
     const jiraBaseUrl = process.env.JIRA_BASE_URL;
     const jiraEmail = process.env.JIRA_EMAIL;

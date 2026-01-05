@@ -29,9 +29,10 @@ export function Teams() {
     try {
       setIsLoading(true);
       const response = await teamsAPI.list();
-      setTeams(response.teams);
+      // Handle paginated response - prefer legacy key, fall back to data array
+      setTeams(response.teams || (response as any).data || []);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load teams');
+      setError(err.response?.data?.error || err.response?.data?.detail || 'Failed to load teams');
     } finally {
       setIsLoading(false);
     }

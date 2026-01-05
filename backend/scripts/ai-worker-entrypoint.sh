@@ -17,9 +17,10 @@ DOE_BASE_DIR="/app"
 AGENTS_MD="${DOE_BASE_DIR}/AGENTS.md"
 DIRECTIVES_DIR="${DOE_BASE_DIR}/directives"
 EXECUTION_DIR="${DOE_BASE_DIR}/execution"
+EXECUTION_COMPILED_DIR="${DOE_BASE_DIR}/execution-compiled"
 
 # Export for Claude to use
-export DOE_BASE_DIR AGENTS_MD DIRECTIVES_DIR EXECUTION_DIR
+export DOE_BASE_DIR AGENTS_MD DIRECTIVES_DIR EXECUTION_DIR EXECUTION_COMPILED_DIR
 
 # Heartbeat configuration
 HEARTBEAT_INTERVAL=60
@@ -186,18 +187,132 @@ send_log "git_operation" "Created branch: ${BRANCH_NAME}" "info"
 transition_jira_to_progress
 add_jira_comment "🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n⚡ Starting work on this task.\n\nBranch: ${BRANCH_NAME}\nRepository: ${GITHUB_REPO}"
 
+# =============================================================================
+# Task Complexity Detection
+# =============================================================================
+# Simple tasks don't need the full directive framework - they can just be done.
+# This saves turns and improves efficiency for straightforward changes.
+
+detect_task_complexity() {
+    local summary_lower=$(echo "${JIRA_SUMMARY:-}" | tr '[:upper:]' '[:lower:]')
+    local desc_lower=$(echo "${JIRA_DESCRIPTION:-}" | tr '[:upper:]' '[:lower:]')
+    local combined="${summary_lower} ${desc_lower}"
+
+    # Simple task indicators (can be done in <5 turns)
+    local simple_patterns=(
+        "fix typo"
+        "update comment"
+        "rename.*to"
+        "change.*from.*to"
+        "add.*import"
+        "remove.*import"
+        "update.*version"
+        "bump.*version"
+        "fix.*spacing"
+        "fix.*indentation"
+        "add.*type"
+        "fix.*type error"
+        "one.*line"
+        "single.*line"
+        "simple.*fix"
+        "quick.*fix"
+        "trivial"
+    )
+
+    for pattern in "${simple_patterns[@]}"; do
+        if echo "$combined" | grep -qiE "$pattern"; then
+            echo "simple"
+            return
+        fi
+    done
+
+    # Complex task indicators (need full directive framework)
+    local complex_patterns=(
+        "implement"
+        "create.*new"
+        "add.*feature"
+        "refactor"
+        "migrate"
+        "integration"
+        "multi.*file"
+        "across.*files"
+        "architecture"
+        "design"
+        "security"
+        "authentication"
+        "database"
+        "api.*endpoint"
+        "new.*route"
+        "test.*coverage"
+    )
+
+    for pattern in "${complex_patterns[@]}"; do
+        if echo "$combined" | grep -qiE "$pattern"; then
+            echo "complex"
+            return
+        fi
+    done
+
+    # Default to standard (use some directives but not all)
+    echo "standard"
+}
+
+TASK_COMPLEXITY=$(detect_task_complexity)
+echo "[Complexity] Detected task complexity: ${TASK_COMPLEXITY}"
+send_log "system" "Task complexity: ${TASK_COMPLEXITY}" "info"
+
 # Build task instructions using DOE framework
 INSTRUCTIONS_FILE="/tmp/task-instructions.md"
 
-# Start with AGENTS.md as the base
-if [ -f "${AGENTS_MD}" ]; then
-    cp "${AGENTS_MD}" "${INSTRUCTIONS_FILE}"
-    echo "" >> "${INSTRUCTIONS_FILE}"
-    echo "---" >> "${INSTRUCTIONS_FILE}"
-    echo "" >> "${INSTRUCTIONS_FILE}"
+# Build instructions based on complexity
+if [ "${TASK_COMPLEXITY}" = "simple" ]; then
+    # Simple tasks: Minimal instructions, just do the work
+    echo "[Instructions] Using simplified instructions for simple task"
+    cat > "${INSTRUCTIONS_FILE}" << 'SIMPLE_EOF'
+# Simple Task - Direct Execution Mode
+
+This is a straightforward task that should be completed quickly.
+
+## Instructions
+
+1. **Read the task** below
+2. **Make the change** directly - no need for extensive planning
+3. **Test** by running deploy.sh if needed
+4. **Commit and push** your changes
+5. **Create a PR** with a brief description
+
+## Git Workflow (Quick Version)
+
+```bash
+# After making changes:
+git add -A
+git commit -m "OCS-XXX: Brief description"
+git push -u origin HEAD
+gh pr create --title "OCS-XXX: Brief description" --body "Quick fix for..."
+```
+
+## Skip These for Simple Tasks
+
+- You don't need to read all directives
+- You don't need extensive error handling
+- You don't need to update multiple test files (unless tests are failing)
+
+Just make the change, verify it works, and ship it.
+
+---
+
+SIMPLE_EOF
 else
-    echo "[WARN] AGENTS.md not found at ${AGENTS_MD}, using fallback instructions"
-    touch "${INSTRUCTIONS_FILE}"
+    # Standard/Complex tasks: Use full AGENTS.md
+    if [ -f "${AGENTS_MD}" ]; then
+        cp "${AGENTS_MD}" "${INSTRUCTIONS_FILE}"
+        echo "" >> "${INSTRUCTIONS_FILE}"
+        echo "---" >> "${INSTRUCTIONS_FILE}"
+        echo "" >> "${INSTRUCTIONS_FILE}"
+    else
+        echo "[WARN] AGENTS.md not found at ${AGENTS_MD}, using fallback instructions"
+        touch "${INSTRUCTIONS_FILE}"
+    fi
 fi
 
 # Add task-specific context
@@ -217,14 +332,16 @@ ${JIRA_DESCRIPTION:-No description provided}
 - **Directives Directory**: ${DIRECTIVES_DIR}
 - **Execution Scripts Directory**: ${EXECUTION_DIR}
 
+EOF
+
+# List available directives dynamically (skip for simple tasks)
+if [ "${TASK_COMPLEXITY}" != "simple" ] && [ -d "${DIRECTIVES_DIR}" ]; then
+    cat >> "${INSTRUCTIONS_FILE}" << 'DIREOF'
 ## Available Directives
 
 Read the relevant directive for your task type:
 
-EOF
-
-# List available directives dynamically
-if [ -d "${DIRECTIVES_DIR}" ]; then
+DIREOF
     echo "### Common Directives" >> "${INSTRUCTIONS_FILE}"
     for f in "${DIRECTIVES_DIR}/common"/*.md; do
         [ -f "$f" ] && echo "- \`directives/common/$(basename $f)\`" >> "${INSTRUCTIONS_FILE}"
@@ -251,7 +368,18 @@ Use these scripts instead of running commands directly:
 
 EOF
 
-if [ -d "${EXECUTION_DIR}" ]; then
+if [ -d "${EXECUTION_COMPILED_DIR}" ]; then
+    for dir in "${EXECUTION_COMPILED_DIR}"/*/; do
+        [ -d "$dir" ] || continue
+        dirname=$(basename "$dir")
+        echo "### ${dirname}/" >> "${INSTRUCTIONS_FILE}"
+        for f in "$dir"*.js; do
+            [ -f "$f" ] && echo "- \`execution-compiled/${dirname}/$(basename $f)\` - Run with: \`node ${f}\`" >> "${INSTRUCTIONS_FILE}"
+        done
+        echo "" >> "${INSTRUCTIONS_FILE}"
+    done
+elif [ -d "${EXECUTION_DIR}" ]; then
+    # Fallback to TypeScript if compiled not available
     for dir in "${EXECUTION_DIR}"/*/; do
         [ -d "$dir" ] || continue
         dirname=$(basename "$dir")
@@ -277,8 +405,8 @@ cat >> "${INSTRUCTIONS_FILE}" << EOF
 
 - NEVER push to main/master directly
 - NEVER commit secrets, credentials, or API keys
-- ALWAYS run tests before creating PR (use \`execution/test/run_tests.ts\`)
-- ALWAYS run typecheck before commit (use \`execution/test/run_typecheck.ts\`)
+- ALWAYS run tests before creating PR (use \`node /app/execution-compiled/test/run_tests.js\`)
+- ALWAYS run typecheck before commit (use \`node /app/execution-compiled/test/run_typecheck.js\`)
 - Keep commits atomic and well-described
 - Follow existing code patterns and conventions
 EOF
