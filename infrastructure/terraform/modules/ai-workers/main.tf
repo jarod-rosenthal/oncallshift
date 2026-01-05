@@ -432,7 +432,7 @@ resource "aws_ecs_task_definition" "executor" {
   container_definitions = jsonencode([
     {
       name      = "ai-worker-executor"
-      image     = "${aws_ecr_repository.ai_worker.repository_url}:v16"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v18"
       essential = true
 
       environment = [
