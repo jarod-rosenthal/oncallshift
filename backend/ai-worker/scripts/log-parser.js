@@ -46,6 +46,15 @@ let pendingToolUse = null; // Track current tool_use waiting for result
 let errorCount = 0;
 let retryCount = 0;
 
+// Token usage tracking (accumulated across all messages)
+const tokenUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheCreationInputTokens: 0,
+  cacheReadInputTokens: 0,
+};
+let modelUsed = process.env.CLAUDE_MODEL || "sonnet";
+
 /**
  * Classify error type from error message
  */
@@ -290,6 +299,47 @@ function processToolResult(data) {
 }
 
 /**
+ * Extract and accumulate token usage from a JSON object
+ * Handles various formats that Claude CLI might output
+ */
+function extractUsage(data) {
+  // Try various paths where usage might be located
+  const usagePaths = [
+    data.usage,
+    data.message?.usage,
+    data.result?.usage,
+    data.delta?.usage,
+    data.content_block?.usage,
+  ];
+
+  for (const usage of usagePaths) {
+    if (usage && typeof usage === "object") {
+      // Accumulate tokens (Claude reports cumulative, so take max)
+      if (typeof usage.input_tokens === "number") {
+        tokenUsage.inputTokens = Math.max(tokenUsage.inputTokens, usage.input_tokens);
+      }
+      if (typeof usage.output_tokens === "number") {
+        tokenUsage.outputTokens = Math.max(tokenUsage.outputTokens, usage.output_tokens);
+      }
+      if (typeof usage.cache_creation_input_tokens === "number") {
+        tokenUsage.cacheCreationInputTokens = Math.max(
+          tokenUsage.cacheCreationInputTokens,
+          usage.cache_creation_input_tokens
+        );
+      }
+      if (typeof usage.cache_read_input_tokens === "number") {
+        tokenUsage.cacheReadInputTokens = Math.max(
+          tokenUsage.cacheReadInputTokens,
+          usage.cache_read_input_tokens
+        );
+      }
+      return true; // Found usage
+    }
+  }
+  return false;
+}
+
+/**
  * Process a line of output from Claude CLI
  */
 function processLine(line) {
@@ -299,6 +349,14 @@ function processLine(line) {
   // Try to parse as JSON
   try {
     const data = JSON.parse(line);
+
+    // Extract token usage from any event that has it
+    extractUsage(data);
+
+    // Track model if specified
+    if (data.model) {
+      modelUsed = data.model;
+    }
 
     // Check for tool_use content block
     if (data.type === "content_block_start" && data.content_block?.type === "tool_use") {
@@ -321,9 +379,96 @@ function processLine(line) {
         }
       }
     }
+
+    // Check message-level content
+    if (data.message?.content && Array.isArray(data.message.content)) {
+      for (const block of data.message.content) {
+        if (block.type === "tool_use") {
+          processToolUse(block);
+        }
+      }
+    }
   } catch {
     // Not JSON - that's fine, just pass through
   }
+}
+
+/**
+ * Send token usage to the API
+ */
+async function sendTokenUsage() {
+  if (!TASK_ID || !ORG_API_KEY) return;
+
+  // Calculate cost based on model
+  const pricing = {
+    haiku: { input: 0.00025, output: 0.00125 }, // per 1K tokens
+    sonnet: { input: 0.003, output: 0.015 },
+    opus: { input: 0.015, output: 0.075 },
+  };
+
+  // Determine pricing tier from model name
+  let tier = "sonnet";
+  const modelLower = modelUsed.toLowerCase();
+  if (modelLower.includes("haiku")) tier = "haiku";
+  else if (modelLower.includes("opus")) tier = "opus";
+
+  const rates = pricing[tier];
+  const inputCost = (tokenUsage.inputTokens / 1000) * rates.input;
+  const outputCost = (tokenUsage.outputTokens / 1000) * rates.output;
+  // Cache tokens: write costs same as input, read costs 10% of input
+  const cacheWriteCost = (tokenUsage.cacheCreationInputTokens / 1000) * rates.input * 1.25;
+  const cacheReadCost = (tokenUsage.cacheReadInputTokens / 1000) * rates.input * 0.1;
+  const totalCost = inputCost + outputCost + cacheWriteCost + cacheReadCost;
+
+  console.error(`[log-parser] Token usage: input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}, cache_write=${tokenUsage.cacheCreationInputTokens}, cache_read=${tokenUsage.cacheReadInputTokens}`);
+  console.error(`[log-parser] Estimated cost: $${totalCost.toFixed(4)} (model: ${modelUsed})`);
+
+  const url = `${API_BASE_URL}/api/v1/ai-worker-tasks/${TASK_ID}/usage`;
+  const body = JSON.stringify({
+    model: modelUsed,
+    inputTokens: tokenUsage.inputTokens,
+    outputTokens: tokenUsage.outputTokens,
+    cacheCreationInputTokens: tokenUsage.cacheCreationInputTokens,
+    cacheReadInputTokens: tokenUsage.cacheReadInputTokens,
+    reportedCost: totalCost,
+  });
+
+  return new Promise((resolve) => {
+    const urlObj = new URL(url);
+    const protocol = urlObj.protocol === "https:" ? https : http;
+
+    const req = protocol.request(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ORG_API_KEY}`,
+          "Content-Length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode === 200 || res.statusCode === 201) {
+            console.error(`[log-parser] Token usage reported successfully`);
+          } else {
+            console.error(`[log-parser] Failed to report token usage: ${res.statusCode} ${data}`);
+          }
+          resolve();
+        });
+      },
+    );
+
+    req.on("error", (err) => {
+      console.error(`[log-parser] Error reporting token usage: ${err.message}`);
+      resolve();
+    });
+
+    req.write(body);
+    req.end();
+  });
 }
 
 /**
@@ -332,6 +477,9 @@ function processLine(line) {
 async function sendSummary() {
   // Flush any remaining events
   await flushBatch();
+
+  // Send token usage first (most important for cost tracking)
+  await sendTokenUsage();
 
   // Send task summary update
   if (!TASK_ID || !ORG_ID || !ORG_API_KEY) return;
