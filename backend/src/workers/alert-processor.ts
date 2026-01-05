@@ -1,28 +1,46 @@
-import 'dotenv/config';
-import { initSentry } from '../shared/config/sentry';
+import "dotenv/config";
+import { initSentry } from "../shared/config/sentry";
 
 // Initialize Sentry for this worker
-initSentry({ workerName: 'alert-processor' });
+initSentry({ workerName: "alert-processor" });
 
-import { getDataSource } from '../shared/db/data-source';
-import { processQueue, AlertMessage, sendNotificationMessage } from '../shared/queues/sqs-client';
-import { Incident, IncidentEvent, Service, MaintenanceWindow, AlertRoutingRule, User } from '../shared/models';
-import { logger } from '../shared/utils/logger';
-import { LessThanOrEqual, MoreThan } from 'typeorm';
-import { workflowEngine } from '../shared/services/workflow-engine';
-import { deliverToMatchingWebhooks } from '../shared/services/webhook-delivery';
+import { getDataSource } from "../shared/db/data-source";
+import {
+  processQueue,
+  AlertMessage,
+  sendNotificationMessage,
+} from "../shared/queues/sqs-client";
+import {
+  Incident,
+  IncidentEvent,
+  Service,
+  MaintenanceWindow,
+  AlertRoutingRule,
+  User,
+} from "../shared/models";
+import { logger } from "../shared/utils/logger";
+import { LessThanOrEqual, MoreThan } from "typeorm";
+import { workflowEngine } from "../shared/services/workflow-engine";
+import { deliverToMatchingWebhooks } from "../shared/services/webhook-delivery";
 
 const QUEUE_URL = process.env.ALERTS_QUEUE_URL;
 
-type Severity = 'info' | 'warning' | 'error' | 'critical';
+type Severity = "info" | "warning" | "error" | "critical";
 
 /**
  * Infer severity from alert summary keywords when not explicitly set
  * Returns suggested severity based on keyword analysis
  */
-function inferSeverityFromSummary(summary: string, currentSeverity?: Severity): Severity {
+function inferSeverityFromSummary(
+  summary: string,
+  currentSeverity?: Severity,
+): Severity {
   // If severity is already set to something specific, respect it
-  if (currentSeverity && currentSeverity !== 'info' && currentSeverity !== 'warning') {
+  if (
+    currentSeverity &&
+    currentSeverity !== "info" &&
+    currentSeverity !== "warning"
+  ) {
     return currentSeverity;
   }
 
@@ -30,48 +48,89 @@ function inferSeverityFromSummary(summary: string, currentSeverity?: Severity): 
 
   // Critical indicators
   const criticalPatterns = [
-    'critical', 'fatal', 'emergency', 'outage', 'down', 'unreachable',
-    'database down', 'service down', 'cluster down', 'complete failure',
-    'data loss', 'security breach', 'production down', '500 error rate',
-    'disk full', '100% cpu', 'out of memory', 'oom', 'unresponsive',
+    "critical",
+    "fatal",
+    "emergency",
+    "outage",
+    "down",
+    "unreachable",
+    "database down",
+    "service down",
+    "cluster down",
+    "complete failure",
+    "data loss",
+    "security breach",
+    "production down",
+    "500 error rate",
+    "disk full",
+    "100% cpu",
+    "out of memory",
+    "oom",
+    "unresponsive",
   ];
 
   // Error indicators
   const errorPatterns = [
-    'error', 'failed', 'failure', 'exception', 'crash', 'crashed',
-    'timeout', 'connection refused', 'connection lost', '5xx',
-    'unhealthy', 'degraded', 'high latency', 'slow response',
-    'disk space low', 'memory high', 'cpu high', 'rate limit',
+    "error",
+    "failed",
+    "failure",
+    "exception",
+    "crash",
+    "crashed",
+    "timeout",
+    "connection refused",
+    "connection lost",
+    "5xx",
+    "unhealthy",
+    "degraded",
+    "high latency",
+    "slow response",
+    "disk space low",
+    "memory high",
+    "cpu high",
+    "rate limit",
   ];
 
   // Warning indicators
   const warningPatterns = [
-    'warning', 'warn', 'alert', 'elevated', 'increasing', 'growing',
-    'approaching', 'threshold', 'spike', 'anomaly', 'unusual',
-    'retry', 'retrying', 'delayed', 'queue backed up',
+    "warning",
+    "warn",
+    "alert",
+    "elevated",
+    "increasing",
+    "growing",
+    "approaching",
+    "threshold",
+    "spike",
+    "anomaly",
+    "unusual",
+    "retry",
+    "retrying",
+    "delayed",
+    "queue backed up",
   ];
 
   // Check patterns in order of severity
   for (const pattern of criticalPatterns) {
     if (lowerSummary.includes(pattern)) {
-      return 'critical';
+      return "critical";
     }
   }
 
   for (const pattern of errorPatterns) {
     if (lowerSummary.includes(pattern)) {
-      return 'error';
+      return "error";
     }
   }
 
   for (const pattern of warningPatterns) {
     if (lowerSummary.includes(pattern)) {
-      return 'warning';
+      return "warning";
     }
   }
 
   // Default to provided severity or 'warning' if none
-  return currentSeverity || 'warning';
+  return currentSeverity || "warning";
 }
 
 /**
@@ -87,44 +146,44 @@ function cleanupAlertSummary(summary: string): string {
 
   // Remove common monitoring tool prefixes
   const prefixPatterns = [
-    /^\[FIRING:\d+\]\s*/i,           // [FIRING:1], [FIRING:3]
-    /^\[RESOLVED\]\s*/i,              // [RESOLVED]
-    /^\[AlertManager\]\s*/i,          // [AlertManager]
-    /^\[Prometheus\]\s*/i,            // [Prometheus]
-    /^\[Grafana\]\s*/i,               // [Grafana]
-    /^\[DataDog\]\s*/i,               // [DataDog]
-    /^\[NewRelic\]\s*/i,              // [NewRelic]
-    /^\[PagerDuty\]\s*/i,             // [PagerDuty]
-    /^\[OpsGenie\]\s*/i,              // [OpsGenie]
-    /^\[CloudWatch\]\s*/i,            // [CloudWatch]
-    /^ALERT:\s*/i,                    // ALERT:
-    /^WARNING:\s*/i,                  // WARNING:
-    /^CRITICAL:\s*/i,                 // CRITICAL:
-    /^ERROR:\s*/i,                    // ERROR:
-    /^\[WARN\]\s*/i,                  // [WARN]
-    /^\[ERROR\]\s*/i,                 // [ERROR]
-    /^\[CRIT\]\s*/i,                  // [CRIT]
-    /^\[INFO\]\s*/i,                  // [INFO]
+    /^\[FIRING:\d+\]\s*/i, // [FIRING:1], [FIRING:3]
+    /^\[RESOLVED\]\s*/i, // [RESOLVED]
+    /^\[AlertManager\]\s*/i, // [AlertManager]
+    /^\[Prometheus\]\s*/i, // [Prometheus]
+    /^\[Grafana\]\s*/i, // [Grafana]
+    /^\[DataDog\]\s*/i, // [DataDog]
+    /^\[NewRelic\]\s*/i, // [NewRelic]
+    /^\[PagerDuty\]\s*/i, // [PagerDuty]
+    /^\[OpsGenie\]\s*/i, // [OpsGenie]
+    /^\[CloudWatch\]\s*/i, // [CloudWatch]
+    /^ALERT:\s*/i, // ALERT:
+    /^WARNING:\s*/i, // WARNING:
+    /^CRITICAL:\s*/i, // CRITICAL:
+    /^ERROR:\s*/i, // ERROR:
+    /^\[WARN\]\s*/i, // [WARN]
+    /^\[ERROR\]\s*/i, // [ERROR]
+    /^\[CRIT\]\s*/i, // [CRIT]
+    /^\[INFO\]\s*/i, // [INFO]
   ];
 
   for (const pattern of prefixPatterns) {
-    cleaned = cleaned.replace(pattern, '');
+    cleaned = cleaned.replace(pattern, "");
   }
 
   // Remove trailing status indicators
-  cleaned = cleaned.replace(/\s*\(firing\)$/i, '');
-  cleaned = cleaned.replace(/\s*\(resolved\)$/i, '');
-  cleaned = cleaned.replace(/\s*\(pending\)$/i, '');
+  cleaned = cleaned.replace(/\s*\(firing\)$/i, "");
+  cleaned = cleaned.replace(/\s*\(resolved\)$/i, "");
+  cleaned = cleaned.replace(/\s*\(pending\)$/i, "");
 
   // Remove excessive whitespace
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
 
   // If cleanup removed everything, return original
   return cleaned.length > 0 ? cleaned : summary;
 }
 
 async function handleAlertMessage(message: AlertMessage): Promise<void> {
-  logger.info('Processing alert message', {
+  logger.info("Processing alert message", {
     serviceId: message.serviceId,
     summary: message.summary,
     severity: message.severity,
@@ -139,11 +198,16 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
     // Get service with escalation policy
     const service = await serviceRepo.findOne({
       where: { id: message.serviceId },
-      relations: ['organization', 'escalationPolicy', 'escalationPolicy.steps', 'escalationPolicy.steps.schedule'],
+      relations: [
+        "organization",
+        "escalationPolicy",
+        "escalationPolicy.steps",
+        "escalationPolicy.steps.schedule",
+      ],
     });
 
     if (!service) {
-      logger.error('Service not found', { serviceId: message.serviceId });
+      logger.error("Service not found", { serviceId: message.serviceId });
       return;
     }
 
@@ -151,12 +215,12 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
     const routingResult = await evaluateRoutingRules(
       service.orgId,
       message,
-      dataSource
+      dataSource,
     );
 
     // Check if alert should be suppressed by routing rule
     if (routingResult.matchedRule?.suppress) {
-      logger.info('Alert suppressed by routing rule', {
+      logger.info("Alert suppressed by routing rule", {
         ruleId: routingResult.matchedRule.id,
         ruleName: routingResult.matchedRule.name,
         summary: message.summary,
@@ -168,12 +232,15 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
 
     // Check if alert should be suspended by routing rule (hold for manual review)
     if (routingResult.matchedRule?.suspend) {
-      logger.info('Alert suspended by routing rule - holding for manual review', {
-        ruleId: routingResult.matchedRule.id,
-        ruleName: routingResult.matchedRule.name,
-        summary: message.summary,
-        serviceId: service.id,
-      });
+      logger.info(
+        "Alert suspended by routing rule - holding for manual review",
+        {
+          ruleId: routingResult.matchedRule.id,
+          ruleName: routingResult.matchedRule.name,
+          summary: message.summary,
+          serviceId: service.id,
+        },
+      );
       // TODO: In future, create suspended alert record for manual review
       // For now, treat like suppression (no incident created)
       return;
@@ -184,15 +251,23 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
     let effectiveSeverity: Severity = message.severity as Severity;
 
     if (routingResult.matchedRule) {
-      if (routingResult.targetServiceId && routingResult.targetServiceId !== service.id) {
+      if (
+        routingResult.targetServiceId &&
+        routingResult.targetServiceId !== service.id
+      ) {
         const newTargetService = await serviceRepo.findOne({
           where: { id: routingResult.targetServiceId, orgId: service.orgId },
-          relations: ['organization', 'escalationPolicy', 'escalationPolicy.steps', 'escalationPolicy.steps.schedule'],
+          relations: [
+            "organization",
+            "escalationPolicy",
+            "escalationPolicy.steps",
+            "escalationPolicy.steps.schedule",
+          ],
         });
 
         if (newTargetService) {
           targetService = newTargetService;
-          logger.info('Alert routed to different service by routing rule', {
+          logger.info("Alert routed to different service by routing rule", {
             originalServiceId: service.id,
             targetServiceId: targetService.id,
             ruleId: routingResult.matchedRule.id,
@@ -203,7 +278,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
 
       if (routingResult.setSeverity) {
         effectiveSeverity = routingResult.setSeverity as Severity;
-        logger.info('Alert severity overridden by routing rule', {
+        logger.info("Alert severity overridden by routing rule", {
           originalSeverity: message.severity,
           newSeverity: effectiveSeverity,
           ruleId: routingResult.matchedRule.id,
@@ -213,9 +288,12 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
     }
 
     // Auto-infer severity from summary keywords if not explicitly set to critical/error
-    const inferredSeverity = inferSeverityFromSummary(message.summary, effectiveSeverity);
+    const inferredSeverity = inferSeverityFromSummary(
+      message.summary,
+      effectiveSeverity,
+    );
     if (inferredSeverity !== effectiveSeverity) {
-      logger.info('Alert severity inferred from summary keywords', {
+      logger.info("Alert severity inferred from summary keywords", {
         originalSeverity: effectiveSeverity,
         inferredSeverity,
         summary: message.summary,
@@ -236,7 +314,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
     });
 
     if (activeMaintenanceWindow) {
-      logger.info('Alert suppressed due to active maintenance window', {
+      logger.info("Alert suppressed due to active maintenance window", {
         serviceId: targetService.id,
         maintenanceWindowId: activeMaintenanceWindow.id,
         summary: message.summary,
@@ -253,7 +331,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
         where: {
           serviceId: targetService.id,
           dedupKey: message.dedupKey,
-          state: 'triggered', // Only match open incidents
+          state: "triggered", // Only match open incidents
         },
       });
 
@@ -263,7 +341,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
           where: {
             serviceId: targetService.id,
             dedupKey: message.dedupKey,
-            state: 'acknowledged',
+            state: "acknowledged",
           },
         });
       }
@@ -277,14 +355,15 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
 
       // Create alert event
       const event = eventRepo.create({
+        orgId: incident.orgId,
         incidentId: incident.id,
-        type: 'alert',
+        type: "alert",
         message: `New alert: ${message.summary}`,
         payload: message.details,
       });
       await eventRepo.save(event);
 
-      logger.info('Alert deduplicated to existing incident', {
+      logger.info("Alert deduplicated to existing incident", {
         incidentId: incident.id,
         incidentNumber: incident.incidentNumber,
         eventCount: incident.eventCount,
@@ -303,7 +382,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
         summary: cleanedSummary,
         details: message.details,
         severity: effectiveSeverity,
-        state: 'triggered',
+        state: "triggered",
         dedupKey: message.dedupKey,
         eventCount: 1,
         currentEscalationStep: 1,
@@ -313,21 +392,28 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
 
       // Create initial alert event
       const event = eventRepo.create({
+        orgId: targetService.orgId,
         incidentId: incident.id,
-        type: 'alert',
+        type: "alert",
         message: `Incident created: ${message.summary}`,
         payload: {
           ...message.details,
-          ...(routingResult.matchedRule ? {
-            routedByRule: routingResult.matchedRule.name,
-            originalServiceId: service.id !== targetService.id ? service.id : undefined,
-            originalSeverity: message.severity !== effectiveSeverity ? message.severity : undefined,
-          } : {}),
+          ...(routingResult.matchedRule
+            ? {
+                routedByRule: routingResult.matchedRule.name,
+                originalServiceId:
+                  service.id !== targetService.id ? service.id : undefined,
+                originalSeverity:
+                  message.severity !== effectiveSeverity
+                    ? message.severity
+                    : undefined,
+              }
+            : {}),
         },
       });
       await eventRepo.save(event);
 
-      logger.info('New incident created', {
+      logger.info("New incident created", {
         incidentId: incident.id,
         incidentNumber: incident.incidentNumber,
         serviceId: targetService.id,
@@ -337,9 +423,16 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
 
       // Trigger automatic workflows for new incidents
       try {
-        await workflowEngine.processEvent(targetService.orgId, incident.id, 'incident.created');
+        await workflowEngine.processEvent(
+          targetService.orgId,
+          incident.id,
+          "incident.created",
+        );
       } catch (workflowError) {
-        logger.error('Error triggering workflows on incident creation', workflowError);
+        logger.error(
+          "Error triggering workflows on incident creation",
+          workflowError,
+        );
         // Don't fail alert processing if workflows fail
       }
 
@@ -347,20 +440,20 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
       try {
         await deliverToMatchingWebhooks(
           targetService.orgId,
-          'incident.triggered',
+          "incident.triggered",
           {
             event: {
               id: event.id,
-              event_type: 'incident.triggered',
-              resource_type: 'incident',
+              event_type: "incident.triggered",
+              resource_type: "incident",
               occurred_at: new Date().toISOString(),
               agent: {
-                id: 'system',
-                type: 'system',
+                id: "system",
+                type: "system",
               },
               data: {
                 id: incident.id,
-                type: 'incident',
+                type: "incident",
                 incident_number: incident.incidentNumber,
                 summary: incident.summary,
                 service_id: incident.serviceId,
@@ -370,10 +463,13 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
               },
             },
           },
-          incident.serviceId
+          incident.serviceId,
         );
       } catch (webhookError) {
-        logger.error('Error delivering webhook on incident triggered', webhookError);
+        logger.error(
+          "Error delivering webhook on incident triggered",
+          webhookError,
+        );
         // Don't fail alert processing if webhooks fail
       }
 
@@ -381,7 +477,7 @@ async function handleAlertMessage(message: AlertMessage): Promise<void> {
       await triggerNotifications(incident, targetService);
     }
   } catch (error) {
-    logger.error('Error handling alert message:', error);
+    logger.error("Error handling alert message:", error);
     throw error; // Let SQS retry
   }
 }
@@ -395,7 +491,7 @@ async function getNextIncidentNumber(orgId: string): Promise<number> {
 
   const lastIncident = await incidentRepo.findOne({
     where: { orgId },
-    order: { incidentNumber: 'DESC' },
+    order: { incidentNumber: "DESC" },
   });
 
   return (lastIncident?.incidentNumber || 0) + 1;
@@ -407,7 +503,7 @@ async function getNextIncidentNumber(orgId: string): Promise<number> {
 interface RoutingResult {
   matchedRule: AlertRoutingRule | null;
   targetServiceId: string | null;
-  setSeverity: 'info' | 'warning' | 'error' | 'critical' | null;
+  setSeverity: "info" | "warning" | "error" | "critical" | null;
 }
 
 /**
@@ -417,7 +513,7 @@ interface RoutingResult {
 async function evaluateRoutingRules(
   orgId: string,
   message: AlertMessage,
-  dataSource: any
+  dataSource: any,
 ): Promise<RoutingResult> {
   try {
     const ruleRepo = dataSource.getRepository(AlertRoutingRule);
@@ -425,7 +521,7 @@ async function evaluateRoutingRules(
     // Get all enabled rules for the org, ordered by ruleOrder
     const rules = await ruleRepo.find({
       where: { orgId, enabled: true },
-      order: { ruleOrder: 'ASC' },
+      order: { ruleOrder: "ASC" },
     });
 
     if (rules.length === 0) {
@@ -436,7 +532,7 @@ async function evaluateRoutingRules(
     const alertPayload = {
       summary: message.summary,
       severity: message.severity,
-      source: message.source || 'api',
+      source: message.source || "api",
       dedupKey: message.dedupKey,
       serviceId: message.serviceId,
       ...message.details,
@@ -445,7 +541,7 @@ async function evaluateRoutingRules(
     // Evaluate rules in order
     for (const rule of rules) {
       if (rule.evaluate(alertPayload)) {
-        logger.info('Alert matched routing rule', {
+        logger.info("Alert matched routing rule", {
           ruleId: rule.id,
           ruleName: rule.name,
           ruleOrder: rule.ruleOrder,
@@ -464,7 +560,7 @@ async function evaluateRoutingRules(
     // No rules matched
     return { matchedRule: null, targetServiceId: null, setSeverity: null };
   } catch (error) {
-    logger.error('Error evaluating routing rules:', error);
+    logger.error("Error evaluating routing rules:", error);
     // On error, return no match - don't block alert processing
     return { matchedRule: null, targetServiceId: null, setSeverity: null };
   }
@@ -473,14 +569,20 @@ async function evaluateRoutingRules(
 /**
  * Trigger notifications to on-call users (PagerDuty-style with Escalation Policies)
  */
-async function triggerNotifications(incident: Incident, service: Service): Promise<void> {
+async function triggerNotifications(
+  incident: Incident,
+  service: Service,
+): Promise<void> {
   try {
     // Check for escalation policy
     if (!service.escalationPolicy) {
-      logger.warn('Service has no escalation policy assigned, no notifications sent', {
-        serviceId: service.id,
-        incidentId: incident.id,
-      });
+      logger.warn(
+        "Service has no escalation policy assigned, no notifications sent",
+        {
+          serviceId: service.id,
+          incidentId: incident.id,
+        },
+      );
       return;
     }
 
@@ -488,18 +590,23 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
 
     // Get first escalation step
     if (!escalationPolicy.steps || escalationPolicy.steps.length === 0) {
-      logger.warn('Escalation policy has no steps configured, no notifications sent', {
-        escalationPolicyId: escalationPolicy.id,
-        incidentId: incident.id,
-      });
+      logger.warn(
+        "Escalation policy has no steps configured, no notifications sent",
+        {
+          escalationPolicyId: escalationPolicy.id,
+          incidentId: incident.id,
+        },
+      );
       return;
     }
 
     // Sort steps by order and get first step
-    const firstStep = escalationPolicy.steps.sort((a, b) => a.stepOrder - b.stepOrder)[0];
+    const firstStep = escalationPolicy.steps.sort(
+      (a, b) => a.stepOrder - b.stepOrder,
+    )[0];
 
     if (!firstStep) {
-      logger.warn('No escalation steps found', {
+      logger.warn("No escalation steps found", {
         escalationPolicyId: escalationPolicy.id,
         incidentId: incident.id,
       });
@@ -507,13 +614,16 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
     }
 
     // For MVP, only handle schedule-type escalation targets
-    if (firstStep.targetType !== 'schedule' || !firstStep.schedule) {
-      logger.warn('First escalation step is not a schedule or schedule not loaded', {
-        escalationPolicyId: escalationPolicy.id,
-        stepId: firstStep.id,
-        targetType: firstStep.targetType,
-        incidentId: incident.id,
-      });
+    if (firstStep.targetType !== "schedule" || !firstStep.schedule) {
+      logger.warn(
+        "First escalation step is not a schedule or schedule not loaded",
+        {
+          escalationPolicyId: escalationPolicy.id,
+          stepId: firstStep.id,
+          targetType: firstStep.targetType,
+          incidentId: incident.id,
+        },
+      );
       return;
     }
 
@@ -521,7 +631,7 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
     const oncallUserId = schedule.getCurrentOncallUserId();
 
     if (!oncallUserId) {
-      logger.warn('No on-call user in schedule, no notifications sent', {
+      logger.warn("No on-call user in schedule, no notifications sent", {
         scheduleId: schedule.id,
         incidentId: incident.id,
       });
@@ -538,7 +648,10 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
     const emailEnabled = notifPrefs.email?.enabled !== false; // Default to enabled
     const smsEnabled = notifPrefs.sms?.enabled !== false; // Default to enabled
 
-    const priority = incident.severity === 'critical' || incident.severity === 'error' ? 'high' : 'normal';
+    const priority =
+      incident.severity === "critical" || incident.severity === "error"
+        ? "high"
+        : "normal";
     const channels: string[] = [];
 
     // Send push notification if enabled
@@ -546,11 +659,11 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
       await sendNotificationMessage({
         incidentId: incident.id,
         userId: oncallUserId,
-        channel: 'push',
+        channel: "push",
         priority,
-        incidentState: 'triggered',
+        incidentState: "triggered",
       });
-      channels.push('push');
+      channels.push("push");
     }
 
     // Send email notification if enabled
@@ -558,72 +671,80 @@ async function triggerNotifications(incident: Incident, service: Service): Promi
       await sendNotificationMessage({
         incidentId: incident.id,
         userId: oncallUserId,
-        channel: 'email',
+        channel: "email",
         priority,
-        incidentState: 'triggered',
+        incidentState: "triggered",
       });
-      channels.push('email');
+      channels.push("email");
     }
 
     // For critical/error incidents, also send SMS if enabled
-    if (smsEnabled && (incident.severity === 'critical' || incident.severity === 'error')) {
+    if (
+      smsEnabled &&
+      (incident.severity === "critical" || incident.severity === "error")
+    ) {
       await sendNotificationMessage({
         incidentId: incident.id,
         userId: oncallUserId,
-        channel: 'sms',
-        priority: 'high',
-        incidentState: 'triggered',
+        channel: "sms",
+        priority: "high",
+        incidentState: "triggered",
       });
-      channels.push('sms');
+      channels.push("sms");
     }
 
-    logger.info('Notifications queued for on-call user (via escalation policy)', {
-      incidentId: incident.id,
-      userId: oncallUserId,
-      escalationPolicyId: escalationPolicy.id,
-      scheduleId: schedule.id,
-      channels,
-      preferences: { pushEnabled, emailEnabled, smsEnabled },
-    });
+    logger.info(
+      "Notifications queued for on-call user (via escalation policy)",
+      {
+        incidentId: incident.id,
+        userId: oncallUserId,
+        escalationPolicyId: escalationPolicy.id,
+        scheduleId: schedule.id,
+        channels,
+        preferences: { pushEnabled, emailEnabled, smsEnabled },
+      },
+    );
   } catch (error) {
-    logger.error('Error triggering notifications:', error);
+    logger.error("Error triggering notifications:", error);
     // Don't throw - incident is created, notification failure shouldn't fail alert processing
   }
 }
 
 async function startWorker() {
   try {
-    logger.info('Starting alert processor worker...');
+    logger.info("Starting alert processor worker...");
 
     if (!QUEUE_URL) {
-      throw new Error('ALERTS_QUEUE_URL environment variable not set');
+      throw new Error("ALERTS_QUEUE_URL environment variable not set");
     }
 
     // Initialize database connection
-    logger.info('Connecting to database...');
+    logger.info("Connecting to database...");
     await getDataSource();
-    logger.info('Database connected successfully');
+    logger.info("Database connected successfully");
 
-    logger.info(`Alert processor worker started, listening to queue: ${QUEUE_URL}`);
+    logger.info(
+      `Alert processor worker started, listening to queue: ${QUEUE_URL}`,
+    );
 
     // Start processing queue
     await processQueue<AlertMessage>(QUEUE_URL, handleAlertMessage, {
       batchSize: 1,
     });
   } catch (error) {
-    logger.error('Failed to start alert processor worker:', error);
+    logger.error("Failed to start alert processor worker:", error);
     process.exit(1);
   }
 }
 
 // Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
+process.on("SIGTERM", async () => {
+  logger.info("SIGTERM received, shutting down gracefully...");
   process.exit(0);
 });
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
+process.on("SIGINT", async () => {
+  logger.info("SIGINT received, shutting down gracefully...");
   process.exit(0);
 });
 
