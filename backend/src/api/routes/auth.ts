@@ -4,6 +4,7 @@ import { CognitoIdentityProviderClient, SignUpCommand, AdminConfirmSignUpCommand
 import { getDataSource } from '../../shared/db/data-source';
 import { User, Organization } from '../../shared/models';
 import { logger } from '../../shared/utils/logger';
+import { authRateLimiter } from '../../shared/middleware/rate-limiter';
 
 const router = Router();
 
@@ -65,6 +66,7 @@ const cognitoClient = new CognitoIdentityProviderClient({
  */
 router.post(
   '/register',
+  authRateLimiter,
   [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
@@ -243,6 +245,7 @@ router.post(
  */
 router.post(
   '/login',
+  authRateLimiter,
   [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),
@@ -308,6 +311,7 @@ router.post(
  */
 router.post(
   '/refresh',
+  authRateLimiter,
   [
     body('refreshToken').notEmpty().withMessage('Refresh token is required'),
   ],
