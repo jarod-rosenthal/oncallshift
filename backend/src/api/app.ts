@@ -57,6 +57,7 @@ import { captureRawBody, etagMiddleware } from '../shared/middleware';
 import { idempotencyMiddleware } from '../shared/middleware/idempotency';
 import { requestIdMiddleware } from '../shared/middleware/request-id';
 import { methodBasedRateLimiter, expensiveRateLimiter, bulkRateLimiter } from '../shared/middleware/rate-limiter';
+import { notFound, internalError } from '../shared/utils/problem-details';
 
 export function createApp(): Express {
   const app = express();
@@ -347,7 +348,7 @@ export function createApp(): Express {
   // 404 handler for API routes
   app.use((req, res, next) => {
     if (req.path.startsWith('/api/')) {
-      res.status(404).json({ error: 'API endpoint not found' });
+      return notFound(res, 'API endpoint');
     } else {
       next();
     }
@@ -359,12 +360,12 @@ export function createApp(): Express {
   }
 
   // Error handler
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     logger.error('Unhandled error:', err);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: process.env.NODE_ENV === 'development' ? err.message : undefined,
-    });
+
+    // Use RFC 9457 Problem Details format
+    const requestId = (req as any).requestId;
+    return internalError(res, requestId);
   });
 
   return app;
