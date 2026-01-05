@@ -865,7 +865,7 @@ resource "aws_lambda_function" "watcher" {
   description   = "AI Worker Watcher - detects stuck tasks, handles retries, and enforces timeouts"
   role          = aws_iam_role.watcher_lambda[0].arn
   handler       = "ai-worker-watcher.handler"
-  runtime       = "nodejs18.x"
+  runtime       = "nodejs20.x"
   timeout       = 60
   memory_size   = 256
 
