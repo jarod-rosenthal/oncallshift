@@ -60,31 +60,25 @@ add_jira_comment() {
     fi
 
     local auth=$(echo -n "${JIRA_EMAIL}:${JIRA_API_TOKEN}" | base64)
-    local body=$(cat <<EOF
-{
-  "body": {
-    "type": "doc",
-    "version": 1,
-    "content": [
-      {
-        "type": "paragraph",
-        "content": [
-          {
-            "type": "text",
-            "text": "${comment}"
-          }
-        ]
-      }
-    ]
-  }
-}
-EOF
-)
 
-    curl -s -X POST "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_ISSUE_KEY}/comment" \
+    # Escape the comment for JSON (handle newlines, quotes, backslashes)
+    local escaped_comment=$(echo "$comment" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+
+    local body="{\"body\":{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"${escaped_comment}\"}]}]}}"
+
+    local response=$(curl -s -w "\n%{http_code}" -X POST "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_ISSUE_KEY}/comment" \
         -H "Authorization: Basic ${auth}" \
         -H "Content-Type: application/json" \
-        -d "${body}" > /dev/null 2>&1 && echo "[Jira] Comment added" || echo "[Jira] Failed to add comment"
+        -d "${body}" 2>&1)
+
+    local http_code=$(echo "$response" | tail -1)
+    local body_response=$(echo "$response" | sed '$d')
+
+    if [ "$http_code" = "201" ] || [ "$http_code" = "200" ]; then
+        echo "[Jira] Comment added"
+    else
+        echo "[Jira] Failed to add comment (HTTP ${http_code})"
+    fi
 }
 
 # Transition Jira issue to "In Progress"
@@ -185,7 +179,81 @@ send_log "git_operation" "Created branch: ${BRANCH_NAME}" "info"
 
 # Notify Jira that work is starting
 transition_jira_to_progress
-add_jira_comment "🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n⚡ Starting work on this task.\n\nBranch: ${BRANCH_NAME}\nRepository: ${GITHUB_REPO}"
+add_jira_comment "[AI Worker] ${WORKER_PERSONA//_/ } - Starting work on this task. Branch: ${BRANCH_NAME}, Repository: ${GITHUB_REPO}"
+
+# =============================================================================
+# Task Complexity Detection
+# =============================================================================
+# Simple tasks don't need the full directive framework - they can just be done.
+# This saves turns and improves efficiency for straightforward changes.
+
+detect_task_complexity() {
+    local summary_lower=$(echo "${JIRA_SUMMARY:-}" | tr '[:upper:]' '[:lower:]')
+    local desc_lower=$(echo "${JIRA_DESCRIPTION:-}" | tr '[:upper:]' '[:lower:]')
+    local combined="${summary_lower} ${desc_lower}"
+
+    # Simple task indicators (can be done in <5 turns)
+    local simple_patterns=(
+        "fix typo"
+        "update comment"
+        "rename.*to"
+        "change.*from.*to"
+        "add.*import"
+        "remove.*import"
+        "update.*version"
+        "bump.*version"
+        "fix.*spacing"
+        "fix.*indentation"
+        "add.*type"
+        "fix.*type error"
+        "one.*line"
+        "single.*line"
+        "simple.*fix"
+        "quick.*fix"
+        "trivial"
+    )
+
+    for pattern in "${simple_patterns[@]}"; do
+        if echo "$combined" | grep -qiE "$pattern"; then
+            echo "simple"
+            return
+        fi
+    done
+
+    # Complex task indicators (need full directive framework)
+    local complex_patterns=(
+        "implement"
+        "create.*new"
+        "add.*feature"
+        "refactor"
+        "migrate"
+        "integration"
+        "multi.*file"
+        "across.*files"
+        "architecture"
+        "design"
+        "security"
+        "authentication"
+        "database"
+        "api.*endpoint"
+        "new.*route"
+        "test.*coverage"
+    )
+
+    for pattern in "${complex_patterns[@]}"; do
+        if echo "$combined" | grep -qiE "$pattern"; then
+            echo "complex"
+            return
+        fi
+    done
+
+    # Default to standard (use some directives but not all)
+    echo "standard"
+}
+
+TASK_COMPLEXITY=$(detect_task_complexity)
+echo "[Complexity] Detected task complexity: ${TASK_COMPLEXITY}"
+send_log "system" "Task complexity: ${TASK_COMPLEXITY}" "info"
 
 # =============================================================================
 # Task Complexity Detection
@@ -356,6 +424,17 @@ DIREOF
             [ -f "$f" ] && echo "- \`directives/${WORKER_PERSONA}/$(basename $f)\`" >> "${INSTRUCTIONS_FILE}"
         done
         echo "" >> "${INSTRUCTIONS_FILE}"
+
+        # Inline the persona's README.md for immediate context
+        PERSONA_README="${PERSONA_DIR}/README.md"
+        if [ -f "${PERSONA_README}" ]; then
+            echo "---" >> "${INSTRUCTIONS_FILE}"
+            echo "" >> "${INSTRUCTIONS_FILE}"
+            echo "## Your Persona Guidelines" >> "${INSTRUCTIONS_FILE}"
+            echo "" >> "${INSTRUCTIONS_FILE}"
+            cat "${PERSONA_README}" >> "${INSTRUCTIONS_FILE}"
+            echo "" >> "${INSTRUCTIONS_FILE}"
+        fi
     fi
 fi
 
@@ -410,6 +489,75 @@ cat >> "${INSTRUCTIONS_FILE}" << EOF
 - Keep commits atomic and well-described
 - Follow existing code patterns and conventions
 EOF
+
+# =============================================================================
+# Fetch Learned Patterns from API
+# =============================================================================
+# Inject high-effectiveness patterns from previous task executions
+
+fetch_learned_patterns() {
+    if [ -z "${API_BASE_URL}" ] || [ -z "${ORG_API_KEY}" ]; then
+        echo "[Patterns] Skipping - API_BASE_URL or ORG_API_KEY not set"
+        return 0
+    fi
+
+    echo "[Patterns] Fetching relevant patterns for persona: ${WORKER_PERSONA}"
+
+    # Fetch patterns relevant to this task type
+    local patterns_response
+    patterns_response=$(curl -s -X GET \
+        "${API_BASE_URL}/api/v1/super-admin/control-center/patterns/relevant?limit=10" \
+        -H "Authorization: Bearer ${ORG_API_KEY}" \
+        -H "Accept: application/json" 2>/dev/null)
+
+    if [ -z "${patterns_response}" ] || [ "${patterns_response}" = "null" ]; then
+        echo "[Patterns] No patterns returned from API"
+        return 0
+    fi
+
+    # Check if we got any patterns
+    local pattern_count
+    pattern_count=$(echo "${patterns_response}" | jq -r '.patterns | length' 2>/dev/null || echo "0")
+
+    if [ "${pattern_count}" = "0" ] || [ "${pattern_count}" = "null" ]; then
+        echo "[Patterns] No relevant patterns found"
+        return 0
+    fi
+
+    echo "[Patterns] Found ${pattern_count} relevant patterns"
+
+    # Append patterns to instructions file
+    cat >> "${INSTRUCTIONS_FILE}" << 'PATTERNS_HEADER'
+
+---
+
+## Learnings from Previous Tasks
+
+Previous AI workers discovered these helpful patterns. Apply them when relevant:
+
+PATTERNS_HEADER
+
+    # Parse each pattern and add to instructions
+    echo "${patterns_response}" | jq -r '.patterns[] | "### \(.title)\n\n\(.recommendedApproach)\n\n*Effectiveness: \(.effectivenessScore | . * 100 | floor)%*\n"' >> "${INSTRUCTIONS_FILE}" 2>/dev/null
+
+    echo "[Patterns] Appended patterns to instructions"
+
+    # Record which patterns were applied (for effectiveness tracking)
+    local pattern_ids
+    pattern_ids=$(echo "${patterns_response}" | jq -r '.patterns[].id' 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    if [ -n "${pattern_ids}" ]; then
+        echo "[Patterns] Applied pattern IDs: ${pattern_ids}"
+        # Report applied patterns to API
+        curl -s -X POST "${API_BASE_URL}/api/v1/super-admin/control-center/tasks/${TASK_ID}/patterns-applied" \
+            -H "Authorization: Bearer ${ORG_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"patternIds\": [$(echo "${pattern_ids}" | sed 's/,$//' | sed 's/\([^,]*\)/"\1"/g')]}" \
+            > /dev/null 2>&1 || true
+    fi
+}
+
+# Fetch and inject learned patterns
+fetch_learned_patterns
 
 # Add previous run context if this is a retry
 if [ -n "${PREVIOUS_RUN_CONTEXT}" ] && [ "${RETRY_NUMBER:-0}" -gt 0 ]; then
@@ -474,7 +622,23 @@ echo "[DEBUG] Working directory: $(pwd)"
 # Run Claude and capture stderr separately to see errors
 CLAUDE_STDERR_FILE="/tmp/claude-stderr.log"
 
-# Run Claude with stream-json and save ALL output to file for parsing
+# Log parser script path (inside Docker container)
+LOG_PARSER_SCRIPT="/app/scripts/log-parser.js"
+
+# Export env vars for log-parser.js
+export TASK_ID ORG_ID API_BASE_URL ORG_API_KEY
+
+# Check if log-parser exists
+if [ -f "${LOG_PARSER_SCRIPT}" ]; then
+    echo "[Learning] Tool event capture enabled via log-parser.js"
+    LOG_PARSER_CMD="node ${LOG_PARSER_SCRIPT}"
+else
+    echo "[Learning] log-parser.js not found, skipping tool event capture"
+    LOG_PARSER_CMD="cat"  # Passthrough if parser not available
+fi
+
+# Run Claude with stream-json and pipe through log-parser for tool event capture
+# Pipeline: claude -> tee (save raw output) -> log-parser (extract events) -> display
 claude \
     --print \
     --verbose \
@@ -483,7 +647,7 @@ claude \
     --model "${CLAUDE_MODEL}" \
     --output-format stream-json \
     "${PROMPT}" \
-    2>"${CLAUDE_STDERR_FILE}" | tee "${CLAUDE_OUTPUT_FILE}" | while IFS= read -r line; do
+    2>"${CLAUDE_STDERR_FILE}" | tee "${CLAUDE_OUTPUT_FILE}" | ${LOG_PARSER_CMD} | while IFS= read -r line; do
     # Extract and display text content for human-readable output
     if echo "$line" | jq -e '.type == "assistant" and .message.content' > /dev/null 2>&1; then
         text_content=$(echo "$line" | jq -r '.message.content[]? | select(.type == "text") | .text // empty' 2>/dev/null)

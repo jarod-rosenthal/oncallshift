@@ -1,7 +1,60 @@
 import { DataSource } from 'typeorm';
+import Anthropic from '@anthropic-ai/sdk';
 import { AIWorkerTask, AIWorkerPersona, AIWorkerTaskStatus } from '../models/AIWorkerTask';
 import { AIWorkerTaskLog } from '../models/AIWorkerTaskLog';
 import { logger } from '../utils/logger';
+
+// Label to persona mapping (highest priority - explicit user intent)
+const LABEL_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
+  // Direct persona labels
+  'frontend': 'frontend_developer',
+  'backend': 'backend_developer',
+  'devops': 'devops_engineer',
+  'infra': 'devops_engineer',
+  'infrastructure': 'devops_engineer',
+  'security': 'security_engineer',
+  'qa': 'qa_engineer',
+  'test': 'qa_engineer',
+  'testing': 'qa_engineer',
+  'docs': 'tech_writer',
+  'documentation': 'tech_writer',
+
+  // Technology-specific labels
+  'react': 'frontend_developer',
+  'vue': 'frontend_developer',
+  'angular': 'frontend_developer',
+  'css': 'frontend_developer',
+  'ui': 'frontend_developer',
+  'ux': 'frontend_developer',
+  'mobile': 'frontend_developer',
+
+  'api': 'backend_developer',
+  'database': 'backend_developer',
+  'db': 'backend_developer',
+  'graphql': 'backend_developer',
+  'rest': 'backend_developer',
+
+  'terraform': 'devops_engineer',
+  'aws': 'devops_engineer',
+  'gcp': 'devops_engineer',
+  'azure': 'devops_engineer',
+  'kubernetes': 'devops_engineer',
+  'k8s': 'devops_engineer',
+  'docker': 'devops_engineer',
+  'ci': 'devops_engineer',
+  'cd': 'devops_engineer',
+  'cicd': 'devops_engineer',
+  'ci/cd': 'devops_engineer',
+  'pipeline': 'devops_engineer',
+
+  'auth': 'security_engineer',
+  'authentication': 'security_engineer',
+  'authorization': 'security_engineer',
+  'encryption': 'security_engineer',
+  'vulnerability': 'security_engineer',
+  'cve': 'security_engineer',
+  'owasp': 'security_engineer',
+};
 
 // Jira API types
 interface JiraIssue {
@@ -84,19 +137,155 @@ const PRIORITY_MAPPING: Record<string, number> = {
   'Lowest': 5,
 };
 
+// Valid personas for AI classification
+const VALID_PERSONAS: AIWorkerPersona[] = [
+  'frontend_developer',
+  'backend_developer',
+  'devops_engineer',
+  'security_engineer',
+  'qa_engineer',
+  'tech_writer',
+  'project_manager',
+];
+
+/**
+ * Use Claude Haiku to classify a ticket into a persona based on content
+ * Cost: ~$0.001 per classification (very cheap)
+ */
+async function classifyPersonaWithAI(
+  summary: string,
+  description: string | null,
+  labels: string[]
+): Promise<AIWorkerPersona | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    logger.warn('No ANTHROPIC_API_KEY set, skipping AI classification');
+    return null;
+  }
+
+  try {
+    const anthropic = new Anthropic({ apiKey });
+
+    const prompt = `Classify this software development ticket into ONE persona. Respond with ONLY the persona name, nothing else.
+
+Personas:
+- frontend_developer: React, Vue, Angular, CSS, UI/UX, mobile apps, browser issues
+- backend_developer: APIs, databases, server logic, Node.js, Python, TypeScript backend
+- devops_engineer: Infrastructure, CI/CD, Terraform, AWS/GCP/Azure, Kubernetes, Docker, deployments
+- security_engineer: Authentication, authorization, encryption, vulnerabilities, OWASP, compliance
+- qa_engineer: Testing, test automation, quality assurance, bug verification
+- tech_writer: Documentation, README, API docs, user guides
+- project_manager: Planning, coordination, epics, roadmaps (rarely assigned to AI workers)
+
+Ticket:
+Title: ${summary}
+${description ? `Description: ${description.substring(0, 500)}` : ''}
+${labels.length > 0 ? `Labels: ${labels.join(', ')}` : ''}
+
+Respond with exactly one of: frontend_developer, backend_developer, devops_engineer, security_engineer, qa_engineer, tech_writer, project_manager`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const content = response.content[0];
+    if (content.type !== 'text') {
+      return null;
+    }
+
+    const persona = content.text.trim().toLowerCase() as AIWorkerPersona;
+
+    // Validate response is a valid persona
+    if (VALID_PERSONAS.includes(persona)) {
+      logger.info('AI classified ticket persona', { summary: summary.substring(0, 50), persona });
+      return persona;
+    }
+
+    logger.warn('AI returned invalid persona', { response: content.text });
+    return null;
+  } catch (error) {
+    logger.error('AI persona classification failed', { error });
+    return null;
+  }
+}
+
 export class JiraAIWorkerService {
   private dataSource: DataSource;
   private config: JiraConfig;
   private personaMapping: Record<string, AIWorkerPersona>;
+  private enableAIClassification: boolean;
 
   constructor(
     dataSource: DataSource,
     config: JiraConfig,
-    personaMapping?: Record<string, AIWorkerPersona>
+    personaMapping?: Record<string, AIWorkerPersona>,
+    enableAIClassification = true
   ) {
     this.dataSource = dataSource;
     this.config = config;
     this.personaMapping = personaMapping || DEFAULT_PERSONA_MAPPING;
+    this.enableAIClassification = enableAIClassification;
+  }
+
+  /**
+   * Determine the best persona for a Jira issue.
+   * Priority order:
+   * 1. Explicit label (e.g., 'frontend', 'backend', 'devops')
+   * 2. AI classification based on title/description
+   * 3. Issue type mapping (fallback)
+   */
+  private async determinePersona(issue: JiraIssue): Promise<AIWorkerPersona | null> {
+    const labels = issue.fields.labels || [];
+    const summary = issue.fields.summary;
+    const description = this.extractDescription(issue.fields.description);
+    const issueType = issue.fields.issuetype.name;
+
+    // 1. Check for explicit persona label (highest priority)
+    for (const label of labels) {
+      const normalizedLabel = label.toLowerCase().replace(/[-_\s]/g, '');
+      const persona = LABEL_PERSONA_MAPPING[normalizedLabel] || LABEL_PERSONA_MAPPING[label.toLowerCase()];
+      if (persona) {
+        logger.info('Persona determined by label', {
+          issueKey: issue.key,
+          label,
+          persona,
+        });
+        return persona;
+      }
+    }
+
+    // 2. Try AI classification (if enabled)
+    if (this.enableAIClassification) {
+      const aiPersona = await classifyPersonaWithAI(summary, description, labels);
+      if (aiPersona) {
+        logger.info('Persona determined by AI classification', {
+          issueKey: issue.key,
+          persona: aiPersona,
+        });
+        return aiPersona;
+      }
+    }
+
+    // 3. Fall back to issue type mapping
+    const typePersona = this.personaMapping[issueType];
+    if (typePersona) {
+      logger.info('Persona determined by issue type', {
+        issueKey: issue.key,
+        issueType,
+        persona: typePersona,
+      });
+      return typePersona;
+    }
+
+    // No persona could be determined
+    logger.info('Could not determine persona for issue', {
+      issueKey: issue.key,
+      issueType,
+      labels,
+    });
+    return null;
   }
 
   // ==================== API Helpers ====================
@@ -177,10 +366,10 @@ export class JiraAIWorkerService {
       return existing;
     }
 
-    // Map issue type to persona
-    const persona = this.getPersonaForIssueType(issue.fields.issuetype.name);
+    // Determine persona using labels, AI classification, or issue type
+    const persona = await this.determinePersona(issue);
     if (!persona) {
-      logger.info('Issue type not mapped to persona, skipping', {
+      logger.info('Could not determine persona, skipping', {
         issueKey: issue.key,
         issueType: issue.fields.issuetype.name,
       });
@@ -212,10 +401,6 @@ export class JiraAIWorkerService {
     });
 
     return task;
-  }
-
-  private getPersonaForIssueType(issueType: string): AIWorkerPersona | null {
-    return this.personaMapping[issueType] || null;
   }
 
   private mapPriority(priority?: string): number {

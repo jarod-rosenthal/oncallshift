@@ -88,15 +88,17 @@ WORKDIR /home/aiworker
 # The binary is named 'claude' not 'claude-code'
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy entrypoint script
+# Copy entrypoint scripts
 COPY scripts/ai-worker-entrypoint.sh /usr/local/bin/ai-worker-entrypoint.sh
-RUN chmod +x /usr/local/bin/ai-worker-entrypoint.sh
+COPY scripts/ai-worker-manager-entrypoint.sh /usr/local/bin/ai-worker-manager-entrypoint.sh
+RUN chmod +x /usr/local/bin/ai-worker-entrypoint.sh /usr/local/bin/ai-worker-manager-entrypoint.sh
 
 # Copy DOE (Directive-Orchestration-Execution) framework
 # These provide SOPs and deterministic execution scripts for AI workers
 COPY ai-worker/AGENTS.md /app/AGENTS.md
 COPY ai-worker/directives /app/directives
 COPY ai-worker/execution /app/execution
+COPY ai-worker/scripts /app/scripts
 
 # Create package.json for execution scripts and install dependencies
 RUN mkdir -p /app && \

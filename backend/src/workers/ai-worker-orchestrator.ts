@@ -34,6 +34,15 @@ interface QueueMessage {
   action: 'execute' | 'retry' | 'cancel' | 'check_status';
 }
 
+// Manager Lambda actions
+type ManagerAction = 'review_pr' | 'analyze_learnings' | 'update_environment';
+
+interface ManagerInvokePayload {
+  action: ManagerAction;
+  taskId: string;
+  changes?: Record<string, any>; // For update_environment action
+}
+
 // Manager Lambda name for event-driven invocation
 const MANAGER_LAMBDA_NAME = process.env.AI_WORKER_MANAGER_LAMBDA || 'pagerduty-lite-dev-ai-worker-manager';
 
@@ -341,36 +350,46 @@ class AIWorkerOrchestrator {
           task.githubPrNumber = prInfo.prNumber ?? null;
           task.githubBranch = prInfo.branch ?? null;
 
-          // Check if manager review should be skipped (default: true = skip)
-          if (task.skipManagerReview) {
+          // Check if manager review should be triggered based on Jira 'review' label
+          const hasReviewLabel = task.hasJiraReviewLabel();
+
+          if (task.skipManagerReview || !hasReviewLabel) {
             // Skip manager review - go directly to review_approved
             await this.updateTaskStatus(task, 'review_approved');
-            await this.logTaskEvent(task, 'pr_created', `PR created (manager review skipped): ${prInfo.prUrl}`);
-            logger.info('Manager review skipped per task configuration', {
+            const skipReason = !hasReviewLabel ? 'no review label' : 'task configuration';
+            await this.logTaskEvent(task, 'pr_created', `PR created (manager review skipped: ${skipReason}): ${prInfo.prUrl}`);
+            logger.info('Manager review skipped', {
               taskId: task.id,
               prUrl: prInfo.prUrl,
+              reason: skipReason,
+              hasReviewLabel,
+              skipManagerReview: task.skipManagerReview,
             });
             // Update Jira (adds comment and transitions to Done)
             if (this.jiraService) {
               await this.jiraService.updateJiraFromTask(task);
             }
           } else {
-            // Normal flow - send to manager for review
+            // Normal flow - send to manager for review (Jira has 'review' label)
             await this.updateTaskStatus(task, 'pr_created');
             await this.logTaskEvent(task, 'pr_created', `PR created: ${prInfo.prUrl}`);
 
             // Create approval request
             await this.createApprovalRequest(task);
 
-            // Invoke Manager Lambda immediately for event-driven review
-            await this.invokeManagerLambda(task.id);
+            // Invoke Manager Lambda immediately for event-driven PR review (Opus 4.5)
+            await this.invokeManagerLambda('review_pr', task.id);
           }
         } else if (prInfo.result === 'no_changes') {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed with no changes needed');
+          // Trigger learning analysis for completed tasks with errors/retries
+          await this.triggerLearningAnalysisIfNeeded(task);
         } else {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed');
+          // Trigger learning analysis for completed tasks with errors/retries
+          await this.triggerLearningAnalysisIfNeeded(task);
         }
       } else {
         // Failure - still try to get token usage
@@ -604,12 +623,45 @@ class AIWorkerOrchestrator {
   }
 
   /**
-   * Invoke the Manager Lambda to review a PR immediately (event-driven)
-   * This provides faster feedback than waiting for the cron sweep
+   * Invoke the Manager Lambda for a specific action (event-driven)
+   * Actions:
+   * - review_pr: Review a PR with Opus 4.5 (only if Jira has 'review' label)
+   * - analyze_learnings: Analyze task for learnings with Haiku (after completion with errors/retries)
+   * - update_environment: Update container/environment with Sonnet (after learning identifies gaps)
    */
-  private async invokeManagerLambda(taskId: string): Promise<void> {
+  private async invokeManagerLambda(
+    action: ManagerAction,
+    taskId: string,
+    changes?: Record<string, any>
+  ): Promise<void> {
     try {
-      logger.info('Invoking Manager Lambda for immediate PR review', {
+      const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+
+      // For PR review, update task status so it shows in Active Workflows
+      if (action === 'review_pr') {
+        await taskRepo.update(taskId, {
+          status: 'manager_review' as AIWorkerTaskStatus,
+        });
+        await this.logTaskEvent(
+          { id: taskId } as AIWorkerTask,
+          'manager',
+          'Virtual Manager starting PR review (Opus 4.5)...'
+        );
+      } else if (action === 'analyze_learnings') {
+        await this.logTaskEvent(
+          { id: taskId } as AIWorkerTask,
+          'manager',
+          'Virtual Manager starting learning analysis (Haiku)...'
+        );
+      }
+
+      const payload: ManagerInvokePayload = { action, taskId };
+      if (changes) {
+        payload.changes = changes;
+      }
+
+      logger.info('Invoking Manager Lambda', {
+        action,
         taskId,
         lambdaName: MANAGER_LAMBDA_NAME,
       });
@@ -618,22 +670,32 @@ class AIWorkerOrchestrator {
         new InvokeCommand({
           FunctionName: MANAGER_LAMBDA_NAME,
           InvocationType: 'Event', // Async invocation - don't wait for result
-          Payload: Buffer.from(JSON.stringify({ taskId })),
+          Payload: Buffer.from(JSON.stringify(payload)),
         })
       );
 
-      logger.info('Manager Lambda invoked successfully', { taskId });
-      await this.logTaskEvent(
-        { id: taskId } as AIWorkerTask,
-        'info',
-        'Manager Lambda invoked for PR review'
-      );
+      logger.info('Manager Lambda invoked successfully', { action, taskId });
     } catch (error) {
-      // Log but don't fail - the cron sweep will catch missed tasks
-      logger.warn('Failed to invoke Manager Lambda (cron will catch it)', {
+      // Log but don't fail - learning analysis is best-effort
+      logger.warn('Failed to invoke Manager Lambda', {
+        action,
         taskId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+    }
+  }
+
+  /**
+   * Check if learning analysis should be triggered and invoke Manager if so
+   */
+  private async triggerLearningAnalysisIfNeeded(task: AIWorkerTask): Promise<void> {
+    if (task.needsLearningAnalysis()) {
+      logger.info('Task has errors/retries, triggering learning analysis', {
+        taskId: task.id,
+        toolErrorCount: task.toolErrorCount,
+        toolRetryCount: task.toolRetryCount,
+      });
+      await this.invokeManagerLambda('analyze_learnings', task.id);
     }
   }
 
@@ -708,6 +770,9 @@ class AIWorkerOrchestrator {
     if (this.jiraService) {
       await this.jiraService.updateJiraFromTask(task);
     }
+
+    // Trigger learning analysis for failed tasks with errors/retries
+    await this.triggerLearningAnalysisIfNeeded(task);
   }
 
   private sleep(ms: number): Promise<void> {

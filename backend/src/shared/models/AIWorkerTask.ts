@@ -215,11 +215,41 @@ export class AIWorkerTask {
   })
   managerReviewModel: string | null;
 
+  // Manager ECS task tracking (runs in ECS like workers)
+  @Column({
+    name: "manager_ecs_task_arn",
+    type: "varchar",
+    length: 500,
+    nullable: true,
+  })
+  managerEcsTaskArn: string | null;
+
+  @Column({
+    name: "manager_ecs_task_id",
+    type: "varchar",
+    length: 100,
+    nullable: true,
+  })
+  managerEcsTaskId: string | null;
+
   @Column({ name: "skip_manager_review", type: "boolean", default: true })
   skipManagerReview: boolean;
 
   @Column({ name: "self_anneal_count", type: "int", default: 0 })
   selfAnnealCount: number;
+
+  // Learning system fields
+  @Column({ name: "tool_error_count", type: "int", default: 0 })
+  toolErrorCount: number;
+
+  @Column({ name: "tool_retry_count", type: "int", default: 0 })
+  toolRetryCount: number;
+
+  @Column({ name: "learning_analyzed", type: "boolean", default: false })
+  learningAnalyzed: boolean;
+
+  @Column({ name: "patterns_applied", type: "jsonb", default: [] })
+  patternsApplied: string[]; // Array of pattern IDs
 
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
@@ -364,5 +394,21 @@ export class AIWorkerTask {
     this.status = "review_rejected";
     this.reviewerManagerId = managerId;
     this.reviewFeedback = feedback;
+  }
+
+  // Learning system helper methods
+  needsLearningAnalysis(): boolean {
+    // Analyze tasks that had errors or retries, and haven't been analyzed yet
+    return (
+      !this.learningAnalyzed &&
+      this.isComplete() &&
+      (this.toolErrorCount > 0 || this.toolRetryCount > 0)
+    );
+  }
+
+  hasJiraReviewLabel(): boolean {
+    // Check if the Jira issue has the 'review' label
+    const labels = this.jiraFields?.labels || [];
+    return labels.includes("review");
   }
 }
