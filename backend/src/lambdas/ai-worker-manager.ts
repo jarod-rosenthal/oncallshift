@@ -208,9 +208,81 @@ async function addJiraComment(
   }
 }
 
+/**
+ * Transition a Jira issue to a target status (e.g., "Done")
+ */
+async function transitionJiraIssue(
+  issueKey: string,
+  targetStatus: string,
+  credentials: JiraCredentials,
+): Promise<boolean> {
+  try {
+    const auth = Buffer.from(
+      `${credentials.email}:${credentials.apiToken}`,
+    ).toString("base64");
+
+    // Get available transitions
+    const transitionsResponse = await fetch(
+      `${credentials.baseUrl}/rest/api/3/issue/${issueKey}/transitions`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    if (!transitionsResponse.ok) {
+      console.warn(`[Manager] Failed to get transitions for ${issueKey}`);
+      return false;
+    }
+
+    const transitionsData = (await transitionsResponse.json()) as {
+      transitions?: Array<{ id: string; name: string }>;
+    };
+    const transitions = transitionsData.transitions || [];
+
+    // Find transition matching target status (case-insensitive)
+    const transition = transitions.find((t) =>
+      t.name.toLowerCase().includes(targetStatus.toLowerCase())
+    );
+
+    if (!transition) {
+      console.warn(`[Manager] No "${targetStatus}" transition found for ${issueKey}`);
+      return false;
+    }
+
+    // Execute the transition
+    const response = await fetch(
+      `${credentials.baseUrl}/rest/api/3/issue/${issueKey}/transitions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ transition: { id: transition.id } }),
+      },
+    );
+
+    if (response.ok) {
+      console.log(`[Manager] Transitioned ${issueKey} to "${targetStatus}"`);
+      return true;
+    } else {
+      console.warn(`[Manager] Failed to transition ${issueKey}: ${response.status}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`[Manager] Error transitioning ${issueKey}:`, error);
+    return false;
+  }
+}
+
 // Configuration
+// Using haiku (cheapest model) until system is stable
 const CONFIG = {
-  managerModel: "claude-opus-4-5-20251101",
+  managerModel: "claude-3-5-haiku-20241022",
   maxTokens: 8192,
   maxConcurrentReviews: 3,
   maxRevisions: 3, // Max times a task can be sent back for revision
@@ -562,6 +634,8 @@ async function reviewTask(
     // Post approval to Jira
     if (jiraCreds) {
       await addJiraComment(task.jiraIssueKey, approvalMessage, jiraCreds);
+      // Transition to Done after approval
+      await transitionJiraIssue(task.jiraIssueKey, "done", jiraCreds);
     }
 
     // Post approval to GitHub PR
@@ -611,6 +685,7 @@ async function reviewTask(
         await addGitHubPRComment(task.githubRepo, task.githubPrNumber, failureMessage);
       }
     } else {
+      // Set next_retry_at so watcher will pick up and re-queue for execution
       await client.query(
         `
         UPDATE ai_worker_tasks
@@ -618,7 +693,8 @@ async function reviewTask(
             review_feedback = $1,
             revision_count = revision_count + 1,
             previous_run_context = COALESCE(previous_run_context, '') || $2,
-            estimated_cost_usd = estimated_cost_usd + $3
+            estimated_cost_usd = estimated_cost_usd + $3,
+            next_retry_at = NOW() + INTERVAL '30 seconds'
         WHERE id = $4
       `,
         [

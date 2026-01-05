@@ -264,6 +264,14 @@ resource "aws_iam_role_policy" "orchestrator_task_policy" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = var.secrets_arns
+      },
+      # Lambda InvokeFunction for triggering Manager immediately after PR creation
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = var.enable_manager ? aws_lambda_function.manager[0].arn : "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:none"
       }
     ]
   })
@@ -362,6 +370,52 @@ resource "aws_iam_role_policy" "executor_task_policy" {
   })
 }
 
+# Terraform state access policy (conditional on bucket being configured)
+resource "aws_iam_role_policy" "executor_terraform_state" {
+  count       = var.terraform_state_bucket != "" ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-exec-tf-"
+  role        = aws_iam_role.executor_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      # S3 bucket access for Terraform state
+      [
+        {
+          Effect = "Allow"
+          Action = var.terraform_write_access ? [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucket"
+          ] : [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.terraform_state_bucket}",
+            "arn:aws:s3:::${var.terraform_state_bucket}/*"
+          ]
+        }
+      ],
+      # DynamoDB for state locking (if configured)
+      var.terraform_state_dynamodb_table != "" ? [
+        {
+          Effect = "Allow"
+          Action = var.terraform_write_access ? [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:DeleteItem"
+          ] : [
+            "dynamodb:GetItem"
+          ]
+          Resource = "arn:aws:dynamodb:${var.aws_region}:*:table/${var.terraform_state_dynamodb_table}"
+        }
+      ] : []
+    )
+  })
+}
+
 # =============================================================================
 # ECS Task Definition - AI Worker Executor (Ephemeral)
 # =============================================================================
@@ -378,15 +432,16 @@ resource "aws_ecs_task_definition" "executor" {
   container_definitions = jsonencode([
     {
       name      = "ai-worker-executor"
-      image     = "${aws_ecr_repository.ai_worker.repository_url}:v5"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v16"
       essential = true
 
       environment = [
         { name = "NODE_ENV", value = var.environment },
         { name = "AWS_REGION", value = var.aws_region },
+        { name = "API_BASE_URL", value = var.api_base_url },
       ]
 
-      secrets = [
+      secrets = concat([
         {
           name      = "GITHUB_TOKEN"
           valueFrom = "${var.github_token_secret_arn}"
@@ -395,7 +450,27 @@ resource "aws_ecs_task_definition" "executor" {
           name      = "ANTHROPIC_API_KEY"
           valueFrom = "${var.anthropic_api_key_secret_arn}"
         }
-      ]
+      ],
+      var.org_api_key_secret_arn != "" ? [
+        {
+          name      = "ORG_API_KEY"
+          valueFrom = "${var.org_api_key_secret_arn}"
+        }
+      ] : [],
+      var.jira_credentials_secret_arn != "" ? [
+        {
+          name      = "JIRA_BASE_URL"
+          valueFrom = "${var.jira_credentials_secret_arn}:base_url::"
+        },
+        {
+          name      = "JIRA_EMAIL"
+          valueFrom = "${var.jira_credentials_secret_arn}:email::"
+        },
+        {
+          name      = "JIRA_API_TOKEN"
+          valueFrom = "${var.jira_credentials_secret_arn}:api_token::"
+        }
+      ] : [])
 
       logConfiguration = {
         logDriver = "awslogs"

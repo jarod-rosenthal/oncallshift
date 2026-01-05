@@ -146,3 +146,34 @@ variable "jira_credentials_secret_arn" {
   type        = string
   default     = ""
 }
+
+variable "api_base_url" {
+  description = "Base URL for the OnCallShift API (e.g., https://oncallshift.com)"
+  type        = string
+  default     = "https://oncallshift.com"
+}
+
+variable "org_api_key_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing the org API key for executor authentication"
+  type        = string
+  default     = ""
+}
+
+# Terraform state access for AI Workers
+variable "terraform_state_bucket" {
+  description = "S3 bucket name containing Terraform state (enables terraform plan)"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_state_dynamodb_table" {
+  description = "DynamoDB table name for Terraform state locking"
+  type        = string
+  default     = ""
+}
+
+variable "terraform_write_access" {
+  description = "Allow AI Workers to run terraform apply (default: false, read-only for terraform plan)"
+  type        = bool
+  default     = false
+}

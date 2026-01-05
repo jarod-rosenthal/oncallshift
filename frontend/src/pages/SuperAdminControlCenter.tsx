@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   RefreshCw,
   ExternalLink,
@@ -25,8 +25,9 @@ import {
   History,
   Plus,
   Play,
+  Power,
+  Trash2,
 } from "lucide-react";
-import { aiWorkersAPI } from "../lib/api-client";
 
 interface ControlCenterStats {
   totalWorkers: number;
@@ -76,6 +77,7 @@ interface ActiveTask {
   status: string;
   workerName: string;
   workerPersona: string;
+  workerModel?: string;
   turnCount: number;
   maxTurns: number;
   estimatedCostUsd: number;
@@ -89,6 +91,7 @@ interface CompletedTask {
   jiraIssueKey: string;
   summary: string;
   status: string;
+  workerModel?: string;
   costUsd: number;
   durationMinutes: number | null;
   completedAt: string;
@@ -166,6 +169,7 @@ interface TaskWithRuns {
   jiraIssueKey: string;
   summary: string;
   status: string;
+  workerModel?: string;
   retryCount: number;
   maxRetries: number;
   lastHeartbeatAt: string | null;
@@ -294,16 +298,45 @@ export default function SuperAdminControlCenter() {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
+  const [deleteWorkerId, setDeleteWorkerId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Terminal output state
   const [terminalLogs, setTerminalLogs] = useState<Record<string, string[]>>({});
+
+  // System on/off state
+  const [systemStatus, setSystemStatus] = useState<{
+    systemEnabled: boolean;
+    orchestrator: { running: boolean; desiredCount: number };
+    executors: { running: number };
+  } | null>(null);
+  const [systemToggleLoading, setSystemToggleLoading] = useState(false);
   const [expandedTerminals, setExpandedTerminals] = useState<Set<string>>(
     new Set(),
   );
   const [terminalLoading, setTerminalLoading] = useState<Set<string>>(
     new Set(),
   );
+  const [streamingTerminals, setStreamingTerminals] = useState<Set<string>>(
+    new Set(),
+  );
+  // Track EventSource connections for SSE streaming
+  const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  // Track terminal scroll containers for auto-scroll
+  const terminalScrollRefs = useRef<Map<string, HTMLDivElement | null>>(
+    new Map(),
+  );
+
+  // Auto-scroll terminal to bottom when new logs arrive
+  useEffect(() => {
+    Object.keys(terminalLogs).forEach((taskId) => {
+      const scrollEl = terminalScrollRefs.current.get(taskId);
+      if (scrollEl) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }
+    });
+  }, [terminalLogs]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -331,6 +364,58 @@ export default function SuperAdminControlCenter() {
       setLoading(false);
     }
   }, []);
+
+  // Fetch system status (on/off state)
+  const fetchSystemStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/system/status`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setSystemStatus(result);
+      }
+    } catch (err) {
+      console.error("Failed to fetch system status:", err);
+    }
+  }, []);
+
+  // Toggle system on/off
+  const toggleSystem = async () => {
+    if (!systemStatus) return;
+    setSystemToggleLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const endpoint = systemStatus.systemEnabled ? "stop" : "start";
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/system/${endpoint}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setCreateSuccess(result.message);
+        setTimeout(() => setCreateSuccess(null), 3000);
+        // Refresh all data
+        fetchSystemStatus();
+        fetchData();
+      } else {
+        const err = await response.json();
+        setCreateError(err.error || `Failed to ${endpoint} system`);
+      }
+    } catch (err) {
+      console.error("Failed to toggle system:", err);
+      setCreateError("Failed to toggle system");
+    } finally {
+      setSystemToggleLoading(false);
+    }
+  };
 
   // Fetch watcher status
   const fetchWatcherStatus = useCallback(async () => {
@@ -378,7 +463,7 @@ export default function SuperAdminControlCenter() {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (searchQuery) params.set("search", searchQuery);
-      params.set("limit", "10");
+      params.set("limit", "50");
 
       const response = await fetch(
         `${API_BASE}/api/v1/super-admin/control-center/tasks?${params}`,
@@ -400,10 +485,11 @@ export default function SuperAdminControlCenter() {
   // Refresh all data (called by refresh button)
   const refreshAll = useCallback(() => {
     fetchData();
+    fetchSystemStatus();
     fetchWatcherStatus();
     fetchManagerStatus();
     fetchTaskList();
-  }, [fetchData, fetchWatcherStatus, fetchManagerStatus, fetchTaskList]);
+  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList]);
 
   // Fetch task runs for detail modal
   const fetchTaskRuns = useCallback(async (taskId: string) => {
@@ -516,16 +602,111 @@ export default function SuperAdminControlCenter() {
     }
   }, []);
 
+  // Start SSE log streaming for a task
+  const startLogStream = useCallback(
+    (taskId: string) => {
+      // Don't start if already streaming
+      if (eventSourcesRef.current.has(taskId)) {
+        return;
+      }
+
+      const token = localStorage.getItem("accessToken");
+      const url = `${API_BASE}/api/v1/super-admin/control-center/logs/${taskId}/stream`;
+
+      // EventSource doesn't support custom headers, so we need to use a different approach
+      // We'll poll initially and use SSE for new logs
+      // For now, fetch initial logs then connect to SSE
+      fetchTerminalLogs(taskId);
+
+      // Create EventSource with token in URL (backend should support this)
+      // Note: EventSource doesn't support Authorization headers natively
+      // We'll use a workaround by including token in query params
+      const eventSource = new EventSource(`${url}?token=${token}`);
+
+      eventSource.onopen = () => {
+        setStreamingTerminals((prev) => new Set([...prev, taskId]));
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "log") {
+            const logLine = `[${new Date(data.timestamp).toLocaleTimeString()}] ${data.message}`;
+            setTerminalLogs((prev) => ({
+              ...prev,
+              [taskId]: [...(prev[taskId] || []), logLine],
+            }));
+          } else if (data.type === "status") {
+            // Task status changed - refresh main data
+            fetchData();
+          } else if (data.type === "complete") {
+            // Task completed - close stream
+            eventSource.close();
+            eventSourcesRef.current.delete(taskId);
+            setStreamingTerminals((prev) => {
+              const newSet = new Set(prev);
+              newSet.delete(taskId);
+              return newSet;
+            });
+          }
+        } catch (err) {
+          console.error("Error parsing SSE data:", err);
+        }
+      };
+
+      eventSource.onerror = () => {
+        // Connection error - fall back to polling
+        eventSource.close();
+        eventSourcesRef.current.delete(taskId);
+        setStreamingTerminals((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(taskId);
+          return newSet;
+        });
+      };
+
+      eventSourcesRef.current.set(taskId, eventSource);
+    },
+    [fetchTerminalLogs, fetchData],
+  );
+
+  // Stop SSE log streaming for a task
+  const stopLogStream = useCallback((taskId: string) => {
+    const eventSource = eventSourcesRef.current.get(taskId);
+    if (eventSource) {
+      eventSource.close();
+      eventSourcesRef.current.delete(taskId);
+      setStreamingTerminals((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(taskId);
+        return newSet;
+      });
+    }
+  }, []);
+
+  // Cleanup SSE connections on unmount
+  useEffect(() => {
+    return () => {
+      eventSourcesRef.current.forEach((es) => es.close());
+      eventSourcesRef.current.clear();
+    };
+  }, []);
+
   // Toggle terminal expansion
-  const toggleTerminal = (taskId: string) => {
+  const toggleTerminal = (taskId: string, isActiveTask: boolean = false) => {
     setExpandedTerminals((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(taskId)) {
         newSet.delete(taskId);
+        // Stop streaming when closing
+        stopLogStream(taskId);
       } else {
         newSet.add(taskId);
-        // Fetch logs when expanding
-        if (!terminalLogs[taskId]) {
+        // Start streaming for active tasks, fetch for completed
+        if (isActiveTask) {
+          startLogStream(taskId);
+        } else if (!terminalLogs[taskId]) {
           fetchTerminalLogs(taskId);
         }
       }
@@ -540,7 +721,7 @@ export default function SuperAdminControlCenter() {
     fetchTaskRuns(task.id);
   };
 
-  // Create worker handler
+  // Create worker handler (using super-admin endpoint)
   const handleCreateWorker = async () => {
     if (!createWorkerForm.displayName.trim()) {
       setCreateError("Display name is required");
@@ -549,20 +730,62 @@ export default function SuperAdminControlCenter() {
     setCreateLoading(true);
     setCreateError(null);
     try {
-      await aiWorkersAPI.create(createWorkerForm);
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(`${API_BASE}/api/v1/super-admin/workers`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(createWorkerForm),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create worker");
+      }
       setCreateSuccess("Worker created successfully");
       setShowCreateWorkerModal(false);
       setCreateWorkerForm({
-        persona: "developer",
+        persona: "backend_developer",
         displayName: "",
         description: "",
       });
       fetchData();
       setTimeout(() => setCreateSuccess(null), 3000);
     } catch (err: any) {
-      setCreateError(err.response?.data?.error || "Failed to create worker");
+      setCreateError(err.message || "Failed to create worker");
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  // Delete worker handler
+  const handleDeleteWorker = async (workerId: string) => {
+    setDeleteLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/workers/${workerId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to delete worker");
+      }
+      setCreateSuccess("Worker deleted successfully");
+      setDeleteWorkerId(null);
+      fetchData();
+      setTimeout(() => setCreateSuccess(null), 3000);
+    } catch (err: any) {
+      setCreateError(err.message || "Failed to delete worker");
+      setTimeout(() => setCreateError(null), 5000);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -609,6 +832,7 @@ export default function SuperAdminControlCenter() {
 
   useEffect(() => {
     fetchData();
+    fetchSystemStatus();
     fetchWatcherStatus();
     fetchManagerStatus();
     fetchTaskList();
@@ -619,6 +843,7 @@ export default function SuperAdminControlCenter() {
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") {
         fetchData();
+        fetchSystemStatus();
         fetchWatcherStatus();
         fetchManagerStatus();
         fetchTaskList();
@@ -634,6 +859,7 @@ export default function SuperAdminControlCenter() {
     };
   }, [
     fetchData,
+    fetchSystemStatus,
     fetchWatcherStatus,
     fetchManagerStatus,
     fetchTaskList,
@@ -775,30 +1001,6 @@ export default function SuperAdminControlCenter() {
     }
   };
 
-  const getLogIcon = (type: string) => {
-    switch (type) {
-      case "file_read":
-        return "📝";
-      case "file_changed":
-        return "✨";
-      case "command_executed":
-        return "⚡";
-      case "test_run":
-        return "🧪";
-      case "build_run":
-        return "🔨";
-      case "git_operation":
-        return "🔀";
-      case "error":
-        return "❌";
-      case "warning":
-        return "⚠️";
-      case "status_change":
-        return "🔄";
-      default:
-        return "📋";
-    }
-  };
 
   if (loading && !data) {
     return (
@@ -836,6 +1038,36 @@ export default function SuperAdminControlCenter() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* System On/Off Toggle */}
+          <button
+            onClick={toggleSystem}
+            disabled={systemToggleLoading || !systemStatus}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              systemStatus?.systemEnabled
+                ? "bg-green-500/20 text-green-500 border border-green-500/30 hover:bg-green-500/30"
+                : "bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/30"
+            } ${systemToggleLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+            title={
+              systemStatus?.systemEnabled
+                ? "System ON - Click to stop all AI workers"
+                : "System OFF - Click to start AI workers"
+            }
+          >
+            <Power
+              className={`w-4 h-4 ${systemToggleLoading ? "animate-pulse" : ""}`}
+            />
+            {systemToggleLoading
+              ? "..."
+              : systemStatus?.systemEnabled
+                ? "System ON"
+                : "System OFF"}
+            {systemStatus && systemStatus.executors.running > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-500/30 rounded">
+                {systemStatus.executors.running} running
+              </span>
+            )}
+          </button>
+          <div className="w-px h-6 bg-border" />
           <button
             onClick={() => setShowCreateTaskModal(true)}
             className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm"
@@ -1190,6 +1422,11 @@ export default function SuperAdminControlCenter() {
                       <span className="text-muted-foreground">
                         {task.workerName}
                       </span>
+                      {task.workerModel && (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-[10px] font-medium">
+                          {task.workerModel}
+                        </span>
+                      )}
                       <span
                         className={`px-2 py-0.5 rounded font-medium ${
                           isFailed
@@ -1305,13 +1542,22 @@ export default function SuperAdminControlCenter() {
                   {/* Terminal Output Toggle */}
                   <div className="mt-3">
                     <button
-                      onClick={() => toggleTerminal(task.id)}
+                      onClick={() => toggleTerminal(task.id, true)}
                       className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
                       <Terminal className="w-3 h-3" />
                       {expandedTerminals.has(task.id)
                         ? "Hide Terminal Output"
                         : "Show Terminal Output"}
+                      {streamingTerminals.has(task.id) && (
+                        <span className="flex items-center gap-1 text-green-500">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                          </span>
+                          LIVE
+                        </span>
+                      )}
                       {expandedTerminals.has(task.id) ? (
                         <ChevronDown className="w-3 h-3" />
                       ) : (
@@ -1332,6 +1578,11 @@ export default function SuperAdminControlCenter() {
                             <span className="text-xs text-gray-400 font-mono">
                               worker-{task.id.substring(0, 8)}
                             </span>
+                            {streamingTerminals.has(task.id) && (
+                              <span className="text-xs text-green-400 font-mono">
+                                [streaming]
+                              </span>
+                            )}
                           </div>
                           <button
                             onClick={() => fetchTerminalLogs(task.id)}
@@ -1343,7 +1594,12 @@ export default function SuperAdminControlCenter() {
                             />
                           </button>
                         </div>
-                        <div className="p-3 h-48 overflow-y-auto font-mono text-xs text-green-400 leading-relaxed">
+                        <div
+                          ref={(el) => {
+                            terminalScrollRefs.current.set(task.id, el);
+                          }}
+                          className="p-3 h-48 overflow-y-auto font-mono text-xs text-green-400 leading-relaxed"
+                        >
                           {terminalLoading.has(task.id) &&
                           !terminalLogs[task.id] ? (
                             <div className="flex items-center gap-2 text-gray-500">
@@ -1391,10 +1647,19 @@ export default function SuperAdminControlCenter() {
 
       {/* Workers Section - Each worker is an expandable card */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Users className="w-5 h-5" />
-          Workers
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Workers
+          </h2>
+          <button
+            onClick={() => setShowCreateWorkerModal(true)}
+            className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Worker
+          </button>
+        </div>
 
         {data?.workers.map((worker) => {
           const personaInfo = getPersonaInfo(worker.persona);
@@ -1479,6 +1744,20 @@ export default function SuperAdminControlCenter() {
                     ${worker.totalCostUsd.toFixed(2)}
                   </span>
                 </div>
+
+                {/* Delete button (only when idle) */}
+                {worker.status === "idle" && !worker.currentTask && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteWorkerId(worker.id);
+                    }}
+                    className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                    title="Delete worker"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
 
                 {/* Expand icon */}
                 {isExpanded ? (
@@ -1628,45 +1907,6 @@ export default function SuperAdminControlCenter() {
                               {workerActiveTask.maxTurns} turns
                             </span>
                           </div>
-
-                          {/* Recent logs */}
-                          {workerActiveTask.recentLogs.length > 0 && (
-                            <div className="bg-muted/30 rounded p-2 max-h-32 overflow-y-auto">
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                                <Terminal className="w-3 h-3" />
-                                Recent Activity
-                              </div>
-                              <div className="space-y-0.5 font-mono text-xs">
-                                {workerActiveTask.recentLogs
-                                  .slice(0, 5)
-                                  .map((log, index) => (
-                                    <div
-                                      key={index}
-                                      className="flex items-start gap-1"
-                                    >
-                                      <span className="text-muted-foreground">
-                                        {new Date(
-                                          log.timestamp,
-                                        ).toLocaleTimeString([], {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })}
-                                      </span>
-                                      <span>{getLogIcon(log.type)}</span>
-                                      <span
-                                        className={
-                                          log.severity === "error"
-                                            ? "text-red-500"
-                                            : ""
-                                        }
-                                      >
-                                        {log.message}
-                                      </span>
-                                    </div>
-                                  ))}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       ) : worker.currentTask ? (
                         <div className="space-y-2">
@@ -1780,6 +2020,9 @@ export default function SuperAdminControlCenter() {
                   Status
                 </th>
                 <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Model
+                </th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
                   Links
                 </th>
                 <th className="text-center px-4 py-2 font-medium text-muted-foreground">
@@ -1796,14 +2039,14 @@ export default function SuperAdminControlCenter() {
             <tbody className="divide-y divide-border">
               {taskListLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center">
+                  <td colSpan={9} className="px-4 py-8 text-center">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
                   </td>
                 </tr>
               ) : taskList.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-muted-foreground"
                   >
                     No tasks found
@@ -1893,6 +2136,15 @@ export default function SuperAdminControlCenter() {
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {task.workerModel ? (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-xs font-medium">
+                          {task.workerModel}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -2533,6 +2785,59 @@ export default function SuperAdminControlCenter() {
                 )}
                 <Play className="w-4 h-4" />
                 Run Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Worker Confirmation Modal */}
+      {deleteWorkerId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg w-full max-w-md">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2 text-red-500">
+                <Trash2 className="w-4 h-4" />
+                Delete Worker
+              </h3>
+              <button
+                onClick={() => setDeleteWorkerId(null)}
+                className="p-1 hover:bg-muted rounded"
+                disabled={deleteLoading}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to delete this worker? This action cannot
+                be undone.
+              </p>
+              <p className="text-sm">
+                The worker will be permanently removed from the system. Any
+                associated task history will be preserved.
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteWorkerId(null)}
+                className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg"
+                disabled={deleteLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteWorker(deleteWorkerId)}
+                disabled={deleteLoading}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+              >
+                {deleteLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                <Trash2 className="w-4 h-4" />
+                Delete Worker
               </button>
             </div>
           </div>

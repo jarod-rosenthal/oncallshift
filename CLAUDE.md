@@ -14,39 +14,7 @@ OnCallShift is a production incident management platform deployed at https://onc
 
 **Be transparent and narrate your work.** Don't just silently execute - share your thinking.
 
-### What to Communicate
-
-1. **Before starting**: State what you're about to do and why
-   - "I'm checking the current codebase for existing implementations before creating this feature..."
-   - "Looking at the database schema to understand the data model..."
-
-2. **During exploration**: Share what you're finding
-   - "Found rate-limiter.ts with tiered limits already implemented, but it's in-memory only..."
-   - "The AIWorkerTask model has heartbeat fields but I need to verify if they're being used..."
-
-3. **When making decisions**: Explain your reasoning
-   - "Using cursor pagination here because this endpoint could return 10K+ records..."
-   - "Adding [VERIFY] prefix because this code exists but needs testing..."
-
-4. **After completing work**: Summarize what was done
-   - "Created OCS-59 through OCS-65 covering auto-investigation, similar incidents, and worker verification..."
-
-### Don't Ask, Just Share
-
-You don't need to stop and ask for approval on routine decisions. Just communicate what you're doing:
-
-❌ "Should I check the existing implementation first?"
-✅ "Checking existing implementation... Found partial work in backend/src/workers/..."
-
-❌ "Would you like me to create this as a [GAP] story?"
-✅ "Creating as [GAP] story since the feature is partially implemented..."
-
-### Level of Detail
-
-- **Exploration**: Name the files you're reading and what you found
-- **Code changes**: Mention which files you're modifying and why
-- **Jira tickets**: Share ticket numbers as you create them
-- **Decisions**: Brief explanation of trade-offs considered
+Share what you're doing before starting, what you're finding during exploration, your reasoning when making decisions, and summarize what was done after completing work. Don't ask for approval on routine decisions—just communicate what you're doing.
 
 ## Agent Workflow Guidelines
 
@@ -89,28 +57,6 @@ When working on large features that span multiple files or may be interrupted:
    - Next steps
    - Any blockers or issues encountered
 3. **Reference the plan file** if one exists in `docs/` or `.claude/plans/`
-
-**Progress file template:**
-```markdown
-# Feature: <name>
-**Plan:** docs/<plan-file>.md
-**Started:** YYYY-MM-DD
-**Status:** In Progress | Blocked | Complete
-
-## Completed
-- [x] Phase 1: Database migration
-- [x] Phase 2: API endpoints
-
-## In Progress
-- [ ] Phase 3: Frontend UI
-
-## Next Steps
-1. Create TaskDetailModal component
-2. Add action buttons to Control Center
-
-## Issues/Blockers
-- None currently
-```
 
 This ensures work can be resumed if the session is interrupted.
 
@@ -228,39 +174,7 @@ Use prefixes to indicate work type:
 6. **Follow-up needed** - Any related work discovered that needs separate tickets
 7. **Testing performed** - How the changes were verified
 
-**Example completion comment:**
-```
-## Completion Summary
-
-### What was done
-Implemented RDS Proxy for connection pooling. Added Terraform module and updated ECS task definitions to use the proxy endpoint.
-
-### Files modified
-- infrastructure/terraform/modules/database/rds-proxy.tf (new)
-- infrastructure/terraform/modules/ecs/variables.tf
-- backend/src/shared/db/data-source.ts
-
-### New artifacts
-- Migration 052: Added connection pool settings table
-- New Terraform module: modules/database/rds-proxy
-
-### Tools installed
-- None required
-
-### Blockers encountered
-- RDS Proxy requires IAM auth - had to add IAM policy for ECS task role
-- Initial connection timeout was too low - increased to 30s
-
-### Follow-up needed
-- OCS-XX: Add connection pool metrics to CloudWatch dashboard
-
-### Testing performed
-- Ran `terraform plan` - no drift
-- Deployed to dev, verified API connects through proxy
-- Load tested with 100 concurrent connections - no errors
-```
-
-**Update Jira via API or UI** - Workers should add this as a comment on the ticket before marking it Done.
+Workers should add this as a comment on the ticket before marking it Done.
 
 ### Branch Naming Convention
 
@@ -323,27 +237,7 @@ Implemented RDS Proxy for connection pooling. Added Terraform module and updated
 
 Auto-formatting is configured in `.claude/settings.json`. After any Write/Edit to `.ts`/`.tsx`/`.js`/`.jsx` files, Prettier runs automatically.
 
-### PostToolUse Hook (Auto-format)
-```json
-{
-  "hooks": {
-    "PostToolUse": [{
-      "matcher": "Write|Edit",
-      "hooks": [{
-        "type": "command",
-        "command": "npx prettier --write \"$CLAUDE_FILE_PATHS\""
-      }]
-    }]
-  }
-}
-```
-
-### Verification Pattern for Long Tasks
-For complex multi-step tasks, spawn a background verification agent when done:
-```
-After completing the main work, use the Task tool with run_in_background: true
-to spawn a verification agent that runs /verify
-```
+For complex multi-step tasks, spawn a background verification agent that runs `/verify` when done.
 
 ### Tool Installation Policy
 
@@ -440,13 +334,6 @@ MSYS_NO_PATHCONV=1 aws logs describe-log-streams --log-group-name "/ecs/..."
 When building Docker containers that output to CloudWatch Logs:
 - **Avoid emojis in shell scripts** - They cause encoding failures even with UTF-8 locale
 - Use text prefixes like `[INFO]`, `[ERROR]`, `[SUCCESS]` instead of emojis
-- Set locale in Dockerfile if Unicode is needed:
-```dockerfile
-RUN apt-get install -y locales && \
-    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
-    locale-gen
-ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
-```
 
 ### ECS Image Caching
 
@@ -497,22 +384,7 @@ A local Ollama server is available with high-performance models running on an RT
 
 ### How to Use (MCP Tools)
 
-The Ollama MCP server provides these tools:
-- `mcp__ollama__generate` - Generate text/code with a prompt
-- `mcp__ollama__chat` - Multi-turn conversation
-- `mcp__ollama__list_models` - List available models
-
-**Example invocations:**
-```
-# Generate a CRUD route
-Use mcp__ollama__generate with model "devstral-small-2:24b" to create an Express route for managing Teams
-
-# Generate unit tests
-Use mcp__ollama__generate with model "qwen3-coder:30b" to write Jest tests for the function in backend/src/shared/utils/filtering.ts
-
-# Generate TypeScript types
-Use mcp__ollama__generate with model "llama3.1:8b" to create TypeScript interfaces from this JSON response: {...}
-```
+Use `mcp__ollama__generate` for text/code generation, `mcp__ollama__chat` for conversations, `mcp__ollama__list_models` to list models.
 
 ### Quality Control Guidelines
 
@@ -582,85 +454,29 @@ npx tsc --noEmit     # Type check
 
 ### Mobile Development with Physical Device
 
-The mobile app connects to the **production API** at `https://oncallshift.com/api`. No local backend is needed for mobile development.
+The mobile app connects to the **production API** at `https://oncallshift.com/api`. No local backend needed.
 
-**Starting the Metro Bundler:**
-```bash
-cd mobile
-npx expo start --host lan    # Binds to LAN IP for physical device testing
-```
+Use `npx expo start --host lan` for physical device testing. Phone must be on same WiFi—scan QR code in Expo Go app.
 
-**Connecting from your phone:**
-1. Ensure phone is on the same WiFi network as your dev machine
-2. Open Expo Go app on phone
-3. Scan QR code from terminal, or enter URL shown in terminal (e.g., `exp://<YOUR_IP>:8081`)
+**Key files:** `mobile/src/screens/` (screens), `mobile/src/components/` (components), `mobile/src/services/apiService.ts` (API), `mobile/src/config/index.ts` (config).
 
-**TypeScript Validation:**
-```bash
-cd mobile
-npx tsc --noEmit    # Check for TypeScript errors before testing
-```
-
-**Troubleshooting:**
-- If phone can't connect, check Windows Firewall allows Node.js on port 8081
-- Verify Metro is running: `netstat -an | findstr "8081"` should show LISTENING
-- Test from phone browser: `http://<YOUR_LAN_IP>:8081` should return packager status
-
-**Config file:** `mobile/src/config/index.ts` - Points to production API, no changes needed for development.
-
-**Key files:**
-- `mobile/src/screens/` - All screen components
-- `mobile/src/components/` - Reusable components (export via `index.ts`)
-- `mobile/src/services/apiService.ts` - API client methods
-- `mobile/src/config/index.ts` - API URL and Cognito config
-
-**Avoiding require cycles:** When adding new components to `mobile/src/components/`, import dependencies directly (e.g., `import { useToast } from './ActionToast'`) rather than from `./index` to avoid circular dependencies.
+**Avoiding require cycles:** Import dependencies directly (e.g., `import { useToast } from './ActionToast'`) rather than from `./index`.
 
 ### Mobile App Builds (EAS Build)
 
-The mobile app uses **EAS Build** for cloud-based builds and **EAS Update** for over-the-air (OTA) updates.
+Uses **EAS Build** for cloud builds and **EAS Update** for OTA updates. Config in `mobile/app.json` and `mobile/eas.json`.
 
-**Key Configuration Files:**
-- `mobile/app.json` - Expo config with updates enabled
-- `mobile/eas.json` - Build profiles with channels configured
-- `mobile/.gitignore` - `/android` and `/ios` are ignored (CNG mode)
+**Build profiles:** `development` (hot reload), `preview` (test APK), `production` (app store).
 
-**Build Profiles:**
-| Profile | Channel | Purpose |
-|---------|---------|---------|
-| `development` | `development` | Dev build with hot reload |
-| `preview` | `preview` | Test APK for testers |
-| `production` | `production` | App store release |
-
-**Building the App:**
 ```bash
 cd mobile
-
-# Preview build (APK for testing)
-eas build --platform android --profile preview
-
-# Production build
-eas build --platform android --profile production
+eas build --platform android --profile preview    # Test APK
+eas build --platform android --profile production # Production
 ```
 
-**Required for Android Builds:**
-- `mobile/google-services.json` - Firebase config (gitignored, stored as EAS secret)
-- Firebase project configured for push notifications
+**Note:** EAS CLI should run from PowerShell, not WSL. Requires `google-services.json` (gitignored, stored as EAS secret).
 
-**Note on Windows:** EAS CLI commands should be run from PowerShell, not WSL.
-
-**CRITICAL: CNG Mode (Continuous Native Generation)**
-
-The app uses CNG mode where EAS generates native folders fresh each build:
-- `/android` and `/ios` are in `.gitignore`
-- Never commit native folders - they're generated from `app.json` config
-- If you need to modify native code, use Expo config plugins instead
-
-**Sentry Configuration (Currently Disabled):**
-- Sentry plugins were removed from `app.json` due to Gradle build failures
-- The `@sentry/react-native` package is still installed but not configured as a plugin
-- To re-enable: add `"@sentry/react-native/expo"` to `app.json` plugins array
-- May require SDK version alignment - test thoroughly before enabling
+**CNG Mode:** `/android` and `/ios` are gitignored—EAS generates them fresh each build. Use Expo config plugins for native modifications.
 
 ### Mobile OTA Updates
 
@@ -678,40 +494,7 @@ eas update --branch preview --message "Description of changes"
 3. App downloads new JS bundle on next launch
 4. Users can also tap "Check for Updates" in Settings
 
-**Important Configurations (DO NOT CHANGE):**
-```json
-// app.json - updates must be enabled
-"updates": {
-  "enabled": true,
-  "url": "https://u.expo.dev/7311a48c-3b87-4bb8-8bba-549de8a578e7"
-},
-"runtimeVersion": {
-  "policy": "appVersion"
-}
-
-// eas.json - channels must match build profiles
-"preview": {
-  "channel": "preview",
-  ...
-}
-```
-
-**Required Package:**
-- `expo-updates` must be installed for OTA to work
-- Settings screen has "Check for Updates" button using `expo-updates` API
-
-**Limitations:**
-- OTA can only update JavaScript/assets
-- Native code changes (permissions, plugins) require a new build
-- Updates only work in production builds, not Expo Go
-
-**Development Workflow for UI Changes:**
-1. Make changes to mobile code
-2. Push OTA update: `eas update --branch preview --message "Description"`
-3. User taps "Check for Updates" in Settings or restarts app
-4. Changes appear without reinstalling APK
-
-This is much faster than rebuilding the entire APK for JavaScript-only changes.
+**Important:** OTA config in `app.json` and `eas.json` must stay enabled. `expo-updates` package required. OTA can only update JavaScript/assets—native changes require a new build.
 
 ### Deployment
 
@@ -872,36 +655,7 @@ React Navigation with bottom tabs + stack navigation. Deep linking for push noti
 - **Runbook Automation**: AI executes runbook steps in sandboxed environments with approval workflows
 
 ### MCP Server
-The `packages/oncallshift-mcp/` package provides an MCP (Model Context Protocol) server for AI assistant integration, enabling programmatic access to OnCallShift features.
-
-```bash
-cd packages/oncallshift-mcp
-npm install
-npm run build        # Build TypeScript
-npm run dev          # Development mode
-npm run typecheck    # Type checking
-```
-
-**Configuration (`.mcp.json` in project root):**
-```json
-{
-  "mcpServers": {
-    "oncallshift": {
-      "command": "node",
-      "args": ["./packages/oncallshift-mcp/build/server.js"],
-      "env": {
-        "ONCALLSHIFT_API_KEY": "org_<your-api-key>"
-      }
-    }
-  }
-}
-```
-
-**Cross-Platform Path:** Uses relative path `./packages/oncallshift-mcp/build/server.js` which works in both Windows (PowerShell/Git Bash) and WSL when Claude Code is started from the project directory.
-
-**API Key:** Create an org API key at https://oncallshift.com Settings > API Keys. The key format is `org_<uuid>`.
-
-**Important:** After modifying `.mcp.json`, restart Claude Code to reload the MCP server configuration.
+The `packages/oncallshift-mcp/` package provides an MCP server for AI assistant integration. Config is in `.mcp.json` (project root). Create org API key at Settings > API Keys (`org_<uuid>` format). Restart Claude Code after modifying `.mcp.json`.
 
 ### Terraform Provider
 The `packages/terraform-provider-oncallshift/` provides a Terraform provider for managing OnCallShift resources as infrastructure-as-code.

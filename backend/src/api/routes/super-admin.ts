@@ -23,7 +23,7 @@ import {
   GetQueueAttributesCommand,
   SendMessageCommand,
 } from "@aws-sdk/client-sqs";
-import { ECS, StopTaskCommand } from "@aws-sdk/client-ecs";
+import { ECS, StopTaskCommand, UpdateServiceCommand, ListTasksCommand } from "@aws-sdk/client-ecs";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { MoreThan, In } from "typeorm";
 import { body, param, query, validationResult } from "express-validator";
@@ -37,6 +37,8 @@ const ecs = new ECS({ region: awsRegion });
 const lambda = new LambdaClient({ region: awsRegion });
 const queueUrl = process.env.AI_WORKER_QUEUE_URL;
 const ecsCluster = process.env.ECS_CLUSTER_NAME || "pagerduty-lite-dev";
+const orchestratorServiceName =
+  process.env.AI_WORKER_ORCHESTRATOR_SERVICE || `${ecsCluster}-aiw-orch`;
 const managerLambdaName =
   process.env.AI_WORKER_MANAGER_LAMBDA ||
   "pagerduty-lite-dev-ai-worker-manager";
@@ -90,18 +92,27 @@ router.get("/control-center", async (_req: Request, res: Response) => {
       order: { displayName: "ASC" },
     });
 
-    // Get active tasks (not completed/failed/cancelled)
+    // Get active tasks (not completed/failed/cancelled) + recently completed (last 10 min)
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const activeTasks = await taskRepo.find({
-      where: {
-        status: In([
-          "queued",
-          "claimed",
-          "environment_setup",
-          "executing",
-          "pr_created",
-          "review_pending",
-        ]),
-      },
+      where: [
+        // Truly active tasks
+        {
+          status: In([
+            "queued",
+            "claimed",
+            "environment_setup",
+            "executing",
+            "pr_created",
+            "review_pending",
+          ]),
+        },
+        // Recently completed tasks (show for 10 minutes after completion)
+        {
+          status: In(["completed", "failed", "cancelled"]),
+          completedAt: MoreThan(tenMinutesAgo),
+        },
+      ],
       order: { createdAt: "DESC" },
     });
 
@@ -112,7 +123,7 @@ router.get("/control-center", async (_req: Request, res: Response) => {
         completedAt: MoreThan(todayStart),
       },
       order: { completedAt: "DESC" },
-      take: 10,
+      take: 15,
     });
 
     // Calculate today's cost (use dynamic calculation if estimatedCostUsd is 0)
@@ -235,6 +246,7 @@ router.get("/control-center", async (_req: Request, res: Response) => {
         status: t.status,
         workerName: worker?.displayName || "Unassigned",
         workerPersona: t.workerPersona,
+        workerModel: t.workerModel,
         turnCount: conversation?.turnCount || 0,
         maxTurns: 50,
         estimatedCostUsd: Number(t.estimatedCostUsd),
@@ -265,6 +277,7 @@ router.get("/control-center", async (_req: Request, res: Response) => {
         jiraIssueKey: t.jiraIssueKey,
         summary: t.summary,
         status: t.status,
+        workerModel: t.workerModel,
         costUsd,
         durationMinutes:
           t.completedAt && t.startedAt
@@ -350,6 +363,218 @@ router.get(
 );
 
 /**
+ * POST /api/v1/super-admin/control-center/logs
+ * Receive logs from the executor container
+ */
+router.post(
+  "/control-center/logs",
+  [
+    body("taskId").isUUID(),
+    body("type").isIn([
+      "system",
+      "claude_output",
+      "tool_use",
+      "file_edit",
+      "bash_command",
+      "test_run",
+      "git_operation",
+      "error",
+      "warning",
+      "info",
+    ]),
+    body("message").isString().notEmpty(),
+    body("severity").optional().isIn(["info", "warning", "error"]),
+    body("command").optional().isString(),
+    body("exitCode").optional().isInt(),
+    body("stdout").optional().isString(),
+    body("stderr").optional().isString(),
+    body("filePath").optional().isString(),
+    body("durationMs").optional().isInt(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const {
+        taskId,
+        type,
+        message,
+        severity,
+        command,
+        exitCode,
+        stdout,
+        stderr,
+        filePath,
+        durationMs,
+      } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const logRepo = dataSource.getRepository(AIWorkerTaskLog);
+
+      // Verify task exists
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Create and save log entry
+      const logData = AIWorkerTaskLog.create(taskId, type, message, {
+        severity: severity || "info",
+        command,
+        exitCode,
+        stdout,
+        stderr,
+        filePath,
+        durationMs,
+      });
+
+      const log = logRepo.create(logData);
+      await logRepo.save(log);
+
+      // Also update task heartbeat
+      task.lastHeartbeatAt = new Date();
+      await taskRepo.save(task);
+
+      return res.status(201).json({
+        id: log.id,
+        taskId: log.taskId,
+        timestamp: log.createdAt,
+      });
+    } catch (error) {
+      logger.error("Error saving task log:", error);
+      return res.status(500).json({ error: "Failed to save log" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/logs/:taskId/stream
+ * SSE endpoint for real-time log streaming
+ * Note: Supports token in query param since EventSource doesn't support headers
+ */
+router.get(
+  "/control-center/logs/:taskId/stream",
+  async (req: Request, res: Response) => {
+    const { taskId } = req.params;
+
+    // EventSource doesn't support Authorization headers, so we also accept token in query
+    // The authenticateRequest middleware already ran, but for SSE we may need query param fallback
+    // This is handled by the middleware, but we log it for debugging
+    if (req.query.token && !req.user && !req.orgId) {
+      // Token was in query but auth failed - return error
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    try {
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const logRepo = dataSource.getRepository(AIWorkerTaskLog);
+
+      // Verify task exists
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Set up SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+      res.flushHeaders();
+
+      // Send initial connection event
+      res.write(
+        `data: ${JSON.stringify({ type: "connected", taskId, status: task.status })}\n\n`,
+      );
+
+      let lastLogId: string | null = null;
+      let lastStatus = task.status;
+
+      // Poll for new logs every second
+      const intervalId = setInterval(async () => {
+        try {
+          // Get task status
+          const currentTask = await taskRepo.findOne({ where: { id: taskId } });
+          if (!currentTask) {
+            res.write(
+              `data: ${JSON.stringify({ type: "error", message: "Task not found" })}\n\n`,
+            );
+            clearInterval(intervalId);
+            res.end();
+            return;
+          }
+
+          // Send status update if changed
+          if (currentTask.status !== lastStatus) {
+            res.write(
+              `data: ${JSON.stringify({ type: "status", status: currentTask.status })}\n\n`,
+            );
+            lastStatus = currentTask.status;
+          }
+
+          // Get new logs since last check
+          const queryBuilder = logRepo
+            .createQueryBuilder("log")
+            .where("log.taskId = :taskId", { taskId })
+            .orderBy("log.createdAt", "ASC");
+
+          if (lastLogId) {
+            queryBuilder.andWhere("log.id > :lastLogId", { lastLogId });
+          }
+
+          const newLogs = await queryBuilder.getMany();
+
+          for (const log of newLogs) {
+            res.write(
+              `data: ${JSON.stringify({
+                type: "log",
+                id: log.id,
+                timestamp: log.createdAt,
+                logType: log.type,
+                message: log.message,
+                severity: log.severity,
+                command: log.command,
+                exitCode: log.exitCode,
+                filePath: log.filePath,
+                durationMs: log.durationMs,
+              })}\n\n`,
+            );
+            lastLogId = log.id;
+          }
+
+          // End stream if task is complete
+          if (["completed", "failed", "cancelled"].includes(currentTask.status)) {
+            res.write(
+              `data: ${JSON.stringify({ type: "complete", status: currentTask.status })}\n\n`,
+            );
+            clearInterval(intervalId);
+            res.end();
+          }
+        } catch (err) {
+          logger.error("Error in SSE loop:", err);
+        }
+      }, 1000);
+
+      // Clean up on client disconnect
+      req.on("close", () => {
+        clearInterval(intervalId);
+      });
+
+      // SSE connection is now open - no return needed (connection stays open)
+      return;
+    } catch (error) {
+      logger.error("Error setting up SSE stream:", error);
+      return res.status(500).json({ error: "Failed to set up log stream" });
+    }
+  },
+);
+
+/**
  * GET /api/v1/super-admin/control-center/tasks
  * List tasks with filtering and pagination
  */
@@ -419,6 +644,7 @@ router.get(
           jiraIssueKey: t.jiraIssueKey,
           summary: t.summary,
           status: t.status,
+          workerModel: t.workerModel,
           workerPersona: t.workerPersona,
           workerName: t.assignedWorker?.displayName || "Unassigned",
           retryCount: t.retryCount,
@@ -660,6 +886,59 @@ router.post(
       });
     } catch (error) {
       logger.error("Error resetting task:", error);
+      return res.status(500).json({ error: "Failed to reset task" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/tasks/reset-to-pr-created
+ * Reset a cancelled task to pr_created so Virtual Manager can review
+ */
+router.post(
+  "/control-center/tasks/reset-to-pr-created",
+  [body("jiraKey").isString().notEmpty()],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { jiraKey } = req.body;
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({
+        where: { jiraIssueKey: jiraKey },
+        order: { createdAt: "DESC" },
+      });
+
+      if (!task) {
+        return res.status(404).json({ error: `Task not found for ${jiraKey}` });
+      }
+
+      if (!task.githubPrUrl) {
+        return res.status(400).json({
+          error: `Task has no PR URL, cannot reset to pr_created`,
+        });
+      }
+
+      const previousStatus = task.status;
+      task.status = "pr_created";
+      task.reviewRequestedAt = null;
+      task.reviewFeedback = null;
+      await taskRepo.save(task);
+
+      logger.info(`Reset task ${jiraKey} (${task.id}) to pr_created for VM review`);
+      return res.json({
+        message: `Task ${jiraKey} reset to pr_created - Virtual Manager will review on next sweep`,
+        taskId: task.id,
+        previousStatus,
+        prUrl: task.githubPrUrl,
+      });
+    } catch (error) {
+      logger.error("Error resetting task to pr_created:", error);
       return res.status(500).json({ error: "Failed to reset task" });
     }
   },
@@ -1178,6 +1457,396 @@ router.patch(
     } catch (error) {
       logger.error("Error updating task status:", error);
       return res.status(500).json({ error: "Failed to update task status" });
+    }
+  },
+);
+
+/**
+ * DELETE /api/v1/super-admin/control-center/workers
+ * Remove all worker instances from the database (except managers)
+ */
+router.delete(
+  "/control-center/workers",
+  async (_req: Request, res: Response) => {
+    try {
+      const dataSource = await getDataSource();
+      const workerRepo = dataSource.getRepository(AIWorkerInstance);
+
+      // Delete all workers except managers
+      const result = await workerRepo
+        .createQueryBuilder()
+        .delete()
+        .from(AIWorkerInstance)
+        .where("role != :role OR role IS NULL", { role: "manager" })
+        .execute();
+
+      logger.info("Cleaned up workers", { count: result.affected });
+
+      return res.json({
+        success: true,
+        message: `Removed ${result.affected || 0} workers`,
+        count: result.affected || 0,
+      });
+    } catch (error) {
+      logger.error("Error cleaning up workers:", error);
+      return res.status(500).json({ error: "Failed to clean up workers" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/system/status
+ * Get current AI Workers system running state
+ */
+router.get(
+  "/control-center/system/status",
+  async (_req: Request, res: Response) => {
+    try {
+      // Check orchestrator service status
+      let orchestratorRunning = false;
+      let orchestratorDesiredCount = 0;
+      let executorTaskCount = 0;
+
+      try {
+        const describeResult = await ecs.describeServices({
+          cluster: ecsCluster,
+          services: [orchestratorServiceName],
+        });
+
+        if (describeResult.services && describeResult.services.length > 0) {
+          const service = describeResult.services[0];
+          orchestratorDesiredCount = service.desiredCount || 0;
+          orchestratorRunning = (service.runningCount || 0) > 0;
+        }
+      } catch (err) {
+        logger.warn("Failed to get orchestrator status:", err);
+      }
+
+      // Count running executor tasks
+      try {
+        const listResult = await ecs.send(
+          new ListTasksCommand({
+            cluster: ecsCluster,
+            family: `${ecsCluster}-ai-worker-executor`,
+            desiredStatus: "RUNNING",
+          }),
+        );
+        executorTaskCount = listResult.taskArns?.length || 0;
+      } catch (err) {
+        logger.warn("Failed to list executor tasks:", err);
+      }
+
+      return res.json({
+        systemEnabled: orchestratorDesiredCount > 0,
+        orchestrator: {
+          running: orchestratorRunning,
+          desiredCount: orchestratorDesiredCount,
+        },
+        executors: {
+          running: executorTaskCount,
+        },
+      });
+    } catch (error) {
+      logger.error("Error fetching system status:", error);
+      return res.status(500).json({ error: "Failed to fetch system status" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/system/start
+ * Scale up the orchestrator service to start processing tasks
+ */
+router.post(
+  "/control-center/system/start",
+  async (_req: Request, res: Response) => {
+    try {
+      // Scale up orchestrator to 1
+      await ecs.send(
+        new UpdateServiceCommand({
+          cluster: ecsCluster,
+          service: orchestratorServiceName,
+          desiredCount: 1,
+        }),
+      );
+
+      logger.info("AI Workers system started - orchestrator scaled to 1");
+
+      return res.json({
+        success: true,
+        message: "AI Workers system started",
+        orchestratorDesiredCount: 1,
+      });
+    } catch (error) {
+      logger.error("Error starting AI Workers system:", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to start AI Workers system" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/system/stop
+ * Scale down orchestrator and stop all executor tasks
+ */
+router.post(
+  "/control-center/system/stop",
+  async (_req: Request, res: Response) => {
+    try {
+      const stoppedTasks: string[] = [];
+
+      // 1. Scale down orchestrator to 0
+      await ecs.send(
+        new UpdateServiceCommand({
+          cluster: ecsCluster,
+          service: orchestratorServiceName,
+          desiredCount: 0,
+        }),
+      );
+
+      logger.info("Orchestrator scaled to 0");
+
+      // 2. Stop all running executor tasks
+      try {
+        const listResult = await ecs.send(
+          new ListTasksCommand({
+            cluster: ecsCluster,
+            family: `${ecsCluster}-ai-worker-executor`,
+            desiredStatus: "RUNNING",
+          }),
+        );
+
+        const taskArns = listResult.taskArns || [];
+        for (const taskArn of taskArns) {
+          try {
+            await ecs.send(
+              new StopTaskCommand({
+                cluster: ecsCluster,
+                task: taskArn,
+                reason: "Stopped via Control Center system shutdown",
+              }),
+            );
+            stoppedTasks.push(taskArn);
+            logger.info("Stopped executor task", { taskArn });
+          } catch (stopErr) {
+            logger.warn("Failed to stop task:", { taskArn, error: stopErr });
+          }
+        }
+      } catch (listErr) {
+        logger.warn("Failed to list executor tasks for stopping:", listErr);
+      }
+
+      // 3. Update any executing tasks in DB to cancelled
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const cancelResult = await taskRepo
+        .createQueryBuilder()
+        .update(AIWorkerTask)
+        .set({
+          status: "cancelled" as AIWorkerTaskStatus,
+          completedAt: new Date(),
+          errorMessage: "System shutdown via Control Center",
+          watcherNotes: () =>
+            `COALESCE(watcher_notes, '') || '\n[${new Date().toISOString()}] Cancelled: System shutdown'`,
+        })
+        .where("status IN (:...statuses)", {
+          statuses: [
+            "queued",
+            "claimed",
+            "environment_setup",
+            "executing",
+            "pr_created",
+          ],
+        })
+        .execute();
+
+      // 4. Clean up ALL workers (they are ephemeral, created per-task)
+      // First, clear the assigned_worker_id from tasks (to avoid FK constraint)
+      await taskRepo
+        .createQueryBuilder()
+        .update(AIWorkerTask)
+        .set({ assignedWorkerId: null })
+        .where("assigned_worker_id IS NOT NULL")
+        .execute();
+
+      // Now delete all non-manager workers
+      const workerRepo = dataSource.getRepository(AIWorkerInstance);
+      const cleanupResult = await workerRepo
+        .createQueryBuilder()
+        .delete()
+        .from(AIWorkerInstance)
+        .where("role != :role OR role IS NULL", { role: "manager" }) // Keep manager instances
+        .execute();
+
+      logger.info("AI Workers system stopped", {
+        stoppedExecutorTasks: stoppedTasks.length,
+        cancelledDbTasks: cancelResult.affected,
+        cleanedUpWorkers: cleanupResult.affected,
+      });
+
+      return res.json({
+        success: true,
+        message: "AI Workers system stopped",
+        orchestratorDesiredCount: 0,
+        stoppedExecutorTasks: stoppedTasks.length,
+        cancelledTasks: cancelResult.affected || 0,
+        cleanedUpWorkers: cleanupResult.affected || 0,
+      });
+    } catch (error) {
+      logger.error("Error stopping AI Workers system:", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to stop AI Workers system" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/workers
+ * Create a new persistent worker
+ */
+router.post(
+  "/workers",
+  [
+    body("persona")
+      .isIn([
+        "frontend_developer",
+        "backend_developer",
+        "devops_engineer",
+        "security_engineer",
+        "qa_engineer",
+        "tech_writer",
+        "project_manager",
+      ])
+      .withMessage("Invalid persona"),
+    body("displayName")
+      .isString()
+      .trim()
+      .isLength({ min: 1, max: 100 })
+      .withMessage("Display name required (1-100 chars)"),
+    body("description")
+      .optional()
+      .isString()
+      .trim()
+      .isLength({ max: 500 }),
+  ],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const dataSource = await getDataSource();
+      const workerRepo = dataSource.getRepository(AIWorkerInstance);
+
+      // Get org ID from request (API key auth or user auth)
+      const orgId = req.orgId || req.user?.orgId;
+      if (!orgId) {
+        return res.status(400).json({ error: "Organization ID required" });
+      }
+
+      const { persona, displayName, description } = req.body;
+
+      // Check if a worker with this persona already exists
+      const existing = await workerRepo.findOne({
+        where: { orgId, persona },
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: "Worker with this persona already exists",
+          existingWorkerId: existing.id,
+        });
+      }
+
+      // Create the worker
+      const worker = workerRepo.create({
+        orgId,
+        persona,
+        displayName,
+        description: description || null,
+        status: "idle",
+        role: "worker",
+      });
+
+      await workerRepo.save(worker);
+
+      logger.info("Worker created", {
+        workerId: worker.id,
+        persona: worker.persona,
+        displayName: worker.displayName,
+      });
+
+      return res.status(201).json(worker);
+    } catch (error) {
+      logger.error("Error creating worker:", error);
+      return res.status(500).json({ error: "Failed to create worker" });
+    }
+  },
+);
+
+/**
+ * DELETE /api/v1/super-admin/workers/:id
+ * Delete a worker (only if idle)
+ */
+router.delete(
+  "/workers/:id",
+  [param("id").isUUID().withMessage("Valid worker ID required")],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const dataSource = await getDataSource();
+      const workerRepo = dataSource.getRepository(AIWorkerInstance);
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const workerId = req.params.id;
+
+      // Find the worker
+      const worker = await workerRepo.findOne({ where: { id: workerId } });
+      if (!worker) {
+        return res.status(404).json({ error: "Worker not found" });
+      }
+
+      // Check if worker is currently working
+      if (worker.status === "working" || worker.currentTaskId) {
+        return res.status(409).json({
+          error: "Cannot delete worker while it is working on a task",
+          currentTaskId: worker.currentTaskId,
+        });
+      }
+
+      // Clear any task references to this worker
+      await taskRepo
+        .createQueryBuilder()
+        .update(AIWorkerTask)
+        .set({ assignedWorkerId: null })
+        .where("assigned_worker_id = :workerId", { workerId })
+        .execute();
+
+      // Delete the worker
+      await workerRepo.delete({ id: workerId });
+
+      logger.info("Worker deleted", {
+        workerId,
+        persona: worker.persona,
+        displayName: worker.displayName,
+      });
+
+      return res.json({
+        success: true,
+        message: "Worker deleted",
+        deletedWorkerId: workerId,
+      });
+    } catch (error) {
+      logger.error("Error deleting worker:", error);
+      return res.status(500).json({ error: "Failed to delete worker" });
     }
   },
 );

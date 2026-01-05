@@ -574,6 +574,11 @@ data "aws_secretsmanager_secret" "jira_integration" {
   name = "oncallshift/jira-integration"
 }
 
+# AI Worker org API key (for executor to POST logs to API)
+data "aws_secretsmanager_secret" "ai_worker_org_key" {
+  name = "${var.project_name}-${var.environment}-ai-worker-org-key"
+}
+
 # API Service
 module "api_service" {
   source = "../../modules/ecs-service"
@@ -912,18 +917,28 @@ module "ai_workers" {
   secrets_arns = [
     aws_secretsmanager_secret.github_token.arn,
     aws_secretsmanager_secret.anthropic_api_key.arn,
-    module.database.secret_arn
+    module.database.secret_arn,
+    data.aws_secretsmanager_secret.jira_integration.arn,
+    data.aws_secretsmanager_secret.ai_worker_org_key.arn
   ]
 
   log_retention_days = var.log_retention_days
   enable_spot        = var.use_fargate_spot
+
+  # Executor API integration
+  api_base_url             = "https://oncallshift.com"
+  org_api_key_secret_arn   = data.aws_secretsmanager_secret.ai_worker_org_key.arn
+  jira_credentials_secret_arn = data.aws_secretsmanager_secret.jira_integration.arn
+
+  # Terraform state access (read-only for terraform plan)
+  terraform_state_bucket = "oncallshift"
+  terraform_write_access = false  # Set to true to enable terraform apply
 
   # Virtual Manager Lambda
   enable_manager              = true
   database_secret_arn         = module.database.secret_arn
   manager_schedule            = "rate(30 minutes)"  # Sweep every 30 mins for any missed tasks
   lambda_security_group_ids   = [module.networking.ecs_security_group_id]
-  jira_credentials_secret_arn = data.aws_secretsmanager_secret.jira_integration.arn
 }
 
 # AI Worker Orchestrator Service

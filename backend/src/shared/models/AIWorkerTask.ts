@@ -26,6 +26,7 @@ export type AIWorkerPersona =
 
 export type AIWorkerTaskStatus =
   | "queued" // Waiting in queue
+  | "dispatching" // Watcher spawning ECS task (transient, prevents duplicate spawns)
   | "claimed" // Worker picked up task
   | "environment_setup" // Fargate task starting
   | "executing" // Claude agent running
@@ -214,6 +215,12 @@ export class AIWorkerTask {
   })
   managerReviewModel: string | null;
 
+  @Column({ name: "skip_manager_review", type: "boolean", default: true })
+  skipManagerReview: boolean;
+
+  @Column({ name: "self_anneal_count", type: "int", default: 0 })
+  selfAnnealCount: number;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt: Date;
 
@@ -225,7 +232,7 @@ export class AIWorkerTask {
   @JoinColumn({ name: "org_id" })
   organization: Organization;
 
-  @ManyToOne(() => AIWorkerInstance, { nullable: true })
+  @ManyToOne(() => AIWorkerInstance, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "assigned_worker_id" })
   assignedWorker: AIWorkerInstance | null;
 
@@ -265,10 +272,26 @@ export class AIWorkerTask {
   }
 
   calculateCost(): number {
-    // Claude Sonnet pricing: $0.003/1K input, $0.015/1K output
+    // Model pricing per 1K tokens (as of 2025)
+    const modelPricing: Record<string, { input: number; output: number }> = {
+      // Haiku - cheapest
+      'haiku': { input: 0.0008, output: 0.004 },
+      'claude-3-5-haiku-20241022': { input: 0.0008, output: 0.004 },
+      // Sonnet
+      'sonnet': { input: 0.003, output: 0.015 },
+      'claude-sonnet-4-20250514': { input: 0.003, output: 0.015 },
+      // Opus - most expensive
+      'opus': { input: 0.015, output: 0.075 },
+      'claude-opus-4-5-20251101': { input: 0.015, output: 0.075 },
+    };
+
+    // Get pricing for this task's model, default to haiku if unknown
+    const model = this.workerModel || 'haiku';
+    const pricing = modelPricing[model] || modelPricing['haiku'];
+
     const claudeCost =
-      (this.claudeInputTokens / 1000) * 0.003 +
-      (this.claudeOutputTokens / 1000) * 0.015;
+      (this.claudeInputTokens / 1000) * pricing.input +
+      (this.claudeOutputTokens / 1000) * pricing.output;
 
     // Fargate Spot pricing: ~$0.04/hour for 2 vCPU, 4GB
     const ecsCost = (this.ecsTaskSeconds / 3600) * 0.04;

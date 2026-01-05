@@ -9,7 +9,7 @@
  * 5. Process retry queue (tasks with next_retry_at <= now)
  */
 
-import { ECS, StopTaskCommand, RunTaskCommand } from "@aws-sdk/client-ecs";
+import { ECS, StopTaskCommand } from "@aws-sdk/client-ecs";
 import { SQS, SendMessageCommand } from "@aws-sdk/client-sqs";
 import {
   SecretsManagerClient,
@@ -106,6 +106,7 @@ interface WatcherResult {
   retriesQueued: number;
   globalTimeoutsMarked: number;
   loopsDetected: number;
+  idleWorkersCleanedUp: number;
   errors: string[];
 }
 
@@ -120,6 +121,7 @@ export async function handler(event?: WatcherEvent): Promise<WatcherResult> {
     retriesQueued: 0,
     globalTimeoutsMarked: 0,
     loopsDetected: 0,
+    idleWorkersCleanedUp: 0,
     errors: [],
   };
 
@@ -160,8 +162,11 @@ export async function handler(event?: WatcherEvent): Promise<WatcherResult> {
     // 0a. Reset orphaned failed tasks (failed without next_retry_at)
     await resetOrphanedFailedTasks(client, result);
 
-    // 0b. Dispatch queued tasks (start ECS tasks)
-    await dispatchQueuedTasks(client, result);
+    // 0b. Reset orphaned revision tasks (revision_needed without next_retry_at)
+    await resetOrphanedRevisionTasks(client, result);
+
+    // NOTE: We do NOT dispatch tasks here - that's the orchestrator's job
+    // The watcher only handles cleanup, retries (via SQS), and monitoring
 
     // 1. Detect and handle stuck tasks
     await handleStuckTasks(client, result);
@@ -175,6 +180,9 @@ export async function handler(event?: WatcherEvent): Promise<WatcherResult> {
     // 4. Detect infinite loops
     await detectInfiniteLoops(client, result);
 
+    // 5. Clean up idle workers (workers showing 'working' but idle > 5 mins)
+    await cleanupIdleWorkers(client, result);
+
     console.log("[Watcher] Completed", result);
     return result;
   } catch (error: any) {
@@ -184,25 +192,6 @@ export async function handler(event?: WatcherEvent): Promise<WatcherResult> {
   } finally {
     await client.end();
   }
-}
-
-// ECS configuration for dispatching tasks
-const EXECUTOR_CONFIG = {
-  taskDefinition:
-    process.env.EXECUTOR_TASK_DEFINITION ||
-    "pagerduty-lite-dev-ai-worker-executor",
-  containerName: "ai-worker-executor",
-  subnets: (process.env.EXECUTOR_SUBNET_IDS || "").split(",").filter(Boolean),
-  securityGroups: (process.env.EXECUTOR_SECURITY_GROUP_IDS || "")
-    .split(",")
-    .filter(Boolean),
-};
-
-async function getSecretValue(secretArn: string): Promise<string> {
-  const response = await secretsManager.send(
-    new GetSecretValueCommand({ SecretId: secretArn }),
-  );
-  return response.SecretString || "";
 }
 
 /**
@@ -247,154 +236,55 @@ async function resetOrphanedFailedTasks(
   }
 }
 
-async function dispatchQueuedTasks(
+/**
+ * Reset orphaned revision_needed tasks - those that were set by old manager code
+ * that didn't set next_retry_at. This ensures they get picked up for re-execution.
+ */
+async function resetOrphanedRevisionTasks(
   client: Client,
   result: WatcherResult,
 ): Promise<void> {
-  // Find queued tasks
-  const queuedTasksQuery = `
-    SELECT t.id, t.jira_issue_key, t.summary, t.description, t.worker_persona,
-           t.github_repo, t.retry_count, t.previous_run_context, t.global_timeout_at,
-           w.org_id
-    FROM ai_worker_tasks t
-    JOIN ai_worker_instances w ON t.assigned_worker_id = w.id
-    WHERE t.status = 'queued'
-    ORDER BY t.created_at ASC
-    LIMIT 5
+  // Find revision_needed tasks without next_retry_at (orphaned by old manager code)
+  const orphanedQuery = `
+    SELECT id, jira_issue_key, revision_count
+    FROM ai_worker_tasks
+    WHERE status = 'revision_needed'
+      AND next_retry_at IS NULL
+      AND revision_count < 3
+      AND created_at > NOW() - INTERVAL '24 hours'
   `;
 
-  const { rows: queuedTasks } = await client.query(queuedTasksQuery);
-  console.log(`[Watcher] Found ${queuedTasks.length} queued tasks to dispatch`);
+  const { rows: orphanedTasks } = await client.query(orphanedQuery);
 
-  if (queuedTasks.length === 0) return;
-
-  // Get secrets
-  const anthropicKeyArn = process.env.ANTHROPIC_API_KEY_SECRET_ARN;
-  const githubTokenArn = process.env.GITHUB_TOKEN_SECRET_ARN;
-
-  if (!anthropicKeyArn || !githubTokenArn) {
-    console.error("[Watcher] Missing secret ARNs for task dispatch");
-    result.errors.push("Missing ANTHROPIC_API_KEY_SECRET_ARN or GITHUB_TOKEN_SECRET_ARN");
-    return;
+  if (orphanedTasks.length > 0) {
+    console.log(
+      `[Watcher] Found ${orphanedTasks.length} orphaned revision_needed tasks to reset`,
+    );
   }
 
-  const anthropicApiKey = await getSecretValue(anthropicKeyArn);
-  const githubToken = await getSecretValue(githubTokenArn);
+  for (const task of orphanedTasks) {
+    console.log(
+      `[Watcher] Setting next_retry_at for orphaned revision task ${task.jira_issue_key} (id: ${task.id})`,
+    );
 
-  for (const task of queuedTasks) {
-    try {
-      console.log(`[Watcher] Dispatching task ${task.jira_issue_key} (id: ${task.id})`);
-
-      // Start ECS task
-      const runTaskResponse = await ecs.send(
-        new RunTaskCommand({
-          cluster: ecsCluster,
-          taskDefinition: EXECUTOR_CONFIG.taskDefinition,
-          capacityProviderStrategy: [
-            { capacityProvider: "FARGATE_SPOT", weight: 1, base: 0 },
-          ],
-          networkConfiguration: {
-            awsvpcConfiguration: {
-              subnets: EXECUTOR_CONFIG.subnets,
-              securityGroups: EXECUTOR_CONFIG.securityGroups,
-              assignPublicIp: "ENABLED",
-            },
-          },
-          overrides: {
-            containerOverrides: [
-              {
-                name: EXECUTOR_CONFIG.containerName,
-                environment: [
-                  { name: "TASK_ID", value: task.id },
-                  { name: "JIRA_ISSUE_KEY", value: task.jira_issue_key },
-                  { name: "JIRA_SUMMARY", value: task.summary || "" },
-                  { name: "JIRA_DESCRIPTION", value: task.description || "" },
-                  { name: "GITHUB_REPO", value: task.github_repo },
-                  { name: "WORKER_PERSONA", value: task.worker_persona },
-                  { name: "ANTHROPIC_API_KEY", value: anthropicApiKey },
-                  { name: "GITHUB_TOKEN", value: githubToken },
-                  { name: "MAX_TURNS", value: "50" },
-                  { name: "RETRY_NUMBER", value: String(task.retry_count || 0) },
-                  {
-                    name: "PREVIOUS_RUN_CONTEXT",
-                    value: task.previous_run_context || "",
-                  },
-                  {
-                    name: "API_BASE_URL",
-                    value: process.env.API_BASE_URL || "https://oncallshift.com",
-                  },
-                ],
-              },
-            ],
-          },
-          tags: [
-            { key: "TaskId", value: task.id },
-            { key: "JiraIssueKey", value: task.jira_issue_key },
-          ],
-        }),
-      );
-
-      if (runTaskResponse.tasks && runTaskResponse.tasks.length > 0) {
-        const ecsTask = runTaskResponse.tasks[0];
-        const taskArn = ecsTask.taskArn!;
-        const taskId = taskArn.split("/").pop()!;
-
-        // Update task status
-        await client.query(
-          `UPDATE ai_worker_tasks
-           SET status = 'environment_setup',
-               ecs_task_arn = $1,
-               ecs_task_id = $2,
-               started_at = NOW(),
-               last_heartbeat_at = NOW()
-           WHERE id = $3`,
-          [taskArn, taskId, task.id],
-        );
-
-        console.log(
-          `[Watcher] Dispatched ${task.jira_issue_key} -> ECS task ${taskId}`,
-        );
-        result.tasksDispatched++;
-      } else {
-        const failures = runTaskResponse.failures
-          ?.map((f) => `${f.arn}: ${f.reason}`)
-          .join(", ");
-        throw new Error(`ECS task launch failed: ${failures}`);
-      }
-    } catch (err: any) {
-      console.error(
-        `[Watcher] Failed to dispatch ${task.jira_issue_key} (id: ${task.id}): ${err.message}`,
-      );
-      result.errors.push(`Dispatch ${task.jira_issue_key}: ${err.message}`);
-
-      // Schedule retry with backoff instead of permanent failure
-      const currentBackoff = task.retry_backoff_seconds || 60;
-      const nextBackoff = Math.min(currentBackoff * 2, 3600); // Max 1 hour
-      const nextRetryAt = new Date(Date.now() + currentBackoff * 1000);
-
-      await client.query(
-        `UPDATE ai_worker_tasks
-         SET status = 'failed',
-             error_message = $1,
-             retry_count = retry_count + 1,
-             retry_backoff_seconds = $2,
-             next_retry_at = $3,
-             watcher_notes = COALESCE(watcher_notes, '') || $4
-         WHERE id = $5`,
-        [
-          `Dispatch failed: ${err.message}`,
-          nextBackoff,
-          nextRetryAt,
-          `\n[${new Date().toISOString()}] Dispatch failed, retry scheduled for ${nextRetryAt.toISOString()}`,
-          task.id,
-        ],
-      );
-      console.log(
-        `[Watcher] Scheduled retry for ${task.jira_issue_key} at ${nextRetryAt.toISOString()}`,
-      );
-    }
+    // Set next_retry_at so the normal retry queue will pick it up
+    await client.query(
+      `UPDATE ai_worker_tasks
+       SET next_retry_at = NOW() + INTERVAL '30 seconds',
+           watcher_notes = COALESCE(watcher_notes, '') || $1
+       WHERE id = $2`,
+      [
+        `\n[${new Date().toISOString()}] Set next_retry_at for orphaned revision task`,
+        task.id,
+      ],
+    );
+    result.retriesQueued++;
   }
 }
+
+// NOTE: dispatchQueuedTasks was REMOVED - the watcher should NOT spawn ECS tasks
+// Task execution is handled by the orchestrator service which processes the SQS queue
+// The watcher only handles: stuck task cleanup, retries (via SQS), timeouts, and monitoring
 
 async function handleStuckTasks(
   client: Client,
@@ -404,14 +294,20 @@ async function handleStuckTasks(
     Date.now() - CONFIG.stuckThresholdMinutes * 60 * 1000,
   );
 
-  // Find stuck tasks
+  // Find stuck tasks (including 'dispatching' which shouldn't persist)
   const stuckTasksQuery = `
     SELECT id, ecs_task_arn, ecs_task_id, retry_count, max_retries,
-           retry_backoff_seconds, global_timeout_at, jira_issue_key
+           retry_backoff_seconds, global_timeout_at, jira_issue_key, status
     FROM ai_worker_tasks
-    WHERE status IN ('executing', 'environment_setup')
-      AND last_heartbeat_at IS NOT NULL
-      AND last_heartbeat_at < $1
+    WHERE (
+      -- Tasks with no heartbeat for too long
+      (status IN ('executing', 'environment_setup')
+        AND last_heartbeat_at IS NOT NULL
+        AND last_heartbeat_at < $1)
+      OR
+      -- 'dispatching' status should never persist - it means spawn failed mid-flight
+      (status = 'dispatching' AND updated_at < $1)
+    )
   `;
 
   const { rows: stuckTasks } = await client.query(stuckTasksQuery, [
@@ -552,14 +448,18 @@ async function processRetryQueue(
   client: Client,
   result: WatcherResult,
 ): Promise<void> {
-  // Find tasks ready for retry
+  // Find tasks ready for retry (includes revision_needed from manager feedback)
+  // For revisions, we check revision_count < 3 (max revisions)
+  // For failures, we check retry_count < max_retries
   const retryQuery = `
-    SELECT id, jira_issue_key, retry_count, global_timeout_at
+    SELECT id, jira_issue_key, retry_count, global_timeout_at, status, revision_count
     FROM ai_worker_tasks
-    WHERE status IN ('failed', 'blocked')
-      AND next_retry_at IS NOT NULL
+    WHERE next_retry_at IS NOT NULL
       AND next_retry_at <= NOW()
-      AND retry_count < max_retries
+      AND (
+        (status IN ('failed', 'blocked') AND retry_count < max_retries)
+        OR (status = 'revision_needed' AND revision_count < 3)
+      )
   `;
 
   const { rows: retryTasks } = await client.query(retryQuery);
@@ -596,6 +496,12 @@ async function processRetryQueue(
         task.global_timeout_at ||
         new Date(Date.now() + CONFIG.globalTimeoutHours * 60 * 60 * 1000);
 
+      // Determine if this is a revision or failure retry
+      const isRevision = task.status === "revision_needed";
+      const retryLabel = isRevision
+        ? `revision #${task.revision_count}`
+        : `retry #${task.retry_count + 1}`;
+
       // Update task to queued and clear retry scheduling
       await client.query(
         `
@@ -610,7 +516,7 @@ async function processRetryQueue(
       `,
         [
           globalTimeoutAt,
-          `\n[${new Date().toISOString()}] Watcher queued retry #${task.retry_count + 1}`,
+          `\n[${new Date().toISOString()}] Watcher queued ${retryLabel}`,
           task.id,
         ],
       );
@@ -625,7 +531,9 @@ async function processRetryQueue(
         );
       }
 
-      console.log(`[Watcher] Queued retry for ${task.jira_issue_key}`);
+      console.log(
+        `[Watcher] Queued ${retryLabel} for ${task.jira_issue_key}`,
+      );
       result.retriesQueued++;
     } catch (error: any) {
       console.error(`[Watcher] Error processing retry for ${task.id}:`, error);
@@ -685,5 +593,59 @@ async function detectInfiniteLoops(
       console.error(`[Watcher] Error handling loop for ${task.id}:`, error);
       result.errors.push(`Loop ${task.id}: ${error.message}`);
     }
+  }
+}
+
+/**
+ * Clean up idle workers - set workers to 'idle' status if they've been
+ * 'working' but have no current task and haven't had activity in 5+ minutes.
+ */
+async function cleanupIdleWorkers(
+  client: Client,
+  result: WatcherResult,
+): Promise<void> {
+  const IDLE_THRESHOLD_MINUTES = 5;
+
+  // Find workers that are marked 'working' but have been idle for 5+ minutes
+  const idleWorkersQuery = `
+    UPDATE ai_worker_instances
+    SET status = 'idle',
+        current_task_id = NULL
+    WHERE status = 'working'
+      AND (
+        -- No current task assigned
+        current_task_id IS NULL
+        OR
+        -- Current task is completed/failed/cancelled
+        current_task_id IN (
+          SELECT id FROM ai_worker_tasks
+          WHERE status IN ('completed', 'failed', 'cancelled', 'blocked')
+        )
+      )
+      AND (
+        -- Last task was more than 5 minutes ago
+        last_task_at IS NULL
+        OR last_task_at < NOW() - INTERVAL '${IDLE_THRESHOLD_MINUTES} minutes'
+      )
+      AND (
+        -- Or updated more than 5 minutes ago
+        updated_at < NOW() - INTERVAL '${IDLE_THRESHOLD_MINUTES} minutes'
+      )
+    RETURNING id, persona, display_name
+  `;
+
+  try {
+    const { rows: cleanedWorkers, rowCount } = await client.query(idleWorkersQuery);
+
+    if (rowCount && rowCount > 0) {
+      console.log(`[Watcher] Cleaned up ${rowCount} idle workers`);
+      for (const worker of cleanedWorkers) {
+        console.log(`[Watcher] Set worker ${worker.display_name} (${worker.persona}) to idle`);
+      }
+      result.idleWorkersCleanedUp = rowCount;
+    }
+  } catch (error: any) {
+    console.error("[Watcher] Error cleaning up idle workers:", error);
+    result.errors.push(`Idle cleanup: ${error.message}`);
   }
 }
