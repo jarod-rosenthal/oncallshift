@@ -509,6 +509,7 @@ export class JiraAIWorkerService {
       security_engineer: 'Security Engineer',
       tech_writer: 'Technical Writer',
       project_manager: 'Project Manager',
+      manager: 'Virtual Manager',
     };
     return displayNames[persona] || persona.replace(/_/g, ' ');
   }

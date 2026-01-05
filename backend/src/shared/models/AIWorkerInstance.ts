@@ -144,6 +144,7 @@ export class AIWorkerInstance {
       qa_engineer: 'QA Engineer',
       tech_writer: 'Technical Writer',
       project_manager: 'Project Manager',
+      manager: 'Virtual Manager',
     };
     return names[this.persona] || this.persona;
   }

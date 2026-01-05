@@ -19,7 +19,14 @@ export type AIWorkerLogType =
   | 'jira_updated'        // Jira issue was updated
   | 'blocked'             // Task was blocked
   | 'retry'               // Task was retried
-  | 'info';               // General information
+  | 'info'                // General information
+  | 'manager'             // Manager system messages
+  | 'manager_output'      // Manager Claude output
+  | 'system'              // System/infrastructure messages
+  | 'claude_output'       // Claude agent output
+  | 'tool_use'            // Tool invocation
+  | 'file_edit'           // File edit operation
+  | 'bash_command';       // Bash command execution
 
 export type AIWorkerLogSeverity = 'debug' | 'info' | 'warning' | 'error';
 

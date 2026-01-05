@@ -99,20 +99,24 @@ router.get("/control-center", async (_req: Request, res: Response) => {
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const activeTasks = await taskRepo.find({
       where: [
-        // Truly active tasks
+        // Truly active tasks (including Manager review stages)
         {
           status: In([
             "queued",
+            "dispatching",
             "claimed",
             "environment_setup",
             "executing",
             "pr_created",
+            "manager_review",
+            "revision_needed",
             "review_pending",
+            "review_approved",
           ]),
         },
         // Recently completed tasks (show for 10 minutes after completion)
         {
-          status: In(["completed", "failed", "cancelled"]),
+          status: In(["completed", "failed", "cancelled", "review_rejected"]),
           completedAt: MoreThan(tenMinutesAgo),
         },
       ],
@@ -206,54 +210,80 @@ router.get("/control-center", async (_req: Request, res: Response) => {
     };
 
     // Map workers with current task info
-    const workersData = workers.map((w) => {
-      const currentTask = activeTasks.find((t) => t.assignedWorkerId === w.id);
-      const conversation = currentTask
-        ? conversations.find((c) => c.taskId === currentTask.id)
-        : null;
+    // Filter to show only workers that are currently working OR were active in last 10 min
+    const workersData = workers
+      .filter((w) => {
+        // Always show workers that are currently working
+        if (w.status === "working") return true;
+        // Show workers with recent activity (last 10 minutes)
+        if (w.lastTaskAt && w.lastTaskAt > tenMinutesAgo) return true;
+        // Hide idle workers with no recent activity
+        return false;
+      })
+      .map((w) => {
+        const currentTask = activeTasks.find((t) => t.assignedWorkerId === w.id);
+        const conversation = currentTask
+          ? conversations.find((c) => c.taskId === currentTask.id)
+          : null;
 
-      return {
-        id: w.id,
-        displayName: w.displayName,
-        persona: w.persona,
-        status: w.status,
-        tasksCompleted: w.tasksCompleted,
-        tasksFailed: w.tasksFailed,
-        totalCostUsd: Number(w.totalCostUsd),
-        currentTask: currentTask
-          ? {
-              id: currentTask.id,
-              jiraKey: currentTask.jiraIssueKey,
-              summary: currentTask.summary,
-              status: currentTask.status,
-              turnCount: conversation?.turnCount || 0,
-              maxTurns: 50, // Default max turns
-            }
-          : null,
-      };
-    });
+        return {
+          id: w.id,
+          displayName: w.displayName,
+          persona: w.persona,
+          role: w.role,
+          status: w.status,
+          tasksCompleted: w.tasksCompleted,
+          tasksFailed: w.tasksFailed,
+          totalCostUsd: Number(w.totalCostUsd),
+          // Manager-specific stats
+          reviewCount: w.reviewCount,
+          approvalsCount: w.approvalsCount,
+          rejectionsCount: w.rejectionsCount,
+          revisionsRequestedCount: w.revisionsRequestedCount,
+          currentTask: currentTask
+            ? {
+                id: currentTask.id,
+                jiraKey: currentTask.jiraIssueKey,
+                summary: currentTask.summary,
+                status: currentTask.status,
+                turnCount: conversation?.turnCount || 0,
+                maxTurns: 50, // Default max turns
+              }
+            : null,
+        };
+      });
 
     // Map active tasks with logs and progress
     const activeTasksData = activeTasks.map((t) => {
-      const worker = workers.find((w) => w.id === t.assignedWorkerId);
+      // For Manager review tasks, use the Manager worker instance
+      // For regular tasks, use the assigned worker
+      const isManagerTask = ["manager_review"].includes(t.status) && t.reviewerManagerId;
+      const workerId = isManagerTask ? t.reviewerManagerId : t.assignedWorkerId;
+      const worker = workers.find((w) => w.id === workerId);
       const conversation = conversations.find((c) => c.taskId === t.id);
       const logs = taskLogs.filter((l) => l.taskId === t.id).slice(0, 10);
 
       // Calculate step progress
       const steps = getTaskSteps(t.status);
 
+      // For Manager tasks, use Manager model; otherwise use worker model
+      const displayModel = isManagerTask ? (t.managerReviewModel || "sonnet") : t.workerModel;
+
       return {
         id: t.id,
         jiraIssueKey: t.jiraIssueKey,
         summary: t.summary,
         status: t.status,
-        workerName: worker?.displayName || "Unassigned",
-        workerPersona: t.workerPersona,
-        workerModel: t.workerModel,
+        workerName: worker?.displayName || (isManagerTask ? "Virtual Manager" : "Unassigned"),
+        workerPersona: isManagerTask ? "manager" : t.workerPersona,
+        workerModel: displayModel,
+        workerRole: isManagerTask ? "manager" : (worker?.role || "worker"),
         turnCount: conversation?.turnCount || 0,
         maxTurns: 50,
         estimatedCostUsd: Number(t.estimatedCostUsd),
         startedAt: t.startedAt,
+        hasPr: !!t.githubPrUrl,
+        githubPrUrl: t.githubPrUrl,
         recentLogs: logs.map((l) => ({
           timestamp: l.createdAt,
           message: l.message,
@@ -384,6 +414,8 @@ router.post(
       "error",
       "warning",
       "info",
+      "manager",         // Manager system messages
+      "manager_output",  // Manager Claude output
     ]),
     body("message").isString().notEmpty(),
     body("severity").optional().isIn(["info", "warning", "error"]),
