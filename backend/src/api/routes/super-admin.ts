@@ -111,12 +111,11 @@ router.get("/control-center", async (_req: Request, res: Response) => {
             "manager_review",
             "revision_needed",
             "review_pending",
-            "review_approved",
           ]),
         },
         // Recently completed tasks (show for 10 minutes after completion)
         {
-          status: In(["completed", "failed", "cancelled", "review_rejected"]),
+          status: In(["completed", "failed", "cancelled", "review_rejected", "review_approved"]),
           completedAt: MoreThan(tenMinutesAgo),
         },
       ],
