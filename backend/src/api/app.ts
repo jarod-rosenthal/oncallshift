@@ -76,9 +76,31 @@ export function createApp(): Express {
     },
   }));
 
-  // CORS
+  // CORS - explicit allowed origins for security (OCS-78)
+  const allowedOrigins = [
+    'https://oncallshift.com',
+    'https://www.oncallshift.com',
+  ];
+
+  // Allow localhost only in development
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev') {
+    allowedOrigins.push('http://localhost:5173'); // Frontend dev server
+    allowedOrigins.push('http://localhost:3000'); // Backend dev server
+  }
+
   app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or Postman)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS policy`));
+      }
+    },
     credentials: true,
   }));
 
