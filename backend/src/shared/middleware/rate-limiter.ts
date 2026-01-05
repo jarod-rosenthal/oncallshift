@@ -196,7 +196,7 @@ export const RATE_LIMIT_TIERS = {
   // Strict limit to prevent brute force
   auth: {
     windowMs: 15 * 60 * 1000,  // 15 minutes
-    maxRequests: 100,
+    maxRequests: 5,
     description: 'Authentication attempts',
   },
 
