@@ -1013,6 +1013,28 @@ resource "aws_iam_role_policy" "manager_lambda" {
           "ec2:UnassignPrivateIpAddresses"
         ]
         Resource = "*"
+      },
+      # ECS RunTask for spawning Manager executor tasks
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:RunTask",
+          "ecs:DescribeTasks",
+          "ecs:TagResource"
+        ]
+        Resource = [
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${local.name_prefix}-ai-worker-manager-executor:*",
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${var.ecs_cluster_name}/*"
+        ]
+      },
+      # IAM PassRole for ECS task execution
+      {
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = [
+          aws_iam_role.manager_executor_execution_role[0].arn,
+          aws_iam_role.manager_executor_task_role[0].arn
+        ]
       }
     ]
   })
@@ -1033,12 +1055,20 @@ resource "aws_lambda_function" "manager" {
 
   environment {
     variables = {
-      REGION                        = var.aws_region
-      ECS_CLUSTER_NAME              = var.ecs_cluster_name
-      DATABASE_SECRET_ARN           = var.database_secret_arn
-      ANTHROPIC_API_KEY_SECRET_ARN  = var.anthropic_api_key_secret_arn
-      GITHUB_TOKEN_SECRET_ARN       = var.github_token_secret_arn
-      JIRA_CREDENTIALS_SECRET_ARN   = var.jira_credentials_secret_arn
+      REGION                          = var.aws_region
+      ECS_CLUSTER_NAME                = var.ecs_cluster_name
+      DATABASE_SECRET_ARN             = var.database_secret_arn
+      ANTHROPIC_API_KEY_SECRET_ARN    = var.anthropic_api_key_secret_arn
+      GITHUB_TOKEN_SECRET_ARN         = var.github_token_secret_arn
+      JIRA_CREDENTIALS_SECRET_ARN     = var.jira_credentials_secret_arn
+      # Manager Executor ECS configuration
+      MANAGER_TASK_DEFINITION         = aws_ecs_task_definition.manager_executor[0].family
+      MANAGER_SUBNET_IDS              = join(",", var.private_subnet_ids)
+      MANAGER_SECURITY_GROUP_IDS      = join(",", var.security_group_ids)
+      MANAGER_CONTAINER_NAME          = "ai-worker-manager-executor"
+      MANAGER_LOG_GROUP               = aws_cloudwatch_log_group.manager_executor[0].name
+      API_BASE_URL                    = var.api_base_url
+      ORG_API_KEY_SECRET_ARN          = var.org_api_key_secret_arn
     }
   }
 
@@ -1059,32 +1089,299 @@ resource "aws_lambda_function" "manager" {
   ]
 }
 
-# CloudWatch Events Rule - Trigger every 2 minutes
-resource "aws_cloudwatch_event_rule" "manager_schedule" {
-  count               = var.enable_manager ? 1 : 0
-  name                = "${local.name_prefix}-ai-worker-manager-schedule"
-  description         = "Trigger AI Worker Manager Lambda every 2 minutes"
-  schedule_expression = var.manager_schedule
+# =============================================================================
+# Manager Lambda Schedule - DISABLED (Push-Based Architecture)
+# =============================================================================
+# The Manager Lambda is now invoked event-driven by the Orchestrator:
+# - review_pr: Invoked immediately when a PR is created (if Jira has 'review' label)
+# - analyze_learnings: Invoked after task completion with errors/retries
+# - update_environment: Invoked when learning analysis identifies environment gaps
+#
+# This eliminates polling overhead and provides faster feedback.
+# If you need to re-enable scheduled polling as a fallback, uncomment below.
+# =============================================================================
+
+# resource "aws_cloudwatch_event_rule" "manager_schedule" {
+#   count               = var.enable_manager ? 1 : 0
+#   name                = "${local.name_prefix}-ai-worker-manager-schedule"
+#   description         = "Trigger AI Worker Manager Lambda every 2 minutes"
+#   schedule_expression = var.manager_schedule
+#
+#   tags = {
+#     Name        = "${local.name_prefix}-ai-worker-manager-schedule"
+#     Environment = var.environment
+#     Component   = "ai-workers"
+#   }
+# }
+
+# resource "aws_cloudwatch_event_target" "manager" {
+#   count     = var.enable_manager ? 1 : 0
+#   rule      = aws_cloudwatch_event_rule.manager_schedule[0].name
+#   target_id = "ai-worker-manager"
+#   arn       = aws_lambda_function.manager[0].arn
+# }
+
+# resource "aws_lambda_permission" "manager_cloudwatch" {
+#   count         = var.enable_manager ? 1 : 0
+#   statement_id  = "AllowCloudWatchEventsInvoke"
+#   action        = "lambda:InvokeFunction"
+#   function_name = aws_lambda_function.manager[0].function_name
+#   principal     = "events.amazonaws.com"
+#   source_arn    = aws_cloudwatch_event_rule.manager_schedule[0].arn
+# }
+
+# =============================================================================
+# AI Worker Manager ECS Executor (New Architecture)
+# =============================================================================
+# Manager now runs as an ECS task (like workers) instead of inline in Lambda.
+# This allows Manager to:
+# - Build Docker images
+# - Modify IAM permissions
+# - Create PRs with infrastructure changes
+# - Use the same log piping as workers
+# =============================================================================
+
+resource "aws_cloudwatch_log_group" "manager_executor" {
+  count             = var.enable_manager ? 1 : 0
+  name              = "/ecs/${local.name_prefix}/ai-worker-manager-executor"
+  retention_in_days = var.log_retention_days
 
   tags = {
-    Name        = "${local.name_prefix}-ai-worker-manager-schedule"
+    Name        = "${local.name_prefix}-ai-worker-manager-executor-logs"
     Environment = var.environment
     Component   = "ai-workers"
   }
 }
 
-resource "aws_cloudwatch_event_target" "manager" {
-  count     = var.enable_manager ? 1 : 0
-  rule      = aws_cloudwatch_event_rule.manager_schedule[0].name
-  target_id = "ai-worker-manager"
-  arn       = aws_lambda_function.manager[0].arn
+# IAM Role for Manager Executor (elevated permissions for infrastructure changes)
+resource "aws_iam_role" "manager_executor_execution_role" {
+  count       = var.enable_manager ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-mgr-exec-ex-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager-executor-execution-role"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
 }
 
-resource "aws_lambda_permission" "manager_cloudwatch" {
-  count         = var.enable_manager ? 1 : 0
-  statement_id  = "AllowCloudWatchEventsInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.manager[0].function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.manager_schedule[0].arn
+resource "aws_iam_role_policy_attachment" "manager_executor_execution_role_policy" {
+  count      = var.enable_manager ? 1 : 0
+  role       = aws_iam_role.manager_executor_execution_role[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "manager_executor_execution_secrets" {
+  count       = var.enable_manager ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-mgr-exec-secrets-"
+  role        = aws_iam_role.manager_executor_execution_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = var.secrets_arns
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "manager_executor_task_role" {
+  count       = var.enable_manager ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-mgr-exec-task-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager-executor-task-role"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
+}
+
+# Manager Executor gets elevated permissions for infrastructure changes
+resource "aws_iam_role_policy" "manager_executor_task_policy" {
+  count       = var.enable_manager ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-mgr-exec-task-"
+  role        = aws_iam_role.manager_executor_task_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # Secrets Manager for API keys
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = var.secrets_arns
+      },
+      # ECR - Build and push Docker images
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:PutImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload"
+        ]
+        Resource = aws_ecr_repository.ai_worker.arn
+      },
+      # IAM - Modify AI Worker roles (scoped to project)
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:PutRolePolicy",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy"
+        ]
+        Resource = "arn:aws:iam::*:role/${var.project_name}-*aiw-*"
+      },
+      # ECS - Update task definitions
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:DescribeTaskDefinition",
+          "ecs:RegisterTaskDefinition",
+          "ecs:DeregisterTaskDefinition"
+        ]
+        Resource = "*"
+      },
+      # CloudWatch Logs - Read executor logs for analysis
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents"
+        ]
+        Resource = "${aws_cloudwatch_log_group.executor.arn}:*"
+      }
+    ]
+  })
+}
+
+# Manager ECS Task Definition
+resource "aws_ecs_task_definition" "manager_executor" {
+  count                    = var.enable_manager ? 1 : 0
+  family                   = "${local.name_prefix}-ai-worker-manager-executor"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.manager_executor_cpu
+  memory                   = var.manager_executor_memory
+  execution_role_arn       = aws_iam_role.manager_executor_execution_role[0].arn
+  task_role_arn            = aws_iam_role.manager_executor_task_role[0].arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "ai-worker-manager-executor"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v19"
+      essential = true
+
+      # Override entrypoint to use Manager-specific script
+      entryPoint = ["/usr/local/bin/ai-worker-manager-entrypoint.sh"]
+
+      environment = [
+        { name = "NODE_ENV", value = var.environment },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "API_BASE_URL", value = var.api_base_url },
+        { name = "MANAGER_MODE", value = "true" },
+        { name = "GITHUB_REPO", value = "jarod-rosenthal/pagerduty-lite" },
+      ]
+
+      secrets = concat([
+        {
+          name      = "GITHUB_TOKEN"
+          valueFrom = "${var.github_token_secret_arn}"
+        },
+        {
+          name      = "ANTHROPIC_API_KEY"
+          valueFrom = "${var.anthropic_api_key_secret_arn}"
+        }
+      ],
+      var.org_api_key_secret_arn != "" ? [
+        {
+          name      = "ORG_API_KEY"
+          valueFrom = "${var.org_api_key_secret_arn}"
+        }
+      ] : [],
+      var.jira_credentials_secret_arn != "" ? [
+        {
+          name      = "JIRA_BASE_URL"
+          valueFrom = "${var.jira_credentials_secret_arn}:base_url::"
+        },
+        {
+          name      = "JIRA_EMAIL"
+          valueFrom = "${var.jira_credentials_secret_arn}:email::"
+        },
+        {
+          name      = "JIRA_API_TOKEN"
+          valueFrom = "${var.jira_credentials_secret_arn}:api_token::"
+        }
+      ] : [])
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.manager_executor[0].name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+    }
+  ])
+
+  tags = {
+    Name        = "${local.name_prefix}-ai-worker-manager-executor"
+    Environment = var.environment
+    Component   = "ai-workers"
+  }
 }

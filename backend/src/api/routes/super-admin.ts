@@ -17,6 +17,9 @@ import { AIWorkerTaskLog } from "../../shared/models/AIWorkerTaskLog";
 import { AIWorkerTaskRun } from "../../shared/models/AIWorkerTaskRun";
 import { AIWorkerConversation } from "../../shared/models/AIWorkerConversation";
 import { AIWorkerReview } from "../../shared/models/AIWorkerReview";
+import { AIWorkerToolEvent } from "../../shared/models/AIWorkerToolEvent";
+import { AIWorkerToolPattern } from "../../shared/models/AIWorkerToolPattern";
+import { AIWorkerPatternApplication } from "../../shared/models/AIWorkerPatternApplication";
 import { logger } from "../../shared/utils/logger";
 import {
   SQS,
@@ -1847,6 +1850,557 @@ router.delete(
     } catch (error) {
       logger.error("Error deleting worker:", error);
       return res.status(500).json({ error: "Failed to delete worker" });
+    }
+  },
+);
+
+// ============================================
+// Learning System Endpoints (Phase 4)
+// ============================================
+
+/**
+ * POST /api/v1/super-admin/control-center/tool-events
+ * Batch insert tool events (called by log-parser.js during task execution)
+ */
+router.post(
+  "/control-center/tool-events",
+  [
+    body("events").isArray({ min: 1, max: 100 }),
+    body("events.*.taskId").isUUID(),
+    body("events.*.orgId").isUUID(),
+    body("events.*.toolName").isString().notEmpty(),
+    body("events.*.success").isBoolean(),
+    body("events.*.sequenceNumber").isInt({ min: 1 }),
+    body("events.*.startedAt").isISO8601(),
+    body("events.*.completedAt").isISO8601(),
+    body("events.*.durationMs").isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { events } = req.body;
+
+      const dataSource = await getDataSource();
+      const eventRepo = dataSource.getRepository(AIWorkerToolEvent);
+
+      // Map events to entities
+      const entities = events.map(
+        (e: {
+          taskId: string;
+          orgId: string;
+          toolName: string;
+          toolCategory?: string;
+          inputSummary?: string;
+          inputHash?: string;
+          outputSummary?: string;
+          success: boolean;
+          errorType?: string;
+          errorMessage?: string;
+          sequenceNumber: number;
+          attemptNumber?: number;
+          startedAt: string;
+          completedAt: string;
+          durationMs: number;
+        }) => {
+          const event = new AIWorkerToolEvent();
+          event.taskId = e.taskId;
+          event.orgId = e.orgId;
+          event.toolName = e.toolName;
+          event.toolCategory = (e.toolCategory ||
+            AIWorkerToolEvent.classifyToolCategory(e.toolName)) as any;
+          event.inputSummary = e.inputSummary || null;
+          event.inputHash = e.inputHash || null;
+          event.outputSummary = e.outputSummary || null;
+          event.success = e.success;
+          event.errorType = (e.errorType || null) as any;
+          event.errorMessage = e.errorMessage || null;
+          event.sequenceNumber = e.sequenceNumber;
+          event.attemptNumber = e.attemptNumber || 1;
+          event.startedAt = new Date(e.startedAt);
+          event.completedAt = new Date(e.completedAt);
+          event.durationMs = e.durationMs;
+          return event;
+        },
+      );
+
+      // Bulk insert
+      await eventRepo.insert(entities);
+
+      logger.debug("Tool events saved", { count: entities.length });
+
+      return res.status(201).json({
+        success: true,
+        count: entities.length,
+      });
+    } catch (error) {
+      logger.error("Error saving tool events:", error);
+      return res.status(500).json({ error: "Failed to save tool events" });
+    }
+  },
+);
+
+/**
+ * PATCH /api/v1/super-admin/control-center/tasks/:taskId/tool-summary
+ * Update tool error/retry counts on task (called by log-parser.js on completion)
+ */
+router.patch(
+  "/control-center/tasks/:taskId/tool-summary",
+  [
+    param("taskId").isUUID(),
+    body("toolErrorCount").optional().isInt({ min: 0 }),
+    body("toolRetryCount").optional().isInt({ min: 0 }),
+    body("totalToolCalls").optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+      const { toolErrorCount, toolRetryCount } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      if (toolErrorCount !== undefined) {
+        task.toolErrorCount = toolErrorCount;
+      }
+      if (toolRetryCount !== undefined) {
+        task.toolRetryCount = toolRetryCount;
+      }
+
+      await taskRepo.save(task);
+
+      return res.json({
+        success: true,
+        taskId,
+        toolErrorCount: task.toolErrorCount,
+        toolRetryCount: task.toolRetryCount,
+      });
+    } catch (error) {
+      logger.error("Error updating tool summary:", error);
+      return res.status(500).json({ error: "Failed to update tool summary" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/patterns/relevant
+ * Get relevant patterns for a new task (for context injection)
+ */
+router.get(
+  "/control-center/patterns/relevant",
+  [
+    query("toolNames").optional().isString(),
+    query("limit").optional().isInt({ min: 1, max: 50 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const toolNames = req.query.toolNames
+        ? (req.query.toolNames as string).split(",")
+        : null;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const orgId = req.orgId || req.user?.orgId;
+
+      const dataSource = await getDataSource();
+      const patternRepo = dataSource.getRepository(AIWorkerToolPattern);
+
+      // Query active patterns ordered by effectiveness
+      const queryBuilder = patternRepo
+        .createQueryBuilder("pattern")
+        .where("pattern.status = :status", { status: "active" })
+        .andWhere(
+          "(pattern.org_id IS NULL OR pattern.org_id = :orgId)",
+          { orgId },
+        )
+        .orderBy("pattern.effectiveness_score", "DESC")
+        .take(limit);
+
+      if (toolNames && toolNames.length > 0) {
+        queryBuilder.andWhere("pattern.tool_name IN (:...toolNames)", {
+          toolNames,
+        });
+      }
+
+      const patterns = await queryBuilder.getMany();
+
+      return res.json({
+        patterns: patterns.map((p) => ({
+          id: p.id,
+          type: p.patternType,
+          toolName: p.toolName,
+          errorType: p.errorType,
+          title: p.title,
+          description: p.description,
+          recommendedApproach: p.recommendedApproach,
+          effectivenessScore: Number(p.effectivenessScore),
+          timesApplied: p.timesApplied,
+        })),
+        count: patterns.length,
+      });
+    } catch (error) {
+      logger.error("Error fetching relevant patterns:", error);
+      return res.status(500).json({ error: "Failed to fetch patterns" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/patterns
+ * List all patterns with filtering
+ */
+router.get(
+  "/control-center/patterns",
+  [
+    query("status").optional().isIn(["active", "deprecated", "pending_review"]),
+    query("toolName").optional().isString(),
+    query("type").optional().isIn(["error_recovery", "best_practice", "anti_pattern"]),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("offset").optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const status = req.query.status as string | undefined;
+      const toolName = req.query.toolName as string | undefined;
+      const type = req.query.type as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const dataSource = await getDataSource();
+      const patternRepo = dataSource.getRepository(AIWorkerToolPattern);
+
+      const queryBuilder = patternRepo
+        .createQueryBuilder("pattern")
+        .orderBy("pattern.effectiveness_score", "DESC")
+        .addOrderBy("pattern.times_applied", "DESC")
+        .take(limit)
+        .skip(offset);
+
+      if (status) {
+        queryBuilder.andWhere("pattern.status = :status", { status });
+      }
+      if (toolName) {
+        queryBuilder.andWhere("pattern.tool_name = :toolName", { toolName });
+      }
+      if (type) {
+        queryBuilder.andWhere("pattern.pattern_type = :type", { type });
+      }
+
+      const [patterns, total] = await queryBuilder.getManyAndCount();
+
+      return res.json({
+        patterns: patterns.map((p) => ({
+          id: p.id,
+          orgId: p.orgId,
+          isGlobal: p.orgId === null,
+          type: p.patternType,
+          toolName: p.toolName,
+          errorType: p.errorType,
+          title: p.title,
+          description: p.description,
+          recommendedApproach: p.recommendedApproach,
+          triggerConditions: p.triggerConditions,
+          effectivenessScore: Number(p.effectivenessScore),
+          timesApplied: p.timesApplied,
+          timesSucceeded: p.timesSucceeded,
+          status: p.status,
+          sourceTaskId: p.sourceTaskId,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        })),
+        total,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      logger.error("Error fetching patterns:", error);
+      return res.status(500).json({ error: "Failed to fetch patterns" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/patterns
+ * Create a new pattern (usually done by Manager after learning analysis)
+ */
+router.post(
+  "/control-center/patterns",
+  [
+    body("patternType").isIn(["error_recovery", "best_practice", "anti_pattern"]),
+    body("toolName").isString().notEmpty(),
+    body("title").isString().isLength({ min: 1, max: 255 }),
+    body("description").isString().notEmpty(),
+    body("recommendedApproach").isString().notEmpty(),
+    body("errorType").optional().isString(),
+    body("triggerConditions").optional().isObject(),
+    body("sourceTaskId").optional().isUUID(),
+    body("isGlobal").optional().isBoolean(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const {
+        patternType,
+        toolName,
+        title,
+        description,
+        recommendedApproach,
+        errorType,
+        triggerConditions,
+        sourceTaskId,
+        isGlobal,
+      } = req.body;
+
+      const orgId = isGlobal ? null : (req.orgId || req.user?.orgId);
+
+      const dataSource = await getDataSource();
+      const patternRepo = dataSource.getRepository(AIWorkerToolPattern);
+
+      // Check for duplicate
+      const existing = await patternRepo.findOne({
+        where: {
+          orgId: orgId as any,
+          toolName,
+          errorType: errorType || null,
+          title,
+          status: "active",
+        },
+      });
+
+      if (existing) {
+        return res.status(409).json({
+          error: "Pattern with this tool, error type, and title already exists",
+          existingPatternId: existing.id,
+        });
+      }
+
+      const pattern = patternRepo.create({
+        orgId,
+        patternType,
+        toolName,
+        errorType: errorType || null,
+        title,
+        description,
+        recommendedApproach,
+        triggerConditions: triggerConditions || {},
+        sourceTaskId: sourceTaskId || null,
+        status: "active",
+        effectivenessScore: 0.5, // Start at 50%
+      });
+
+      await patternRepo.save(pattern);
+
+      logger.info("Pattern created", {
+        patternId: pattern.id,
+        toolName,
+        title,
+        sourceTaskId,
+      });
+
+      return res.status(201).json({
+        id: pattern.id,
+        type: pattern.patternType,
+        toolName: pattern.toolName,
+        title: pattern.title,
+        status: pattern.status,
+      });
+    } catch (error) {
+      logger.error("Error creating pattern:", error);
+      return res.status(500).json({ error: "Failed to create pattern" });
+    }
+  },
+);
+
+/**
+ * PATCH /api/v1/super-admin/control-center/patterns/:patternId/effectiveness
+ * Update pattern effectiveness after a task completes
+ */
+router.patch(
+  "/control-center/patterns/:patternId/effectiveness",
+  [
+    param("patternId").isUUID(),
+    body("succeeded").isBoolean(),
+    body("taskId").optional().isUUID(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { patternId } = req.params;
+      const { succeeded, taskId } = req.body;
+
+      const dataSource = await getDataSource();
+      const patternRepo = dataSource.getRepository(AIWorkerToolPattern);
+
+      const pattern = await patternRepo.findOne({ where: { id: patternId } });
+      if (!pattern) {
+        return res.status(404).json({ error: "Pattern not found" });
+      }
+
+      // Record the application
+      pattern.recordApplication(succeeded);
+      await patternRepo.save(pattern);
+
+      // If taskId provided, also record in pattern_applications
+      if (taskId) {
+        const appRepo = dataSource.getRepository(AIWorkerPatternApplication);
+        await appRepo.update(
+          { patternId, taskId },
+          {
+            taskCompleted: true,
+            patternToolUsed: true,
+            patternHelped: succeeded,
+            verifiedAt: new Date(),
+          },
+        );
+      }
+
+      logger.debug("Pattern effectiveness updated", {
+        patternId,
+        succeeded,
+        newScore: pattern.effectivenessScore,
+        status: pattern.status,
+      });
+
+      return res.json({
+        patternId,
+        effectivenessScore: Number(pattern.effectivenessScore),
+        timesApplied: pattern.timesApplied,
+        timesSucceeded: pattern.timesSucceeded,
+        status: pattern.status,
+      });
+    } catch (error) {
+      logger.error("Error updating pattern effectiveness:", error);
+      return res.status(500).json({ error: "Failed to update effectiveness" });
+    }
+  },
+);
+
+/**
+ * GET /api/v1/super-admin/control-center/tasks/:taskId/tool-events
+ * Get tool events for a specific task (for debugging/analysis)
+ */
+router.get(
+  "/control-center/tasks/:taskId/tool-events",
+  [
+    param("taskId").isUUID(),
+    query("limit").optional().isInt({ min: 1, max: 500 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 100;
+
+      const dataSource = await getDataSource();
+      const eventRepo = dataSource.getRepository(AIWorkerToolEvent);
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      // Verify task exists
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      const events = await eventRepo.find({
+        where: { taskId },
+        order: { sequenceNumber: "ASC" },
+        take: limit,
+      });
+
+      // Identify retry sequences (multiple attempts at same operation)
+      const retrySequences: Array<{
+        toolName: string;
+        attempts: number;
+        finalSuccess: boolean;
+      }> = [];
+
+      let currentTool = "";
+      let currentAttempts: typeof events = [];
+
+      for (const event of events) {
+        if (event.toolName !== currentTool || event.attemptNumber === 1) {
+          // New operation - save previous if it was a retry
+          if (currentAttempts.length > 1) {
+            retrySequences.push({
+              toolName: currentTool,
+              attempts: currentAttempts.length,
+              finalSuccess: currentAttempts[currentAttempts.length - 1].success,
+            });
+          }
+          currentTool = event.toolName;
+          currentAttempts = [event];
+        } else {
+          currentAttempts.push(event);
+        }
+      }
+      // Don't forget the last sequence
+      if (currentAttempts.length > 1) {
+        retrySequences.push({
+          toolName: currentTool,
+          attempts: currentAttempts.length,
+          finalSuccess: currentAttempts[currentAttempts.length - 1].success,
+        });
+      }
+
+      return res.json({
+        taskId,
+        taskStatus: task.status,
+        totalEvents: events.length,
+        errorCount: task.toolErrorCount,
+        retryCount: task.toolRetryCount,
+        retrySequences,
+        events: events.map((e) => ({
+          id: e.id,
+          toolName: e.toolName,
+          toolCategory: e.toolCategory,
+          success: e.success,
+          errorType: e.errorType,
+          errorMessage: e.errorMessage,
+          sequenceNumber: e.sequenceNumber,
+          attemptNumber: e.attemptNumber,
+          durationMs: e.durationMs,
+          startedAt: e.startedAt,
+          completedAt: e.completedAt,
+          inputSummary: e.inputSummary?.substring(0, 200),
+          outputSummary: e.outputSummary?.substring(0, 200),
+        })),
+      });
+    } catch (error) {
+      logger.error("Error fetching tool events:", error);
+      return res.status(500).json({ error: "Failed to fetch tool events" });
     }
   },
 );

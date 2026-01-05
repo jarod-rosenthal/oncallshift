@@ -177,3 +177,16 @@ variable "terraform_write_access" {
   type        = bool
   default     = false
 }
+
+# Manager Executor settings (Manager runs as ECS like workers)
+variable "manager_executor_cpu" {
+  description = "CPU units for the Manager executor task (1024 = 1 vCPU)"
+  type        = number
+  default     = 2048  # 2 vCPU for Claude Code CLI
+}
+
+variable "manager_executor_memory" {
+  description = "Memory for the Manager executor task in MB"
+  type        = number
+  default     = 4096  # 4 GB
+}

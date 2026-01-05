@@ -21,15 +21,24 @@ function getDateRange(startDate?: string, endDate?: string): { start: Date; end:
 }
 
 /**
+ * Format minutes as human-readable string
+ */
+function formatMinutes(minutes: number): string {
+  if (minutes === 0) return '-';
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/**
  * Helper to calculate MTTA and MTTR
  */
 function calculateMetrics(incidents: Incident[]): {
-  mtta: number;
-  mttr: number;
+  mtta: { minutes: number; formatted: string } | null;
+  mttr: { minutes: number; formatted: string } | null;
   totalIncidents: number;
-  triggeredCount: number;
-  acknowledgedCount: number;
-  resolvedCount: number;
+  byState: { triggered: number; acknowledged: number; resolved: number };
 } {
   let totalAckTime = 0;
   let ackCount = 0;
@@ -50,13 +59,18 @@ function calculateMetrics(incidents: Incident[]): {
     }
   });
 
+  const mttaMinutes = ackCount > 0 ? Math.round(totalAckTime / ackCount) : 0;
+  const mttrMinutes = resolveCount > 0 ? Math.round(totalResolveTime / resolveCount) : 0;
+
   return {
-    mtta: ackCount > 0 ? Math.round(totalAckTime / ackCount) : 0,
-    mttr: resolveCount > 0 ? Math.round(totalResolveTime / resolveCount) : 0,
+    mtta: ackCount > 0 ? { minutes: mttaMinutes, formatted: formatMinutes(mttaMinutes) } : null,
+    mttr: resolveCount > 0 ? { minutes: mttrMinutes, formatted: formatMinutes(mttrMinutes) } : null,
     totalIncidents: incidents.length,
-    triggeredCount: incidents.filter(i => i.state === 'triggered').length,
-    acknowledgedCount: incidents.filter(i => i.state === 'acknowledged').length,
-    resolvedCount: incidents.filter(i => i.state === 'resolved').length,
+    byState: {
+      triggered: incidents.filter(i => i.state === 'triggered').length,
+      acknowledged: incidents.filter(i => i.state === 'acknowledged').length,
+      resolved: incidents.filter(i => i.state === 'resolved').length,
+    },
   };
 }
 
@@ -95,7 +109,7 @@ router.get(
       const metrics = calculateMetrics(incidents);
 
       // Incidents by severity
-      const incidentsBySeverity = {
+      const bySeverity = {
         critical: incidents.filter(i => i.severity === 'critical').length,
         error: incidents.filter(i => i.severity === 'error').length,
         warning: incidents.filter(i => i.severity === 'warning').length,
@@ -119,22 +133,22 @@ router.get(
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
-      // Daily trend
+      // Daily trend (renamed to incidentsByDay for frontend)
       const dailyMap = new Map<string, number>();
       incidents.forEach((incident) => {
         const dateStr = new Date(incident.triggeredAt).toISOString().split('T')[0];
         dailyMap.set(dateStr, (dailyMap.get(dateStr) || 0) + 1);
       });
-      const dailyTrend = Array.from(dailyMap.entries())
+      const incidentsByDay = Array.from(dailyMap.entries())
         .map(([date, count]) => ({ date, count }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
       return res.json({
         ...metrics,
-        incidentsBySeverity,
+        bySeverity,
         incidentsByService,
-        dailyTrend,
-        dateRange: { start: start.toISOString(), end: end.toISOString() },
+        incidentsByDay,
+        period: { startDate: start.toISOString(), endDate: end.toISOString() },
       });
     } catch (error) {
       logger.error('Error fetching analytics overview:', error);

@@ -71,3 +71,7 @@ export * from './AIWorkerConversation';
 export * from './AIWorkerApproval';
 export * from './AIWorkerTaskRun';
 export * from './AIWorkerReview';
+export * from './AIWorkerToolEvent';
+export * from './AIWorkerToolPattern';
+export * from './AIWorkerLearningSession';
+export * from './AIWorkerPatternApplication';
