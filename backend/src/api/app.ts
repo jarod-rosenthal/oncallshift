@@ -74,6 +74,18 @@ export function createApp(): Express {
         "upgrade-insecure-requests": null, // Disable for demo (no SSL certificate)
       },
     },
+    // Strict-Transport-Security: Force HTTPS for 1 year (OCS-79)
+    hsts: {
+      maxAge: 31536000, // 1 year in seconds
+      includeSubDomains: true,
+      preload: true,
+    },
+    // X-Frame-Options: Prevent clickjacking (OCS-79)
+    frameguard: {
+      action: 'deny',
+    },
+    // X-Content-Type-Options: Prevent MIME sniffing (OCS-79)
+    noSniff: true,
   }));
 
   // CORS - explicit allowed origins for security (OCS-78)
