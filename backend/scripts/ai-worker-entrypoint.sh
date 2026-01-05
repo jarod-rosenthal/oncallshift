@@ -255,79 +255,22 @@ TASK_COMPLEXITY=$(detect_task_complexity)
 echo "[Complexity] Detected task complexity: ${TASK_COMPLEXITY}"
 send_log "system" "Task complexity: ${TASK_COMPLEXITY}" "info"
 
-# =============================================================================
-# Task Complexity Detection
-# =============================================================================
-# Simple tasks don't need the full directive framework - they can just be done.
-# This saves turns and improves efficiency for straightforward changes.
-
-detect_task_complexity() {
-    local summary_lower=$(echo "${JIRA_SUMMARY:-}" | tr '[:upper:]' '[:lower:]')
-    local desc_lower=$(echo "${JIRA_DESCRIPTION:-}" | tr '[:upper:]' '[:lower:]')
-    local combined="${summary_lower} ${desc_lower}"
-
-    # Simple task indicators (can be done in <5 turns)
-    local simple_patterns=(
-        "fix typo"
-        "update comment"
-        "rename.*to"
-        "change.*from.*to"
-        "add.*import"
-        "remove.*import"
-        "update.*version"
-        "bump.*version"
-        "fix.*spacing"
-        "fix.*indentation"
-        "add.*type"
-        "fix.*type error"
-        "one.*line"
-        "single.*line"
-        "simple.*fix"
-        "quick.*fix"
-        "trivial"
-    )
-
-    for pattern in "${simple_patterns[@]}"; do
-        if echo "$combined" | grep -qiE "$pattern"; then
-            echo "simple"
-            return
-        fi
-    done
-
-    # Complex task indicators (need full directive framework)
-    local complex_patterns=(
-        "implement"
-        "create.*new"
-        "add.*feature"
-        "refactor"
-        "migrate"
-        "integration"
-        "multi.*file"
-        "across.*files"
-        "architecture"
-        "design"
-        "security"
-        "authentication"
-        "database"
-        "api.*endpoint"
-        "new.*route"
-        "test.*coverage"
-    )
-
-    for pattern in "${complex_patterns[@]}"; do
-        if echo "$combined" | grep -qiE "$pattern"; then
-            echo "complex"
-            return
-        fi
-    done
-
-    # Default to standard (use some directives but not all)
-    echo "standard"
-}
-
-TASK_COMPLEXITY=$(detect_task_complexity)
-echo "[Complexity] Detected task complexity: ${TASK_COMPLEXITY}"
-send_log "system" "Task complexity: ${TASK_COMPLEXITY}" "info"
+# Set max turns based on complexity
+case "${TASK_COMPLEXITY}" in
+    "simple")
+        EFFECTIVE_MAX_TURNS="${MAX_TURNS:-20}"
+        ;;
+    "standard")
+        EFFECTIVE_MAX_TURNS="${MAX_TURNS:-50}"
+        ;;
+    "complex")
+        EFFECTIVE_MAX_TURNS="${MAX_TURNS:-100}"
+        ;;
+    *)
+        EFFECTIVE_MAX_TURNS="${MAX_TURNS:-50}"
+        ;;
+esac
+echo "[Complexity] Max turns set to: ${EFFECTIVE_MAX_TURNS}"
 
 # Build task instructions using DOE framework
 INSTRUCTIONS_FILE="/tmp/task-instructions.md"
@@ -485,7 +428,6 @@ cat >> "${INSTRUCTIONS_FILE}" << EOF
 - NEVER push to main/master directly
 - NEVER commit secrets, credentials, or API keys
 - ALWAYS run tests before creating PR (use \`node /app/execution-compiled/test/run_tests.js\`)
-- ALWAYS run typecheck before commit (use \`node /app/execution-compiled/test/run_typecheck.js\`)
 - Keep commits atomic and well-described
 - Follow existing code patterns and conventions
 EOF
@@ -587,11 +529,11 @@ cat "${INSTRUCTIONS_FILE}"
 echo ""
 echo "[Claude] Starting Claude Agent..."
 echo "================================"
-send_log "system" "Starting Claude Agent (model: ${CLAUDE_MODEL:-sonnet}, max turns: ${MAX_TURNS:-50})" "info"
+send_log "system" "Starting Claude Agent (model: ${CLAUDE_MODEL:-sonnet}, max turns: ${EFFECTIVE_MAX_TURNS}, complexity: ${TASK_COMPLEXITY})" "info"
 
 # Set up Claude Code with appropriate permissions
 export CLAUDE_CODE_ACCEPT_EDITS=true
-export CLAUDE_CODE_MAX_TURNS="${MAX_TURNS:-50}"
+export CLAUDE_CODE_MAX_TURNS="${EFFECTIVE_MAX_TURNS}"
 
 # Use sonnet (reliable model) until system is stable, can override with CLAUDE_MODEL env var
 # Note: Claude Code CLI accepts short names: haiku, sonnet, opus
@@ -643,7 +585,7 @@ claude \
     --print \
     --verbose \
     --dangerously-skip-permissions \
-    --max-turns "${MAX_TURNS:-50}" \
+    --max-turns "${EFFECTIVE_MAX_TURNS}" \
     --model "${CLAUDE_MODEL}" \
     --output-format stream-json \
     "${PROMPT}" \

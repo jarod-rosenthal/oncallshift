@@ -22,7 +22,8 @@ export type AIWorkerPersona =
   | "security_engineer"
   | "qa_engineer"
   | "tech_writer"
-  | "project_manager";
+  | "project_manager"
+  | "manager";
 
 export type AIWorkerTaskStatus =
   | "queued" // Waiting in queue
@@ -407,8 +408,14 @@ export class AIWorkerTask {
   }
 
   hasJiraReviewLabel(): boolean {
-    // Check if the Jira issue has the 'review' label
+    // Check if the Jira issue has the 'review' label (triggers PR review)
     const labels = this.jiraFields?.labels || [];
     return labels.includes("review");
+  }
+
+  hasJiraManagerLabel(): boolean {
+    // Check if the Jira issue has the 'manager' label (triggers learning analysis)
+    const labels = this.jiraFields?.labels || [];
+    return labels.includes("manager");
   }
 }

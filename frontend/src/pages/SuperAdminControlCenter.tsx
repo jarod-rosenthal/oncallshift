@@ -51,10 +51,16 @@ interface Worker {
   id: string;
   displayName: string;
   persona: string;
+  role: "worker" | "manager";
   status: string;
   tasksCompleted: number;
   tasksFailed: number;
   totalCostUsd: number;
+  // Manager-specific stats
+  reviewCount?: number;
+  approvalsCount?: number;
+  rejectionsCount?: number;
+  revisionsRequestedCount?: number;
   currentTask: WorkerTask | null;
 }
 
@@ -78,10 +84,13 @@ interface ActiveTask {
   workerName: string;
   workerPersona: string;
   workerModel?: string;
+  workerRole?: "worker" | "manager";
   turnCount: number;
   maxTurns: number;
   estimatedCostUsd: number;
   startedAt: string | null;
+  hasPr?: boolean;
+  githubPrUrl?: string | null;
   recentLogs: TaskLog[];
   steps: TaskStep[];
 }
@@ -237,6 +246,12 @@ const PERSONA_CONFIG: Record<
     title: "Project Manager",
     description: "Task planning, coordination, status updates",
     skills: ["Jira", "Project Planning", "Stakeholder Management"],
+  },
+  manager: {
+    emoji: "👔",
+    title: "Virtual Manager",
+    description: "Reviews PRs from workers, provides feedback, approves or requests revisions",
+    skills: ["Code Review", "Quality Assurance", "Feedback", "Approval Workflow"],
   },
 };
 
@@ -1369,7 +1384,7 @@ export default function SuperAdminControlCenter() {
             </div>
           ) : (
             data.activeTasks.map((task) => {
-              // Define workflow stages
+              // Define workflow stages - PR step always shown but can be skipped
               const stages = [
                 { id: "queued", label: "Queued", icon: Clock },
                 { id: "executing", label: "Executing", icon: Cpu },
@@ -1379,8 +1394,10 @@ export default function SuperAdminControlCenter() {
               ];
 
               // Determine current stage index
+              // If no PR, pr_created stage is auto-completed (skipped)
               const statusToStage: Record<string, number> = {
                 queued: 0,
+                dispatching: 0,
                 claimed: 0,
                 environment_setup: 1,
                 executing: 1,
@@ -1393,7 +1410,12 @@ export default function SuperAdminControlCenter() {
                 failed: -1,
                 blocked: -1,
                 cancelled: -1,
+                review_rejected: -1,
               };
+
+              // If task has no PR but is past executing, treat PR step as completed
+              const noPrButPastExecuting = !task.hasPr &&
+                ["manager_review", "review_pending", "review_approved", "completed"].includes(task.status);
 
               const currentStageIndex = statusToStage[task.status] ?? 0;
               const isFailed =
@@ -1447,11 +1469,13 @@ export default function SuperAdminControlCenter() {
                   <div className="flex items-center justify-between">
                     {stages.map((stage, index) => {
                       const StageIcon = stage.icon;
+                      // PR step (index 2) is auto-completed if no PR but task is past executing
+                      const isPrStepSkipped = stage.id === "pr_created" && noPrButPastExecuting;
                       const isCompleted =
-                        !isFailed && currentStageIndex > index;
+                        !isFailed && (currentStageIndex > index || isPrStepSkipped);
                       const isCurrent =
-                        !isFailed && currentStageIndex === index;
-                      const isPending = !isFailed && currentStageIndex < index;
+                        !isFailed && currentStageIndex === index && !isPrStepSkipped;
+                      const isPending = !isFailed && currentStageIndex < index && !isPrStepSkipped;
                       const isFailedStage =
                         isFailed && currentStageIndex === index;
 
@@ -1725,17 +1749,33 @@ export default function SuperAdminControlCenter() {
                   </div>
                 )}
 
-                {/* Stats */}
+                {/* Stats - different for Manager vs Worker */}
                 <div className="hidden lg:flex items-center gap-4 text-sm">
-                  <span className="text-green-500">
-                    {worker.tasksCompleted} done
-                  </span>
-                  <span className="text-red-500">
-                    {worker.tasksFailed} failed
-                  </span>
-                  <span className="text-muted-foreground">
-                    ${worker.totalCostUsd.toFixed(2)}
-                  </span>
+                  {worker.role === "manager" ? (
+                    <>
+                      <span className="text-blue-500">
+                        {worker.reviewCount || 0} reviews
+                      </span>
+                      <span className="text-green-500">
+                        {worker.approvalsCount || 0} approved
+                      </span>
+                      <span className="text-orange-500">
+                        {worker.revisionsRequestedCount || 0} revisions
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-green-500">
+                        {worker.tasksCompleted} done
+                      </span>
+                      <span className="text-red-500">
+                        {worker.tasksFailed} failed
+                      </span>
+                      <span className="text-muted-foreground">
+                        ${worker.totalCostUsd.toFixed(2)}
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 {/* Delete button (only when idle) */}

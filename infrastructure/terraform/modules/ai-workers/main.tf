@@ -505,6 +505,8 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         Action = [
           "s3:Get*",
           "s3:List*",
+          "s3:PutObject",
+          "s3:DeleteObject",
           "s3:CreateBucket",
           "s3:DeleteBucket",
           "s3:PutBucket*"
@@ -512,6 +514,20 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         Resource = [
           "arn:aws:s3:::${var.project_name}-*",
           "arn:aws:s3:::${var.project_name}-*/*"
+        ]
+      },
+      # S3 - Frontend deployment bucket (oncallshift-specific)
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::oncallshift-frontend-*",
+          "arn:aws:s3:::oncallshift-frontend-*/*"
         ]
       },
       # CloudFront - CDN
@@ -1304,6 +1320,32 @@ resource "aws_iam_role_policy" "manager_executor_task_policy" {
           "logs:FilterLogEvents"
         ]
         Resource = "${aws_cloudwatch_log_group.executor.arn}:*"
+      },
+      # S3 - Deploy frontend assets (scoped to project buckets)
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:Get*",
+          "s3:List*",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-*",
+          "arn:aws:s3:::${var.project_name}-*/*",
+          "arn:aws:s3:::oncallshift-frontend-*",
+          "arn:aws:s3:::oncallshift-frontend-*/*"
+        ]
+      },
+      # CloudFront - Invalidate cache after deployment
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetInvalidation",
+          "cloudfront:ListInvalidations"
+        ]
+        Resource = "arn:aws:cloudfront::*:distribution/*"
       }
     ]
   })

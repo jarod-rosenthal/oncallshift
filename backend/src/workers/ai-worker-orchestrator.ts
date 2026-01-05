@@ -383,13 +383,13 @@ class AIWorkerOrchestrator {
         } else if (prInfo.result === 'no_changes') {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed with no changes needed');
-          // Trigger learning analysis for completed tasks with errors/retries
-          await this.triggerLearningAnalysisIfNeeded(task);
+          // Trigger Manager analyses after completion
+          await this.triggerPostCompletionActions(task);
         } else {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed');
-          // Trigger learning analysis for completed tasks with errors/retries
-          await this.triggerLearningAnalysisIfNeeded(task);
+          // Trigger Manager analyses after completion
+          await this.triggerPostCompletionActions(task);
         }
       } else {
         // Failure - still try to get token usage
@@ -686,16 +686,28 @@ class AIWorkerOrchestrator {
   }
 
   /**
-   * Check if learning analysis should be triggered and invoke Manager if so
+   * Trigger all post-completion Manager actions
+   * Called after a task completes (success or failure)
    */
-  private async triggerLearningAnalysisIfNeeded(task: AIWorkerTask): Promise<void> {
+  private async triggerPostCompletionActions(task: AIWorkerTask): Promise<void> {
+    // 1. Learning analysis - automatic for tasks with errors/retries (Haiku)
     if (task.needsLearningAnalysis()) {
-      logger.info('Task has errors/retries, triggering learning analysis', {
+      logger.info('Triggering learning analysis (errors/retries detected)', {
         taskId: task.id,
         toolErrorCount: task.toolErrorCount,
         toolRetryCount: task.toolRetryCount,
       });
       await this.invokeManagerLambda('analyze_learnings', task.id);
+    }
+
+    // 2. Environment update - triggered by 'manager' label (Sonnet)
+    // Manager analyzes logs, identifies issues, creates Jira ticket, implements fixes, deploys, opens PR
+    if (task.hasJiraManagerLabel()) {
+      logger.info('Triggering Manager environment update (manager label detected)', {
+        taskId: task.id,
+        jiraIssueKey: task.jiraIssueKey,
+      });
+      await this.invokeManagerLambda('update_environment', task.id);
     }
   }
 
@@ -771,8 +783,8 @@ class AIWorkerOrchestrator {
       await this.jiraService.updateJiraFromTask(task);
     }
 
-    // Trigger learning analysis for failed tasks with errors/retries
-    await this.triggerLearningAnalysisIfNeeded(task);
+    // Trigger Manager analyses after task failure
+    await this.triggerPostCompletionActions(task);
   }
 
   private sleep(ms: number): Promise<void> {

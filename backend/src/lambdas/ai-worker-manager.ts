@@ -308,6 +308,47 @@ export async function handler(
       [logId, taskId, `Virtual Manager starting ${action} (ECS-based)...`],
     );
 
+    // Get org_id for the task
+    const orgId = (await client.query(
+      `SELECT org_id FROM ai_worker_tasks WHERE id = $1`,
+      [taskId],
+    )).rows[0]?.org_id;
+
+    // Create or update Manager worker instance
+    let managerId: string | null = null;
+    if (orgId) {
+      const existingManager = await client.query(
+        `SELECT id FROM ai_worker_instances
+         WHERE org_id = $1 AND role = 'manager' AND persona = 'manager'
+         LIMIT 1`,
+        [orgId],
+      );
+
+      if (existingManager.rows.length > 0) {
+        managerId = existingManager.rows[0].id;
+        // Update existing manager to working status
+        await client.query(
+          `UPDATE ai_worker_instances
+           SET status = 'working',
+               current_task_id = $1,
+               last_task_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $2`,
+          [taskId, managerId],
+        );
+      } else {
+        // Create new manager instance
+        managerId = uuidv4();
+        await client.query(
+          `INSERT INTO ai_worker_instances
+           (id, org_id, persona, display_name, description, status, role, model_id, current_task_id, last_task_at, created_at, updated_at)
+           VALUES ($1, $2, 'manager', 'Virtual Manager', 'Reviews PRs from workers and provides feedback', 'working', 'manager', 'claude-opus-4-5-20251101', $3, NOW(), NOW(), NOW())`,
+          [managerId, orgId, taskId],
+        );
+      }
+      console.log(`[Manager] Worker instance ${managerId} set to working`);
+    }
+
     // Spawn the ECS task
     const result = await spawnManagerTask(action, taskId, extraEnv);
 
@@ -316,9 +357,10 @@ export async function handler(
       await client.query(
         `UPDATE ai_worker_tasks
          SET manager_ecs_task_arn = $1,
-             manager_ecs_task_id = $2
-         WHERE id = $3`,
-        [result.ecsTaskArn, result.ecsTaskId, taskId],
+             manager_ecs_task_id = $2,
+             reviewer_manager_id = $3
+         WHERE id = $4`,
+        [result.ecsTaskArn, result.ecsTaskId, managerId, taskId],
       );
 
       console.log(`[Manager] ECS task spawned successfully: ${result.ecsTaskId}`);
@@ -330,6 +372,16 @@ export async function handler(
          WHERE id = $1`,
         [taskId],
       );
+
+      // Reset manager instance to idle
+      if (managerId) {
+        await client.query(
+          `UPDATE ai_worker_instances
+           SET status = 'idle', current_task_id = NULL, updated_at = NOW()
+           WHERE id = $1`,
+          [managerId],
+        );
+      }
     }
 
     return result;
