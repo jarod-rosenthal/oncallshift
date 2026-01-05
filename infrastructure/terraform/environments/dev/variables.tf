@@ -73,7 +73,7 @@ variable "worker_desired_count" {
 variable "enable_container_insights" {
   description = "Enable CloudWatch Container Insights"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "log_retention_days" {
