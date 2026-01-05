@@ -298,7 +298,7 @@ export class JiraAIWorkerService {
     // Transition status if needed
     if (task.status === 'executing' || task.status === 'claimed') {
       await this.transitionToInProgress(task.jiraIssueKey);
-    } else if (task.status === 'completed') {
+    } else if (task.status === 'completed' || task.status === 'review_approved') {
       await this.transitionToDone(task.jiraIssueKey);
     } else if (task.status === 'blocked') {
       // Keep in progress but add blocked label

@@ -207,8 +207,15 @@ export async function authenticateOrgApiKey(req: Request, res: Response, next: N
  * This allows endpoints to accept any valid authentication method.
  */
 export async function authenticateRequest(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
+  let authHeader = req.headers.authorization;
   const serviceApiKey = req.headers['x-api-key'] as string;
+
+  // Support token in query param for SSE (EventSource doesn't support headers)
+  if (!authHeader && req.query.token) {
+    authHeader = `Bearer ${req.query.token}`;
+    // Set on request so downstream auth functions can read it
+    req.headers.authorization = authHeader;
+  }
 
   // Try Organization API key first (Bearer org_*)
   if (authHeader && authHeader.startsWith('Bearer org_')) {

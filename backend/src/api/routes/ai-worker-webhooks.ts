@@ -5,6 +5,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { Not, In, MoreThan } from 'typeorm';
 import { getDataSource } from '../../shared/db/data-source';
 import { AIWorkerTask, AIWorkerPersona } from '../../shared/models/AIWorkerTask';
 import { AIWorkerTaskLog } from '../../shared/models/AIWorkerTaskLog';
@@ -123,12 +124,12 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
 
     const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-    // Check for existing active task
+    // Check for existing active task (any non-terminal status)
     const existingTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
-        status: 'queued',
+        status: Not(In(['completed', 'failed', 'cancelled'])),
       },
     });
 
@@ -137,6 +138,34 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
         message: 'Task already exists',
         taskId: existingTask.id,
         issueKey: issue.key,
+      });
+    }
+
+    // Check for recently completed task (cooldown period to prevent webhook loops)
+    // When we complete a task and update Jira, Jira fires another webhook
+    // This prevents re-triggering the same issue within 1 hour of completion
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentlyCompletedTask = await taskRepo.findOne({
+      where: {
+        orgId: org.id,
+        jiraIssueKey: issue.key,
+        status: In(['completed', 'failed', 'cancelled']),
+        completedAt: MoreThan(oneHourAgo),
+      },
+      order: { completedAt: 'DESC' },
+    });
+
+    if (recentlyCompletedTask) {
+      logger.info('Ignoring webhook - task recently completed (cooldown period)', {
+        issueKey: issue.key,
+        taskId: recentlyCompletedTask.id,
+        completedAt: recentlyCompletedTask.completedAt,
+      });
+      return res.json({
+        message: 'Task recently completed (cooldown period)',
+        taskId: recentlyCompletedTask.id,
+        issueKey: issue.key,
+        completedAt: recentlyCompletedTask.completedAt,
       });
     }
 
@@ -161,6 +190,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
         sprint: issue.fields?.customfield_10020?.[0]?.name, // Sprint field
       },
       workerPersona: persona,
+      workerModel: 'sonnet', // Using Sonnet 4.5 for reliable execution
       githubRepo: process.env.DEFAULT_GITHUB_REPO || 'jarod-rosenthal/pagerduty-lite',
       priority: mapJiraPriority(issue.fields?.priority?.name),
       status: 'queued' as const,

@@ -92,6 +92,18 @@ RUN npm install -g @anthropic-ai/claude-code
 COPY scripts/ai-worker-entrypoint.sh /usr/local/bin/ai-worker-entrypoint.sh
 RUN chmod +x /usr/local/bin/ai-worker-entrypoint.sh
 
+# Copy DOE (Directive-Orchestration-Execution) framework
+# These provide SOPs and deterministic execution scripts for AI workers
+COPY ai-worker/AGENTS.md /app/AGENTS.md
+COPY ai-worker/directives /app/directives
+COPY ai-worker/execution /app/execution
+
+# Create package.json for execution scripts and install dependencies
+RUN mkdir -p /app && \
+    echo '{"name": "ai-worker-execution", "type": "module", "dependencies": {"typescript": "^5.0.0", "ts-node": "^10.9.0", "@types/node": "^20.0.0"}}' > /app/package.json && \
+    cd /app && npm install && \
+    chown -R aiworker:aiworker /app
+
 # Switch to non-root user
 USER aiworker
 

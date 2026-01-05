@@ -17,6 +17,7 @@ initSentry({ workerName: 'ai-worker-orchestrator' });
 
 import { SQS, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { ECS } from '@aws-sdk/client-ecs';
 import { DataSource } from 'typeorm';
 import { AIWorkerTask, AIWorkerTaskStatus } from '../shared/models/AIWorkerTask';
 import { AIWorkerInstance } from '../shared/models/AIWorkerInstance';
@@ -38,18 +39,22 @@ const MANAGER_LAMBDA_NAME = process.env.AI_WORKER_MANAGER_LAMBDA || 'pagerduty-l
 
 class AIWorkerOrchestrator {
   private sqs: SQS;
+  private ecs: ECS;
   private lambda: LambdaClient;
   private dataSource: DataSource;
   private queueUrl: string;
   private running = false;
   private jiraService: JiraAIWorkerService | null = null;
+  private ecsCluster: string;
 
   constructor(dataSource: DataSource, queueUrl: string) {
     this.dataSource = dataSource;
     this.queueUrl = queueUrl;
     const region = process.env.AWS_REGION || 'us-east-1';
     this.sqs = new SQS({ region });
+    this.ecs = new ECS({ region });
     this.lambda = new LambdaClient({ region });
+    this.ecsCluster = process.env.ECS_CLUSTER_NAME || 'pagerduty-lite-dev';
   }
 
   async initialize(): Promise<void> {
@@ -157,21 +162,31 @@ class AIWorkerOrchestrator {
     const taskRepo = this.dataSource.getRepository(AIWorkerTask);
     const workerRepo = this.dataSource.getRepository(AIWorkerInstance);
 
-    // Get task
+    // CRITICAL: Use atomic update to prevent duplicate execution
+    // Only claim the task if it's still in 'queued' status
+    const claimResult = await taskRepo
+      .createQueryBuilder()
+      .update(AIWorkerTask)
+      .set({ status: 'claimed' as AIWorkerTaskStatus })
+      .where('id = :id AND status = :status', { id: taskId, status: 'queued' })
+      .execute();
+
+    // If no rows updated, task was already claimed by another process
+    if (claimResult.affected === 0) {
+      logger.info('Task already claimed or not in queued state, skipping duplicate', { taskId });
+      return;
+    }
+
+    // Now fetch the task (we know it exists since we just updated it)
     const task = await taskRepo.findOne({ where: { id: taskId } });
     if (!task) {
-      logger.error('Task not found', { taskId });
+      logger.error('Task not found after claim', { taskId });
       return;
     }
 
-    if (task.status !== 'queued') {
-      logger.info('Task not in queued state, skipping', { taskId, status: task.status });
-      return;
-    }
+    logger.info('Task claimed successfully', { taskId, jiraIssueKey: task.jiraIssueKey });
 
     try {
-      // Update status to claimed
-      await this.updateTaskStatus(task, 'claimed');
       await this.logTaskEvent(task, 'status_change', 'Task claimed by orchestrator');
 
       // Find available worker
@@ -215,6 +230,27 @@ class AIWorkerOrchestrator {
 
       if (!anthropicApiKey || !githubToken) {
         throw new Error('Missing required credentials (ANTHROPIC_API_KEY or GITHUB_TOKEN)');
+      }
+
+      // CRITICAL: Check if this task already has an executor running
+      if (task.ecsTaskArn) {
+        try {
+          const describeResult = await this.ecs.describeTasks({
+            cluster: this.ecsCluster,
+            tasks: [task.ecsTaskArn],
+          });
+          const existingTask = describeResult.tasks?.[0];
+          if (existingTask && ['RUNNING', 'PENDING', 'PROVISIONING'].includes(existingTask.lastStatus || '')) {
+            logger.info('Task already has an active executor, skipping spawn', {
+              taskId: task.id,
+              ecsTaskArn: task.ecsTaskArn,
+              ecsStatus: existingTask.lastStatus,
+            });
+            return;
+          }
+        } catch (error) {
+          logger.warn('Could not check existing ECS task, proceeding with spawn', { error });
+        }
       }
 
       // Spawn ECS task
@@ -280,12 +316,15 @@ class AIWorkerOrchestrator {
         const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 200 });
         const prInfo = this.parseTaskOutput(logs.events.map(e => e.message).join('\n'));
 
-        // Update token counts from parsed output
+        // Update token counts and model from parsed output
         if (prInfo.inputTokens !== undefined) {
           task.claudeInputTokens = prInfo.inputTokens;
         }
         if (prInfo.outputTokens !== undefined) {
           task.claudeOutputTokens = prInfo.outputTokens;
+        }
+        if (prInfo.model) {
+          task.workerModel = prInfo.model;
         }
 
         logger.info('Parsed task output', {
@@ -301,14 +340,31 @@ class AIWorkerOrchestrator {
           task.githubPrUrl = prInfo.prUrl;
           task.githubPrNumber = prInfo.prNumber ?? null;
           task.githubBranch = prInfo.branch ?? null;
-          await this.updateTaskStatus(task, 'pr_created');
-          await this.logTaskEvent(task, 'pr_created', `PR created: ${prInfo.prUrl}`);
 
-          // Create approval request
-          await this.createApprovalRequest(task);
+          // Check if manager review should be skipped (default: true = skip)
+          if (task.skipManagerReview) {
+            // Skip manager review - go directly to review_approved
+            await this.updateTaskStatus(task, 'review_approved');
+            await this.logTaskEvent(task, 'pr_created', `PR created (manager review skipped): ${prInfo.prUrl}`);
+            logger.info('Manager review skipped per task configuration', {
+              taskId: task.id,
+              prUrl: prInfo.prUrl,
+            });
+            // Update Jira (adds comment and transitions to Done)
+            if (this.jiraService) {
+              await this.jiraService.updateJiraFromTask(task);
+            }
+          } else {
+            // Normal flow - send to manager for review
+            await this.updateTaskStatus(task, 'pr_created');
+            await this.logTaskEvent(task, 'pr_created', `PR created: ${prInfo.prUrl}`);
 
-          // Invoke Manager Lambda immediately for event-driven review
-          await this.invokeManagerLambda(task.id);
+            // Create approval request
+            await this.createApprovalRequest(task);
+
+            // Invoke Manager Lambda immediately for event-driven review
+            await this.invokeManagerLambda(task.id);
+          }
         } else if (prInfo.result === 'no_changes') {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed with no changes needed');
@@ -345,25 +401,24 @@ class AIWorkerOrchestrator {
         estimatedCostUsd: task.estimatedCostUsd,
       });
 
-      // Release worker
+      // Set worker back to idle (workers are now persistent)
       if (task.assignedWorkerId) {
         const worker = await workerRepo.findOne({ where: { id: task.assignedWorkerId } });
         if (worker) {
           worker.status = 'idle';
           worker.currentTaskId = null;
           worker.lastTaskAt = new Date();
-
-          if (task.status === 'completed' || task.status === 'pr_created') {
-            worker.tasksCompleted++;
-          } else if (task.status === 'failed') {
-            worker.tasksFailed++;
-          }
-
-          worker.totalTokensUsed += task.claudeInputTokens + task.claudeOutputTokens;
-          worker.totalCostUsd = Number(worker.totalCostUsd) + task.estimatedCostUsd;
-
           await workerRepo.save(worker);
+          logger.info('Worker returned to idle after task completion', {
+            taskId: task.id,
+            workerId: worker.id,
+            workerName: worker.displayName,
+          });
         }
+
+        // Clear the FK reference on the task
+        task.assignedWorkerId = null;
+        await taskRepo.save(task);
       }
 
       // Update Jira
@@ -583,13 +638,60 @@ class AIWorkerOrchestrator {
   }
 
   private async handleTaskError(task: AIWorkerTask, error: any): Promise<void> {
+    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
     const workerRepo = this.dataSource.getRepository(AIWorkerInstance);
 
     logger.error('Task execution error', { taskId: task.id, error: error.message });
 
     task.errorMessage = error.message;
+
+    // ALWAYS try to calculate cost, even for failed tasks
+    try {
+      // Try to get ECS task info for cost calculation
+      if (task.ecsTaskArn) {
+        const ecsRunner = getECSTaskRunner();
+        const status = await ecsRunner.getTaskStatus(task.ecsTaskArn);
+        if (status.startedAt && status.stoppedAt) {
+          task.ecsTaskSeconds = Math.floor(
+            (status.stoppedAt.getTime() - status.startedAt.getTime()) / 1000
+          );
+        }
+
+        // Try to parse tokens from logs
+        if (task.ecsTaskId) {
+          const logs = await ecsRunner.getTaskLogs(task.ecsTaskId, { limit: 200 });
+          const logOutput = logs.events.map(e => e.message).join('\n');
+          const prInfo = this.parseTaskOutput(logOutput);
+          if (prInfo.inputTokens !== undefined) {
+            task.claudeInputTokens = prInfo.inputTokens;
+          }
+          if (prInfo.outputTokens !== undefined) {
+            task.claudeOutputTokens = prInfo.outputTokens;
+          }
+        }
+      }
+
+      // Calculate cost with whatever data we have
+      task.estimatedCostUsd = task.calculateCost();
+      logger.info('Failed task cost calculated', {
+        taskId: task.id,
+        inputTokens: task.claudeInputTokens,
+        outputTokens: task.claudeOutputTokens,
+        ecsTaskSeconds: task.ecsTaskSeconds,
+        estimatedCostUsd: task.estimatedCostUsd,
+      });
+    } catch (costError: any) {
+      logger.warn('Could not calculate cost for failed task', {
+        taskId: task.id,
+        error: costError.message,
+      });
+    }
+
     await this.updateTaskStatus(task, 'failed');
     await this.logTaskEvent(task, 'error', error.message, { severity: 'error' });
+
+    // Save the task with cost info
+    await taskRepo.save(task);
 
     // Release worker
     if (task.assignedWorkerId) {

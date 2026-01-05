@@ -24,6 +24,7 @@ interface TaskEnvironment {
   ANTHROPIC_API_KEY: string;
   GITHUB_TOKEN: string;
   MAX_TURNS?: string;
+  CLAUDE_MODEL?: string;
   // Self-recovery env vars
   RETRY_NUMBER?: string;
   PREVIOUS_RUN_CONTEXT?: string;
@@ -68,6 +69,7 @@ export class ECSTaskRunner {
     credentials: { anthropicApiKey: string; githubToken: string; orgApiKey?: string }
   ): Promise<RunTaskResult> {
     // Build environment variables for the container
+    // Use haiku (cheapest model) for all personas until system is stable
     const environment: TaskEnvironment = {
       TASK_ID: task.id,
       JIRA_ISSUE_KEY: task.jiraIssueKey,
@@ -78,6 +80,7 @@ export class ECSTaskRunner {
       ANTHROPIC_API_KEY: credentials.anthropicApiKey,
       GITHUB_TOKEN: credentials.githubToken,
       MAX_TURNS: String(worker.config.maxTurns || 50),
+      CLAUDE_MODEL: 'sonnet',
       // Self-recovery env vars
       RETRY_NUMBER: String(task.retryCount),
       PREVIOUS_RUN_CONTEXT: task.previousRunContext || '',
