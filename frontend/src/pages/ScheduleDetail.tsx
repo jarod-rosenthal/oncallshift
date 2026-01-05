@@ -97,14 +97,17 @@ export function ScheduleDetail() {
       console.log('Layers data loaded:', layersData);
 
       setSchedule(scheduleData.schedule);
-      setMembers(membersData.members);
-      setOverrides(overridesData.overrides || []);
-      setLayers(layersData.layers || []);
-      setAllUsers(usersData.users);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      const membersList = membersData.members || (membersData as any).data || [];
+      setMembers(membersList);
+      setOverrides(overridesData.overrides || (overridesData as any).data || []);
+      setLayers(layersData.layers || (layersData as any).data || []);
+      const usersList = usersData.users || (usersData as any).data || [];
+      setAllUsers(usersList);
 
       // Filter out users who are already members
-      const memberUserIds = new Set(membersData.members.map(m => m.userId));
-      const available = usersData.users.filter(u => !memberUserIds.has(u.id));
+      const memberUserIds = new Set(membersList.map((m: any) => m.userId));
+      const available = usersList.filter((u: any) => !memberUserIds.has(u.id));
       setAvailableUsers(available);
 
       setError(null);

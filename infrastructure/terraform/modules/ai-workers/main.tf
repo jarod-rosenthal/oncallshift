@@ -416,6 +416,257 @@ resource "aws_iam_role_policy" "executor_terraform_state" {
   })
 }
 
+# Terraform infrastructure access policy - allows terraform plan/apply
+resource "aws_iam_role_policy" "executor_terraform_infra" {
+  count       = var.terraform_state_bucket != "" ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-exec-infra-"
+  role        = aws_iam_role.executor_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # ECS - Task definitions, services, clusters
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:Describe*",
+          "ecs:List*",
+          "ecs:RegisterTaskDefinition",
+          "ecs:DeregisterTaskDefinition",
+          "ecs:CreateService",
+          "ecs:UpdateService",
+          "ecs:DeleteService"
+        ]
+        Resource = "*"
+      },
+      # ECR - Container registries
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:Describe*",
+          "ecr:List*",
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      },
+      # Lambda - Functions
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:Get*",
+          "lambda:List*",
+          "lambda:CreateFunction",
+          "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration",
+          "lambda:DeleteFunction",
+          "lambda:AddPermission",
+          "lambda:RemovePermission"
+        ]
+        Resource = "arn:aws:lambda:${var.aws_region}:*:function:${var.project_name}-*"
+      },
+      # IAM - Roles and policies (scoped to project)
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:Get*",
+          "iam:List*",
+          "iam:PassRole"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:UpdateAssumeRolePolicy"
+        ]
+        Resource = "arn:aws:iam::*:role/${var.project_name}-*"
+      },
+      # RDS - Database
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:Describe*",
+          "rds:List*"
+        ]
+        Resource = "*"
+      },
+      # S3 - Buckets (scoped to project)
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:Get*",
+          "s3:List*",
+          "s3:CreateBucket",
+          "s3:DeleteBucket",
+          "s3:PutBucket*"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-*",
+          "arn:aws:s3:::${var.project_name}-*/*"
+        ]
+      },
+      # CloudFront - CDN
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudfront:Get*",
+          "cloudfront:List*",
+          "cloudfront:CreateDistribution",
+          "cloudfront:UpdateDistribution",
+          "cloudfront:DeleteDistribution",
+          "cloudfront:CreateInvalidation"
+        ]
+        Resource = "*"
+      },
+      # Route53 - DNS
+      {
+        Effect = "Allow"
+        Action = [
+          "route53:Get*",
+          "route53:List*",
+          "route53:ChangeResourceRecordSets"
+        ]
+        Resource = "*"
+      },
+      # ACM - Certificates
+      {
+        Effect = "Allow"
+        Action = [
+          "acm:Describe*",
+          "acm:List*",
+          "acm:GetCertificate"
+        ]
+        Resource = "*"
+      },
+      # Cognito - User pools
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:Describe*",
+          "cognito-idp:List*",
+          "cognito-idp:Get*"
+        ]
+        Resource = "*"
+      },
+      # SQS - Queues
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:Get*",
+          "sqs:List*",
+          "sqs:CreateQueue",
+          "sqs:DeleteQueue",
+          "sqs:SetQueueAttributes"
+        ]
+        Resource = "arn:aws:sqs:${var.aws_region}:*:${var.project_name}-*"
+      },
+      # SNS - Topics
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Get*",
+          "sns:List*",
+          "sns:CreateTopic",
+          "sns:DeleteTopic",
+          "sns:SetTopicAttributes"
+        ]
+        Resource = "arn:aws:sns:${var.aws_region}:*:${var.project_name}-*"
+      },
+      # CloudWatch - Logs and alarms
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:Describe*",
+          "logs:List*",
+          "logs:CreateLogGroup",
+          "logs:DeleteLogGroup",
+          "logs:PutRetentionPolicy",
+          "logs:TagLogGroup"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:log-group:*${var.project_name}*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:Describe*",
+          "cloudwatch:List*",
+          "cloudwatch:Get*",
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DeleteAlarms"
+        ]
+        Resource = "*"
+      },
+      # EC2/VPC - Networking (read-only + security groups)
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:Describe*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:CreateTags",
+          "ec2:DeleteTags"
+        ]
+        Resource = "*"
+        Condition = {
+          StringLike = {
+            "ec2:ResourceTag/Name" = "${var.project_name}-*"
+          }
+        }
+      },
+      # ELB - Load balancers
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:Describe*"
+        ]
+        Resource = "*"
+      },
+      # EventBridge - Scheduled events
+      {
+        Effect = "Allow"
+        Action = [
+          "events:Describe*",
+          "events:List*",
+          "events:PutRule",
+          "events:DeleteRule",
+          "events:PutTargets",
+          "events:RemoveTargets"
+        ]
+        Resource = "arn:aws:events:${var.aws_region}:*:rule/${var.project_name}-*"
+      },
+      # SES - Email
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:Get*",
+          "ses:List*",
+          "ses:Describe*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # =============================================================================
 # ECS Task Definition - AI Worker Executor (Ephemeral)
 # =============================================================================
@@ -432,7 +683,7 @@ resource "aws_ecs_task_definition" "executor" {
   container_definitions = jsonencode([
     {
       name      = "ai-worker-executor"
-      image     = "${aws_ecr_repository.ai_worker.repository_url}:v18"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v19"
       essential = true
 
       environment = [

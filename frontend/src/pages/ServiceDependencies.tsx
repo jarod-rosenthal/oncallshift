@@ -63,7 +63,8 @@ export function ServiceDependencies() {
         servicesAPI.list(),
       ]);
       setGraph(graphData);
-      setServices(servicesData.services);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setServices(servicesData.services || (servicesData as any).data || []);
       setError(null);
     } catch (err) {
       console.error('Failed to load dependency graph:', err);

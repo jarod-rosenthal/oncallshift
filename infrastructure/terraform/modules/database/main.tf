@@ -107,7 +107,10 @@ resource "aws_db_instance" "main" {
   }
 
   lifecycle {
-    ignore_changes = [final_snapshot_identifier]
+    # Temporarily ignoring vpc_security_group_ids due to AWS stuck state
+    # where sg-042379676eeb8f86c (deleted) is stuck in "adding" status
+    # TODO: Remove vpc_security_group_ids from ignore list once AWS clears the stuck state
+    ignore_changes = [final_snapshot_identifier, vpc_security_group_ids]
   }
 }
 

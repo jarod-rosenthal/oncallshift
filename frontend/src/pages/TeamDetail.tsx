@@ -56,7 +56,8 @@ export function TeamDetail() {
   const loadUsers = async () => {
     try {
       const response = await usersAPI.listAllUsers();
-      setAllUsers(response.users);
+      // Handle paginated response - prefer legacy key, fall back to data array
+      setAllUsers(response.users || (response as any).data || []);
     } catch (err: any) {
       console.error('Failed to load users:', err);
     }

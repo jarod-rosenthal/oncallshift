@@ -21,6 +21,7 @@ import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
 import { ResolveModal } from '../components/ResolveModal';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
+import { notifyIncidentChanged } from '../lib/incident-events';
 import type { Incident, User } from '../types/api';
 
 type DialogType = 'escalate' | 'reassign' | null;
@@ -81,6 +82,7 @@ export function Incidents() {
     try {
       await incidentsAPI.acknowledge(id);
       showToast.acknowledge();
+      notifyIncidentChanged(); // Update sidebar badge immediately
       await loadIncidents();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
@@ -104,6 +106,7 @@ export function Incidents() {
       setResolveIncidentId(null);
       showToast.resolve();
       triggerConfetti();
+      notifyIncidentChanged(); // Update sidebar badge immediately
       await loadIncidents();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };

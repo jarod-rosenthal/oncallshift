@@ -118,8 +118,9 @@ export function StatusDashboard() {
         servicesAPI.list(),
         incidentsAPI.list(),
       ]);
-      setServices(servicesRes.services);
-      setIncidents(incidentsRes.incidents);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setServices(servicesRes.services || (servicesRes as any).data || []);
+      setIncidents(incidentsRes.incidents || (incidentsRes as any).data || []);
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to load status data:', error);

@@ -49,7 +49,8 @@ export function Analytics() {
   const loadTeams = async () => {
     try {
       const response = await analyticsAPI.getTeams();
-      setTeams(response.teams);
+      // Handle paginated response - prefer legacy key, fall back to data array
+      setTeams(response.teams || (response as any).data || []);
     } catch (error) {
       console.error('Failed to load teams:', error);
     }
@@ -67,7 +68,8 @@ export function Analytics() {
       ]);
 
       setOverviewData(overview);
-      setTopResponders(responders.responders);
+      // Handle response - backend returns topResponders, fall back to empty array
+      setTopResponders(responders.topResponders || (responders as any).data || []);
       setSlaData(sla);
 
       if (selectedTeamId !== 'all') {

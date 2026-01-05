@@ -564,6 +564,22 @@ resource "aws_secretsmanager_secret" "github_token" {
   }
 }
 
+# Expo Access Token for push notifications to standalone mobile apps
+# This is required for EAS-built apps (not needed for Expo Go development)
+resource "aws_secretsmanager_secret" "expo_access_token" {
+  name        = "${var.project_name}-${var.environment}-expo-access-token"
+  description = "Expo Access Token for push notifications to mobile app"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-expo-access-token"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "expo_access_token" {
+  secret_id     = aws_secretsmanager_secret.expo_access_token.id
+  secret_string = "0-DPir5fH337iOFkkLK_T5pFCPmwPvNWNbFF2om3"
+}
+
 # Jira webhook secret (created manually, imported via data source)
 data "aws_secretsmanager_secret" "jira_webhook_secret" {
   name = "${var.project_name}-${var.environment}-jira-webhook-secret"
@@ -748,12 +764,13 @@ module "notification_worker" {
   }
 
   secrets = {
-    DATABASE_URL = module.database.secret_arn
+    DATABASE_URL      = module.database.secret_arn
     ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
-    SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
+    SENTRY_DSN        = data.aws_secretsmanager_secret.sentry_dsn.arn
+    EXPO_ACCESS_TOKEN = aws_secretsmanager_secret.expo_access_token.arn
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, data.aws_secretsmanager_secret.sentry_dsn.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, aws_secretsmanager_secret.expo_access_token.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.notifications.arn

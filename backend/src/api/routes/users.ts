@@ -382,8 +382,8 @@ router.get(
     try {
       const user = req.user!;
 
-      // Only admins can list users
-      if (user.role !== 'admin') {
+      // Only admins can list users (super_admin has all admin privileges)
+      if (user.role !== 'admin' && user.role !== 'super_admin') {
         return forbidden(res, 'Admin access required');
       }
 
@@ -787,7 +787,7 @@ router.put(
       const orgId = req.orgId!;
 
       // Require admin role (for JWT auth) or allow API key auth
-      if (currentUser && currentUser.role !== 'admin') {
+      if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return forbidden(res, 'Admin access required');
       }
 
@@ -949,7 +949,7 @@ router.delete(
       const orgId = req.orgId!;
 
       // Require admin role (for JWT auth) or allow API key auth
-      if (currentUser && currentUser.role !== 'admin') {
+      if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return forbidden(res, 'Admin access required');
       }
 
@@ -1042,7 +1042,7 @@ router.put(
         where: { orgId, role: 'admin' },
       });
 
-      if (adminCount > 0 && currentUser.role !== 'admin') {
+      if (adminCount > 0 && currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return forbidden(res, 'Admin access required');
       }
 
@@ -1099,7 +1099,7 @@ router.post(
       const orgId = req.orgId!;
 
       // Only admins can invite users
-      if (currentUser.role !== 'admin') {
+      if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return forbidden(res, 'Admin access required');
       }
 
@@ -1193,7 +1193,7 @@ router.put(
       const orgId = req.orgId!;
 
       // Only admins can change user status
-      if (currentUser.role !== 'admin') {
+      if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return forbidden(res, 'Admin access required');
       }
 

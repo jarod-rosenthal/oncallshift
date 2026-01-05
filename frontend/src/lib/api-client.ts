@@ -1369,8 +1369,13 @@ export const businessServicesAPI = {
     impactTier?: string;
     teamId?: string;
   }): Promise<BusinessService[]> => {
-    const response = await apiClient.get<BusinessService[]>('/business-services', { params });
-    return response.data;
+    const response = await apiClient.get<{
+      data: BusinessService[];
+      businessServices: BusinessService[];
+      pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+    }>('/business-services', { params });
+    // Handle paginated response - prefer legacy key, fall back to data array
+    return response.data.businessServices || response.data.data || [];
   },
 
   get: async (id: string): Promise<BusinessService> => {
@@ -2001,12 +2006,12 @@ export const analyticsAPI = {
     startDate?: string,
     endDate?: string,
     limit?: number
-  ): Promise<{ responders: TopResponder[] }> => {
+  ): Promise<{ topResponders: TopResponder[] }> => {
     const params: Record<string, string | number> = {};
     if (startDate) params.startDate = startDate;
     if (endDate) params.endDate = endDate;
     if (limit) params.limit = limit;
-    const response = await apiClient.get<{ responders: TopResponder[] }>('/analytics/top-responders', { params });
+    const response = await apiClient.get<{ topResponders: TopResponder[] }>('/analytics/top-responders', { params });
     return response.data;
   },
 

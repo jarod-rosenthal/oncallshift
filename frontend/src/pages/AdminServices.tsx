@@ -142,11 +142,12 @@ export function AdminServices() {
         incidentsAPI.list(),
         teamsAPI.list(),
       ]);
-      setServices(servicesRes.services);
-      setSchedules(schedulesRes.schedules);
-      setOnCallInfo(onCallRes.oncall);
-      setIncidents(incidentsRes.incidents);
-      setTeams(teamsRes.teams);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setServices(servicesRes.services || (servicesRes as any).data || []);
+      setSchedules(schedulesRes.schedules || (schedulesRes as any).data || []);
+      setOnCallInfo(onCallRes.oncall || (onCallRes as any).data || []);
+      setIncidents(incidentsRes.incidents || (incidentsRes as any).data || []);
+      setTeams(teamsRes.teams || (teamsRes as any).data || []);
 
       // Fetch escalation policies
       const token = localStorage.getItem('accessToken');

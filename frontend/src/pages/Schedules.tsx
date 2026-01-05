@@ -427,9 +427,14 @@ export function Schedules() {
         escalationPoliciesAPI.list().catch(() => ({ policies: [] })),
       ]);
 
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      const servicesList = servicesRes.services || (servicesRes as any).data || [];
+      const policiesList = policiesRes.policies || (policiesRes as any).data || [];
+      const schedulesList = schedulesRes.schedules || (schedulesRes as any).data || [];
+
       // Build a map of escalation policy ID to services
       const policyToServices = new Map<string, Array<{ id: string; name: string }>>();
-      servicesRes.services.forEach((service: Service) => {
+      servicesList.forEach((service: Service) => {
         const policyId = (service as any).escalationPolicyId || service.escalationPolicy?.id;
         if (policyId) {
           if (!policyToServices.has(policyId)) {
@@ -444,7 +449,7 @@ export function Schedules() {
 
       // Build a map of schedule ID to escalation policies (via policy steps)
       const scheduleToPolicy = new Map<string, { id: string; name: string }>();
-      policiesRes.policies.forEach((policy: any) => {
+      policiesList.forEach((policy: any) => {
         policy.steps?.forEach((step: any) => {
           if (step.scheduleId) {
             scheduleToPolicy.set(step.scheduleId, { id: policy.id, name: policy.name });
@@ -453,7 +458,7 @@ export function Schedules() {
       });
 
       // Enhance schedules with escalation policy and services
-      const enhancedSchedules = schedulesRes.schedules.map((schedule: Schedule) => {
+      const enhancedSchedules = schedulesList.map((schedule: Schedule) => {
         const policy = scheduleToPolicy.get(schedule.id);
         const services = policy ? policyToServices.get(policy.id) : [];
         return {
@@ -464,9 +469,10 @@ export function Schedules() {
       });
 
       setSchedules(enhancedSchedules);
-      setUsers(usersRes.users);
-      setTeams(teamsRes.teams);
-      setCurrentUserId(meRes.user.id);
+      // Handle paginated responses - prefer legacy key, fall back to data array
+      setUsers(usersRes.users || (usersRes as any).data || []);
+      setTeams(teamsRes.teams || (teamsRes as any).data || []);
+      setCurrentUserId(meRes.user?.id || (meRes as any).id);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load schedules');
     } finally {
