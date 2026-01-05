@@ -358,13 +358,23 @@ resource "aws_iam_role_policy" "executor_task_policy" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Secrets Manager for GitHub PAT, Anthropic API key
+      # Secrets Manager - specific secrets for core functionality
       {
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue"
         ]
         Resource = var.secrets_arns
+      },
+      # Secrets Manager - allow workers to pull any project secret by name
+      # Workers can reference secrets in Jira tickets for task-specific credentials
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-*"
       }
     ]
   })
