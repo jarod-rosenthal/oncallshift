@@ -1916,8 +1916,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const orgId = req.orgId!;
     const user = req.user!;
 
-    // Check if user is admin
-    if (user.role !== 'admin') {
+    // Check if user is admin or super_admin
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
       return res.status(403).json({ error: 'Only admins can delete incidents' });
     }
 

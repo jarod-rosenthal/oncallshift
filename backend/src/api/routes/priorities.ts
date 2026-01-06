@@ -60,8 +60,8 @@ router.post(
       const orgId = req.orgId!;
       const currentUser = req.user!;
 
-      // Only admins can create priorities
-      if (currentUser.role !== 'admin') {
+      // Only admins or super_admins can create priorities
+      if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
@@ -183,8 +183,8 @@ router.put(
       const orgId = req.orgId!;
       const currentUser = req.user!;
 
-      // Only admins can update priorities
-      if (currentUser.role !== 'admin') {
+      // Only admins or super_admins can update priorities
+      if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
@@ -263,8 +263,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const orgId = req.orgId!;
     const currentUser = req.user!;
 
-    // Only admins can delete priorities
-    if (currentUser.role !== 'admin') {
+    // Only admins or super_admins can delete priorities
+    if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -311,8 +311,8 @@ router.put(
       const currentUser = req.user!;
       const { priorityIds } = req.body;
 
-      // Only admins can reorder priorities
-      if (currentUser.role !== 'admin') {
+      // Only admins or super_admins can reorder priorities
+      if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
@@ -346,8 +346,8 @@ router.post('/seed-defaults', async (req: Request, res: Response) => {
     const orgId = req.orgId!;
     const currentUser = req.user!;
 
-    // Only admins can seed defaults
-    if (currentUser.role !== 'admin') {
+    // Only admins or super_admins can seed defaults
+    if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
