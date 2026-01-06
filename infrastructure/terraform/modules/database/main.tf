@@ -313,7 +313,7 @@ resource "aws_db_proxy_target" "main" {
 
   db_proxy_name         = aws_db_proxy.main[0].name
   target_group_name     = aws_db_proxy_default_target_group.main[0].name
-  db_instance_identifier = aws_db_instance.main.id
+  db_instance_identifier = aws_db_instance.main.identifier
 }
 
 # CloudWatch Log Group for RDS Proxy
