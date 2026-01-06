@@ -30,6 +30,7 @@ export async function getDbConfig(): Promise<DbConfig> {
           username: secret.username,
           password: secret.password,
           database: secret.dbname || secret.database,
+          ssl: true, // Always use SSL for RDS connections
         };
         return cachedConfig;
       }
