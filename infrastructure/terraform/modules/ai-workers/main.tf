@@ -1378,6 +1378,52 @@ resource "aws_iam_role_policy" "manager_executor_task_policy" {
   })
 }
 
+# Manager Terraform state access policy (conditional on bucket being configured)
+resource "aws_iam_role_policy" "manager_executor_terraform_state" {
+  count       = var.enable_manager && var.terraform_state_bucket != "" ? 1 : 0
+  name_prefix = "${local.name_prefix}-aiw-mgr-tf-"
+  role        = aws_iam_role.manager_executor_task_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      # S3 bucket access for Terraform state
+      [
+        {
+          Effect = "Allow"
+          Action = var.terraform_write_access ? [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucket"
+          ] : [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.terraform_state_bucket}",
+            "arn:aws:s3:::${var.terraform_state_bucket}/*"
+          ]
+        }
+      ],
+      # DynamoDB for state locking (if configured)
+      var.terraform_state_dynamodb_table != "" ? [
+        {
+          Effect = "Allow"
+          Action = var.terraform_write_access ? [
+            "dynamodb:GetItem",
+            "dynamodb:PutItem",
+            "dynamodb:DeleteItem"
+          ] : [
+            "dynamodb:GetItem"
+          ]
+          Resource = "arn:aws:dynamodb:${var.aws_region}:*:table/${var.terraform_state_dynamodb_table}"
+        }
+      ] : []
+    )
+  })
+}
+
 # Manager ECS Task Definition
 resource "aws_ecs_task_definition" "manager_executor" {
   count                    = var.enable_manager ? 1 : 0
