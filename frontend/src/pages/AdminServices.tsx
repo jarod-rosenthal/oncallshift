@@ -972,7 +972,7 @@ export function AdminServices() {
                             </svg>
                           </button>
                           {showActionsMenu === service.id && (
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-background border rounded-md shadow-lg z-20">
+                            <div className="absolute right-0 bottom-full mb-1 w-48 bg-background border rounded-md shadow-lg z-20">
                               <button
                                 className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2"
                                 onClick={(e) => {
@@ -1419,6 +1419,18 @@ export function AdminServices() {
                 <Button type="submit" disabled={isCreating} className="flex-1">
                   {isCreating ? 'Saving...' : editingService ? 'Save Changes' : 'Create Service'}
                 </Button>
+                {editingService && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      handleDelete(editingService.id, editingService.name);
+                      resetForm();
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
                 <Button type="button" variant="outline" onClick={resetForm}>
                   Cancel
                 </Button>
