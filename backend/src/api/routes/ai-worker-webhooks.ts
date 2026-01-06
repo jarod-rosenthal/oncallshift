@@ -134,8 +134,29 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     });
 
     if (existingTask) {
+      // Update the task's jiraFields with latest data from webhook (e.g., label changes)
+      // This allows adding 'review' label after task creation to trigger Manager review
+      const updatedFields = {
+        priority: issue.fields?.priority?.name,
+        labels: issue.fields?.labels,
+        components: issue.fields?.components?.map((c: any) => c.name),
+        sprint: issue.fields?.customfield_10020?.[0]?.name,
+      };
+
+      await taskRepo.update(existingTask.id, {
+        jiraFields: updatedFields,
+        summary: issue.fields?.summary || existingTask.summary,
+        description: extractDescription(issue.fields?.description) || existingTask.description,
+      });
+
+      logger.info('Updated existing task with latest Jira data', {
+        taskId: existingTask.id,
+        issueKey: issue.key,
+        labels: updatedFields.labels,
+      });
+
       return res.json({
-        message: 'Task already exists',
+        message: 'Task updated with latest Jira data',
         taskId: existingTask.id,
         issueKey: issue.key,
       });

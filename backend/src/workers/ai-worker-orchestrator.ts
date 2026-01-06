@@ -369,6 +369,8 @@ class AIWorkerOrchestrator {
             if (this.jiraService) {
               await this.jiraService.updateJiraFromTask(task);
             }
+            // Trigger post-completion actions (e.g., manager label for environment updates)
+            await this.triggerPostCompletionActions(task);
           } else {
             // Normal flow - send to manager for review (Jira has 'review' label)
             await this.updateTaskStatus(task, 'pr_created');
@@ -379,6 +381,8 @@ class AIWorkerOrchestrator {
 
             // Invoke Manager Lambda immediately for event-driven PR review (Opus 4.5)
             await this.invokeManagerLambda('review_pr', task.id);
+            // Trigger post-completion actions (e.g., manager label for environment updates)
+            await this.triggerPostCompletionActions(task);
           }
         } else if (prInfo.result === 'no_changes') {
           await this.updateTaskStatus(task, 'completed');
