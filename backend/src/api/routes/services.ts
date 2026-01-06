@@ -626,8 +626,19 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Service not found' });
     }
 
-    // Hard delete - actually remove the service
-    await serviceRepo.remove(service);
+    // Use a transaction to ensure all deletions succeed or fail together
+    await dataSource.transaction(async (transactionalEntityManager) => {
+      // Delete related ServiceDependencies (where this service is either dependent or supporting)
+      await transactionalEntityManager
+        .createQueryBuilder()
+        .delete()
+        .from('service_dependencies')
+        .where('dependent_service_id = :serviceId OR supporting_service_id = :serviceId', { serviceId: id })
+        .execute();
+
+      // Delete the service (incidents will be handled by ON DELETE CASCADE in the database)
+      await transactionalEntityManager.remove(service);
+    });
 
     logger.info('Service deleted', {
       serviceId: id,
