@@ -626,11 +626,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Service not found' });
     }
 
-    // Soft delete - set status to inactive
-    service.status = 'inactive';
-    await serviceRepo.save(service);
+    // Hard delete - actually remove the service
+    await serviceRepo.remove(service);
 
-    logger.info('Service deleted (soft)', {
+    logger.info('Service deleted', {
       serviceId: id,
       orgId,
       deletedBy: req.user?.id || 'api_key',
