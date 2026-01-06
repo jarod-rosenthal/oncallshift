@@ -516,8 +516,8 @@ router.post('/:id/regenerate-key', async (req: Request, res: Response) => {
     const orgId = req.orgId!;
     const currentUser = req.user!;
 
-    // Only admins can regenerate API keys
-    if (currentUser.role !== 'admin') {
+    // Only admins or super_admins can regenerate API keys
+    if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -605,13 +605,25 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
     const orgId = req.orgId!;
 
-    // Only admins or org API keys can delete services
-    if (req.authMethod === 'jwt' && req.user?.role !== 'admin') {
+    logger.info('DELETE service handler called', {
+      serviceId: id,
+      orgId,
+      authMethod: req.authMethod,
+      userRole: req.user?.role
+    });
+
+    // Only admins, super_admins, or org API keys can delete services
+    if (req.authMethod === 'jwt' && req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      logger.warn('Delete service blocked - not admin', {
+        serviceId: id,
+        userRole: req.user?.role
+      });
       return res.status(403).json({ error: 'Admin access required' });
     }
 
     // Service keys cannot delete services
     if (req.authMethod === 'service_key') {
+      logger.warn('Delete service blocked - service key auth', { serviceId: id });
       return res.status(403).json({ error: 'Cannot delete services using service API key' });
     }
 
