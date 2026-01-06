@@ -1305,6 +1305,21 @@ export default function SuperAdminControlCenter() {
                   Watcher {watcherStatus.enabled ? "Active" : "Off"}
                 </span>
               )}
+              {/* Orchestrator status indicator */}
+              {systemStatus && (
+                <span
+                  className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${
+                    systemStatus.orchestrator.running
+                      ? "bg-blue-500/10 text-blue-500"
+                      : "bg-gray-500/10 text-gray-500"
+                  }`}
+                  title={`Orchestrator: ${systemStatus.orchestrator.desiredCount} desired, ${systemStatus.orchestrator.running ? "running" : "stopped"}`}
+                >
+                  <Activity className="w-3 h-3" />
+                  Orchestrator{" "}
+                  {systemStatus.orchestrator.running ? "Running" : "Off"}
+                </span>
+              )}
             </div>
             <span className="text-xs text-muted-foreground">
               Reviews PRs using Opus 4.5
@@ -1700,7 +1715,7 @@ export default function SuperAdminControlCenter() {
                           ref={(el) => {
                             terminalScrollRefs.current.set(task.id, el);
                           }}
-                          className="p-3 h-48 overflow-y-auto font-mono text-xs text-green-400 leading-relaxed"
+                          className="p-3 h-72 overflow-y-auto font-mono text-xs text-green-400 leading-relaxed"
                         >
                           {terminalLoading.has(task.id) &&
                           !terminalLogs[task.id] ? (

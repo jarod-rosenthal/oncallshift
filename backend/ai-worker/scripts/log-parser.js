@@ -395,42 +395,23 @@ function processLine(line) {
 
 /**
  * Send token usage to the API
+ *
+ * Note: Cost calculation is done server-side using the shared pricing config.
+ * This function only reports raw token counts.
  */
 async function sendTokenUsage() {
   if (!TASK_ID || !ORG_API_KEY) return;
 
-  // Calculate cost based on model
-  const pricing = {
-    haiku: { input: 0.00025, output: 0.00125 }, // per 1K tokens
-    sonnet: { input: 0.003, output: 0.015 },
-    opus: { input: 0.015, output: 0.075 },
-  };
-
-  // Determine pricing tier from model name
-  let tier = "sonnet";
-  const modelLower = modelUsed.toLowerCase();
-  if (modelLower.includes("haiku")) tier = "haiku";
-  else if (modelLower.includes("opus")) tier = "opus";
-
-  const rates = pricing[tier];
-  const inputCost = (tokenUsage.inputTokens / 1000) * rates.input;
-  const outputCost = (tokenUsage.outputTokens / 1000) * rates.output;
-  // Cache tokens: write costs same as input, read costs 10% of input
-  const cacheWriteCost = (tokenUsage.cacheCreationInputTokens / 1000) * rates.input * 1.25;
-  const cacheReadCost = (tokenUsage.cacheReadInputTokens / 1000) * rates.input * 0.1;
-  const totalCost = inputCost + outputCost + cacheWriteCost + cacheReadCost;
-
-  console.error(`[log-parser] Token usage: input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}, cache_write=${tokenUsage.cacheCreationInputTokens}, cache_read=${tokenUsage.cacheReadInputTokens}`);
-  console.error(`[log-parser] Estimated cost: $${totalCost.toFixed(4)} (model: ${modelUsed})`);
+  console.error(`[log-parser] Token usage: input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}, cache_create=${tokenUsage.cacheCreationInputTokens}, cache_read=${tokenUsage.cacheReadInputTokens}`);
+  console.error(`[log-parser] Model: ${modelUsed}`);
 
   const url = `${API_BASE_URL}/api/v1/ai-worker-tasks/${TASK_ID}/usage`;
   const body = JSON.stringify({
     model: modelUsed,
     inputTokens: tokenUsage.inputTokens,
     outputTokens: tokenUsage.outputTokens,
-    cacheCreationInputTokens: tokenUsage.cacheCreationInputTokens,
-    cacheReadInputTokens: tokenUsage.cacheReadInputTokens,
-    reportedCost: totalCost,
+    cacheCreationTokens: tokenUsage.cacheCreationInputTokens,
+    cacheReadTokens: tokenUsage.cacheReadInputTokens,
   });
 
   return new Promise((resolve) => {

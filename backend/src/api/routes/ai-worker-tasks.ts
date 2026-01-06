@@ -15,6 +15,7 @@ import {
 import { AIWorkerTaskLog } from "../../shared/models/AIWorkerTaskLog";
 import { AIWorkerConversation } from "../../shared/models/AIWorkerConversation";
 import { AIWorkerInstance } from "../../shared/models/AIWorkerInstance";
+import { Organization } from "../../shared/models/Organization";
 import { logger } from "../../shared/utils/logger";
 import { setLocationHeader } from "../../shared/utils/location-header";
 import {
@@ -24,6 +25,7 @@ import {
 import { paginationValidators } from "../../shared/validators/pagination";
 import { SQS, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { In } from "typeorm";
+import { calculateTotalCost, type TokenUsage } from "../../shared/config/pricing";
 
 const router = Router();
 
@@ -787,6 +789,9 @@ router.post(
 /**
  * POST /api/v1/ai-worker-tasks/:id/usage
  * Report token usage from Claude Code (called by running ECS tasks)
+ *
+ * This endpoint is idempotent - it rejects duplicate reports to prevent double-counting.
+ * All costs (including failed runs) are added to the org's cumulative cost.
  */
 router.post(
   "/:id/usage",
@@ -795,7 +800,8 @@ router.post(
     body("model").isString(),
     body("inputTokens").isInt({ min: 0 }),
     body("outputTokens").isInt({ min: 0 }),
-    body("reportedCost").optional().isFloat({ min: 0 }),
+    body("cacheCreationTokens").optional().isInt({ min: 0 }),
+    body("cacheReadTokens").optional().isInt({ min: 0 }),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -806,10 +812,17 @@ router.post(
 
       const orgId = req.orgId!;
       const { id } = req.params;
-      const { model, inputTokens, outputTokens, reportedCost } = req.body;
+      const {
+        model,
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens = 0,
+        cacheReadTokens = 0,
+      } = req.body;
 
       const dataSource = await getDataSource();
       const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const orgRepo = dataSource.getRepository(Organization);
 
       const task = await taskRepo.findOne({
         where: { id, orgId },
@@ -819,57 +832,65 @@ router.post(
         return res.status(404).json({ error: "Task not found" });
       }
 
-      // Update token counts (accumulate if called multiple times)
-      task.claudeInputTokens += inputTokens;
-      task.claudeOutputTokens += outputTokens;
+      // Idempotency check: reject if usage already reported
+      if (task.usageReportedAt) {
+        logger.warn("Duplicate usage report rejected", {
+          taskId: id,
+          previouslyReportedAt: task.usageReportedAt,
+        });
+        return res.status(409).json({
+          error: "Usage already reported for this task",
+          usageReportedAt: task.usageReportedAt,
+        });
+      }
+
+      // Update token counts
+      task.claudeInputTokens = inputTokens;
+      task.claudeOutputTokens = outputTokens;
+      task.claudeCacheCreationTokens = cacheCreationTokens;
+      task.claudeCacheReadTokens = cacheReadTokens;
       task.workerModel = model;
+      task.usageReportedAt = new Date();
 
-      // Calculate Claude API cost based on model
-      // Pricing as of 2024:
-      // - claude-3-5-haiku: $0.001/1K input, $0.005/1K output
-      // - claude-sonnet-4: $0.003/1K input, $0.015/1K output
-      // - claude-opus-4: $0.015/1K input, $0.075/1K output
-      const modelPricing: Record<string, { input: number; output: number }> = {
-        haiku: { input: 0.001, output: 0.005 },
-        "claude-3-5-haiku": { input: 0.001, output: 0.005 },
-        "claude-3-5-haiku-20241022": { input: 0.001, output: 0.005 },
-        sonnet: { input: 0.003, output: 0.015 },
-        "claude-sonnet-4": { input: 0.003, output: 0.015 },
-        "claude-sonnet-4-20250514": { input: 0.003, output: 0.015 },
-        opus: { input: 0.015, output: 0.075 },
-        "claude-opus-4": { input: 0.015, output: 0.075 },
-        "claude-opus-4-5-20251101": { input: 0.015, output: 0.075 },
-      };
-
-      const pricing = modelPricing[model] || modelPricing["sonnet"]; // Default to sonnet pricing
-      const claudeCost =
-        (task.claudeInputTokens / 1000) * pricing.input +
-        (task.claudeOutputTokens / 1000) * pricing.output;
-
-      // Calculate ECS cost from duration
-      let ecsCost = 0;
+      // Calculate ECS duration
       if (task.startedAt) {
         const durationSeconds = Math.floor(
           (Date.now() - task.startedAt.getTime()) / 1000,
         );
         task.ecsTaskSeconds = durationSeconds;
-        ecsCost = (durationSeconds / 3600) * 0.015; // Fargate Spot rate
       }
 
-      // Total cost = Claude API + ECS
-      task.estimatedCostUsd = claudeCost + ecsCost;
+      // Calculate cost using shared pricing config
+      const tokens: TokenUsage = {
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+      };
+      const totalCost = calculateTotalCost(tokens, model, task.ecsTaskSeconds);
+      task.estimatedCostUsd = totalCost;
 
+      // Save task
       await taskRepo.save(task);
+
+      // Update org cumulative cost (always, even for failed runs)
+      const org = await orgRepo.findOne({ where: { id: orgId } });
+      if (org) {
+        org.aiWorkerCumulativeCost =
+          Number(org.aiWorkerCumulativeCost || 0) + totalCost;
+        await orgRepo.save(org);
+      }
 
       logger.info("Token usage reported for task", {
         taskId: id,
         model,
         inputTokens,
         outputTokens,
-        claudeCost: claudeCost.toFixed(4),
-        ecsCost: ecsCost.toFixed(4),
-        totalCost: task.estimatedCostUsd.toFixed(4),
-        reportedCost: reportedCost ?? null, // Claude CLI reported cost for comparison
+        cacheCreationTokens,
+        cacheReadTokens,
+        ecsTaskSeconds: task.ecsTaskSeconds,
+        totalCost: totalCost.toFixed(4),
+        orgCumulativeCost: org?.aiWorkerCumulativeCost?.toFixed(4),
       });
 
       return res.json({
@@ -877,9 +898,11 @@ router.post(
         model: task.workerModel,
         claudeInputTokens: task.claudeInputTokens,
         claudeOutputTokens: task.claudeOutputTokens,
-        claudeCost: claudeCost,
-        ecsCost: ecsCost,
+        claudeCacheCreationTokens: task.claudeCacheCreationTokens,
+        claudeCacheReadTokens: task.claudeCacheReadTokens,
+        ecsTaskSeconds: task.ecsTaskSeconds,
         estimatedCostUsd: task.estimatedCostUsd,
+        orgCumulativeCost: org?.aiWorkerCumulativeCost,
       });
     } catch (error) {
       logger.error("Error reporting token usage:", error);
