@@ -19,6 +19,19 @@ export class Organization {
   @Column({ type: 'jsonb', nullable: true })
   settings: Record<string, any> | null;
 
+  // AI Worker cumulative cost tracking
+  @Column({
+    name: 'ai_worker_cumulative_cost',
+    type: 'decimal',
+    precision: 12,
+    scale: 4,
+    default: 0,
+  })
+  aiWorkerCumulativeCost: number;
+
+  @Column({ name: 'ai_worker_cost_reset_at', type: 'timestamptz', nullable: true })
+  aiWorkerCostResetAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
