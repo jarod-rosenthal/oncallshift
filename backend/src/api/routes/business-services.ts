@@ -341,6 +341,27 @@ router.put('/:id/services',
         return notFound(res, 'Business service', id);
       }
 
+      // Validate that all provided service IDs exist and belong to this org
+      if (serviceIds.length > 0) {
+        const existingServices = await serviceRepo.find({
+          where: { id: In(serviceIds), orgId },
+          select: ['id'],
+        });
+
+        if (existingServices.length !== serviceIds.length) {
+          const existingIds = existingServices.map(s => s.id);
+          const missingIds = serviceIds.filter((id: string) => !existingIds.includes(id));
+
+          return validationError(res, [
+            {
+              field: 'serviceIds',
+              message: `Services not found or do not belong to this organization: ${missingIds.join(', ')}`,
+              value: missingIds,
+            },
+          ]);
+        }
+      }
+
       // Clear existing associations and set new ones
       await serviceRepo.update(
         { businessServiceId: id, orgId },
