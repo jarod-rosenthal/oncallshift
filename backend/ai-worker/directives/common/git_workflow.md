@@ -42,6 +42,21 @@ After pushing your branch:
 3. Include Summary and Test Plan sections
 4. Link to the Jira ticket
 
+### Skipping PR Creation
+
+If the Jira ticket explicitly says "Do NOT create a PR" or you only need to push code without a PR:
+
+1. Push your branch normally: `git push -u origin <branch>`
+2. Output this marker in your final response:
+   ```
+   ::no_pr::true
+   ```
+
+This tells the orchestrator to skip automatic PR creation. Use this when:
+- The Jira ticket requests code changes without a PR
+- You're preparing code for manual review
+- The changes are experimental or incomplete
+
 ## Before Creating PR
 
 1. Run `./deploy.sh` to verify changes work

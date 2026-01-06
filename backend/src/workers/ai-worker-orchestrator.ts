@@ -384,6 +384,18 @@ class AIWorkerOrchestrator {
             // Trigger post-completion actions (e.g., manager label for environment updates)
             await this.triggerPostCompletionActions(task);
           }
+        } else if (prInfo.result === 'success_no_pr') {
+          // Worker pushed commits but explicitly requested no PR
+          task.githubBranch = prInfo.branch ?? null;
+          await this.updateTaskStatus(task, 'completed');
+          await this.logTaskEvent(task, 'status_change', `Task completed - changes pushed to branch ${prInfo.branch} without PR (worker request)`);
+          logger.info('Worker completed without PR', {
+            taskId: task.id,
+            branch: prInfo.branch,
+            reason: 'Worker explicitly requested no PR',
+          });
+          // Trigger Manager analyses after completion
+          await this.triggerPostCompletionActions(task);
         } else if (prInfo.result === 'no_changes') {
           await this.updateTaskStatus(task, 'completed');
           await this.logTaskEvent(task, 'status_change', 'Task completed with no changes needed');

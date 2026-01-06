@@ -216,219 +216,116 @@ EOF
         send_log "manager" "Starting autonomous environment analysis and fixes" "info"
 
         cat >> "${INSTRUCTIONS_FILE}" << EOF
-# Current Task: Autonomous Environment Update
+# Manager: Environment Update
 
-## Task Details
-- **Task ID**: ${TASK_ID}
-- **Source Jira Issue**: ${JIRA_ISSUE_KEY}
+**CRITICAL: You have 80 turns. Use them wisely.**
 
-## Your Mission
+## Task
+Analyze worker task ${TASK_ID} (${JIRA_ISSUE_KEY}) for environment issues and fix them.
 
-You are the Virtual Manager. A worker just finished task ${JIRA_ISSUE_KEY} and the Jira issue had the \`manager\` label, which means you need to analyze what went wrong and fix the environment.
+## Key Files (Read These First)
+- \`backend/Dockerfile.ai-worker\` - Container configuration
+- \`backend/scripts/ai-worker-entrypoint.sh\` - Execution script
+- \`backend/ai-worker/directives/\` - Worker instructions
+- \`infrastructure/terraform/modules/ai-workers/main.tf\` - IAM permissions
 
-## Step 1: Fetch Worker Logs
+## Workflow
 
-First, fetch the logs from the worker's execution:
-
-\`\`\`bash
-# Get the ECS task logs for the source task
-curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
-  "\${API_BASE_URL}/api/v1/super-admin/control-center/logs/${TASK_ID}?limit=500" | jq -r '.logs[] | .message'
-\`\`\`
-
-Save these logs to a file for analysis:
+### 1. Fetch Worker Logs (2 turns)
 \`\`\`bash
 curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
   "\${API_BASE_URL}/api/v1/super-admin/control-center/logs/${TASK_ID}?limit=500" > /tmp/worker-logs.json
 \`\`\`
 
-## Step 2: Analyze for Environment Issues
+Output: \`::progress::logs_fetched\`
 
-Look through the logs for patterns indicating environment problems:
+### 2. Identify Environment Issues (5 turns)
+Scan logs for:
+- \`command not found\` - Missing tools
+- \`permission denied\` - IAM/file permissions
+- \`No such file\` - Missing scripts
+- Container build failures
+- AWS permission errors
 
-1. **Missing tools**: \`command not found\`, \`not installed\`
-2. **Permission errors**: \`permission denied\`, \`AccessDenied\`, \`not authorized\`
-3. **Missing scripts**: \`No such file or directory\` for scripts in /app/
-4. **Docker issues**: Container build failures, missing packages
-5. **IAM issues**: AWS permission errors, role assumption failures
-6. **Network issues**: Connection timeouts, DNS failures
+Output: \`::progress::issues_identified\` or \`::result::no_issues\`
 
-Create a summary of issues found:
-\`\`\`bash
-cat > /tmp/issues-found.md << 'ISSUES'
-# Environment Issues Found
+### 3. Implement Fixes (40-60 turns)
 
-## Issue 1: [Title]
-- **Error**: [exact error message]
-- **Location**: [file/component]
-- **Fix**: [what needs to change]
+**Allowed modifications:**
+- \`backend/Dockerfile.ai-worker\`
+- \`backend/ai-worker/directives/**\`
+- \`backend/ai-worker/execution/**\`
+- \`backend/scripts/ai-worker-entrypoint.sh\`
+- \`infrastructure/terraform/modules/ai-workers/main.tf\`
 
-## Issue 2: ...
-ISSUES
-\`\`\`
-
-## Step 3: Create Jira Ticket for Tracking
-
-Create a new Jira ticket to track the environment fix:
-
-\`\`\`bash
-# Create Jira ticket using the Jira API
-curl -s -X POST \\
-  -H "Authorization: Basic \$(echo -n "\${JIRA_EMAIL}:\${JIRA_API_TOKEN}" | base64)" \\
-  -H "Content-Type: application/json" \\
-  "\${JIRA_BASE_URL}/rest/api/3/issue" \\
-  -d '{
-    "fields": {
-      "project": {"key": "OCS"},
-      "summary": "[Self-Anneal] Environment fix for ${JIRA_ISSUE_KEY}",
-      "description": {
-        "type": "doc",
-        "version": 1,
-        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Automated environment fix based on worker logs from ${JIRA_ISSUE_KEY}"}]}]
-      },
-      "issuetype": {"name": "Task"},
-      "labels": ["self-anneal", "ai-worker", "environment-fix"]
-    }
-  }'
-\`\`\`
-
-Save the new ticket key for later reference.
-
-## Step 4: Implement Fixes
-
-Based on your analysis, implement the necessary fixes. You have permission to modify:
-
-### Allowed Files:
-- \`backend/Dockerfile.ai-worker\` - Add missing tools/packages
-- \`backend/ai-worker/directives/**\` - Update worker instructions
-- \`backend/ai-worker/execution/**\` - Fix/add execution scripts
-- \`backend/scripts/ai-worker-entrypoint.sh\` - Fix entrypoint issues
-- \`infrastructure/terraform/modules/ai-workers/main.tf\` - Fix IAM policies
-
-### FORBIDDEN Files (NEVER modify):
-- \`backend/src/\` (except workers directory)
-- \`frontend/\`
-- \`mobile/\`
+**FORBIDDEN:**
+- \`backend/src/\` (except workers)
+- \`frontend/\`, \`mobile/\`
 - \`backend/src/shared/db/migrations/\`
-- Any production secrets or credentials
 
-### Example Fixes:
+Output: \`::progress::fixes_implemented\`
 
-**Missing tool in Docker:**
-\`\`\`dockerfile
-# In backend/Dockerfile.ai-worker
-RUN apt-get update && apt-get install -y jq curl wget
-\`\`\`
-
-**Missing IAM permission:**
-\`\`\`hcl
-# In infrastructure/terraform/modules/ai-workers/main.tf
-{
-  Effect = "Allow"
-  Action = ["s3:GetObject"]
-  Resource = "arn:aws:s3:::bucket-name/*"
-}
-\`\`\`
-
-**Missing execution script:**
-Create the script in \`backend/ai-worker/execution/\`
-
-## Step 5: Run Deployment (if Docker changes)
-
-If you modified the Dockerfile:
-
+### 4. Commit and Create PR (10 turns)
 \`\`\`bash
-# Build and push new Docker image
-cd /home/aiworker/workspace
-./deploy.sh --backend-only
-\`\`\`
-
-If you modified Terraform:
-\`\`\`bash
-cd infrastructure/terraform/environments/dev
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
-\`\`\`
-
-## Step 6: Create PR with Changes
-
-\`\`\`bash
-# Create branch for changes
-git checkout -b self-anneal/${TASK_ID}
-
-# Stage all changes
+git checkout -b self-anneal/\${TASK_ID}
 git add -A
+git commit -m "chore: Fix environment issues from ${JIRA_ISSUE_KEY}
 
-# Commit with descriptive message
-git commit -m "chore(self-anneal): Environment fixes from ${JIRA_ISSUE_KEY}
+Environment fixes:
+- [List issues fixed]
 
-Issues fixed:
-- [List issues you fixed]
-
-Triggered by worker task: ${JIRA_ISSUE_KEY}
-Tracking ticket: [New Jira ticket key]
-
+Source: ${JIRA_ISSUE_KEY}
 \ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)"
 
-# Push and create PR
 git push -u origin HEAD
 
 gh pr create \\
   --title "[Self-Anneal] Environment fixes from ${JIRA_ISSUE_KEY}" \\
-  --body "\$(cat << 'PRBODY'
-## Summary
+  --body "## Summary
 
-This PR contains automated environment fixes identified from worker task ${JIRA_ISSUE_KEY}.
+Automated environment fixes from ${JIRA_ISSUE_KEY}.
 
 ## Issues Fixed
+[List what you fixed]
 
-[List the issues you identified and fixed]
-
-## Changes Made
-
-[Describe the changes]
-
-## Testing
-
-- [ ] Docker image builds successfully
-- [ ] Terraform plan shows expected changes
-- [ ] New execution scripts are valid
+## Changes
+[Describe changes]
 
 ---
-Tracking: [New Jira ticket]
 Source: ${JIRA_ISSUE_KEY}
-
-\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)
-PRBODY
-)"
+\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)"
 \`\`\`
 
-## Step 7: Output Results
+Output: \`::progress::pr_created\`
 
-When done, output these markers:
-
+### 5. Output Results (1 turn)
 \`\`\`
 ::result::success
-::pr_url::[PR URL]
-::pr_number::[PR number]
-::jira_ticket::[New tracking ticket key]
-::issues_fixed::[Count of issues fixed]
+::pr_url::[URL]
+::pr_number::[number]
+::issues_fixed::[count]
+::description::[Brief summary]
 \`\`\`
 
-## Important Notes
+## Bailout Logic
+If turn count > 70 and not done:
+\`\`\`
+::result::partial
+::progress::[what you completed]
+::remaining::[what's left]
+\`\`\`
 
-1. If you find NO environment issues in the logs, that's fine! Just output:
-   \`\`\`
-   ::result::no_issues
-   ::analysis::No environment issues found in worker logs
-   \`\`\`
+## No Issues Found?
+\`\`\`
+::result::no_issues
+::analysis::Worker succeeded with no environment gaps
+\`\`\`
 
-2. If you encounter errors during the fix, document them and continue with what you can fix.
-
-3. Always create the tracking Jira ticket even if the fix fails - this helps humans follow up.
-
-4. Be conservative - only fix clear environment issues, don't refactor or improve unrelated code.
+## Rules
+- Be concise - no verbose explanations
+- Focus on environment issues only
+- Don't create Jira tickets - orchestrator handles that
+- If unsure about a fix, skip it and document in PR
 
 EOF
         ;;
@@ -471,7 +368,7 @@ case "${MANAGER_ACTION}" in
         ;;
     "update_environment")
         CLAUDE_MODEL="sonnet"  # Balanced for infrastructure changes
-        MAX_TURNS=40
+        MAX_TURNS=80  # Increased from 40 - needs time for file edits, commits, PR creation
         ;;
 esac
 
