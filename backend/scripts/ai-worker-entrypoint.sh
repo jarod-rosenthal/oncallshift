@@ -626,33 +626,28 @@ fi
 # =============================================================================
 # Token Usage Tracking
 # =============================================================================
-# Token usage is now tracked by log-parser.js which:
-# 1. Parses usage from every JSON event in real-time
-# 2. Accumulates totals across all messages
-# 3. Reports to /api/v1/ai-worker-tasks/:id/usage when Claude exits
+# Token usage is tracked by log-parser.js which:
+# 1. Parses usage from the final result event (guaranteed accurate)
+# 2. Reports all 4 token types (input, output, cache_creation, cache_read)
+# 3. Posts to /api/v1/ai-worker-tasks/:id/usage on completion
+# 4. Server calculates cost using shared pricing config
 #
-# This shell-based parsing is a simple fallback for Jira comments only.
-# The authoritative cost tracking is done by log-parser.js.
+# We extract basic token counts here only for Jira comment display.
+# Authoritative cost is in the Control Center (calculated server-side).
 
 echo "[Tokens] Token usage tracked by log-parser.js (reports to API on completion)"
+echo "[Tokens] Cost calculated server-side using shared pricing config"
 echo "[Tokens] Model: ${CLAUDE_MODEL}"
 
-# Simple fallback: extract from last line for Jira comment display
-CLAUDE_COST="0"
+# Extract token counts from last line for Jira comment display only
+INPUT_TOKENS="0"
+OUTPUT_TOKENS="0"
 if [ -f "${CLAUDE_OUTPUT_FILE}" ] && [ -s "${CLAUDE_OUTPUT_FILE}" ]; then
-    # Try to get usage from last JSON line (result event)
     LAST_LINE=$(tail -1 "${CLAUDE_OUTPUT_FILE}" 2>/dev/null)
     INPUT_TOKENS=$(echo "${LAST_LINE}" | jq -r '.usage.input_tokens // .message.usage.input_tokens // 0' 2>/dev/null || echo "0")
     OUTPUT_TOKENS=$(echo "${LAST_LINE}" | jq -r '.usage.output_tokens // .message.usage.output_tokens // 0' 2>/dev/null || echo "0")
-
-    # Quick cost estimate for Jira comment (log-parser.js has the accurate number)
     if [ "${INPUT_TOKENS}" != "0" ] && [ "${INPUT_TOKENS}" != "null" ]; then
-        if [ "${CLAUDE_MODEL}" = "haiku" ]; then
-            CLAUDE_COST=$(echo "scale=4; ${INPUT_TOKENS} * 0.00000025 + ${OUTPUT_TOKENS} * 0.00000125" | bc 2>/dev/null || echo "0")
-        else
-            CLAUDE_COST=$(echo "scale=4; ${INPUT_TOKENS} * 0.000003 + ${OUTPUT_TOKENS} * 0.000015" | bc 2>/dev/null || echo "0")
-        fi
-        echo "[Tokens] Fallback estimate: ${INPUT_TOKENS} in / ${OUTPUT_TOKENS} out = \$${CLAUDE_COST}"
+        echo "[Tokens] Display estimate: ${INPUT_TOKENS} input / ${OUTPUT_TOKENS} output"
     fi
 fi
 
@@ -684,8 +679,23 @@ build_detailed_comment() {
         fi
         comment="${comment}🔀 *Pull Request:* ${pr_url}\n"
         comment="${comment}🌿 *Branch:* ${BRANCH_NAME}\n\n"
-        comment="${comment}💰 *Cost:* \$${CLAUDE_COST:-0} (${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output tokens)\n\n"
+        comment="${comment}📈 *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output\n\n"
         comment="${comment}⏳ Awaiting Virtual Manager review."
+    elif [ "$status" = "success_no_pr" ]; then
+        comment="${comment}✅ *Implementation Complete (No PR)*\n\n"
+        comment="${comment}📊 *Changes Summary:*\n"
+        comment="${comment}• Files modified: ${FILES_CHANGED}\n"
+        comment="${comment}• Lines: +${LINES_ADDED} / -${LINES_REMOVED}\n"
+        if [ -n "${FILES_LIST}" ]; then
+            comment="${comment}• Key files: ${FILES_LIST}\n"
+        fi
+        comment="${comment}\n"
+        if [ -n "${COMMIT_MESSAGES}" ]; then
+            comment="${comment}📝 *Commits:* ${COMMIT_MESSAGES}\n\n"
+        fi
+        comment="${comment}🌿 *Branch:* ${BRANCH_NAME}\n"
+        comment="${comment}📝 *Note:* Changes pushed to branch without creating PR (as requested)\n\n"
+        comment="${comment}📈 *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output"
     elif [ "$status" = "no_changes" ]; then
         comment="${comment}⚠️ *No Changes Made*\n\n"
         comment="${comment}The AI worker analyzed this task but determined no code changes were required.\n\n"
@@ -693,7 +703,7 @@ build_detailed_comment() {
         comment="${comment}• The task is already complete\n"
         comment="${comment}• Requirements need clarification\n"
         comment="${comment}• The requested change conflicts with existing code\n\n"
-        comment="${comment}💰 *Analysis cost:* \$${CLAUDE_COST:-0}"
+        comment="${comment}📈 *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output"
     fi
 
     echo "$comment"
@@ -726,11 +736,24 @@ else
         send_log "git_operation" "Pushing branch with ${COMMIT_COUNT} commits" "info"
         git push -u origin "${BRANCH_NAME}"
 
-        echo "[INFO] Creating PR..."
-        send_log "git_operation" "Creating pull request" "info"
-        gh pr create \
-            --title "${JIRA_ISSUE_KEY}: ${JIRA_SUMMARY}" \
-            --body "## Summary
+        # Check if worker explicitly requested no PR
+        if grep -q "::no_pr::true" "${OUTPUT_FILE}"; then
+            echo "[INFO] Worker requested no PR - skipping PR creation"
+            send_log "git_operation" "Branch pushed without PR (worker request)" "info"
+
+            # Update Jira with detailed comment
+            DETAILED_COMMENT=$(build_detailed_comment "success_no_pr" "")
+            add_jira_comment "${DETAILED_COMMENT}"
+
+            echo "::result::success_no_pr"
+            echo "::branch::${BRANCH_NAME}"
+            echo "::commits::${COMMIT_COUNT}"
+        else
+            echo "[INFO] Creating PR..."
+            send_log "git_operation" "Creating pull request" "info"
+            gh pr create \
+                --title "${JIRA_ISSUE_KEY}: ${JIRA_SUMMARY}" \
+                --body "## Summary
 
 Automated implementation for [${JIRA_ISSUE_KEY}](https://oncallshift.atlassian.net/browse/${JIRA_ISSUE_KEY})
 
@@ -739,18 +762,19 @@ ${JIRA_DESCRIPTION:-}
 ---
 🤖 Generated by AI Worker (${WORKER_PERSONA//_/ })"
 
-        PR_URL=$(gh pr view --json url -q '.url')
-        echo "[SUCCESS] PR created: ${PR_URL}"
-        send_log "git_operation" "PR created: ${PR_URL}" "info"
+            PR_URL=$(gh pr view --json url -q '.url')
+            echo "[SUCCESS] PR created: ${PR_URL}"
+            send_log "git_operation" "PR created: ${PR_URL}" "info"
 
-        # Update Jira with detailed comment
-        DETAILED_COMMENT=$(build_detailed_comment "success" "${PR_URL}")
-        add_jira_comment "${DETAILED_COMMENT}"
+            # Update Jira with detailed comment
+            DETAILED_COMMENT=$(build_detailed_comment "success" "${PR_URL}")
+            add_jira_comment "${DETAILED_COMMENT}"
 
-        echo "::result::success"
-        echo "::pr_url::${PR_URL}"
-        echo "::pr_number::$(gh pr view --json number -q '.number')"
-        echo "::branch::${BRANCH_NAME}"
+            echo "::result::success"
+            echo "::pr_url::${PR_URL}"
+            echo "::pr_number::$(gh pr view --json number -q '.number')"
+            echo "::branch::${BRANCH_NAME}"
+        fi
     else
         echo "[WARNING] No changes were made"
         send_log "warning" "No code changes were made" "warning"
