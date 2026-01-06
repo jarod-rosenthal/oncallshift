@@ -27,11 +27,10 @@ function verifySlackSignature(req: Request): { valid: boolean; error?: string } 
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
   if (!signingSecret) {
-    // TODO: When SLACK_SIGNING_SECRET is not configured, we currently allow the request.
-    // In production, you MUST set this environment variable for security.
-    // Consider failing closed (returning false) in production environments.
-    logger.warn('SLACK_SIGNING_SECRET not configured - signature verification skipped');
-    return { valid: true };
+    // Security: Fail closed when signing secret is not configured
+    // This prevents accepting unsigned requests from potential attackers
+    logger.error('SLACK_SIGNING_SECRET not configured - rejecting request for security');
+    return { valid: false, error: 'Slack signing secret not configured' };
   }
 
   const timestamp = req.headers['x-slack-request-timestamp'] as string;
