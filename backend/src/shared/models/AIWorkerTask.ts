@@ -14,6 +14,10 @@ import { AIWorkerTaskLog } from "./AIWorkerTaskLog";
 import { AIWorkerConversation } from "./AIWorkerConversation";
 import { AIWorkerApproval } from "./AIWorkerApproval";
 import { AIWorkerTaskRun } from "./AIWorkerTaskRun";
+import {
+  calculateTotalCost,
+  type TokenUsage,
+} from "../config/pricing";
 
 export type AIWorkerPersona =
   | "frontend_developer"
@@ -132,6 +136,12 @@ export class AIWorkerTask {
   @Column({ name: "claude_output_tokens", type: "int", default: 0 })
   claudeOutputTokens: number;
 
+  @Column({ name: "claude_cache_creation_tokens", type: "int", default: 0 })
+  claudeCacheCreationTokens: number;
+
+  @Column({ name: "claude_cache_read_tokens", type: "int", default: 0 })
+  claudeCacheReadTokens: number;
+
   @Column({ name: "ecs_task_seconds", type: "int", default: 0 })
   ecsTaskSeconds: number;
 
@@ -143,6 +153,10 @@ export class AIWorkerTask {
     default: 0,
   })
   estimatedCostUsd: number;
+
+  // Idempotency: prevent double-reporting of usage
+  @Column({ name: "usage_reported_at", type: "timestamptz", nullable: true })
+  usageReportedAt: Date | null;
 
   // Execution metadata
   @Column({ name: "started_at", type: "timestamp", nullable: true })
@@ -196,6 +210,17 @@ export class AIWorkerTask {
 
   @Column({ name: "review_feedback", type: "text", nullable: true })
   reviewFeedback: string | null;
+
+  @Column({
+    name: "review_decision",
+    type: "varchar",
+    length: 50,
+    nullable: true,
+  })
+  reviewDecision: string | null; // 'approved', 'revision_needed', 'rejected'
+
+  @Column({ name: "code_quality_score", type: "int", nullable: true })
+  codeQualityScore: number | null; // 1-10 score from manager
 
   @Column({ name: "revision_count", type: "int", default: 0 })
   revisionCount: number;
@@ -303,31 +328,26 @@ export class AIWorkerTask {
   }
 
   calculateCost(): number {
-    // Model pricing per 1K tokens (as of 2025)
-    const modelPricing: Record<string, { input: number; output: number }> = {
-      // Haiku - cheapest
-      'haiku': { input: 0.0008, output: 0.004 },
-      'claude-3-5-haiku-20241022': { input: 0.0008, output: 0.004 },
-      // Sonnet
-      'sonnet': { input: 0.003, output: 0.015 },
-      'claude-sonnet-4-20250514': { input: 0.003, output: 0.015 },
-      // Opus - most expensive
-      'opus': { input: 0.015, output: 0.075 },
-      'claude-opus-4-5-20251101': { input: 0.015, output: 0.075 },
+    // Use shared pricing config for consistent cost calculation
+    const tokens: TokenUsage = {
+      inputTokens: this.claudeInputTokens,
+      outputTokens: this.claudeOutputTokens,
+      cacheCreationTokens: this.claudeCacheCreationTokens,
+      cacheReadTokens: this.claudeCacheReadTokens,
     };
+    return calculateTotalCost(tokens, this.workerModel || "sonnet", this.ecsTaskSeconds);
+  }
 
-    // Get pricing for this task's model, default to haiku if unknown
-    const model = this.workerModel || 'haiku';
-    const pricing = modelPricing[model] || modelPricing['haiku'];
-
-    const claudeCost =
-      (this.claudeInputTokens / 1000) * pricing.input +
-      (this.claudeOutputTokens / 1000) * pricing.output;
-
-    // Fargate Spot pricing: ~$0.04/hour for 2 vCPU, 4GB
-    const ecsCost = (this.ecsTaskSeconds / 3600) * 0.04;
-
-    return claudeCost + ecsCost;
+  /**
+   * Get token usage as a structured object
+   */
+  getTokenUsage(): TokenUsage {
+    return {
+      inputTokens: this.claudeInputTokens,
+      outputTokens: this.claudeOutputTokens,
+      cacheCreationTokens: this.claudeCacheCreationTokens,
+      cacheReadTokens: this.claudeCacheReadTokens,
+    };
   }
 
   // Self-recovery helper methods
