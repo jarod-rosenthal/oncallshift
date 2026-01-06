@@ -193,10 +193,10 @@ export const RATE_LIMIT_TIERS = {
   },
 
   // Tier 5: Authentication endpoints
-  // Strict limit to prevent brute force
+  // Reasonable limit to prevent brute force while allowing normal usage
   auth: {
-    windowMs: 15 * 60 * 1000,  // 15 minutes
-    maxRequests: 5,
+    windowMs: 5 * 60 * 1000,  // 5 minutes
+    maxRequests: 20,
     description: 'Authentication attempts',
   },
 
