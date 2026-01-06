@@ -604,11 +604,15 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const orgId = req.orgId!;
-    const currentUser = req.user!;
 
-    // Only admins can delete services
-    if (currentUser.role !== 'admin') {
+    // Only admins or org API keys can delete services
+    if (req.authMethod === 'jwt' && req.user?.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Service keys cannot delete services
+    if (req.authMethod === 'service_key') {
+      return res.status(403).json({ error: 'Cannot delete services using service API key' });
     }
 
     const dataSource = await getDataSource();
@@ -626,7 +630,12 @@ router.delete('/:id', async (req: Request, res: Response) => {
     service.status = 'inactive';
     await serviceRepo.save(service);
 
-    logger.info('Service deleted (soft)', { serviceId: id, orgId, deletedBy: currentUser.id });
+    logger.info('Service deleted (soft)', {
+      serviceId: id,
+      orgId,
+      deletedBy: req.user?.id || 'api_key',
+      authMethod: req.authMethod
+    });
 
     return res.json({
       message: 'Service deleted successfully',
