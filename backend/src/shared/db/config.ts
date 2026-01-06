@@ -17,14 +17,32 @@ export async function getDbConfig(): Promise<DbConfig> {
     return cachedConfig;
   }
 
-  // Check if DATABASE_URL is provided directly (for local development)
+  // Check if DATABASE_URL is provided (can be URL string or JSON object from Secrets Manager)
   const directUrl = process.env.DATABASE_URL;
   if (directUrl) {
+    // Try to parse as JSON first (for ECS with Secrets Manager)
+    try {
+      const secret = JSON.parse(directUrl);
+      if (secret.host && secret.username && secret.password) {
+        cachedConfig = {
+          host: secret.host,
+          port: secret.port || 5432,
+          username: secret.username,
+          password: secret.password,
+          database: secret.dbname || secret.database,
+        };
+        return cachedConfig;
+      }
+    } catch {
+      // Not JSON, try parsing as URL
+    }
+
+    // Parse as postgres:// URL (for local development)
     cachedConfig = parseDatabaseUrl(directUrl);
     return cachedConfig;
   }
 
-  // Fetch from AWS Secrets Manager
+  // Fetch from AWS Secrets Manager using DATABASE_SECRET_ARN
   const secretArn = process.env.DATABASE_SECRET_ARN;
   if (!secretArn) {
     throw new Error('DATABASE_URL or DATABASE_SECRET_ARN must be set');
