@@ -1032,16 +1032,11 @@ export function AdminServices() {
                               <button
                                 type="button"
                                 className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 text-destructive"
-                                onMouseDown={(e) => {
+                                onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                }}
-                                onClick={() => {
-                                  const svc = services.find(s => s.id === service.id);
-                                  if (svc) {
-                                    setShowActionsMenu(null);
-                                    handleDelete(svc.id, svc.name);
-                                  }
+                                  setShowActionsMenu(null);
+                                  handleDelete(service.id, service.name);
                                 }}
                               >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
