@@ -48,27 +48,48 @@ S3_BUCKET="oncallshift-dev-web"
 
 echo "🚀 Starting deployment..."
 
-# 1. Login to ECR
+# 1. Get git commit SHA for versioning
+GIT_SHA=$(git rev-parse --short HEAD)
+echo "📝 Using git commit: $GIT_SHA"
+
+# 2. Login to ECR
 echo "📝 Logging into ECR..."
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
 
-# 2. Build frontend separately (for S3 upload)
+# 3. Build frontend separately (for S3 upload)
 echo "🔨 Building frontend..."
 cd frontend && npm install && npx tsc -b && npx vite build && cd ..
 
-# 3. Upload frontend to S3
+# 4. Upload frontend to S3
 echo "📤 Uploading frontend to S3..."
 aws s3 sync frontend/dist/ s3://$S3_BUCKET/ --delete
 
-# 4. Build Docker image (backend only - frontend is served from S3/CloudFront)
-echo "🔨 Building Docker image..."
-docker build -t $ECR_REPO:latest .
+# 5. Build Docker image (backend only - frontend is served from S3/CloudFront)
+echo "🔨 Building Docker image with version $GIT_SHA..."
+docker build -t $ECR_REPO:$GIT_SHA -t $ECR_REPO:latest .
 
-# 5. Push to ECR
-echo "⬆️  Pushing to ECR..."
+# 6. Push both tags to ECR
+echo "⬆️  Pushing versioned image to ECR..."
+docker push $ECR_REPO:$GIT_SHA
+echo "⬆️  Pushing latest tag to ECR..."
 docker push $ECR_REPO:latest
 
-# 6. Force new ECS deployment for ALL services
+# 7. Get image digest for exact version tracking
+IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REPO:$GIT_SHA | cut -d'@' -f2)
+echo "📝 Image digest: $IMAGE_DIGEST"
+
+# 8. Deploy Terraform infrastructure changes
+echo "🏗️  Deploying Terraform infrastructure..."
+cd infrastructure/terraform/environments/dev
+terraform init -upgrade
+echo "📝 Planning Terraform changes..."
+terraform plan -out=tfplan
+echo "✅ Applying Terraform changes..."
+terraform apply tfplan
+rm -f tfplan
+cd ../../../../
+
+# 9. Force new ECS deployment for ALL services
 # NOTE: All services (API, notification-worker, alert-processor, escalation-timer)
 # use the SAME Docker image from the API's ECR repository. We must force-redeploy
 # all of them to ensure they pick up the new image.
@@ -108,7 +129,7 @@ aws ecs update-service \
   --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
   --output table
 
-# 7. Wait for new task to be running and run migrations
+# 10. Wait for new task to be running and run migrations
 echo "⏳ Waiting for new ECS task to start (up to 3 minutes)..."
 MIGRATION_SUCCESS=false
 for i in {1..18}; do
@@ -151,7 +172,7 @@ if [ "$MIGRATION_SUCCESS" = false ]; then
   echo "⚠️  Warning: Could not verify migrations ran. You may need to run manually."
 fi
 
-# 8. Invalidate CloudFront cache
+# 11. Invalidate CloudFront cache
 echo "🗑️  Invalidating CloudFront cache..."
 aws cloudfront create-invalidation \
   --distribution-id $CLOUDFRONT_DIST_ID \
