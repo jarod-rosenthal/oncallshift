@@ -500,12 +500,23 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         ]
         Resource = "arn:aws:iam::*:role/${var.project_name}-*"
       },
-      # RDS - Database
+      # RDS - Database (expanded for terraform plan validation)
       {
         Effect = "Allow"
         Action = [
           "rds:Describe*",
-          "rds:List*"
+          "rds:List*",
+          "rds:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      # Secrets Manager - Read access for terraform plan validation
+      # This allows workers to read secrets referenced in terraform configurations
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:ListSecrets"
         ]
         Resource = "*"
       },
@@ -563,13 +574,14 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         ]
         Resource = "*"
       },
-      # ACM - Certificates
+      # ACM - Certificates (expanded for terraform plan validation)
       {
         Effect = "Allow"
         Action = [
           "acm:Describe*",
           "acm:List*",
-          "acm:GetCertificate"
+          "acm:GetCertificate",
+          "acm:ListTagsForCertificate"
         ]
         Resource = "*"
       },
@@ -1026,6 +1038,7 @@ resource "aws_iam_role_policy" "manager_lambda" {
           var.github_token_secret_arn != "" ? var.github_token_secret_arn : null,
           var.anthropic_api_key_secret_arn != "" ? var.anthropic_api_key_secret_arn : null,
           var.jira_credentials_secret_arn != "" ? var.jira_credentials_secret_arn : null,
+          var.org_api_key_secret_arn != "" ? var.org_api_key_secret_arn : null,
         ])
       },
       # VPC access for Lambda (required to connect to RDS in private subnet)

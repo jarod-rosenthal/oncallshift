@@ -36,6 +36,8 @@ interface ControlCenterStats {
   todayCost: number;
   todayCompleted: number;
   todayFailed: number;
+  cumulativeCost: number;
+  cumulativeCostResetAt: string | null;
 }
 
 interface WorkerTask {
@@ -316,6 +318,8 @@ export default function SuperAdminControlCenter() {
   const [deleteWorkerId, setDeleteWorkerId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [showResetCostModal, setShowResetCostModal] = useState(false);
+  const [resetCostLoading, setResetCostLoading] = useState(false);
 
   // Terminal output state
   const [terminalLogs, setTerminalLogs] = useState<Record<string, string[]>>({});
@@ -370,7 +374,21 @@ export default function SuperAdminControlCenter() {
       }
 
       const result = await response.json();
-      setData(result);
+
+      // Merge updates instead of replacing to reduce re-renders
+      setData(prevData => {
+        if (!prevData) return result;
+
+        // Only update if data actually changed
+        const hasChanges =
+          JSON.stringify(prevData.stats) !== JSON.stringify(result.stats) ||
+          JSON.stringify(prevData.workers) !== JSON.stringify(result.workers) ||
+          JSON.stringify(prevData.activeTasks) !== JSON.stringify(result.activeTasks) ||
+          JSON.stringify(prevData.recentCompleted) !== JSON.stringify(result.recentCompleted);
+
+        return hasChanges ? result : prevData;
+      });
+
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
@@ -488,7 +506,19 @@ export default function SuperAdminControlCenter() {
       );
       if (response.ok) {
         const result = await response.json();
-        setTaskList(result.tasks || []);
+        const newTasks = result.tasks || [];
+
+        // Merge updates to preserve component state
+        setTaskList(prevTasks => {
+          if (prevTasks.length === 0) return newTasks;
+
+          // Only update if tasks actually changed
+          if (JSON.stringify(prevTasks) === JSON.stringify(newTasks)) {
+            return prevTasks;
+          }
+
+          return newTasks;
+        });
       }
     } catch (err) {
       console.error("Failed to fetch task list:", err);
@@ -584,6 +614,40 @@ export default function SuperAdminControlCenter() {
       console.error("Failed to cancel task:", err);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Reset cumulative cost to zero
+  const handleResetCost = async () => {
+    setResetCostLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/reset-cost`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (response.ok) {
+        setShowResetCostModal(false);
+        setCreateSuccess("Cumulative cost reset to $0.00");
+        setTimeout(() => setCreateSuccess(null), 3000);
+        fetchData();
+      } else {
+        const err = await response.json();
+        setCreateError(err.error || "Failed to reset cost");
+        setTimeout(() => setCreateError(null), 5000);
+      }
+    } catch (err) {
+      console.error("Failed to reset cost:", err);
+      setCreateError("Failed to reset cost");
+      setTimeout(() => setCreateError(null), 5000);
+    } finally {
+      setResetCostLoading(false);
     }
   };
 
@@ -852,7 +916,7 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus();
     fetchTaskList();
 
-    // Poll every 5 seconds if auto-refresh is enabled
+    // Poll every 10 seconds if auto-refresh is enabled
     if (!autoRefresh) return;
 
     const interval = setInterval(() => {
@@ -867,7 +931,7 @@ export default function SuperAdminControlCenter() {
           fetchTerminalLogs(taskId);
         });
       }
-    }, 5000);
+    }, 10000);
 
     return () => {
       clearInterval(interval);
@@ -1104,7 +1168,7 @@ export default function SuperAdminControlCenter() {
                 ? "bg-green-500/20 text-green-500 border border-green-500/30"
                 : "bg-muted text-muted-foreground border border-border"
             }`}
-            title={autoRefresh ? "Auto-refresh ON (5s)" : "Auto-refresh OFF"}
+            title={autoRefresh ? "Auto-refresh ON (10s)" : "Auto-refresh OFF"}
           >
             {autoRefresh ? "Auto: ON" : "Auto: OFF"}
           </button>
@@ -1188,13 +1252,27 @@ export default function SuperAdminControlCenter() {
           </div>
         </div>
         <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <DollarSign className="w-4 h-4" />
-            <span className="text-xs uppercase">Cost Today</span>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <DollarSign className="w-4 h-4" />
+              <span className="text-xs uppercase">Cumulative Cost</span>
+            </div>
+            <button
+              onClick={() => setShowResetCostModal(true)}
+              className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+              title="Reset cumulative cost to $0.00"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
           </div>
           <div className="text-2xl font-bold">
-            ${data?.stats.todayCost?.toFixed(2) || "0.00"}
+            ${data?.stats.cumulativeCost?.toFixed(2) || "0.00"}
           </div>
+          {data?.stats.cumulativeCostResetAt && (
+            <div className="text-xs text-muted-foreground mt-1">
+              Reset {new Date(data.stats.cumulativeCostResetAt).toLocaleDateString()}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2630,6 +2708,62 @@ export default function SuperAdminControlCenter() {
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 )}
                 Cancel Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Cost Confirmation Modal */}
+      {showResetCostModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg w-full max-w-md">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2 text-amber-500">
+                <RotateCcw className="w-4 h-4" />
+                Reset Cumulative Cost
+              </h3>
+              <button
+                onClick={() => setShowResetCostModal(false)}
+                className="p-1 hover:bg-muted rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Are you sure you want to reset the cumulative cost to{" "}
+                <span className="text-primary font-medium">$0.00</span>?
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Current cost:{" "}
+                <span className="text-foreground font-medium">
+                  ${data?.stats.cumulativeCost?.toFixed(2) || "0.00"}
+                </span>
+              </p>
+              <p className="text-xs text-amber-500">
+                This action cannot be undone. The previous cost total will be lost.
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                onClick={() => setShowResetCostModal(false)}
+                className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg"
+                disabled={resetCostLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetCost}
+                disabled={resetCostLoading}
+                className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"
+              >
+                {resetCostLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                Reset to $0.00
               </button>
             </div>
           </div>
