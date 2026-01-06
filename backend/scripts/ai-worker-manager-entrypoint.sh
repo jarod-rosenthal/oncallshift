@@ -77,18 +77,6 @@ echo "https://${GITHUB_TOKEN}@github.com" > ~/.git-credentials
 git config --global user.name "Virtual Manager"
 git config --global user.email "ai-manager@oncallshift.com"
 
-# Clone the repository
-REPO_DIR="/home/aiworker/workspace"
-echo "[Setup] Cloning ${GITHUB_REPO}..."
-send_log "system" "Cloning repository ${GITHUB_REPO}..." "info"
-if ! git clone "https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git" "${REPO_DIR}" 2>&1; then
-    echo "[ERROR] Failed to clone repository ${GITHUB_REPO}"
-    send_log "error" "Failed to clone repository" "error"
-    exit 1
-fi
-cd "${REPO_DIR}"
-echo "[Setup] Clone successful"
-
 # Start heartbeat
 start_heartbeat
 
@@ -113,6 +101,18 @@ case "${MANAGER_ACTION}" in
     "review_pr")
         echo "[Manager] Action: PR Code Review"
         send_log "manager" "Starting PR code review" "info"
+
+        # Clone repository (needed for PR review)
+        REPO_DIR="/home/aiworker/workspace"
+        echo "[Setup] Cloning ${GITHUB_REPO} for PR review..."
+        send_log "system" "Cloning repository ${GITHUB_REPO}..." "info"
+        if ! git clone "https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git" "${REPO_DIR}" 2>&1; then
+            echo "[ERROR] Failed to clone repository ${GITHUB_REPO}"
+            send_log "error" "Failed to clone repository" "error"
+            exit 1
+        fi
+        cd "${REPO_DIR}"
+        echo "[Setup] Clone successful"
 
         cat >> "${INSTRUCTIONS_FILE}" << EOF
 # Current Task: PR Code Review
@@ -142,12 +142,69 @@ case "${MANAGER_ACTION}" in
    - **REVISION_NEEDED**: Has fixable issues, provide specific feedback
    - **REJECT**: Fundamental problems, cannot be fixed with revisions
 
-4. Post your feedback to both Jira and GitHub PR
+4. Post your feedback to both Jira and GitHub PR (REQUIRED)
 
-5. Output your decision:
+5. Create new Jira tickets for significant issues found (if any):
+
+   **When to create new tickets:**
+   - Security vulnerabilities discovered
+   - Missing test coverage for critical paths
+   - Technical debt that should be addressed separately
+   - Follow-up improvements suggested during review
+
+   **How to create tickets:**
+   \`\`\`bash
+   # Get JIRA credentials
+   JIRA_URL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.url')
+   JIRA_EMAIL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.email')
+   JIRA_API_TOKEN=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.apiToken')
+
+   # Create new ticket
+   curl -X POST \\
+     -H "Content-Type: application/json" \\
+     -u "\${JIRA_EMAIL}:\${JIRA_API_TOKEN}" \\
+     "\${JIRA_URL}/rest/api/3/issue" \\
+     -d '{
+       "fields": {
+         "project": {"key": "OCS"},
+         "summary": "[FIX] <brief issue description>",
+         "issuetype": {"name": "Story"},
+         "description": {
+           "type": "doc",
+           "version": 1,
+           "content": [
+             {
+               "type": "paragraph",
+               "content": [
+                 {"type": "text", "text": "Issue found during review of ${JIRA_ISSUE_KEY}\\n\\n"}
+               ]
+             },
+             {
+               "type": "paragraph",
+               "content": [
+                 {"type": "text", "text": "[Detailed description of the issue]"}
+               ]
+             }
+           ]
+         },
+         "priority": {"name": "Medium"},
+         "labels": ["manager", "code-review-finding"]
+       }
+     }'
+   \`\`\`
+
+   **Note:** Only create tickets for issues that should be tracked separately.
+   Simple fixes should just be noted in the PR review feedback.
+
+6. Output your decision:
    \`\`\`
    ::review_decision::approved|revision_needed|rejected
    ::code_quality_score::1-10
+   ::jira_updated::true
+   ::new_tickets_created::N (where N is the number of new tickets, or 0)
    ::feedback::Your detailed feedback
    \`\`\`
 
@@ -166,6 +223,9 @@ EOF
     "analyze_learnings")
         echo "[Manager] Action: Learning Analysis"
         send_log "manager" "Starting learning analysis" "info"
+
+        # No repository clone needed - only analyzes logs via API
+        cd /tmp
 
         cat >> "${INSTRUCTIONS_FILE}" << EOF
 # Current Task: Learning Analysis
@@ -198,11 +258,74 @@ EOF
 4. If you identify environment issues (missing tools, permissions), suggest them:
    - Create a file /tmp/environment-suggestions.json with suggested changes
 
-5. Output summary:
+5. Update Jira with findings:
+   \`\`\`bash
+   # Post learning analysis results to Jira
+   curl -X POST -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     -H "Content-Type: application/json" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-comment" \\
+     -d '{"issueKey": "${JIRA_ISSUE_KEY}", "comment": "Learning Analysis: [summary]"}'
+   \`\`\`
+
+6. Create new Jira tickets for critical findings (if any):
+
+   **When to create new tickets:**
+   - Systematic environment issues that need fixing
+   - Missing tools or permissions affecting multiple workers
+   - Best practices that should be formalized into directives
+   - Anti-patterns that keep recurring
+
+   **How to create tickets:**
+   \`\`\`bash
+   # Get JIRA credentials
+   JIRA_URL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.url')
+   JIRA_EMAIL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.email')
+   JIRA_API_TOKEN=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+     "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.apiToken')
+
+   # Create ticket
+   curl -X POST \\
+     -H "Content-Type: application/json" \\
+     -u "\${JIRA_EMAIL}:\${JIRA_API_TOKEN}" \\
+     "\${JIRA_URL}/rest/api/3/issue" \\
+     -d '{
+       "fields": {
+         "project": {"key": "OCS"},
+         "summary": "[GAP] <brief issue description>",
+         "issuetype": {"name": "Story"},
+         "description": {
+           "type": "doc",
+           "version": 1,
+           "content": [
+             {
+               "type": "paragraph",
+               "content": [
+                 {"type": "text", "text": "Found during learning analysis of ${JIRA_ISSUE_KEY}\\n\\n"}
+               ]
+             },
+             {
+               "type": "paragraph",
+               "content": [
+                 {"type": "text", "text": "[Description of the systemic issue]"}
+               ]
+             }
+           ]
+         },
+         "priority": {"name": "Medium"},
+         "labels": ["manager", "learning-finding"]
+       }
+     }'
+   \`\`\`
+
+7. Output summary:
    \`\`\`
    ::patterns_extracted::N
    ::directive_suggestions::N
    ::environment_suggestions::N
+   ::jira_updated::true
+   ::new_tickets_created::N (where N is the number of new tickets, or 0)
    \`\`\`
 
 ## Source Task ID to Analyze
@@ -215,6 +338,9 @@ EOF
         echo "[Manager] Action: Autonomous Environment Update"
         send_log "manager" "Starting autonomous environment analysis and fixes" "info"
 
+        # Start in /tmp - repository will only be cloned if issues are found
+        cd /tmp
+
         cat >> "${INSTRUCTIONS_FILE}" << EOF
 # Manager: Environment Update
 
@@ -222,12 +348,6 @@ EOF
 
 ## Task
 Analyze worker task ${TASK_ID} (${JIRA_ISSUE_KEY}) for environment issues and fix them.
-
-## Key Files (Read These First)
-- \`backend/Dockerfile.ai-worker\` - Container configuration
-- \`backend/scripts/ai-worker-entrypoint.sh\` - Execution script
-- \`backend/ai-worker/directives/\` - Worker instructions
-- \`infrastructure/terraform/modules/ai-workers/main.tf\` - IAM permissions
 
 ## Workflow
 
@@ -249,7 +369,22 @@ Scan logs for:
 
 Output: \`::progress::issues_identified\` or \`::result::no_issues\`
 
-### 3. Implement Fixes (40-60 turns)
+**If NO issues found:**
+- Skip to step 6 (Update Jira)
+- Output: \`::result::no_issues\`
+
+### 3. Clone Repository (ONLY if issues found) (3 turns)
+
+**IMPORTANT: Only execute this step if you found issues in step 2.**
+
+\`\`\`bash
+REPO_DIR="/home/aiworker/workspace"
+echo "Cloning repository for environment fixes..."
+git clone "https://\${GITHUB_TOKEN}@github.com/jarod-rosenthal/pagerduty-lite.git" "\${REPO_DIR}"
+cd "\${REPO_DIR}"
+\`\`\`
+
+### 4. Implement Fixes (40-60 turns)
 
 **Allowed modifications:**
 - \`backend/Dockerfile.ai-worker\`
@@ -265,7 +400,7 @@ Output: \`::progress::issues_identified\` or \`::result::no_issues\`
 
 Output: \`::progress::fixes_implemented\`
 
-### 4. Commit and Create PR (10 turns)
+### 5. Commit and Create PR (10 turns)
 \`\`\`bash
 git checkout -b self-anneal/\${TASK_ID}
 git add -A
@@ -298,13 +433,126 @@ Source: ${JIRA_ISSUE_KEY}
 
 Output: \`::progress::pr_created\`
 
-### 5. Output Results (1 turn)
+### 6. Update Jira Ticket (REQUIRED - All Cases) (3 turns)
+
+**CRITICAL: Always update Jira with your findings, even if no issues were found.**
+
+\`\`\`bash
+# Get JIRA credentials
+JIRA_URL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+  "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.url')
+JIRA_EMAIL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+  "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.email')
+JIRA_API_TOKEN=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+  "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.apiToken')
+
+# Post comment to Jira
+curl -X POST \\
+  -H "Content-Type: application/json" \\
+  -u "\${JIRA_EMAIL}:\${JIRA_API_TOKEN}" \\
+  "\${JIRA_URL}/rest/api/3/issue/${JIRA_ISSUE_KEY}/comment" \\
+  -d '{
+    "body": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Virtual Manager Analysis Results",
+              "marks": [{"type": "strong"}]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "[Your analysis summary here - issues found or no issues found]"
+            }
+          ]
+        }
+      ]
+    }
+  }'
+\`\`\`
+
+### 7. Create New Jira Tickets for Complex Issues (Optional) (5 turns)
+
+**When to create new tickets:**
+- Infrastructure changes too complex for a single PR
+- Multiple related but separable environment issues
+- Issues that require coordination with other systems
+- Follow-up improvements discovered during fixes
+
+**How to create tickets:**
+\`\`\`bash
+# Get JIRA credentials (if not already fetched)
+JIRA_URL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+  "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.url')
+JIRA_EMAIL=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+  "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.email')
+JIRA_API_TOKEN=\$(curl -s -H "Authorization: Bearer \${ORG_API_KEY}" \\
+  "\${API_BASE_URL}/api/v1/super-admin/control-center/jira-config" | jq -r '.apiToken')
+
+# Create ticket
+curl -X POST \\
+  -H "Content-Type: application/json" \\
+  -u "\${JIRA_EMAIL}:\${JIRA_API_TOKEN}" \\
+  "\${JIRA_URL}/rest/api/3/issue" \\
+  -d '{
+    "fields": {
+      "project": {"key": "OCS"},
+      "summary": "[INFRA] <brief issue description>",
+      "issuetype": {"name": "Story"},
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {"type": "text", "text": "Found during environment update for ${JIRA_ISSUE_KEY}\\n\\n"}
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {"type": "text", "text": "[Description of the infrastructure issue]"}
+            ]
+          }
+        ]
+      },
+      "priority": {"name": "Medium"},
+      "labels": ["manager", "environment-finding"]
+    }
+  }'
+\`\`\`
+
+**Note:** Only create tickets for issues beyond the scope of the current fix.
+
+### 8. Output Results (1 turn)
+
+**If issues were found and fixed:**
 \`\`\`
 ::result::success
 ::pr_url::[URL]
 ::pr_number::[number]
 ::issues_fixed::[count]
+::jira_updated::true
+::new_tickets_created::N (where N is the number of new tickets, or 0)
 ::description::[Brief summary]
+\`\`\`
+
+**If NO issues found:**
+\`\`\`
+::result::no_issues
+::jira_updated::true
+::new_tickets_created::0
+::analysis::Worker succeeded with no environment gaps. All required tools present, permissions correct, execution scripts working.
 \`\`\`
 
 ## Bailout Logic
@@ -315,16 +563,10 @@ If turn count > 70 and not done:
 ::remaining::[what's left]
 \`\`\`
 
-## No Issues Found?
-\`\`\`
-::result::no_issues
-::analysis::Worker succeeded with no environment gaps
-\`\`\`
-
 ## Rules
 - Be concise - no verbose explanations
 - Focus on environment issues only
-- Don't create Jira tickets - orchestrator handles that
+- Create Jira tickets for complex issues beyond scope of current PR
 - If unsure about a fix, skip it and document in PR
 
 EOF
