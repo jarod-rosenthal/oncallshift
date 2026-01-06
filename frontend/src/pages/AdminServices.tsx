@@ -409,7 +409,9 @@ export function AdminServices() {
     try {
       setError(null);
       await servicesAPI.delete(serviceId);
+      // Update both services and servicesWithDetails to remove the deleted service
       setServices(services.filter(s => s.id !== serviceId));
+      setServicesWithDetails(servicesWithDetails.filter(s => s.id !== serviceId));
       setSuccess('Service deleted successfully');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -1028,11 +1030,18 @@ export function AdminServices() {
                               </button>
                               <div className="border-t my-1"></div>
                               <button
+                                type="button"
                                 className="w-full px-3 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 text-destructive"
-                                onClick={(e) => {
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
                                   e.stopPropagation();
-                                  handleDelete(service.id, service.name);
-                                  setShowActionsMenu(null);
+                                }}
+                                onClick={() => {
+                                  const svc = services.find(s => s.id === service.id);
+                                  if (svc) {
+                                    setShowActionsMenu(null);
+                                    handleDelete(svc.id, svc.name);
+                                  }
                                 }}
                               >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
