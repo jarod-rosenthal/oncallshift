@@ -19,7 +19,7 @@
 
 import { ECS, RunTaskCommand } from "@aws-sdk/client-ecs";
 import { Client } from "pg";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -300,7 +300,7 @@ export async function handler(
     );
 
     // Log the manager task start
-    const logId = uuidv4();
+    const logId = randomUUID();
     await client.query(
       `INSERT INTO ai_worker_task_logs
        (id, task_id, type, message, severity, created_at)
@@ -338,7 +338,7 @@ export async function handler(
         );
       } else {
         // Create new manager instance
-        managerId = uuidv4();
+        managerId = randomUUID();
         await client.query(
           `INSERT INTO ai_worker_instances
            (id, org_id, persona, display_name, description, status, role, model_id, current_task_id, last_task_at, created_at, updated_at)
