@@ -12,10 +12,10 @@ import type {
 } from '../types/api';
 
 const STATUS_OPTIONS: { value: BusinessServiceStatus; label: string; color: string }[] = [
-  { value: 'operational', label: 'Operational', color: 'bg-green-100 text-green-800' },
-  { value: 'degraded', label: 'Degraded', color: 'bg-yellow-100 text-yellow-800' },
-  { value: 'major_outage', label: 'Major Outage', color: 'bg-red-100 text-red-800' },
-  { value: 'maintenance', label: 'Maintenance', color: 'bg-blue-100 text-blue-800' },
+  { value: 'operational', label: 'Operational', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+  { value: 'degraded', label: 'Degraded', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  { value: 'major_outage', label: 'Major Outage', color: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
+  { value: 'maintenance', label: 'Maintenance', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
   { value: 'unknown', label: 'Unknown', color: 'bg-muted text-muted-foreground' },
 ];
 
@@ -192,10 +192,10 @@ export function BusinessServices() {
 
   const getTierBadge = (tier: ImpactTier) => {
     const colors: Record<ImpactTier, string> = {
-      tier_1: 'bg-red-100 text-red-800 border-red-200',
-      tier_2: 'bg-orange-100 text-orange-800 border-orange-200',
-      tier_3: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      tier_4: 'bg-green-100 text-green-800 border-green-200',
+      tier_1: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-200 dark:border-red-700',
+      tier_2: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900 dark:text-orange-200 dark:border-orange-700',
+      tier_3: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-700',
+      tier_4: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-700',
     };
     const tierOpt = IMPACT_TIERS.find(t => t.value === tier);
     return (
@@ -243,9 +243,9 @@ export function BusinessServices() {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-300">
           {error}
-          <button onClick={() => setError(null)} className="ml-4 text-red-500 underline">
+          <button onClick={() => setError(null)} className="ml-4 text-red-500 dark:text-red-400 underline">
             Dismiss
           </button>
         </div>
@@ -362,7 +362,7 @@ export function BusinessServices() {
                 <div className="flex gap-2 mt-4 pt-4 border-t border-border">
                   <button
                     onClick={() => openEditModal(bs)}
-                    className="flex-1 px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50 rounded"
+                    className="flex-1 px-3 py-1.5 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded"
                   >
                     Edit
                   </button>
@@ -378,7 +378,7 @@ export function BusinessServices() {
                   )}
                   <button
                     onClick={() => handleDelete(bs)}
-                    className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
+                    className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
                   >
                     Delete
                   </button>
@@ -391,21 +391,21 @@ export function BusinessServices() {
 
       {/* Unassigned Services Summary */}
       {unassignedServices.length > 0 && (
-        <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <h4 className="font-medium text-yellow-800 mb-2">
+        <div className="mt-8 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <h4 className="font-medium text-yellow-800 dark:text-yellow-300 mb-2">
             Unassigned Technical Services ({unassignedServices.length})
           </h4>
-          <p className="text-sm text-yellow-700 mb-2">
+          <p className="text-sm text-yellow-700 dark:text-yellow-400 mb-2">
             These technical services are not linked to any business service:
           </p>
           <div className="flex flex-wrap gap-2">
             {unassignedServices.slice(0, 10).map((s) => (
-              <span key={s.id} className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">
+              <span key={s.id} className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 text-xs rounded">
                 {s.name}
               </span>
             ))}
             {unassignedServices.length > 10 && (
-              <span className="px-2 py-1 text-yellow-600 text-xs">
+              <span className="px-2 py-1 text-yellow-600 dark:text-yellow-400 text-xs">
                 +{unassignedServices.length - 10} more
               </span>
             )}
@@ -644,10 +644,10 @@ function ServiceSelectorModal({
                   <span
                     className={`ml-auto px-2 py-0.5 text-xs rounded ${
                       service.status === 'active'
-                        ? 'bg-green-100 text-green-800'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                         : service.status === 'maintenance'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-muted text-gray-800'
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                        : 'bg-muted text-muted-foreground'
                     }`}
                   >
                     {service.status}
