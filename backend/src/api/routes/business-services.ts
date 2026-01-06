@@ -369,7 +369,6 @@ router.delete('/:id',
 router.put('/:id/services',
   param('id').isUUID().withMessage('Invalid business service ID'),
   body('serviceIds').isArray().withMessage('Service IDs must be an array'),
-  body('serviceIds.*').isUUID().withMessage('All service IDs must be valid UUIDs'),
   async (req: Request, res: Response) => {
     try {
       const errors = validationResult(req);
