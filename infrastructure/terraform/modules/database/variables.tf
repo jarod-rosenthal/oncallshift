@@ -107,3 +107,15 @@ variable "deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "enable_rds_proxy" {
+  description = "Enable RDS Proxy for connection pooling"
+  type        = bool
+  default     = false
+}
+
+variable "enable_proxy_debug_logging" {
+  description = "Enable debug logging for RDS Proxy to CloudWatch"
+  type        = bool
+  default     = false
+}

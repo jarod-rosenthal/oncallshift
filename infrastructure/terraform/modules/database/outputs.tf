@@ -43,3 +43,13 @@ output "secret_name" {
   description = "Name of the Secrets Manager secret"
   value       = aws_secretsmanager_secret.db_master_password.name
 }
+
+output "proxy_endpoint" {
+  description = "Endpoint for the RDS Proxy (for connection pooling)"
+  value       = var.enable_rds_proxy ? aws_db_proxy.main[0].endpoint : null
+}
+
+output "proxy_arn" {
+  description = "ARN of the RDS Proxy"
+  value       = var.enable_rds_proxy ? aws_db_proxy.main[0].arn : null
+}

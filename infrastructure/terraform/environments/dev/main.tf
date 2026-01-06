@@ -76,6 +76,10 @@ module "database" {
   deletion_protection         = var.db_deletion_protection
   enable_performance_insights = false
   enable_enhanced_monitoring  = false
+
+  # RDS Proxy for connection pooling
+  enable_rds_proxy            = var.enable_rds_proxy
+  enable_proxy_debug_logging  = var.enable_proxy_debug_logging
 }
 
 # Application Load Balancer

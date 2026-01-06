@@ -36,10 +36,16 @@ resource "aws_secretsmanager_secret_version" "db_master_password" {
     username = var.master_username
     password = random_password.master_password.result
     engine   = "postgres"
-    host     = aws_db_instance.main.address
+    host     = var.enable_rds_proxy ? aws_db_proxy.main[0].endpoint : aws_db_instance.main.address
     port     = 5432
     dbname   = var.database_name
   })
+
+  # Ensure proxy is created before updating the secret with proxy endpoint
+  depends_on = [
+    aws_db_proxy.main,
+    aws_db_proxy_target.main
+  ]
 }
 
 # DB Subnet Group
@@ -191,6 +197,134 @@ resource "aws_cloudwatch_metric_alarm" "database_connections" {
 
   tags = {
     Name        = "${var.project_name}-${var.environment}-postgres-connections-alarm"
+    Environment = var.environment
+  }
+}
+
+# =============================================================================
+# RDS Proxy for Connection Pooling
+# =============================================================================
+
+# IAM Role for RDS Proxy
+resource "aws_iam_role" "rds_proxy" {
+  count = var.enable_rds_proxy ? 1 : 0
+
+  name_prefix = "${var.project_name}-${var.environment}-rds-proxy-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "rds.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-rds-proxy-role"
+    Environment = var.environment
+  }
+}
+
+# IAM Policy for RDS Proxy to access Secrets Manager
+resource "aws_iam_role_policy" "rds_proxy_secrets" {
+  count = var.enable_rds_proxy ? 1 : 0
+
+  name_prefix = "${var.project_name}-${var.environment}-rds-proxy-secrets-"
+  role        = aws_iam_role.rds_proxy[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetResourcePolicy",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:ListSecretVersionIds"
+        ]
+        Resource = aws_secretsmanager_secret.db_master_password.arn
+      }
+    ]
+  })
+}
+
+# RDS Proxy
+resource "aws_db_proxy" "main" {
+  count = var.enable_rds_proxy ? 1 : 0
+
+  name                   = "${var.project_name}-${var.environment}-proxy"
+  engine_family          = "POSTGRESQL"
+  auth {
+    auth_scheme = "SECRETS"
+    iam_auth    = "DISABLED"
+    secret_arn  = aws_secretsmanager_secret.db_master_password.arn
+  }
+
+  role_arn               = aws_iam_role.rds_proxy[0].arn
+  vpc_subnet_ids         = var.private_subnet_ids
+  require_tls            = true
+
+  # Enhanced logging to CloudWatch
+  debug_logging = var.enable_proxy_debug_logging
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-rds-proxy"
+    Environment = var.environment
+  }
+
+  # Wait for the IAM policy to be attached before creating the proxy
+  depends_on = [aws_iam_role_policy.rds_proxy_secrets]
+}
+
+# RDS Proxy Target Group
+resource "aws_db_proxy_default_target_group" "main" {
+  count = var.enable_rds_proxy ? 1 : 0
+
+  db_proxy_name = aws_db_proxy.main[0].name
+
+  connection_pool_config {
+    # Max percentage of available connections to use (for db.t4g.micro with ~100 connections)
+    # Setting to 90% allows ~90 pooled connections with buffer for admin/maintenance
+    max_connections_percent        = 90
+
+    # Max percentage of connections that can be borrowed (idle connections)
+    max_idle_connections_percent   = 50
+
+    # Timeout for borrowed connections (5 minutes)
+    connection_borrow_timeout      = 300
+
+    # SQL statements to run on each new connection
+    init_query                     = ""
+
+    # Session pinning filters - empty means no pinning (more efficient connection reuse)
+    session_pinning_filters        = []
+  }
+}
+
+# RDS Proxy Target
+resource "aws_db_proxy_target" "main" {
+  count = var.enable_rds_proxy ? 1 : 0
+
+  db_proxy_name         = aws_db_proxy.main[0].name
+  target_group_name     = aws_db_proxy_default_target_group.main[0].name
+  db_instance_identifier = aws_db_instance.main.id
+}
+
+# CloudWatch Log Group for RDS Proxy
+resource "aws_cloudwatch_log_group" "rds_proxy" {
+  count = var.enable_rds_proxy && var.enable_proxy_debug_logging ? 1 : 0
+
+  name              = "/aws/rds/proxy/${var.project_name}-${var.environment}"
+  retention_in_days = 7
+
+  tags = {
+    Name        = "${var.project_name}-${var.environment}-rds-proxy-logs"
     Environment = var.environment
   }
 }

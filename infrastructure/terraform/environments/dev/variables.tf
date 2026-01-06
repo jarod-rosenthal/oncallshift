@@ -159,3 +159,16 @@ variable "sentry_enabled" {
   type        = bool
   default     = false
 }
+
+# RDS Proxy configuration
+variable "enable_rds_proxy" {
+  description = "Enable RDS Proxy for connection pooling to reduce connection overhead"
+  type        = bool
+  default     = true
+}
+
+variable "enable_proxy_debug_logging" {
+  description = "Enable debug logging for RDS Proxy to CloudWatch"
+  type        = bool
+  default     = false
+}
