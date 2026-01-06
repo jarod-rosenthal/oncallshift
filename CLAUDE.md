@@ -789,17 +789,67 @@ aws logs tail /ecs/pagerduty-lite-dev/escalation-timer --follow --region us-east
 
 ### Database Access
 
-**Note:** The RDS database is in a private subnet and is not reachable from local development machines. Database operations must go through ECS tasks or the AWS console.
+**The RDS database is in a private subnet.** Access it directly via the ECS container.
+
+#### Quick Database Access
 
 ```bash
-# Migrations run automatically during ECS deployment via deploy.sh
-# To run migrations manually, use ECS exec:
+# Get running task ID
+TASK_ID=$(aws ecs list-tasks --cluster pagerduty-lite-dev --service-name pagerduty-lite-dev-api --region us-east-1 --query 'taskArns[0]' --output text | awk -F/ '{print $NF}')
+
+# Connect to PostgreSQL
+aws ecs execute-command \
+  --cluster pagerduty-lite-dev \
+  --task $TASK_ID \
+  --container api \
+  --interactive \
+  --command "psql \$DATABASE_URL"
+```
+
+**Common SQL queries:**
+
+```sql
+-- Cancel stuck AI worker task
+UPDATE ai_worker_tasks
+SET status = 'failed',
+    completed_at = NOW(),
+    error_message = 'Manually cancelled'
+WHERE jira_issue_key = 'OCS-91'
+  AND status NOT IN ('completed', 'failed', 'cancelled');
+
+-- List active AI worker tasks
+SELECT id, jira_issue_key, status, summary, created_at
+FROM ai_worker_tasks
+WHERE status IN ('claimed', 'environment_setup', 'executing')
+ORDER BY created_at DESC;
+
+-- Check user status
+SELECT id, email, full_name, status FROM users WHERE org_id = 'YOUR_ORG_ID';
+```
+
+#### Migrations
+
+```bash
+# Migrations run automatically during deployment
+# To run manually:
 aws ecs execute-command --cluster pagerduty-lite-dev \
-  --task <task-id> --container api --interactive \
+  --task $TASK_ID --container api --interactive \
   --command "node dist/shared/db/migrate.js"
 
 # Create new migration (local)
 cd backend && npm run migrate:create
+```
+
+#### Alternative: Use API Endpoints
+
+For common operations, use the API instead of direct SQL:
+
+```bash
+# Cancel stuck task (requires super_admin role or org API key)
+curl -X POST https://oncallshift.com/api/v1/super-admin/control-center/tasks/cancel-by-key \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jiraKey": "OCS-91", "reason": "Manually cancelled"}'
 ```
 
 ## Work In Progress
