@@ -623,27 +623,40 @@ router.delete('/:id', async (req: Request, res: Response) => {
       relations: ['incidents'],
     });
 
+    logger.info('Service lookup result', { serviceId: id, found: !!service });
+
     if (!service) {
       return res.status(404).json({ error: 'Service not found' });
     }
 
     // Check if service has any incidents
     if (service.incidents && service.incidents.length > 0) {
+      logger.warn('Cannot delete service - has incidents', {
+        serviceId: id,
+        incidentCount: service.incidents.length
+      });
       return res.status(400).json({
         error: 'Cannot delete service with existing incidents',
         incidentCount: service.incidents.length
       });
     }
 
+    logger.info('Starting service deletion transaction', { serviceId: id });
+
     // Use a transaction to ensure all deletions succeed or fail together
     await dataSource.transaction(async (transactionalEntityManager) => {
       // Delete related ServiceDependencies (where this service is either dependent or supporting)
-      await transactionalEntityManager
+      const depResult = await transactionalEntityManager
         .createQueryBuilder()
         .delete()
         .from('service_dependencies')
         .where('dependent_service_id = :serviceId OR supporting_service_id = :serviceId', { serviceId: id })
         .execute();
+
+      logger.info('Deleted service dependencies', {
+        serviceId: id,
+        dependenciesDeleted: depResult.affected
+      });
 
       // Delete the service using the transaction's query builder
       const result = await transactionalEntityManager
@@ -652,6 +665,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
         .from('services')
         .where('id = :id AND org_id = :orgId', { id, orgId })
         .execute();
+
+      logger.info('Service deletion query executed', {
+        serviceId: id,
+        rowsAffected: result.affected
+      });
 
       if (result.affected === 0) {
         throw new Error('Service deletion failed - no rows affected');
