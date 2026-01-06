@@ -714,6 +714,16 @@ module "api_service" {
         "application-autoscaling:DescribeScalingActivities"
       ]
       Resource = "*"
+    },
+    # EventBridge permissions for AI Worker watcher control
+    {
+      Effect = "Allow"
+      Action = [
+        "events:DescribeRule",
+        "events:EnableRule",
+        "events:DisableRule"
+      ]
+      Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/${var.project_name}-${var.environment}-ai-worker-watcher-schedule"
     }
   ]
 
@@ -1200,6 +1210,18 @@ resource "aws_cloudfront_origin_access_control" "s3" {
   signing_protocol                  = "sigv4"
 }
 
+# CloudFront Function for SPA routing
+# Rewrites non-API, non-file requests to /index.html for client-side routing
+resource "aws_cloudfront_function" "spa_router" {
+  count = var.domain_name != null ? 1 : 0
+
+  name    = "${var.project_name}-${var.environment}-spa-router"
+  runtime = "cloudfront-js-2.0"
+  comment = "SPA routing - rewrite requests to index.html, exclude API and files"
+  publish = true
+  code    = file("${path.module}/cloudfront-function.js")
+}
+
 # CloudFront Distribution
 resource "aws_cloudfront_distribution" "main" {
   count = var.domain_name != null ? 1 : 0
@@ -1232,7 +1254,7 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   # Default behavior - serve from S3 (SPA with client-side routing)
-  # 404 errors from S3 are handled by custom_error_response below
+  # CloudFront Function rewrites non-API, non-file requests to /index.html
   default_cache_behavior {
     allowed_methods  = ["GET", "HEAD", "OPTIONS"]
     cached_methods   = ["GET", "HEAD"]
@@ -1244,6 +1266,12 @@ resource "aws_cloudfront_distribution" "main" {
       cookies {
         forward = "none"
       }
+    }
+
+    # Attach SPA routing function to viewer requests
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_router[0].arn
     }
 
     viewer_protocol_policy = "redirect-to-https"
@@ -1334,19 +1362,6 @@ resource "aws_cloudfront_distribution" "main" {
     min_ttl                = 0
     default_ttl            = 0
     max_ttl                = 0
-  }
-
-  # SPA routing - serve index.html for 404 errors from S3
-  custom_error_response {
-    error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
-  }
-
-  custom_error_response {
-    error_code         = 403
-    response_code      = 200
-    response_page_path = "/index.html"
   }
 
   restrictions {
