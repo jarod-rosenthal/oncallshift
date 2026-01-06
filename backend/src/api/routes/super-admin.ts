@@ -20,7 +20,9 @@ import { AIWorkerReview } from "../../shared/models/AIWorkerReview";
 import { AIWorkerToolEvent } from "../../shared/models/AIWorkerToolEvent";
 import { AIWorkerToolPattern } from "../../shared/models/AIWorkerToolPattern";
 import { AIWorkerPatternApplication } from "../../shared/models/AIWorkerPatternApplication";
+import { Organization } from "../../shared/models/Organization";
 import { logger } from "../../shared/utils/logger";
+import { ECS_FARGATE_SPOT_RATE_PER_HOUR } from "../../shared/config/pricing";
 import {
   SQS,
   GetQueueAttributesCommand,
@@ -78,13 +80,18 @@ router.use(requireSuperAdmin);
  * GET /api/v1/super-admin/control-center
  * Get aggregated data for the AI Workers Control Center
  */
-router.get("/control-center", async (_req: Request, res: Response) => {
+router.get("/control-center", async (req: Request, res: Response) => {
   try {
+    const orgId = req.orgId!;
     const dataSource = await getDataSource();
     const workerRepo = dataSource.getRepository(AIWorkerInstance);
     const taskRepo = dataSource.getRepository(AIWorkerTask);
     const logRepo = dataSource.getRepository(AIWorkerTaskLog);
     const conversationRepo = dataSource.getRepository(AIWorkerConversation);
+    const orgRepo = dataSource.getRepository(Organization);
+
+    // Get org for cumulative cost
+    const org = await orgRepo.findOne({ where: { id: orgId } });
 
     // Get today's start (midnight)
     const todayStart = new Date();
@@ -149,8 +156,8 @@ router.get("/control-center", async (_req: Request, res: Response) => {
         const durationSeconds = Math.floor(
           (endTime.getTime() - t.startedAt.getTime()) / 1000,
         );
-        // Fargate Spot: ~$0.015/hour
-        const ecsCost = (durationSeconds / 3600) * 0.015;
+        // Use shared ECS pricing constant
+        const ecsCost = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
         return sum + ecsCost;
       }
       return sum;
@@ -206,6 +213,9 @@ router.get("/control-center", async (_req: Request, res: Response) => {
       todayCost: Math.round(todayCost * 100) / 100,
       todayCompleted: todayTasks.filter((t) => t.status === "completed").length,
       todayFailed: todayTasks.filter((t) => t.status === "failed").length,
+      // Cumulative cost tracking
+      cumulativeCost: Number(org?.aiWorkerCumulativeCost || 0),
+      cumulativeCostResetAt: org?.aiWorkerCostResetAt || null,
     };
 
     // Map workers with current task info
@@ -302,7 +312,7 @@ router.get("/control-center", async (_req: Request, res: Response) => {
         const durationSeconds = Math.floor(
           (endTime.getTime() - t.startedAt.getTime()) / 1000,
         );
-        costUsd = (durationSeconds / 3600) * 0.015; // Fargate Spot rate
+        costUsd = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
       }
       return {
         id: t.id,
@@ -333,6 +343,43 @@ router.get("/control-center", async (_req: Request, res: Response) => {
     return res
       .status(500)
       .json({ error: "Failed to fetch control center data" });
+  }
+});
+
+/**
+ * POST /api/v1/super-admin/control-center/reset-cost
+ * Reset the cumulative cost counter to zero
+ */
+router.post("/control-center/reset-cost", async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+    const dataSource = await getDataSource();
+    const orgRepo = dataSource.getRepository(Organization);
+
+    const org = await orgRepo.findOne({ where: { id: orgId } });
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const previousCost = Number(org.aiWorkerCumulativeCost || 0);
+    org.aiWorkerCumulativeCost = 0;
+    org.aiWorkerCostResetAt = new Date();
+    await orgRepo.save(org);
+
+    logger.info("AI Worker cumulative cost reset", {
+      orgId,
+      previousCost,
+      resetAt: org.aiWorkerCostResetAt,
+    });
+
+    return res.json({
+      success: true,
+      previousCost,
+      resetAt: org.aiWorkerCostResetAt,
+    });
+  } catch (error) {
+    logger.error("Error resetting cumulative cost:", error);
+    return res.status(500).json({ error: "Failed to reset cumulative cost" });
   }
 });
 
@@ -866,6 +913,94 @@ router.post(
 );
 
 /**
+ * POST /api/v1/super-admin/control-center/tasks/:taskId/mark-manager-complete
+ * Mark a manager task as completed (called by manager ECS task before exit)
+ */
+router.post(
+  "/control-center/tasks/:taskId/mark-manager-complete",
+  [
+    param("taskId").isUUID(),
+    body("decision").optional().isString(),
+    body("feedback").optional().isString(),
+    body("codeQualityScore").optional().isInt({ min: 1, max: 10 }),
+    body("newTicketsCreated").optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+      const { decision, feedback, codeQualityScore, newTicketsCreated } =
+        req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const managerRepo = dataSource.getRepository(AIWorkerInstance);
+
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      if (task.status !== "manager_review") {
+        return res.status(400).json({
+          error: `Task is in ${task.status} status, expected manager_review`,
+        });
+      }
+
+      // Update task to completed
+      task.status = "completed";
+      task.completedAt = new Date();
+
+      // Store manager review results if provided
+      if (decision) {
+        task.reviewDecision = decision;
+      }
+      if (feedback) {
+        task.reviewFeedback = feedback;
+      }
+      if (codeQualityScore !== undefined) {
+        task.codeQualityScore = codeQualityScore;
+      }
+
+      await taskRepo.save(task);
+
+      // Update manager instance to idle
+      if (task.reviewerManagerId) {
+        const manager = await managerRepo.findOne({
+          where: { id: task.reviewerManagerId },
+        });
+        if (manager) {
+          manager.status = "idle";
+          manager.currentTaskId = null;
+          await managerRepo.save(manager);
+        }
+      }
+
+      logger.info(`Manager marked task ${taskId} as completed`, {
+        taskId,
+        decision,
+        newTicketsCreated,
+      });
+
+      return res.json({
+        message: "Task marked as completed",
+        taskId: task.id,
+        status: task.status,
+      });
+    } catch (error) {
+      logger.error("Error marking manager task as complete:", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to mark task as complete" });
+    }
+  },
+);
+
+/**
  * POST /api/v1/super-admin/control-center/tasks/reset-by-key
  * Reset a failed task back to queued status by Jira key
  */
@@ -1056,6 +1191,106 @@ router.post(
       });
     } catch (error) {
       logger.error("Error cancelling task:", error);
+      return res.status(500).json({ error: "Failed to cancel task" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/tasks/cancel-by-key
+ * Cancel a running task by Jira issue key
+ */
+router.post(
+  "/control-center/tasks/cancel-by-key",
+  [
+    body("jiraKey")
+      .isString()
+      .matches(/^[A-Z]+-\d+$/)
+      .withMessage("Invalid Jira issue key format (e.g., OCS-30)"),
+    body("reason").optional().isString().isLength({ max: 500 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { jiraKey, reason } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      // Find most recent task for this Jira key
+      const task = await taskRepo.findOne({
+        where: { jiraIssueKey: jiraKey },
+        order: { createdAt: "DESC" },
+      });
+
+      if (!task) {
+        return res.status(404).json({ error: `Task not found for ${jiraKey}` });
+      }
+
+      if (["completed", "failed", "cancelled"].includes(task.status)) {
+        return res.status(400).json({
+          error: `Task ${jiraKey} is already ${task.status}`,
+          taskId: task.id,
+          status: task.status,
+        });
+      }
+
+      // Stop ECS task if running
+      if (task.ecsTaskArn) {
+        try {
+          await ecs.send(
+            new StopTaskCommand({
+              cluster: ecsCluster,
+              task: task.ecsTaskArn,
+              reason: reason || `Cancelled via cancel-by-key: ${jiraKey}`,
+            }),
+          );
+          logger.info("Stopped ECS task", {
+            jiraKey,
+            taskId: task.id,
+            ecsTaskArn: task.ecsTaskArn,
+          });
+        } catch (err) {
+          logger.warn("Failed to stop ECS task (may already be stopped):", err);
+        }
+      }
+
+      // Update task state
+      task.status = "failed";
+      task.completedAt = new Date();
+      task.errorMessage = reason || `Cancelled via cancel-by-key: ${jiraKey}`;
+      task.watcherNotes =
+        (task.watcherNotes || "") +
+        `\n[${new Date().toISOString()}] Cancelled via cancel-by-key: ${reason || "No reason provided"}`;
+
+      // Calculate cost from duration
+      if (task.startedAt) {
+        task.ecsTaskSeconds = Math.floor(
+          (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
+        );
+        task.estimatedCostUsd = task.calculateCost();
+      }
+
+      await taskRepo.save(task);
+
+      logger.info("Task cancelled via cancel-by-key", {
+        jiraKey,
+        taskId: task.id,
+        reason,
+      });
+
+      return res.json({
+        message: `Task ${jiraKey} cancelled`,
+        jiraKey,
+        taskId: task.id,
+        status: task.status,
+      });
+    } catch (error) {
+      logger.error("Error cancelling task by key:", error);
       return res.status(500).json({ error: "Failed to cancel task" });
     }
   },

@@ -684,6 +684,44 @@ fi
 
 if [ "${CLAUDE_EXIT_CODE}" -eq 0 ]; then
     send_log "system" "Manager completed successfully" "info"
+
+    # Parse output markers from Claude's response
+    DECISION=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::review_decision::\K[^:]+' | head -1 || echo "")
+    CODE_QUALITY=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::code_quality_score::\K[0-9]+' | head -1 || echo "")
+    NEW_TICKETS=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::new_tickets_created::\K[0-9]+' | head -1 || echo "0")
+    FEEDBACK=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::feedback::\K.+' | head -1 || echo "")
+
+    # Mark task as completed via API
+    if [ -n "${API_BASE_URL}" ] && [ -n "${ORG_API_KEY}" ]; then
+        echo "[Manager] Marking task as completed..."
+
+        # Build JSON payload with available fields
+        PAYLOAD=$(jq -n \
+            --arg decision "$DECISION" \
+            --arg feedback "$FEEDBACK" \
+            --argjson codeQuality "${CODE_QUALITY:-null}" \
+            --argjson newTickets "${NEW_TICKETS:-0}" \
+            '{
+                decision: (if $decision != "" then $decision else null end),
+                feedback: (if $feedback != "" then $feedback else null end),
+                codeQualityScore: $codeQuality,
+                newTicketsCreated: $newTickets
+            }')
+
+        COMPLETE_RESPONSE=$(curl -s -X POST \
+            "${API_BASE_URL}/api/v1/super-admin/control-center/tasks/${TASK_ID}/mark-manager-complete" \
+            -H "Authorization: Bearer ${ORG_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+        if echo "$COMPLETE_RESPONSE" | jq -e '.error' > /dev/null 2>&1; then
+            echo "[Manager] Failed to mark as completed: $(echo "$COMPLETE_RESPONSE" | jq -r '.error')"
+            send_log "error" "Failed to mark task as completed" "error"
+        else
+            echo "[Manager] Task marked as completed successfully"
+            send_log "system" "Task marked as completed" "info"
+        fi
+    fi
 else
     send_log "error" "Manager exited with code ${CLAUDE_EXIT_CODE}" "error"
 fi
