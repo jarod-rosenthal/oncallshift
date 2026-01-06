@@ -106,7 +106,21 @@ async function main(): Promise<void> {
     output.error = error instanceof Error ? error.message : String(error);
   }
 
+  // Output JSON for worker to parse
   console.log(JSON.stringify(output));
+
+  // Output tagged markers for orchestrator to parse from CloudWatch logs
+  if (output.success && output.prUrl) {
+    console.error(`::pr_url::${output.prUrl}`);
+    if (output.prNumber) {
+      console.error(`::pr_number::${output.prNumber}`);
+    }
+    if (output.branch) {
+      console.error(`::branch::${output.branch}`);
+    }
+    console.error(`::result::success_with_pr`);
+  }
+
   process.exit(output.success ? 0 : 1);
 }
 
