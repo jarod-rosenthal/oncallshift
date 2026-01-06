@@ -74,7 +74,7 @@ module "database" {
   max_allocated_storage       = var.db_max_allocated_storage
   backup_retention_period     = var.db_backup_retention_days
   deletion_protection         = var.db_deletion_protection
-  enable_performance_insights = false
+  enable_performance_insights = true
   enable_enhanced_monitoring  = false
 
   # RDS Proxy for connection pooling
