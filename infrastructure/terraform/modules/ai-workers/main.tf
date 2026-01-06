@@ -548,7 +548,9 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         ]
         Resource = [
           "arn:aws:s3:::oncallshift-frontend-*",
-          "arn:aws:s3:::oncallshift-frontend-*/*"
+          "arn:aws:s3:::oncallshift-frontend-*/*",
+          "arn:aws:s3:::oncallshift-*-web",
+          "arn:aws:s3:::oncallshift-*-web/*"
         ]
       },
       # CloudFront - CDN
@@ -1357,7 +1359,9 @@ resource "aws_iam_role_policy" "manager_executor_task_policy" {
           "arn:aws:s3:::${var.project_name}-*",
           "arn:aws:s3:::${var.project_name}-*/*",
           "arn:aws:s3:::oncallshift-frontend-*",
-          "arn:aws:s3:::oncallshift-frontend-*/*"
+          "arn:aws:s3:::oncallshift-frontend-*/*",
+          "arn:aws:s3:::oncallshift-*-web",
+          "arn:aws:s3:::oncallshift-*-web/*"
         ]
       },
       # CloudFront - Invalidate cache after deployment
