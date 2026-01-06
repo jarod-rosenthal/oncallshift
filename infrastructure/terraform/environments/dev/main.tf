@@ -477,8 +477,8 @@ resource "aws_cognito_user_pool_client" "mobile" {
   ]
 
   refresh_token_validity = 30
-  access_token_validity  = 1
-  id_token_validity      = 1
+  access_token_validity  = 12
+  id_token_validity      = 12
 
   token_validity_units {
     refresh_token = "days"
