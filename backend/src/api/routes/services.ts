@@ -620,10 +620,19 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     const service = await serviceRepo.findOne({
       where: { id, orgId },
+      relations: ['incidents'],
     });
 
     if (!service) {
       return res.status(404).json({ error: 'Service not found' });
+    }
+
+    // Check if service has any incidents
+    if (service.incidents && service.incidents.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete service with existing incidents',
+        incidentCount: service.incidents.length
+      });
     }
 
     // Use a transaction to ensure all deletions succeed or fail together
@@ -637,12 +646,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
         .execute();
 
       // Delete the service using the transaction's query builder
-      await transactionalEntityManager
+      const result = await transactionalEntityManager
         .createQueryBuilder()
         .delete()
         .from('services')
         .where('id = :id AND org_id = :orgId', { id, orgId })
         .execute();
+
+      if (result.affected === 0) {
+        throw new Error('Service deletion failed - no rows affected');
+      }
     });
 
     logger.info('Service deleted', {
