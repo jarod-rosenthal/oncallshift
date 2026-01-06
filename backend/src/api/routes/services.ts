@@ -636,8 +636,13 @@ router.delete('/:id', async (req: Request, res: Response) => {
         .where('dependent_service_id = :serviceId OR supporting_service_id = :serviceId', { serviceId: id })
         .execute();
 
-      // Delete the service (incidents will be handled by ON DELETE CASCADE in the database)
-      await transactionalEntityManager.remove(service);
+      // Delete the service using the transaction's query builder
+      await transactionalEntityManager
+        .createQueryBuilder()
+        .delete()
+        .from(Service)
+        .where('id = :id AND org_id = :orgId', { id, orgId })
+        .execute();
     });
 
     logger.info('Service deleted', {
