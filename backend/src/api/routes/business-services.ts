@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
+import { In } from 'typeorm';
 import { authenticateUser } from '../../shared/auth/middleware';
 import { getDataSource } from '../../shared/db/data-source';
 import { BusinessService, ServiceDependency, Service, Team, User } from '../../shared/models';
@@ -83,6 +84,53 @@ router.get('/',
       ));
     } catch (error) {
       console.error('Error fetching business services:', error);
+      return internalError(res);
+    }
+  }
+);
+
+/**
+ * Get full dependency graph for the organization
+ */
+router.get('/dependency-graph',
+  async (req: Request, res: Response) => {
+    try {
+      const orgId = req.user!.orgId;
+      const dataSource = await getDataSource();
+      const serviceRepo = dataSource.getRepository(Service);
+      const depRepo = dataSource.getRepository(ServiceDependency);
+
+      const [services, dependencies] = await Promise.all([
+        serviceRepo.find({
+          where: { orgId },
+          select: ['id', 'name', 'status', 'businessServiceId'],
+          relations: ['businessService'],
+        }),
+        depRepo.find({
+          where: { orgId },
+        }),
+      ]);
+
+      // Build graph structure
+      const nodes = services.map(s => ({
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        businessServiceId: s.businessServiceId,
+        businessServiceName: s.businessService?.name || null,
+      }));
+
+      const edges = dependencies.map(d => ({
+        id: d.id,
+        source: d.dependentServiceId,
+        target: d.supportingServiceId,
+        dependencyType: d.dependencyType,
+        impactLevel: d.impactLevel,
+      }));
+
+      return res.json({ nodes, edges });
+    } catch (error) {
+      console.error('Error fetching dependency graph:', error);
       return internalError(res);
     }
   }
@@ -594,53 +642,6 @@ router.delete('/dependencies/:id',
       return res.status(204).send();
     } catch (error) {
       console.error('Error deleting service dependency:', error);
-      return internalError(res);
-    }
-  }
-);
-
-/**
- * Get full dependency graph for the organization
- */
-router.get('/dependency-graph',
-  async (req: Request, res: Response) => {
-    try {
-      const orgId = req.user!.orgId;
-      const dataSource = await getDataSource();
-      const serviceRepo = dataSource.getRepository(Service);
-      const depRepo = dataSource.getRepository(ServiceDependency);
-
-      const [services, dependencies] = await Promise.all([
-        serviceRepo.find({
-          where: { orgId },
-          select: ['id', 'name', 'status', 'businessServiceId'],
-          relations: ['businessService'],
-        }),
-        depRepo.find({
-          where: { orgId },
-        }),
-      ]);
-
-      // Build graph structure
-      const nodes = services.map(s => ({
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        businessServiceId: s.businessServiceId,
-        businessServiceName: s.businessService?.name || null,
-      }));
-
-      const edges = dependencies.map(d => ({
-        id: d.id,
-        source: d.dependentServiceId,
-        target: d.supportingServiceId,
-        dependencyType: d.dependencyType,
-        impactLevel: d.impactLevel,
-      }));
-
-      return res.json({ nodes, edges });
-    } catch (error) {
-      console.error('Error fetching dependency graph:', error);
       return internalError(res);
     }
   }
