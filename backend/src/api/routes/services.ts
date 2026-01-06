@@ -640,7 +640,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       await transactionalEntityManager
         .createQueryBuilder()
         .delete()
-        .from(Service)
+        .from('services')
         .where('id = :id AND org_id = :orgId', { id, orgId })
         .execute();
     });
