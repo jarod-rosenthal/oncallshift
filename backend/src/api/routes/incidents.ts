@@ -14,11 +14,79 @@ import { parsePaginationParams, paginatedResponse, validateSortField, decodeCurs
 import { parseIncidentFilters, applyIncidentFilters } from '../../shared/utils/filtering';
 import { incidentFilterValidators, paginationValidators } from '../../shared/validators/pagination';
 import { notFound, internalError } from '../../shared/utils/problem-details';
+import { MoreThan } from 'typeorm';
 
 const router = Router();
 
 // All routes require authentication (supports JWT, service API key, and org API key)
 router.use(authenticateRequest);
+
+// Server-Sent Events stream for incident updates
+router.get('/stream', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = req.orgId!;
+    if (!orgId) {
+      res.status(401).end();
+      return;
+    }
+
+    const dataSource = await getDataSource();
+    const incidentRepo = dataSource.getRepository(Incident);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    if ((res as any).flushHeaders) {
+      (res as any).flushHeaders();
+    }
+
+    let isClosed = false;
+    let lastSeen = new Date(Date.now() - 5 * 60 * 1000); // send recent updates on connect
+
+    const sendUpdates = async () => {
+      if (isClosed) return;
+      try {
+        const updates = await incidentRepo.find({
+          where: { orgId, updatedAt: MoreThan(lastSeen) },
+          relations: ['service', 'acknowledgedByUser', 'resolvedByUser', 'assignedToUser'],
+          order: { updatedAt: 'ASC' },
+          take: 50,
+        });
+
+        if (updates.length > 0) {
+          lastSeen = updates[updates.length - 1].updatedAt;
+          res.write('event: incident_update\n');
+          res.write(`data: ${JSON.stringify({ incidents: updates.map(formatIncident) })}\n\n`);
+        }
+      } catch (error) {
+        logger.error('Error streaming incident updates', { error });
+      }
+    };
+
+    const sendPing = () => {
+      if (isClosed) return;
+      res.write('event: ping\n');
+      res.write('data: {}\n\n');
+    };
+
+    const updateInterval = setInterval(sendUpdates, 5000);
+    const pingInterval = setInterval(sendPing, 20000);
+
+    req.on('close', () => {
+      isClosed = true;
+      clearInterval(updateInterval);
+      clearInterval(pingInterval);
+      res.end();
+    });
+
+    res.write('event: connected\n');
+    res.write('data: {}\n\n');
+    await sendUpdates();
+  } catch (error) {
+    logger.error('Failed to establish incident SSE stream', { error });
+    res.status(500).json({ error: 'Failed to start incident stream' });
+  }
+});
 
 /**
  * @swagger

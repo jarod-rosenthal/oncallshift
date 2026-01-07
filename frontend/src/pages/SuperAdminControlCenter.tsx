@@ -342,6 +342,7 @@ export default function SuperAdminControlCenter() {
   const [streamingTerminals, setStreamingTerminals] = useState<Set<string>>(
     new Set(),
   );
+  const controlCenterStreamRef = useRef<EventSource | null>(null);
   // Track EventSource connections for SSE streaming
   const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
   // Track terminal scroll containers for auto-scroll
@@ -982,25 +983,52 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus();
     fetchTaskList();
 
-    // Poll every 10 seconds if auto-refresh is enabled
+    // Live updates via SSE when auto-refresh is enabled
     if (!autoRefresh) return;
 
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        fetchData();
-        fetchSystemStatus();
-        fetchWatcherStatus();
-        fetchManagerStatus();
-        fetchTaskList();
-        // Also refresh terminal logs for expanded terminals
-        expandedTerminals.forEach((taskId) => {
-          fetchTerminalLogs(taskId);
-        });
+    const token = localStorage.getItem("accessToken");
+    const params = new URLSearchParams();
+    if (token) params.set("token", token);
+    if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+    if (searchQuery) params.set("search", searchQuery);
+
+    const streamUrl = `${API_BASE}/api/v1/super-admin/control-center/stream?${params.toString()}`;
+    const es = new EventSource(streamUrl);
+    controlCenterStreamRef.current = es;
+
+    es.addEventListener("control_center_update", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data);
+        if (payload.controlCenter) {
+          setData(payload.controlCenter);
+        }
+        if (payload.systemStatus) setSystemStatus(payload.systemStatus);
+        if (payload.watcherStatus) setWatcherStatus(payload.watcherStatus);
+        if (payload.managerStatus) setManagerStatus(payload.managerStatus);
+        if (payload.taskList?.tasks) {
+          setTaskList(payload.taskList.tasks);
+        }
+        if (payload.lastUpdated) {
+          setLastUpdated(new Date(payload.lastUpdated));
+        } else {
+          setLastUpdated(new Date());
+        }
+        setError(null);
+      } catch (e) {
+        console.error("Failed to process control_center_update", e);
       }
-    }, 10000);
+    });
+
+    es.addEventListener("error", () => {
+      setError("Live updates disconnected");
+      es.close();
+    });
 
     return () => {
-      clearInterval(interval);
+      if (controlCenterStreamRef.current) {
+        controlCenterStreamRef.current.close();
+        controlCenterStreamRef.current = null;
+      }
     };
   }, [
     fetchData,
@@ -1008,9 +1036,9 @@ export default function SuperAdminControlCenter() {
     fetchWatcherStatus,
     fetchManagerStatus,
     fetchTaskList,
-    fetchTerminalLogs,
-    expandedTerminals,
     autoRefresh,
+    statusFilter,
+    searchQuery,
   ]);
 
   // Refetch task list when filters change
@@ -2345,17 +2373,24 @@ export default function SuperAdminControlCenter() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {task.githubPrUrl && (
-                          <a
-                            href={task.githubPrUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline flex items-center gap-1 text-xs"
-                            title="View Pull Request"
-                          >
-                            <GitBranch className="w-3 h-3" />
-                            PR#{task.githubPrNumber}
-                          </a>
+                        {(task.githubPrUrl || task.githubPrNumber) && (
+                          task.githubPrUrl ? (
+                            <a
+                              href={task.githubPrUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline flex items-center gap-1 text-xs"
+                              title="View Pull Request"
+                            >
+                              <GitBranch className="w-3 h-3" />
+                              {task.githubPrNumber ? `PR#${task.githubPrNumber}` : "PR"}
+                            </a>
+                          ) : (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Pull request number">
+                              <GitBranch className="w-3 h-3" />
+                              {task.githubPrNumber ? `PR#${task.githubPrNumber}` : "PR"}
+                            </span>
+                          )
                         )}
                         {task.ecsTaskArn && (
                           <a
