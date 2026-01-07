@@ -8,6 +8,12 @@ import { runCloudInvestigation } from '../../shared/services/cloud-investigation
 import { logger } from '../../shared/utils/logger';
 import { notFound, internalError, badRequest } from '../../shared/utils/problem-details';
 
+function isOrgAdmin(user: any) {
+  const role = user?.role;
+  const baseRole = user?.baseRole;
+  return role === 'super_admin' || role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
+}
+
 const router = Router();
 
 /**
@@ -296,7 +302,7 @@ router.post(
       } = req.body;
 
       // Check user has admin role
-      if (req.user!.baseRole !== 'admin' && req.user!.baseRole !== 'owner') {
+      if (!isOrgAdmin(req.user)) {
         return res.status(403).json({ error: 'Only admins can create cloud credentials' });
       }
 
@@ -417,7 +423,7 @@ router.put(
       const orgId = req.orgId!;
 
       // Check user has admin role
-      if (req.user!.baseRole !== 'admin' && req.user!.baseRole !== 'owner') {
+      if (!isOrgAdmin(req.user)) {
         return res.status(403).json({ error: 'Only admins can update cloud credentials' });
       }
 
@@ -490,7 +496,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     const orgId = req.orgId!;
 
     // Check user has admin role
-    if (req.user!.baseRole !== 'admin' && req.user!.baseRole !== 'owner') {
+    if (!isOrgAdmin(req.user)) {
       return res.status(403).json({ error: 'Only admins can delete cloud credentials' });
     }
 
@@ -736,7 +742,7 @@ router.post(
       const recommendation = recommendations[recommendation_index];
 
       // Check if high-risk requires approval
-      if (recommendation.requires_approval && req.user!.baseRole !== 'admin' && req.user!.baseRole !== 'owner') {
+      if (recommendation.requires_approval && !isOrgAdmin(req.user)) {
         return res.status(403).json({
           error: 'This action requires admin approval',
           requires_approval: true,
