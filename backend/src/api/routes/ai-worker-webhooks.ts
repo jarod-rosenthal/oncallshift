@@ -162,16 +162,16 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       });
     }
 
-    // Check for recently completed task (cooldown period to prevent webhook loops)
-    // When we complete a task and update Jira, Jira fires another webhook
-    // This prevents re-triggering the same issue within 1 hour of completion
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Check for recently completed task (cooldown to avoid tight webhook loops).
+    // Previously 60 minutes; reduced to 5 minutes so manual re-runs (e.g., re-adding ai-worker label)
+    // get picked up quickly.
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const recentlyCompletedTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
         status: In(['completed', 'failed', 'cancelled']),
-        completedAt: MoreThan(oneHourAgo),
+        completedAt: MoreThan(fiveMinutesAgo),
       },
       order: { completedAt: 'DESC' },
     });
@@ -183,7 +183,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
         completedAt: recentlyCompletedTask.completedAt,
       });
       return res.json({
-        message: 'Task recently completed (cooldown period)',
+        message: 'Task recently completed (cooldown period - 5 minutes)',
         taskId: recentlyCompletedTask.id,
         issueKey: issue.key,
         completedAt: recentlyCompletedTask.completedAt,

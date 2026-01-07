@@ -342,9 +342,12 @@ export default function SuperAdminControlCenter() {
   const [streamingTerminals, setStreamingTerminals] = useState<Set<string>>(
     new Set(),
   );
+  const [terminalCursors, setTerminalCursors] = useState<Record<string, string | null>>({});
   const controlCenterStreamRef = useRef<EventSource | null>(null);
   // Track EventSource connections for SSE streaming
   const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  // Fallback polling timers when SSE drops
+  const pollIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   // Track terminal scroll containers for auto-scroll
   const terminalScrollRefs = useRef<Map<string, HTMLDivElement | null>>(
     new Map(),
@@ -736,6 +739,10 @@ export default function SuperAdminControlCenter() {
             `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`,
         );
         setTerminalLogs((prev) => ({ ...prev, [taskId]: logLines }));
+        if (result.logs && result.logs.length > 0) {
+          const last = result.logs[result.logs.length - 1];
+          setTerminalCursors((prev) => ({ ...prev, [taskId]: last.id || null }));
+        }
       }
     } catch (err) {
       console.error("Failed to fetch terminal logs:", err);
@@ -748,6 +755,23 @@ export default function SuperAdminControlCenter() {
     }
   }, []);
 
+  const startPolling = useCallback(
+    (taskId: string, intervalMs = 5000) => {
+      if (pollIntervalsRef.current.has(taskId)) return;
+      const interval = setInterval(() => fetchTerminalLogs(taskId), intervalMs);
+      pollIntervalsRef.current.set(taskId, interval);
+    },
+    [fetchTerminalLogs],
+  );
+
+  const stopPolling = useCallback((taskId: string) => {
+    const interval = pollIntervalsRef.current.get(taskId);
+    if (interval) {
+      clearInterval(interval);
+      pollIntervalsRef.current.delete(taskId);
+    }
+  }, []);
+
   // Start SSE log streaming for a task
   const startLogStream = useCallback(
     (taskId: string) => {
@@ -757,7 +781,10 @@ export default function SuperAdminControlCenter() {
       }
 
       const token = localStorage.getItem("accessToken");
-      const url = `${API_BASE}/api/v1/super-admin/control-center/logs/${taskId}/stream`;
+      const tokenParam = token ? `token=${encodeURIComponent(token)}` : "";
+      const sinceParam = terminalCursors[taskId] ? `since=${encodeURIComponent(terminalCursors[taskId]!)}` : "";
+      const query = [tokenParam, sinceParam].filter(Boolean).join("&");
+      const url = `${API_BASE}/api/v1/super-admin/control-center/logs/${taskId}/stream${query ? `?${query}` : ""}`;
 
       // EventSource doesn't support custom headers, so we need to use a different approach
       // We'll poll initially and use SSE for new logs
@@ -767,9 +794,12 @@ export default function SuperAdminControlCenter() {
       // Create EventSource with token in URL (backend should support this)
       // Note: EventSource doesn't support Authorization headers natively
       // We'll use a workaround by including token in query params
-      const eventSource = new EventSource(`${url}?token=${token}`);
+      const eventSource = new EventSource(url);
+
+      eventSource.addEventListener("ping", () => {});
 
       eventSource.onopen = () => {
+        stopPolling(taskId); // stop any fallback poll once SSE opens
         setStreamingTerminals((prev) => new Set([...prev, taskId]));
       };
 
@@ -783,6 +813,7 @@ export default function SuperAdminControlCenter() {
               ...prev,
               [taskId]: [...(prev[taskId] || []), logLine],
             }));
+            setTerminalCursors((prev) => ({ ...prev, [taskId]: data.id || prev[taskId] || null }));
           } else if (data.type === "status") {
             // Task status changed - refresh main data
             fetchData();
@@ -802,7 +833,7 @@ export default function SuperAdminControlCenter() {
       };
 
       eventSource.onerror = () => {
-        // Connection error - fall back to polling
+        // Connection error - fall back to polling and retry SSE after a delay
         eventSource.close();
         eventSourcesRef.current.delete(taskId);
         setStreamingTerminals((prev) => {
@@ -810,11 +841,21 @@ export default function SuperAdminControlCenter() {
           newSet.delete(taskId);
           return newSet;
         });
+        // Pull latest logs to avoid user refresh and try to reconnect once network is back
+        fetchTerminalLogs(taskId);
+        // Start fallback polling so terminal keeps moving
+        startPolling(taskId);
+        setTimeout(() => {
+          // Only retry if not already reconnected/closed
+          if (!eventSourcesRef.current.has(taskId)) {
+            startLogStream(taskId);
+          }
+        }, 5000);
       };
 
       eventSourcesRef.current.set(taskId, eventSource);
     },
-    [fetchTerminalLogs, fetchData],
+    [fetchTerminalLogs, fetchData, startPolling, stopPolling],
   );
 
   // Stop SSE log streaming for a task
@@ -829,13 +870,16 @@ export default function SuperAdminControlCenter() {
         return newSet;
       });
     }
-  }, []);
+    stopPolling(taskId);
+  }, [stopPolling]);
 
   // Cleanup SSE connections on unmount
   useEffect(() => {
     return () => {
       eventSourcesRef.current.forEach((es) => es.close());
       eventSourcesRef.current.clear();
+      pollIntervalsRef.current.forEach((interval) => clearInterval(interval));
+      pollIntervalsRef.current.clear();
     };
   }, []);
 
