@@ -172,7 +172,6 @@ const Icons = {
 export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps) {
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['People']));
   const [showQuickActions, setShowQuickActions] = useState(true);
 
   // super_admin should have all admin privileges for normal site interaction
@@ -180,18 +179,6 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
-  };
-
-  const toggleSection = (title: string) => {
-    setExpandedSections(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(title)) {
-        newSet.delete(title);
-      } else {
-        newSet.add(title);
-      }
-      return newSet;
-    });
   };
 
   const navSections: NavSection[] = [
@@ -271,31 +258,16 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
     const visibleItems = section.items.filter(item => !item.adminOnly || isAdmin);
     if (visibleItems.length === 0) return null;
 
-    const isExpanded = expandedSections.has(section.title);
-    const hasSubItems = section.title === 'People';
-
     return (
       <div key={section.title} className="mb-2">
         {!collapsed && (
-          <button
-            onClick={() => hasSubItems && toggleSection(section.title)}
-            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${
-              hasSubItems ? 'hover:text-foreground cursor-pointer' : ''
-            }`}
-          >
+          <div className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             <span>{section.title}</span>
-            {hasSubItems && (
-              <span className="transition-transform duration-200">
-                {isExpanded ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
-              </span>
-            )}
-          </button>
-        )}
-        {(collapsed || isExpanded || !hasSubItems) && (
-          <div className="space-y-1">
-            {visibleItems.map(renderNavItem)}
           </div>
         )}
+        <div className="space-y-1">
+          {visibleItems.map(renderNavItem)}
+        </div>
       </div>
     );
   };
