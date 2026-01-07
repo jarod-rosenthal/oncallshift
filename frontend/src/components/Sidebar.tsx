@@ -258,8 +258,6 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
     const visibleItems = section.items.filter(item => !item.adminOnly || isAdmin);
     if (visibleItems.length === 0) return null;
 
-    const hasSubItems = false;
-
     return (
       <div key={section.title} className="mb-2">
         {!collapsed && (
@@ -267,11 +265,9 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
             <span>{section.title}</span>
           </div>
         )}
-        {(collapsed || !hasSubItems) && (
-          <div className="space-y-1">
-            {visibleItems.map(renderNavItem)}
-          </div>
-        )}
+        <div className="space-y-1">
+          {visibleItems.map(renderNavItem)}
+        </div>
       </div>
     );
   };
