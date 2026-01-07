@@ -71,3 +71,4 @@ temp/
 docker-compose.override.yml
 tfplan
 .mcp.json
+.aider*

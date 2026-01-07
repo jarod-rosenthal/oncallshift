@@ -30,6 +30,7 @@ import {
 } from "@aws-sdk/client-sqs";
 import { ECS, StopTaskCommand, UpdateServiceCommand, ListTasksCommand } from "@aws-sdk/client-ecs";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { EventBridgeClient, EnableRuleCommand, DisableRuleCommand, DescribeRuleCommand } from "@aws-sdk/client-eventbridge";
 import { MoreThan, In } from "typeorm";
 import { body, param, query, validationResult } from "express-validator";
 
@@ -40,6 +41,7 @@ const awsRegion = process.env.AWS_REGION || "us-east-1";
 const sqs = new SQS({ region: awsRegion });
 const ecs = new ECS({ region: awsRegion });
 const lambda = new LambdaClient({ region: awsRegion });
+const eventBridge = new EventBridgeClient({ region: awsRegion });
 const queueUrl = process.env.AI_WORKER_QUEUE_URL;
 const ecsCluster = process.env.ECS_CLUSTER_NAME || "pagerduty-lite-dev";
 const orchestratorServiceName =
@@ -47,6 +49,8 @@ const orchestratorServiceName =
 const managerLambdaName =
   process.env.AI_WORKER_MANAGER_LAMBDA ||
   "pagerduty-lite-dev-ai-worker-manager";
+const watcherRuleName =
+  process.env.AI_WORKER_WATCHER_RULE || `${ecsCluster}-ai-worker-watcher-schedule`;
 
 // Middleware to check super admin role
 // Supports both user JWT auth (req.user) and org API key auth (req.orgId)
@@ -1352,9 +1356,22 @@ router.get(
         }),
       ]);
 
+      // Check if watcher rule is enabled
+      let watcherEnabled = false;
+      try {
+        const ruleStatus = await eventBridge.send(
+          new DescribeRuleCommand({
+            Name: watcherRuleName,
+          })
+        );
+        watcherEnabled = ruleStatus.State === "ENABLED";
+      } catch (err) {
+        logger.warn("Failed to get watcher rule status:", err);
+      }
+
       // Return in format frontend expects
       return res.json({
-        enabled: true,
+        enabled: watcherEnabled,
         lastRunAt: null, // Would need CloudWatch Logs API to get this
         stuckTasks: stuckCount,
         pendingRetries: pendingRetryCount,
@@ -1367,6 +1384,118 @@ router.get(
       return res.status(500).json({ error: "Failed to fetch watcher status" });
     }
   },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/watcher/enable
+ * Enable the watcher CloudWatch Events rule
+ */
+router.post(
+  "/control-center/watcher/enable",
+  async (_req: Request, res: Response) => {
+    try {
+      await eventBridge.send(
+        new EnableRuleCommand({
+          Name: watcherRuleName,
+        })
+      );
+
+      logger.info("Watcher enabled");
+
+      return res.json({
+        success: true,
+        message: "Watcher enabled",
+      });
+    } catch (error) {
+      logger.error("Error enabling watcher:", error);
+      return res.status(500).json({ error: "Failed to enable watcher" });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/watcher/disable
+ * Disable the watcher CloudWatch Events rule
+ */
+router.post(
+  "/control-center/watcher/disable",
+  async (_req: Request, res: Response) => {
+    try {
+      await eventBridge.send(
+        new DisableRuleCommand({
+          Name: watcherRuleName,
+        })
+      );
+
+      logger.info("Watcher disabled");
+
+      return res.json({
+        success: true,
+        message: "Watcher disabled",
+      });
+    } catch (error) {
+      logger.error("Error disabling watcher:", error);
+      return res.status(500).json({ error: "Failed to disable watcher" });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/orchestrator/start
+ * Start the orchestrator service (set desiredCount to 1)
+ */
+router.post(
+  "/control-center/orchestrator/start",
+  async (_req: Request, res: Response) => {
+    try {
+      await ecs.send(
+        new UpdateServiceCommand({
+          cluster: ecsCluster,
+          service: orchestratorServiceName,
+          desiredCount: 1,
+        })
+      );
+
+      logger.info("Orchestrator started");
+
+      return res.json({
+        success: true,
+        message: "Orchestrator started",
+      });
+    } catch (error) {
+      logger.error("Error starting orchestrator:", error);
+      return res.status(500).json({ error: "Failed to start orchestrator" });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/orchestrator/stop
+ * Stop the orchestrator service (set desiredCount to 0)
+ */
+router.post(
+  "/control-center/orchestrator/stop",
+  async (_req: Request, res: Response) => {
+    try {
+      await ecs.send(
+        new UpdateServiceCommand({
+          cluster: ecsCluster,
+          service: orchestratorServiceName,
+          desiredCount: 0,
+        })
+      );
+
+      logger.info("Orchestrator stopped");
+
+      return res.json({
+        success: true,
+        message: "Orchestrator stopped",
+      });
+    } catch (error) {
+      logger.error("Error stopping orchestrator:", error);
+      return res.status(500).json({ error: "Failed to stop orchestrator" });
+    }
+  }
 );
 
 /**

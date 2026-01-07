@@ -331,6 +331,8 @@ export default function SuperAdminControlCenter() {
     executors: { running: number };
   } | null>(null);
   const [systemToggleLoading, setSystemToggleLoading] = useState(false);
+  const [watcherToggleLoading, setWatcherToggleLoading] = useState(false);
+  const [orchestratorToggleLoading, setOrchestratorToggleLoading] = useState(false);
   const [expandedTerminals, setExpandedTerminals] = useState<Set<string>>(
     new Set(),
   );
@@ -447,6 +449,70 @@ export default function SuperAdminControlCenter() {
       setCreateError("Failed to toggle system");
     } finally {
       setSystemToggleLoading(false);
+    }
+  };
+
+  // Toggle watcher on/off
+  const toggleWatcher = async () => {
+    if (!watcherStatus) return;
+    setWatcherToggleLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const endpoint = watcherStatus.enabled ? "disable" : "enable";
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/watcher/${endpoint}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setCreateSuccess(result.message);
+        setTimeout(() => setCreateSuccess(null), 3000);
+        // Refresh watcher status
+        fetchWatcherStatus();
+      } else {
+        const err = await response.json();
+        setCreateError(err.error || `Failed to ${endpoint} watcher`);
+      }
+    } catch (err) {
+      console.error("Failed to toggle watcher:", err);
+      setCreateError("Failed to toggle watcher");
+    } finally {
+      setWatcherToggleLoading(false);
+    }
+  };
+
+  // Toggle orchestrator on/off
+  const toggleOrchestrator = async () => {
+    if (!systemStatus) return;
+    setOrchestratorToggleLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const endpoint = systemStatus.orchestrator.running ? "stop" : "start";
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/orchestrator/${endpoint}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setCreateSuccess(result.message);
+        setTimeout(() => setCreateSuccess(null), 3000);
+        // Refresh system status
+        fetchSystemStatus();
+      } else {
+        const err = await response.json();
+        setCreateError(err.error || `Failed to ${endpoint} orchestrator`);
+      }
+    } catch (err) {
+      console.error("Failed to toggle orchestrator:", err);
+      setCreateError("Failed to toggle orchestrator");
+    } finally {
+      setOrchestratorToggleLoading(false);
     }
   };
 
@@ -1292,33 +1358,38 @@ export default function SuperAdminControlCenter() {
               >
                 {managerStatus.enabled ? "Active" : "Disabled"}
               </span>
-              {/* Watcher status indicator */}
+              {/* Watcher status indicator - clickable */}
               {watcherStatus && (
-                <span
-                  className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${
+                <button
+                  onClick={toggleWatcher}
+                  disabled={watcherToggleLoading}
+                  className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-all cursor-pointer hover:opacity-80 ${
                     watcherStatus.enabled
-                      ? "bg-green-500/10 text-green-500"
-                      : "bg-red-500/10 text-red-500"
-                  }`}
+                      ? "bg-green-500/10 text-green-500 border border-green-500/30"
+                      : "bg-red-500/10 text-red-500 border border-red-500/30"
+                  } ${watcherToggleLoading ? "opacity-50 cursor-not-allowed animate-pulse" : ""}`}
+                  title={`Click to ${watcherStatus.enabled ? "disable" : "enable"} watcher`}
                 >
                   <Shield className="w-3 h-3" />
                   Watcher {watcherStatus.enabled ? "Active" : "Off"}
-                </span>
+                </button>
               )}
-              {/* Orchestrator status indicator */}
+              {/* Orchestrator status indicator - clickable */}
               {systemStatus && (
-                <span
-                  className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${
+                <button
+                  onClick={toggleOrchestrator}
+                  disabled={orchestratorToggleLoading}
+                  className={`flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-all cursor-pointer hover:opacity-80 ${
                     systemStatus.orchestrator.running
-                      ? "bg-blue-500/10 text-blue-500"
-                      : "bg-gray-500/10 text-gray-500"
-                  }`}
-                  title={`Orchestrator: ${systemStatus.orchestrator.desiredCount} desired, ${systemStatus.orchestrator.running ? "running" : "stopped"}`}
+                      ? "bg-blue-500/10 text-blue-500 border border-blue-500/30"
+                      : "bg-gray-500/10 text-gray-500 border border-gray-500/30"
+                  } ${orchestratorToggleLoading ? "opacity-50 cursor-not-allowed animate-pulse" : ""}`}
+                  title={`Click to ${systemStatus.orchestrator.running ? "stop" : "start"} orchestrator`}
                 >
                   <Activity className="w-3 h-3" />
                   Orchestrator{" "}
                   {systemStatus.orchestrator.running ? "Running" : "Off"}
-                </span>
+                </button>
               )}
             </div>
             <span className="text-xs text-muted-foreground">
