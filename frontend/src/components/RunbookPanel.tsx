@@ -157,12 +157,27 @@ export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
   const [selectedCredentials, setSelectedCredentials] = useState<string[]>([]);
   const [showCredentialSelector, setShowCredentialSelector] = useState(false);
   const [selectedModel, setSelectedModel] = useState<'haiku' | 'sonnet' | 'opus'>('sonnet');
+  const [matchingRunbooks, setMatchingRunbooks] = useState<Runbook[]>([]);
+  const STANDARD_SEVERITIES = ['critical', 'error', 'warning', 'info'];
+
+  const normalizeSeverity = (s: string) => (s || '').toLowerCase();
+  const cleanRunbook = (rb: any): Runbook => {
+    const cleanedSeverity = (rb.severity || [])
+      .map(normalizeSeverity)
+      .filter((sev: string) => STANDARD_SEVERITIES.includes(sev));
+    return {
+      ...rb,
+      severity: cleanedSeverity,
+    };
+  };
 
   const modelOptions = [
     { id: 'haiku' as const, name: 'Claude Haiku', description: 'Fast, lightweight' },
     { id: 'sonnet' as const, name: 'Claude Sonnet', description: 'Balanced (Recommended)' },
     { id: 'opus' as const, name: 'Claude Opus', description: 'Most capable' },
   ];
+
+  const progressKey = (runbookId: string) => `runbook-progress-${incident.id}-${runbookId}`;
 
   // Execute a runbook action
   const executeAction = async (stepId: string, action: RunbookStepAction) => {
@@ -361,33 +376,36 @@ export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
       try {
         // First try service-specific runbooks
         const response = await runbooksAPI.listForService(incident.service.id);
-        let serviceRunbooks = response?.runbooks || [];
+        let serviceRunbooks = (response?.runbooks || []).map(cleanRunbook);
 
         // If no service-specific runbooks, try ALL org runbooks with automated steps
         if (serviceRunbooks.length === 0) {
           try {
             const allResponse = await runbooksAPI.list();
             // Filter to runbooks that have automated steps
-            serviceRunbooks = (allResponse?.runbooks || []).filter((rb: any) =>
-              rb.steps?.some((s: any) => s.type === 'automated')
-            );
+            serviceRunbooks = (allResponse?.runbooks || [])
+              .filter((rb: any) => rb.steps?.some((s: any) => s.type === 'automated'))
+              .map(cleanRunbook);
           } catch (e) {
             console.log('Could not fetch org runbooks:', e);
           }
         }
 
         if (serviceRunbooks.length > 0) {
-          // Find the best matching runbook:
-          // 1. Match severity if specified
-          // 2. Otherwise use the first one
-          let matchedRunbook = serviceRunbooks.find((rb: any) =>
-            rb.severity.length === 0 || rb.severity.includes(incident.severity)
-          );
+          const incidentSeverity = normalizeSeverity(incident.severity);
 
-          if (!matchedRunbook) {
-            matchedRunbook = serviceRunbooks[0];
-          }
+          // Keep severity-matching runbooks; ignore non-standard severities
+          const severityMatches = serviceRunbooks.filter((rb: any) => {
+            const sevList = rb.severity || [];
+            if (sevList.length === 0) return true;
+            if (sevList.includes(incidentSeverity)) return true;
+            return false;
+          });
 
+          const candidates = severityMatches.length > 0 ? severityMatches : serviceRunbooks;
+          setMatchingRunbooks(candidates);
+
+          const matchedRunbook = candidates[0];
           setRunbook({
             id: matchedRunbook.id,
             title: matchedRunbook.title,
@@ -397,22 +415,18 @@ export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
           });
         } else {
           // Fall back to mock runbook
+          setMatchingRunbooks([]);
           setRunbook(getMockRunbook(incident.service.name));
         }
       } catch (error) {
         console.error('Failed to fetch runbook:', error);
         // Fall back to mock runbook on error
+        setMatchingRunbooks([]);
         setRunbook(getMockRunbook(incident.service.name));
       }
     };
 
     loadRunbook();
-
-    // Load completed steps from localStorage
-    const savedSteps = localStorage.getItem(`runbook-progress-${incident.id}`);
-    if (savedSteps) {
-      setCompletedSteps(JSON.parse(savedSteps));
-    }
 
     // Load saved conversation from localStorage
     const savedChat = localStorage.getItem(`ai-chat-${incident.id}`);
@@ -443,6 +457,17 @@ export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
     };
     loadCredentials();
   }, [incident.id, incident.service.id, incident.service.name, incident.severity]);
+
+  // Load saved progress when switching runbooks
+  useEffect(() => {
+    if (runbook?.id) {
+      const savedSteps = localStorage.getItem(progressKey(runbook.id));
+      setCompletedSteps(savedSteps ? JSON.parse(savedSteps) : []);
+      setIsCollapsed(false);
+      setActionStates({});
+      setCurrentExecution(null);
+    }
+  }, [runbook?.id]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -632,16 +657,29 @@ Provide:
 
   const toggleStep = (stepId: string) => {
     if (incident.state === 'resolved') return;
+    if (!runbook) return;
 
     const newCompletedSteps = completedSteps.includes(stepId)
       ? completedSteps.filter(id => id !== stepId)
       : [...completedSteps, stepId];
 
     setCompletedSteps(newCompletedSteps);
-    localStorage.setItem(`runbook-progress-${incident.id}`, JSON.stringify(newCompletedSteps));
+    localStorage.setItem(progressKey(runbook.id), JSON.stringify(newCompletedSteps));
   };
 
   if (!runbook) return null;
+
+  const selectRunbook = (runbookId: string) => {
+    const next = matchingRunbooks.find(rb => rb.id === runbookId);
+    if (!next) return;
+    setRunbook({
+      id: next.id,
+      title: next.title,
+      description: next.description,
+      steps: next.steps,
+      externalUrl: next.externalUrl,
+    });
+  };
 
   const progress = Math.round((completedSteps.length / runbook.steps.length) * 100);
   const requiredSteps = runbook.steps.filter(s => !s.isOptional);
@@ -683,6 +721,24 @@ Provide:
             </button>
           </div>
         </div>
+
+        {matchingRunbooks.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {matchingRunbooks.map(rb => (
+              <button
+                key={rb.id}
+                onClick={() => selectRunbook(rb.id)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                  rb.id === runbook.id
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80 border-transparent'
+                }`}
+              >
+                {rb.title}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Progress Bar */}
         <div className="mt-3">

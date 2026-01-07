@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -e
 
 # AI Worker Entrypoint Script
@@ -547,6 +547,20 @@ if ! claude --version > /dev/null 2>&1; then
     exit 1
 fi
 
+# Install Claude plugins (idempotent)
+claude plugin marketplace add wshobson/agents || true
+claude plugin install \
+  python-development javascript-typescript backend-development \
+  kubernetes-operations cloud-infrastructure aws-operations \
+  security-scanning secrets-detection code-review-ai \
+  typescript-refactoring react-performance database-optimization \
+  full-stack-orchestration react-frontend observability logging-insights || true
+
+# Warn if API key missing (usage reporting depends on it)
+if [ -z "${ANTHROPIC_API_KEY}" ]; then
+  echo "[WARN] ANTHROPIC_API_KEY not set; token usage reporting may fail"
+fi
+
 # Run Claude Code with stream-json output for accurate token tracking
 CLAUDE_OUTPUT_FILE="/tmp/claude-output.jsonl"
 CLAUDE_TEXT_FILE="/tmp/claude-output.txt"
@@ -663,47 +677,47 @@ build_detailed_comment() {
     local status="$1"
     local pr_url="$2"
 
-    local comment="🤖 *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n"
+    local comment="ðŸ¤– *AI Worker (${WORKER_PERSONA//_/ })* - Automated Update\n\n"
 
     if [ "$status" = "success" ]; then
-        comment="${comment}✅ *Implementation Complete*\n\n"
-        comment="${comment}📊 *Changes Summary:*\n"
-        comment="${comment}• Files modified: ${FILES_CHANGED}\n"
-        comment="${comment}• Lines: +${LINES_ADDED} / -${LINES_REMOVED}\n"
+        comment="${comment}âœ… *Implementation Complete*\n\n"
+        comment="${comment}ðŸ“Š *Changes Summary:*\n"
+        comment="${comment}â€¢ Files modified: ${FILES_CHANGED}\n"
+        comment="${comment}â€¢ Lines: +${LINES_ADDED} / -${LINES_REMOVED}\n"
         if [ -n "${FILES_LIST}" ]; then
-            comment="${comment}• Key files: ${FILES_LIST}\n"
+            comment="${comment}â€¢ Key files: ${FILES_LIST}\n"
         fi
         comment="${comment}\n"
         if [ -n "${COMMIT_MESSAGES}" ]; then
-            comment="${comment}📝 *Commits:* ${COMMIT_MESSAGES}\n\n"
+            comment="${comment}ðŸ“ *Commits:* ${COMMIT_MESSAGES}\n\n"
         fi
-        comment="${comment}🔀 *Pull Request:* ${pr_url}\n"
-        comment="${comment}🌿 *Branch:* ${BRANCH_NAME}\n\n"
-        comment="${comment}📈 *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output\n\n"
-        comment="${comment}⏳ Awaiting Virtual Manager review."
+        comment="${comment}ðŸ”€ *Pull Request:* ${pr_url}\n"
+        comment="${comment}ðŸŒ¿ *Branch:* ${BRANCH_NAME}\n\n"
+        comment="${comment}ðŸ“ˆ *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output\n\n"
+        comment="${comment}â³ Awaiting Virtual Manager review."
     elif [ "$status" = "success_no_pr" ]; then
-        comment="${comment}✅ *Implementation Complete (No PR)*\n\n"
-        comment="${comment}📊 *Changes Summary:*\n"
-        comment="${comment}• Files modified: ${FILES_CHANGED}\n"
-        comment="${comment}• Lines: +${LINES_ADDED} / -${LINES_REMOVED}\n"
+        comment="${comment}âœ… *Implementation Complete (No PR)*\n\n"
+        comment="${comment}ðŸ“Š *Changes Summary:*\n"
+        comment="${comment}â€¢ Files modified: ${FILES_CHANGED}\n"
+        comment="${comment}â€¢ Lines: +${LINES_ADDED} / -${LINES_REMOVED}\n"
         if [ -n "${FILES_LIST}" ]; then
-            comment="${comment}• Key files: ${FILES_LIST}\n"
+            comment="${comment}â€¢ Key files: ${FILES_LIST}\n"
         fi
         comment="${comment}\n"
         if [ -n "${COMMIT_MESSAGES}" ]; then
-            comment="${comment}📝 *Commits:* ${COMMIT_MESSAGES}\n\n"
+            comment="${comment}ðŸ“ *Commits:* ${COMMIT_MESSAGES}\n\n"
         fi
-        comment="${comment}🌿 *Branch:* ${BRANCH_NAME}\n"
-        comment="${comment}📝 *Note:* Changes pushed to branch without creating PR (as requested)\n\n"
-        comment="${comment}📈 *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output"
+        comment="${comment}ðŸŒ¿ *Branch:* ${BRANCH_NAME}\n"
+        comment="${comment}ðŸ“ *Note:* Changes pushed to branch without creating PR (as requested)\n\n"
+        comment="${comment}ðŸ“ˆ *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output"
     elif [ "$status" = "no_changes" ]; then
-        comment="${comment}⚠️ *No Changes Made*\n\n"
+        comment="${comment}âš ï¸ *No Changes Made*\n\n"
         comment="${comment}The AI worker analyzed this task but determined no code changes were required.\n\n"
         comment="${comment}This may indicate:\n"
-        comment="${comment}• The task is already complete\n"
-        comment="${comment}• Requirements need clarification\n"
-        comment="${comment}• The requested change conflicts with existing code\n\n"
-        comment="${comment}📈 *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output"
+        comment="${comment}â€¢ The task is already complete\n"
+        comment="${comment}â€¢ Requirements need clarification\n"
+        comment="${comment}â€¢ The requested change conflicts with existing code\n\n"
+        comment="${comment}ðŸ“ˆ *Tokens:* ${INPUT_TOKENS:-0} input / ${OUTPUT_TOKENS:-0} output"
     fi
 
     echo "$comment"
@@ -760,7 +774,7 @@ Automated implementation for [${JIRA_ISSUE_KEY}](https://oncallshift.atlassian.n
 ${JIRA_DESCRIPTION:-}
 
 ---
-🤖 Generated by AI Worker (${WORKER_PERSONA//_/ })"
+ðŸ¤– Generated by AI Worker (${WORKER_PERSONA//_/ })"
 
             PR_URL=$(gh pr view --json url -q '.url')
             echo "[SUCCESS] PR created: ${PR_URL}"
@@ -786,3 +800,4 @@ fi
 
 # Exit with Claude's exit code (cleanup handled by trap)
 exit ${CLAUDE_EXIT_CODE}
+

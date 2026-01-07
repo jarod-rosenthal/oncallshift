@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Plus, Filter } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import {
@@ -21,7 +21,7 @@ import { showToast } from '../components/Toast';
 import { triggerConfetti } from '../components/Confetti';
 import { ResolveModal } from '../components/ResolveModal';
 import { incidentsAPI, usersAPI } from '../lib/api-client';
-import { notifyIncidentChanged } from '../lib/incident-events';
+import { notifyIncidentChanged, onIncidentChanged } from '../lib/incident-events';
 import type { Incident, User } from '../types/api';
 
 type DialogType = 'escalate' | 'reassign' | null;
@@ -45,38 +45,108 @@ export function Incidents() {
     null
   );
   const [isResolving, setIsResolving] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Form state
   const [escalateReason, setEscalateReason] = useState('');
   const [reassignUserId, setReassignUserId] = useState('');
   const [reassignReason, setReassignReason] = useState('');
 
-  useEffect(() => {
-    loadIncidents();
-    loadUsers();
-  }, []);
-
-  const loadIncidents = async () => {
+  const loadIncidents = useCallback(async () => {
     try {
       setIsLoading(true);
       const response = await incidentsAPI.list();
-      setIncidents(response?.incidents || []);
+      const list = response?.incidents || [];
+      setIncidents(list);
+      // Keep sidebar indicator in sync
+      notifyIncidentChanged();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
       setError(error.response?.data?.error || 'Failed to load incidents');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const response = await usersAPI.listUsers();
       setUsers(response?.users || []);
     } catch {
       // Silently fail - users list is optional
     }
-  };
+  }, []);
+
+  const mergeIncidents = useCallback((incoming: Incident[]) => {
+    setIncidents((prev) => {
+      const map = new Map<string, Incident>();
+      prev.forEach((inc) => map.set(inc.id, inc));
+      incoming.forEach((inc) => map.set(inc.id, inc));
+      return Array.from(map.values()).sort(
+        (a, b) =>
+          new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime()
+      );
+    });
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(loadIncidents, 15000);
+  }, [loadIncidents]);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    loadIncidents();
+    loadUsers();
+
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      const es = new EventSource(`/api/v1/incidents/stream?token=${token}`);
+      eventSourceRef.current = es;
+
+      es.addEventListener('open', () => {
+        stopPolling();
+      });
+
+      es.addEventListener('incident_update', (event) => {
+        try {
+          const payload = JSON.parse((event as MessageEvent).data);
+          if (payload?.incidents) {
+            mergeIncidents(payload.incidents as Incident[]);
+            notifyIncidentChanged();
+          }
+        } catch (e) {
+          console.error('Failed to process incident_update event', e);
+        }
+      });
+
+      es.addEventListener('error', () => {
+        // Close and fall back to polling if SSE fails
+        es.close();
+        startPolling();
+      });
+    }
+    // If no token (should not happen when authenticated), fall back to polling
+    if (!token) {
+      startPolling();
+    }
+
+    const unsubscribe = onIncidentChanged(loadIncidents);
+    return () => {
+      unsubscribe();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      stopPolling();
+    };
+  }, [loadIncidents, loadUsers, mergeIncidents, startPolling, stopPolling]);
 
   const handleAcknowledge = async (id: string) => {
     try {

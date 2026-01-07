@@ -52,6 +52,484 @@ const managerLambdaName =
 const watcherRuleName =
   process.env.AI_WORKER_WATCHER_RULE || `${ecsCluster}-ai-worker-watcher-schedule`;
 
+// Shared builders so SSE and REST endpoints stay in sync
+async function buildControlCenterData(orgId: string) {
+  const dataSource = await getDataSource();
+  const workerRepo = dataSource.getRepository(AIWorkerInstance);
+  const taskRepo = dataSource.getRepository(AIWorkerTask);
+  const logRepo = dataSource.getRepository(AIWorkerTaskLog);
+  const conversationRepo = dataSource.getRepository(AIWorkerConversation);
+  const orgRepo = dataSource.getRepository(Organization);
+
+  const org = await orgRepo.findOne({ where: { id: orgId } });
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const workers = await workerRepo.find({
+    order: { displayName: "ASC" },
+  });
+
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  const activeTasks = await taskRepo.find({
+    where: [
+      {
+        status: In([
+          "queued",
+          "dispatching",
+          "claimed",
+          "environment_setup",
+          "executing",
+          "pr_created",
+          "manager_review",
+          "revision_needed",
+          "review_pending",
+        ]),
+      },
+      {
+        status: In(["completed", "failed", "cancelled", "review_rejected", "review_approved"]),
+        completedAt: MoreThan(tenMinutesAgo),
+      },
+    ],
+    order: { createdAt: "DESC" },
+  });
+
+  const recentCompleted = await taskRepo.find({
+    where: {
+      status: In(["completed", "failed", "cancelled"]),
+      completedAt: MoreThan(todayStart),
+    },
+    order: { completedAt: "DESC" },
+    take: 15,
+  });
+
+  const todayTasks = await taskRepo.find({
+    where: {
+      createdAt: MoreThan(todayStart),
+    },
+  });
+  const todayCost = todayTasks.reduce((sum, t) => {
+    if (Number(t.estimatedCostUsd) > 0) {
+      return sum + Number(t.estimatedCostUsd);
+    }
+    if (t.startedAt) {
+      const endTime = t.completedAt || new Date();
+      const durationSeconds = Math.floor(
+        (endTime.getTime() - t.startedAt.getTime()) / 1000,
+      );
+      const ecsCost = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
+      return sum + ecsCost;
+    }
+    return sum;
+  }, 0);
+
+  let queueDepth = 0;
+  if (queueUrl) {
+    try {
+      const queueAttrs = await sqs.send(
+        new GetQueueAttributesCommand({
+          QueueUrl: queueUrl,
+          AttributeNames: ["ApproximateNumberOfMessages"],
+        }),
+      );
+      queueDepth = parseInt(
+        queueAttrs.Attributes?.ApproximateNumberOfMessages || "0",
+        10,
+      );
+    } catch (err) {
+      logger.warn("Failed to get SQS queue depth:", err);
+    }
+  }
+
+  const activeTaskIds = activeTasks.map((t) => t.id);
+  let taskLogs: AIWorkerTaskLog[] = [];
+  if (activeTaskIds.length > 0) {
+    taskLogs = await logRepo.find({
+      where: {
+        taskId: In(activeTaskIds),
+      },
+      order: { createdAt: "DESC" },
+      take: 100,
+    });
+  }
+
+  let conversations: AIWorkerConversation[] = [];
+  if (activeTaskIds.length > 0) {
+    conversations = await conversationRepo.find({
+      where: {
+        taskId: In(activeTaskIds),
+      },
+    });
+  }
+
+  const stats = {
+    totalWorkers: workers.length,
+    activeWorkers: workers.filter((w) => w.status === "working").length,
+    queueDepth,
+    todayCost: Math.round(todayCost * 100) / 100,
+    todayCompleted: todayTasks.filter((t) => t.status === "completed").length,
+    todayFailed: todayTasks.filter((t) => t.status === "failed").length,
+    cumulativeCost: Number(org?.aiWorkerCumulativeCost || 0),
+    cumulativeCostResetAt: org?.aiWorkerCostResetAt || null,
+  };
+
+  const workersData = workers
+    .filter((w) => {
+      if (w.status === "working") return true;
+      if (w.lastTaskAt && w.lastTaskAt > tenMinutesAgo) return true;
+      return false;
+    })
+    .map((w) => {
+      const currentTask = activeTasks.find((t) => t.assignedWorkerId === w.id);
+      const conversation = currentTask
+        ? conversations.find((c) => c.taskId === currentTask.id)
+        : null;
+
+      return {
+        id: w.id,
+        displayName: w.displayName,
+        persona: w.persona,
+        role: w.role,
+        status: w.status,
+        tasksCompleted: w.tasksCompleted,
+        tasksFailed: w.tasksFailed,
+        totalCostUsd: Number(w.totalCostUsd),
+        reviewCount: w.reviewCount,
+        approvalsCount: w.approvalsCount,
+        rejectionsCount: w.rejectionsCount,
+        revisionsRequestedCount: w.revisionsRequestedCount,
+        currentTask: currentTask
+          ? {
+              id: currentTask.id,
+              jiraKey: currentTask.jiraIssueKey,
+              summary: currentTask.summary,
+              status: currentTask.status,
+              turnCount: conversation?.turnCount || 0,
+              maxTurns: 50,
+            }
+          : null,
+      };
+    });
+
+  const activeTasksData = activeTasks.map((t) => {
+    const isManagerTask = ["manager_review"].includes(t.status) && t.reviewerManagerId;
+    const workerId = isManagerTask ? t.reviewerManagerId : t.assignedWorkerId;
+    const worker = workers.find((w) => w.id === workerId);
+    const conversation = conversations.find((c) => c.taskId === t.id);
+    const logs = taskLogs.filter((l) => l.taskId === t.id).slice(0, 10);
+
+    const steps = getTaskSteps(t.status);
+    const displayModel = isManagerTask ? (t.managerReviewModel || "sonnet") : t.workerModel;
+
+    return {
+      id: t.id,
+      jiraIssueKey: t.jiraIssueKey,
+      summary: t.summary,
+      status: t.status,
+      workerName: worker?.displayName || (isManagerTask ? "Virtual Manager" : "Unassigned"),
+      workerPersona: isManagerTask ? "manager" : t.workerPersona,
+      workerModel: displayModel,
+      workerRole: isManagerTask ? "manager" : (worker?.role || "worker"),
+      turnCount: conversation?.turnCount || 0,
+      maxTurns: 50,
+      estimatedCostUsd: Number(t.estimatedCostUsd),
+      startedAt: t.startedAt,
+      hasPr: !!t.githubPrUrl,
+      githubPrUrl: t.githubPrUrl,
+      recentLogs: logs.map((l) => ({
+        timestamp: l.createdAt,
+        message: l.message,
+        type: l.type,
+        severity: l.severity,
+      })),
+      steps,
+    };
+  });
+
+  const recentCompletedData = recentCompleted.map((t) => {
+    let costUsd = Number(t.estimatedCostUsd);
+    if (costUsd === 0 && t.startedAt) {
+      const endTime = t.completedAt || new Date();
+      const durationSeconds = Math.floor(
+        (endTime.getTime() - t.startedAt.getTime()) / 1000,
+      );
+      costUsd = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
+    }
+    return {
+      id: t.id,
+      jiraIssueKey: t.jiraIssueKey,
+      summary: t.summary,
+      status: t.status,
+      workerModel: t.workerModel,
+      costUsd,
+      durationMinutes:
+        t.completedAt && t.startedAt
+          ? Math.round(
+              (t.completedAt.getTime() - t.startedAt.getTime()) / 60000,
+            )
+          : null,
+      completedAt: t.completedAt,
+      githubPrUrl: t.githubPrUrl,
+    };
+  });
+
+  return {
+    stats,
+    workers: workersData,
+    activeTasks: activeTasksData,
+    recentCompleted: recentCompletedData,
+  };
+}
+
+async function buildTaskList(
+  status?: AIWorkerTaskStatus,
+  search?: string,
+  limit = 20,
+  offset = 0,
+) {
+  const dataSource = await getDataSource();
+  const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+  const queryBuilder = taskRepo
+    .createQueryBuilder("task")
+    .leftJoinAndSelect("task.assignedWorker", "worker")
+    .orderBy("task.createdAt", "DESC")
+    .take(limit)
+    .skip(offset);
+
+  if (status) {
+    queryBuilder.andWhere("task.status = :status", { status });
+  }
+
+  if (search) {
+    queryBuilder.andWhere(
+      "(task.jiraIssueKey ILIKE :search OR task.summary ILIKE :search)",
+      {
+        search: `%${search}%`,
+      },
+    );
+  }
+
+  const [tasks, total] = await queryBuilder.getManyAndCount();
+
+  return {
+    tasks: tasks.map((t) => ({
+      id: t.id,
+      jiraIssueKey: t.jiraIssueKey,
+      summary: t.summary,
+      status: t.status,
+      workerModel: t.workerModel,
+      workerPersona: t.workerPersona,
+      workerName: t.assignedWorker?.displayName || "Unassigned",
+      retryCount: t.retryCount,
+      maxRetries: t.maxRetries,
+      estimatedCostUsd: Number(t.estimatedCostUsd),
+      startedAt: t.startedAt,
+      completedAt: t.completedAt,
+      errorMessage: t.errorMessage,
+      failureCategory: t.failureCategory,
+      lastHeartbeatAt: t.lastHeartbeatAt,
+      nextRetryAt: t.nextRetryAt,
+      globalTimeoutAt: t.globalTimeoutAt,
+      retryBackoffSeconds: t.retryBackoffSeconds,
+      watcherNotes: t.watcherNotes,
+      ecsTaskArn: t.ecsTaskArn,
+      githubPrUrl: t.githubPrUrl,
+      githubPrNumber: t.githubPrNumber,
+      githubBranch: t.githubBranch,
+      createdAt: t.createdAt,
+    })),
+    total,
+    limit,
+    offset,
+  };
+}
+
+async function buildWatcherStatus() {
+  const dataSource = await getDataSource();
+  const taskRepo = dataSource.getRepository(AIWorkerTask);
+  const stuckThreshold = new Date(Date.now() - 3 * 60 * 1000);
+
+  const [
+    monitoringCount,
+    stuckCount,
+    pendingRetryCount,
+    globalTimeoutCount,
+    loopCount,
+  ] = await Promise.all([
+    taskRepo.count({
+      where: { status: In(["executing", "environment_setup"]) },
+    }),
+    taskRepo
+      .createQueryBuilder("task")
+      .where("task.status IN (:...statuses)", {
+        statuses: ["executing", "environment_setup"],
+      })
+      .andWhere("task.lastHeartbeatAt < :threshold", {
+        threshold: stuckThreshold,
+      })
+      .getCount(),
+    taskRepo.count({
+      where: {
+        status: In(["failed", "blocked"]),
+        nextRetryAt: MoreThan(new Date()),
+      },
+    }),
+    taskRepo.count({
+      where: {
+        failureCategory: "timeout",
+      },
+    }),
+    taskRepo.count({
+      where: {
+        failureCategory: "loop",
+      },
+    }),
+  ]);
+
+  let watcherEnabled = false;
+  try {
+    const ruleStatus = await eventBridge.send(
+      new DescribeRuleCommand({
+        Name: watcherRuleName,
+      })
+    );
+    watcherEnabled = ruleStatus.State === "ENABLED";
+  } catch (err) {
+    logger.warn("Failed to get watcher rule status:", err);
+  }
+
+  return {
+    enabled: watcherEnabled,
+    lastRunAt: null,
+    stuckTasks: stuckCount,
+    pendingRetries: pendingRetryCount,
+    loopsDetected: loopCount,
+    globalTimeouts: globalTimeoutCount,
+    tasksMonitored: monitoringCount,
+  };
+}
+
+async function buildSystemStatus() {
+  let orchestratorRunning = false;
+  let orchestratorDesiredCount = 0;
+  let executorTaskCount = 0;
+
+  try {
+    const describeResult = await ecs.describeServices({
+      cluster: ecsCluster,
+      services: [orchestratorServiceName],
+    });
+
+    if (describeResult.services && describeResult.services.length > 0) {
+      const service = describeResult.services[0];
+      orchestratorRunning = (service.runningCount || 0) > 0;
+      orchestratorDesiredCount = service.desiredCount || 0;
+    }
+  } catch (err) {
+    logger.warn("Failed to describe orchestrator service:", err);
+  }
+
+  try {
+    const listTasksResult = await ecs.send(
+      new ListTasksCommand({
+        cluster: ecsCluster,
+        serviceName: process.env.AI_WORKER_EXECUTOR_SERVICE || "pagerduty-lite-dev-ai-worker",
+        desiredStatus: "RUNNING",
+      }),
+    );
+    executorTaskCount = listTasksResult.taskArns?.length || 0;
+  } catch (err) {
+    logger.warn("Failed to list executor tasks:", err);
+  }
+
+  return {
+    systemEnabled: orchestratorRunning,
+    orchestrator: { running: orchestratorRunning, desiredCount: orchestratorDesiredCount },
+    executors: { running: executorTaskCount },
+  };
+}
+
+async function buildManagerStatus() {
+  const dataSource = await getDataSource();
+  const taskRepo = dataSource.getRepository(AIWorkerTask);
+  const reviewRepo = dataSource.getRepository(AIWorkerReview);
+  const instanceRepo = dataSource.getRepository(AIWorkerInstance);
+
+  // Manager instances
+  const managers = await instanceRepo.find({
+    where: { role: "manager" },
+  });
+
+  // Queue counts
+  const [awaitingReviewCount, underReviewCount, revisionNeededCount] =
+    await Promise.all([
+      taskRepo.count({
+        where: { status: "pr_created" as AIWorkerTaskStatus },
+      }),
+      taskRepo.count({
+        where: { status: "manager_review" as AIWorkerTaskStatus },
+      }),
+      taskRepo.count({
+        where: { status: "revision_needed" as AIWorkerTaskStatus },
+      }),
+    ]);
+
+  // Last 24h review stats
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const recentReviews = await reviewRepo.find({
+    where: { createdAt: MoreThan(oneDayAgo) },
+    order: { createdAt: "DESC" },
+  });
+
+  const approvedCount = recentReviews.filter(
+    (r) => r.decision === "approved",
+  ).length;
+  const rejectedCount = recentReviews.filter(
+    (r) => r.decision === "rejected",
+  ).length;
+  const revisionRequestedCount = recentReviews.filter(
+    (r) => r.decision === "revision_needed",
+  ).length;
+  const totalReviewCost = recentReviews.reduce(
+    (sum, r) => sum + Number(r.estimatedCostUsd),
+    0,
+  );
+  const avgReviewDuration =
+    recentReviews.length > 0
+      ? recentReviews.reduce((sum, r) => sum + (r.durationSeconds || 0), 0) /
+        recentReviews.length
+      : 0;
+
+  return {
+    enabled: true,
+    managers: managers.map((m) => ({
+      id: m.id,
+      displayName: m.displayName,
+      modelId: m.modelId,
+      status: m.status,
+      reviewCount: m.reviewCount,
+      approvalsCount: m.approvalsCount,
+      rejectionsCount: m.rejectionsCount,
+      revisionsRequestedCount: m.revisionsRequestedCount,
+      approvalRate: m.getApprovalRate(),
+    })),
+    queue: {
+      awaitingReview: awaitingReviewCount,
+      underReview: underReviewCount,
+      revisionNeeded: revisionNeededCount,
+    },
+    last24Hours: {
+      totalReviews: recentReviews.length,
+      approved: approvedCount,
+      rejected: rejectedCount,
+      revisionsRequested: revisionRequestedCount,
+      totalCost: Math.round(totalReviewCost * 100) / 100,
+      avgDurationSeconds: Math.round(avgReviewDuration),
+    },
+  };
+}
+
 // Middleware to check super admin role
 // Supports both user JWT auth (req.user) and org API key auth (req.orgId)
 const requireSuperAdmin = async (
@@ -87,266 +565,91 @@ router.use(requireSuperAdmin);
 router.get("/control-center", async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
-    const dataSource = await getDataSource();
-    const workerRepo = dataSource.getRepository(AIWorkerInstance);
-    const taskRepo = dataSource.getRepository(AIWorkerTask);
-    const logRepo = dataSource.getRepository(AIWorkerTaskLog);
-    const conversationRepo = dataSource.getRepository(AIWorkerConversation);
-    const orgRepo = dataSource.getRepository(Organization);
-
-    // Get org for cumulative cost
-    const org = await orgRepo.findOne({ where: { id: orgId } });
-
-    // Get today's start (midnight)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    // Get all workers
-    const workers = await workerRepo.find({
-      order: { displayName: "ASC" },
-    });
-
-    // Get active tasks (not completed/failed/cancelled) + recently completed (last 10 min)
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    const activeTasks = await taskRepo.find({
-      where: [
-        // Truly active tasks (including Manager review stages)
-        {
-          status: In([
-            "queued",
-            "dispatching",
-            "claimed",
-            "environment_setup",
-            "executing",
-            "pr_created",
-            "manager_review",
-            "revision_needed",
-            "review_pending",
-          ]),
-        },
-        // Recently completed tasks (show for 10 minutes after completion)
-        {
-          status: In(["completed", "failed", "cancelled", "review_rejected", "review_approved"]),
-          completedAt: MoreThan(tenMinutesAgo),
-        },
-      ],
-      order: { createdAt: "DESC" },
-    });
-
-    // Get recent completed tasks (today)
-    const recentCompleted = await taskRepo.find({
-      where: {
-        status: In(["completed", "failed", "cancelled"]),
-        completedAt: MoreThan(todayStart),
-      },
-      order: { completedAt: "DESC" },
-      take: 15,
-    });
-
-    // Calculate today's cost (use dynamic calculation if estimatedCostUsd is 0)
-    const todayTasks = await taskRepo.find({
-      where: {
-        createdAt: MoreThan(todayStart),
-      },
-    });
-    const todayCost = todayTasks.reduce((sum, t) => {
-      // If we have a stored cost, use it
-      if (Number(t.estimatedCostUsd) > 0) {
-        return sum + Number(t.estimatedCostUsd);
-      }
-      // Otherwise calculate from duration if available
-      if (t.startedAt) {
-        const endTime = t.completedAt || new Date();
-        const durationSeconds = Math.floor(
-          (endTime.getTime() - t.startedAt.getTime()) / 1000,
-        );
-        // Use shared ECS pricing constant
-        const ecsCost = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
-        return sum + ecsCost;
-      }
-      return sum;
-    }, 0);
-
-    // Get queue depth from SQS
-    let queueDepth = 0;
-    if (queueUrl) {
-      try {
-        const queueAttrs = await sqs.send(
-          new GetQueueAttributesCommand({
-            QueueUrl: queueUrl,
-            AttributeNames: ["ApproximateNumberOfMessages"],
-          }),
-        );
-        queueDepth = parseInt(
-          queueAttrs.Attributes?.ApproximateNumberOfMessages || "0",
-          10,
-        );
-      } catch (err) {
-        logger.warn("Failed to get SQS queue depth:", err);
-      }
-    }
-
-    // Get logs for active tasks
-    const activeTaskIds = activeTasks.map((t) => t.id);
-    let taskLogs: AIWorkerTaskLog[] = [];
-    if (activeTaskIds.length > 0) {
-      taskLogs = await logRepo.find({
-        where: {
-          taskId: In(activeTaskIds),
-        },
-        order: { createdAt: "DESC" },
-        take: 100, // Last 100 logs across all active tasks
-      });
-    }
-
-    // Get conversations for turn counts
-    let conversations: AIWorkerConversation[] = [];
-    if (activeTaskIds.length > 0) {
-      conversations = await conversationRepo.find({
-        where: {
-          taskId: In(activeTaskIds),
-        },
-      });
-    }
-
-    // Build response
-    const stats = {
-      totalWorkers: workers.length,
-      activeWorkers: workers.filter((w) => w.status === "working").length,
-      queueDepth,
-      todayCost: Math.round(todayCost * 100) / 100,
-      todayCompleted: todayTasks.filter((t) => t.status === "completed").length,
-      todayFailed: todayTasks.filter((t) => t.status === "failed").length,
-      // Cumulative cost tracking
-      cumulativeCost: Number(org?.aiWorkerCumulativeCost || 0),
-      cumulativeCostResetAt: org?.aiWorkerCostResetAt || null,
-    };
-
-    // Map workers with current task info
-    // Filter to show only workers that are currently working OR were active in last 10 min
-    const workersData = workers
-      .filter((w) => {
-        // Always show workers that are currently working
-        if (w.status === "working") return true;
-        // Show workers with recent activity (last 10 minutes)
-        if (w.lastTaskAt && w.lastTaskAt > tenMinutesAgo) return true;
-        // Hide idle workers with no recent activity
-        return false;
-      })
-      .map((w) => {
-        const currentTask = activeTasks.find((t) => t.assignedWorkerId === w.id);
-        const conversation = currentTask
-          ? conversations.find((c) => c.taskId === currentTask.id)
-          : null;
-
-        return {
-          id: w.id,
-          displayName: w.displayName,
-          persona: w.persona,
-          role: w.role,
-          status: w.status,
-          tasksCompleted: w.tasksCompleted,
-          tasksFailed: w.tasksFailed,
-          totalCostUsd: Number(w.totalCostUsd),
-          // Manager-specific stats
-          reviewCount: w.reviewCount,
-          approvalsCount: w.approvalsCount,
-          rejectionsCount: w.rejectionsCount,
-          revisionsRequestedCount: w.revisionsRequestedCount,
-          currentTask: currentTask
-            ? {
-                id: currentTask.id,
-                jiraKey: currentTask.jiraIssueKey,
-                summary: currentTask.summary,
-                status: currentTask.status,
-                turnCount: conversation?.turnCount || 0,
-                maxTurns: 50, // Default max turns
-              }
-            : null,
-        };
-      });
-
-    // Map active tasks with logs and progress
-    const activeTasksData = activeTasks.map((t) => {
-      // For Manager review tasks, use the Manager worker instance
-      // For regular tasks, use the assigned worker
-      const isManagerTask = ["manager_review"].includes(t.status) && t.reviewerManagerId;
-      const workerId = isManagerTask ? t.reviewerManagerId : t.assignedWorkerId;
-      const worker = workers.find((w) => w.id === workerId);
-      const conversation = conversations.find((c) => c.taskId === t.id);
-      const logs = taskLogs.filter((l) => l.taskId === t.id).slice(0, 10);
-
-      // Calculate step progress
-      const steps = getTaskSteps(t.status);
-
-      // For Manager tasks, use Manager model; otherwise use worker model
-      const displayModel = isManagerTask ? (t.managerReviewModel || "sonnet") : t.workerModel;
-
-      return {
-        id: t.id,
-        jiraIssueKey: t.jiraIssueKey,
-        summary: t.summary,
-        status: t.status,
-        workerName: worker?.displayName || (isManagerTask ? "Virtual Manager" : "Unassigned"),
-        workerPersona: isManagerTask ? "manager" : t.workerPersona,
-        workerModel: displayModel,
-        workerRole: isManagerTask ? "manager" : (worker?.role || "worker"),
-        turnCount: conversation?.turnCount || 0,
-        maxTurns: 50,
-        estimatedCostUsd: Number(t.estimatedCostUsd),
-        startedAt: t.startedAt,
-        hasPr: !!t.githubPrUrl,
-        githubPrUrl: t.githubPrUrl,
-        recentLogs: logs.map((l) => ({
-          timestamp: l.createdAt,
-          message: l.message,
-          type: l.type,
-          severity: l.severity,
-        })),
-        steps,
-      };
-    });
-
-    // Map recent completed tasks (with dynamic cost calculation)
-    const recentCompletedData = recentCompleted.map((t) => {
-      let costUsd = Number(t.estimatedCostUsd);
-      // Calculate cost dynamically if not stored
-      if (costUsd === 0 && t.startedAt) {
-        const endTime = t.completedAt || new Date();
-        const durationSeconds = Math.floor(
-          (endTime.getTime() - t.startedAt.getTime()) / 1000,
-        );
-        costUsd = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
-      }
-      return {
-        id: t.id,
-        jiraIssueKey: t.jiraIssueKey,
-        summary: t.summary,
-        status: t.status,
-        workerModel: t.workerModel,
-        costUsd,
-        durationMinutes:
-          t.completedAt && t.startedAt
-            ? Math.round(
-                (t.completedAt.getTime() - t.startedAt.getTime()) / 60000,
-              )
-            : null,
-        completedAt: t.completedAt,
-        githubPrUrl: t.githubPrUrl,
-      };
-    });
-
-    return res.json({
-      stats,
-      workers: workersData,
-      activeTasks: activeTasksData,
-      recentCompleted: recentCompletedData,
-    });
+    const data = await buildControlCenterData(orgId);
+    return res.json(data);
   } catch (error) {
     logger.error("Error fetching control center data:", error);
     return res
       .status(500)
       .json({ error: "Failed to fetch control center data" });
+  }
+});
+
+/**
+ * GET /api/v1/super-admin/control-center/stream
+ * SSE stream for AI Workers Control Center updates
+ */
+router.get("/control-center/stream", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = req.orgId!;
+    if (!orgId) {
+      res.status(401).end();
+      return;
+    }
+
+    const statusFilter = (req.query.status as AIWorkerTaskStatus | undefined) || undefined;
+    const search = (req.query.search as string | undefined) || undefined;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    if ((res as any).flushHeaders) {
+      (res as any).flushHeaders();
+    }
+
+    let isClosed = false;
+
+    const sendUpdate = async () => {
+      if (isClosed) return;
+      try {
+        const [controlCenter, systemStatus, watcherStatus, managerStatus, tasks] =
+          await Promise.all([
+            buildControlCenterData(orgId),
+            buildSystemStatus(),
+            buildWatcherStatus(),
+            buildManagerStatus(),
+            buildTaskList(statusFilter, search, 20, 0),
+          ]);
+
+        res.write("event: control_center_update\n");
+        res.write(
+          `data: ${JSON.stringify({
+            controlCenter,
+            systemStatus,
+            watcherStatus,
+            managerStatus,
+            taskList: tasks,
+            lastUpdated: new Date().toISOString(),
+          })}\n\n`,
+        );
+      } catch (err) {
+        logger.error("Failed to stream control center update", { err });
+      }
+    };
+
+    const sendPing = () => {
+      if (isClosed) return;
+      res.write("event: ping\n");
+      res.write("data: {}\n\n");
+    };
+
+    const updateInterval = setInterval(sendUpdate, 5000);
+    const pingInterval = setInterval(sendPing, 20000);
+
+    req.on("close", () => {
+      isClosed = true;
+      clearInterval(updateInterval);
+      clearInterval(pingInterval);
+      res.end();
+    });
+
+    // initial connection
+    res.write("event: connected\n");
+    res.write("data: {}\n\n");
+    await sendUpdate();
+  } catch (error) {
+    logger.error("Failed to establish control center stream", { error });
+    res.status(500).json({ error: "Failed to start control center stream" });
   }
 });
 
@@ -1506,86 +1809,8 @@ router.get(
   "/control-center/manager/status",
   async (_req: Request, res: Response) => {
     try {
-      const dataSource = await getDataSource();
-      const taskRepo = dataSource.getRepository(AIWorkerTask);
-      const reviewRepo = dataSource.getRepository(AIWorkerReview);
-      const instanceRepo = dataSource.getRepository(AIWorkerInstance);
-
-      // Get manager instances
-      const managers = await instanceRepo.find({
-        where: { role: "manager" },
-      });
-
-      // Count tasks in manager review states
-      const [awaitingReviewCount, underReviewCount, revisionNeededCount] =
-        await Promise.all([
-          taskRepo.count({
-            where: { status: "pr_created" as AIWorkerTaskStatus },
-          }),
-          taskRepo.count({
-            where: { status: "manager_review" as AIWorkerTaskStatus },
-          }),
-          taskRepo.count({
-            where: { status: "revision_needed" as AIWorkerTaskStatus },
-          }),
-        ]);
-
-      // Get recent reviews (last 24 hours)
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const recentReviews = await reviewRepo.find({
-        where: { createdAt: MoreThan(oneDayAgo) },
-        order: { createdAt: "DESC" },
-      });
-
-      // Calculate review stats
-      const approvedCount = recentReviews.filter(
-        (r) => r.decision === "approved",
-      ).length;
-      const rejectedCount = recentReviews.filter(
-        (r) => r.decision === "rejected",
-      ).length;
-      const revisionRequestedCount = recentReviews.filter(
-        (r) => r.decision === "revision_needed",
-      ).length;
-      const totalReviewCost = recentReviews.reduce(
-        (sum, r) => sum + Number(r.estimatedCostUsd),
-        0,
-      );
-      const avgReviewDuration =
-        recentReviews.length > 0
-          ? recentReviews.reduce(
-              (sum, r) => sum + (r.durationSeconds || 0),
-              0,
-            ) / recentReviews.length
-          : 0;
-
-      return res.json({
-        enabled: true,
-        managers: managers.map((m) => ({
-          id: m.id,
-          displayName: m.displayName,
-          modelId: m.modelId,
-          status: m.status,
-          reviewCount: m.reviewCount,
-          approvalsCount: m.approvalsCount,
-          rejectionsCount: m.rejectionsCount,
-          revisionsRequestedCount: m.revisionsRequestedCount,
-          approvalRate: m.getApprovalRate(),
-        })),
-        queue: {
-          awaitingReview: awaitingReviewCount,
-          underReview: underReviewCount,
-          revisionNeeded: revisionNeededCount,
-        },
-        last24Hours: {
-          totalReviews: recentReviews.length,
-          approved: approvedCount,
-          rejected: rejectedCount,
-          revisionsRequested: revisionRequestedCount,
-          totalCost: Math.round(totalReviewCost * 100) / 100,
-          avgDurationSeconds: Math.round(avgReviewDuration),
-        },
-      });
+      const status = await buildManagerStatus();
+      return res.json(status);
     } catch (error) {
       logger.error("Error fetching manager status:", error);
       return res.status(500).json({ error: "Failed to fetch manager status" });

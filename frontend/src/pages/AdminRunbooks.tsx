@@ -150,9 +150,11 @@ export function AdminRunbooks() {
   };
 
   const handleUpdateStep = (index: number, field: keyof RunbookStep, value: any) => {
-    const newSteps = [...formData.steps];
-    newSteps[index] = { ...newSteps[index], [field]: value };
-    setFormData({ ...formData, steps: newSteps });
+    setFormData((prev) => {
+      const newSteps = [...prev.steps];
+      newSteps[index] = { ...newSteps[index], [field]: value };
+      return { ...prev, steps: newSteps };
+    });
   };
 
   const handleRemoveStep = (index: number) => {
@@ -792,26 +794,6 @@ export function AdminRunbooks() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2 flex-wrap mb-1">
                                 <h4 className="font-medium">{runbook.title}</h4>
-                                {runbook.severity.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {runbook.severity.map((sev) => (
-                                      <span
-                                        key={sev}
-                                        className={`px-1.5 py-0.5 rounded text-xs font-medium capitalize ${
-                                          sev === 'critical'
-                                            ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
-                                            : sev === 'error'
-                                            ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200'
-                                            : sev === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
-                                            : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
-                                        }`}
-                                      >
-                                        {sev}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                               {runbook.description && (
                                 <p className="text-sm text-muted-foreground mb-2">
@@ -820,6 +802,30 @@ export function AdminRunbooks() {
                               )}
                               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                 <span>{runbook.steps.length} steps</span>
+                                {runbook.severity.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    {(runbook.severity || [])
+                                      .filter(sev =>
+                                        ['critical', 'error', 'warning', 'info'].includes(sev)
+                                      )
+                                      .map((sev) => (
+                                        <span
+                                          key={sev}
+                                          className={`px-1.5 py-0.5 rounded text-xs font-medium capitalize ${
+                                            sev === 'critical'
+                                              ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                                              : sev === 'error'
+                                              ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200'
+                                              : sev === 'warning'
+                                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
+                                              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                          }`}
+                                        >
+                                          {sev}
+                                        </span>
+                                      ))}
+                                  </div>
+                                )}
                                 {runbook.tags.length > 0 && (
                                   <span>Tags: {runbook.tags.join(', ')}</span>
                                 )}
