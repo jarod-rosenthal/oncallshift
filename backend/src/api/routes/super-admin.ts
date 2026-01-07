@@ -886,14 +886,14 @@ router.get(
         lastLogId = since;
       }
       let lastStatus = task.status;
-      let isClosed = false;
+      let _isClosed = false;
 
       const sendLogs = async () => {
         try {
           const currentTask = await taskRepo.findOne({ where: { id: taskId } });
           if (!currentTask) {
             res.write(`data: ${JSON.stringify({ type: "error", message: "Task not found" })}\n\n`);
-            isClosed = true;
+            _isClosed = true;
             res.end();
             return;
           }
@@ -934,7 +934,7 @@ router.get(
 
           if (["completed", "failed", "cancelled"].includes(currentTask.status)) {
             res.write(`data: ${JSON.stringify({ type: "complete", status: currentTask.status })}\n\n`);
-            isClosed = true;
+            _isClosed = true;
             res.end();
           }
         } catch (err) {
@@ -954,7 +954,7 @@ router.get(
       const pingInterval = setInterval(sendPing, 20000);
 
       req.on("close", () => {
-        isClosed = true;
+        _isClosed = true;
         clearInterval(logInterval);
         clearInterval(pingInterval);
       });
