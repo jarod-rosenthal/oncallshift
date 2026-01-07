@@ -162,6 +162,16 @@ async function buildControlCenterData(orgId: string) {
     });
   }
 
+  // Fallback: if cumulative cost not set, derive from all tasks with cost > 0
+  let derivedCumulativeCost = Number(org?.aiWorkerCumulativeCost || 0);
+  if (!derivedCumulativeCost || derivedCumulativeCost <= 0) {
+    const costSumRow = await taskRepo
+      .createQueryBuilder("task")
+      .select("COALESCE(SUM(task.estimatedCostUsd), 0)", "sum")
+      .getRawOne<{ sum: string }>();
+    derivedCumulativeCost = Number(costSumRow?.sum || 0);
+  }
+
   const stats = {
     totalWorkers: workers.length,
     activeWorkers: workers.filter((w) => w.status === "working").length,
@@ -169,7 +179,7 @@ async function buildControlCenterData(orgId: string) {
     todayCost: Math.round(todayCost * 100) / 100,
     todayCompleted: todayTasks.filter((t) => t.status === "completed").length,
     todayFailed: todayTasks.filter((t) => t.status === "failed").length,
-    cumulativeCost: Number(org?.aiWorkerCumulativeCost || 0),
+    cumulativeCost: derivedCumulativeCost,
     cumulativeCostResetAt: org?.aiWorkerCostResetAt || null,
   };
 
@@ -841,19 +851,16 @@ router.post(
 
 /**
  * GET /api/v1/super-admin/control-center/logs/:taskId/stream
- * SSE endpoint for real-time log streaming
- * Note: Supports token in query param since EventSource doesn't support headers
+ * SSE endpoint for real-time log streaming with heartbeats and cursor-based resume
+ * Supports token in query param since EventSource doesn't support headers
  */
 router.get(
   "/control-center/logs/:taskId/stream",
   async (req: Request, res: Response) => {
     const { taskId } = req.params;
+    const since = req.query.since ? String(req.query.since) : null;
 
-    // EventSource doesn't support Authorization headers, so we also accept token in query
-    // The authenticateRequest middleware already ran, but for SSE we may need query param fallback
-    // This is handled by the middleware, but we log it for debugging
     if (req.query.token && !req.user && !req.orgId) {
-      // Token was in query but auth failed - return error
       return res.status(401).json({ error: "Invalid token" });
     }
 
@@ -862,61 +869,51 @@ router.get(
       const taskRepo = dataSource.getRepository(AIWorkerTask);
       const logRepo = dataSource.getRepository(AIWorkerTaskLog);
 
-      // Verify task exists
       const task = await taskRepo.findOne({ where: { id: taskId } });
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
       }
 
-      // Set up SSE headers
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
-      res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
-      res.flushHeaders();
+      res.setHeader("X-Accel-Buffering", "no");
+      if ((res as any).flushHeaders) (res as any).flushHeaders();
 
-      // Send initial connection event
-      res.write(
-        `data: ${JSON.stringify({ type: "connected", taskId, status: task.status })}\n\n`,
-      );
-
+      // Start cursor at provided since or last log id
       let lastLogId: string | null = null;
+      if (since) {
+        lastLogId = since;
+      }
       let lastStatus = task.status;
+      let isClosed = false;
 
-      // Poll for new logs every second
-      const intervalId = setInterval(async () => {
+      const sendLogs = async () => {
         try {
-          // Get task status
           const currentTask = await taskRepo.findOne({ where: { id: taskId } });
           if (!currentTask) {
-            res.write(
-              `data: ${JSON.stringify({ type: "error", message: "Task not found" })}\n\n`,
-            );
-            clearInterval(intervalId);
+            res.write(`data: ${JSON.stringify({ type: "error", message: "Task not found" })}\n\n`);
+            isClosed = true;
             res.end();
             return;
           }
 
-          // Send status update if changed
           if (currentTask.status !== lastStatus) {
-            res.write(
-              `data: ${JSON.stringify({ type: "status", status: currentTask.status })}\n\n`,
-            );
+            res.write(`data: ${JSON.stringify({ type: "status", status: currentTask.status })}\n\n`);
             lastStatus = currentTask.status;
           }
 
-          // Get new logs since last check
-          const queryBuilder = logRepo
+          const qb = logRepo
             .createQueryBuilder("log")
             .where("log.taskId = :taskId", { taskId })
-            .orderBy("log.createdAt", "ASC");
+            .orderBy("log.createdAt", "ASC")
+            .addOrderBy("log.id", "ASC");
 
           if (lastLogId) {
-            queryBuilder.andWhere("log.id > :lastLogId", { lastLogId });
+            qb.andWhere("log.id > :lastLogId", { lastLogId });
           }
 
-          const newLogs = await queryBuilder.getMany();
-
+          const newLogs = await qb.getMany();
           for (const log of newLogs) {
             res.write(
               `data: ${JSON.stringify({
@@ -935,25 +932,35 @@ router.get(
             lastLogId = log.id;
           }
 
-          // End stream if task is complete
           if (["completed", "failed", "cancelled"].includes(currentTask.status)) {
-            res.write(
-              `data: ${JSON.stringify({ type: "complete", status: currentTask.status })}\n\n`,
-            );
-            clearInterval(intervalId);
+            res.write(`data: ${JSON.stringify({ type: "complete", status: currentTask.status })}\n\n`);
+            isClosed = true;
             res.end();
           }
         } catch (err) {
           logger.error("Error in SSE loop:", err);
         }
-      }, 1000);
+      };
 
-      // Clean up on client disconnect
+      const sendPing = () => {
+        res.write("event: ping\n");
+        res.write("data: {}\n\n");
+      };
+
+      // Send initial handshake
+      res.write(`data: ${JSON.stringify({ type: "connected", taskId, status: task.status, cursor: lastLogId })}\n\n`);
+
+      const logInterval = setInterval(sendLogs, 1000);
+      const pingInterval = setInterval(sendPing, 20000);
+
       req.on("close", () => {
-        clearInterval(intervalId);
+        isClosed = true;
+        clearInterval(logInterval);
+        clearInterval(pingInterval);
       });
 
-      // SSE connection is now open - no return needed (connection stays open)
+      // First fetch immediately
+      await sendLogs();
       return;
     } catch (error) {
       logger.error("Error setting up SSE stream:", error);

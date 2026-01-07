@@ -354,6 +354,7 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
     // Get all schedules with rotation config
     const schedules = await scheduleRepo.find({
       where: { orgId },
+      relations: ['layers', 'layers.members', 'overrides'],
       order: { name: 'ASC' },
     });
 
@@ -435,11 +436,13 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
 /**
  * Calculate who's on-call for a specific date based on schedule rotation
  */
-function calculateOncallForDate(
-  schedule: Schedule,
-  targetDate: Date
-): string | null {
-  // If manual schedule, just return current on-call
+function calculateOncallForDate(schedule: Schedule, targetDate: Date): string | null {
+  // Highest fidelity: use layered schedules + overrides when present
+  if (schedule.hasLayers()) {
+    return schedule.getEffectiveOncallUserId(targetDate);
+  }
+
+  // Legacy/manual fallback
   if (schedule.type === 'manual' || !schedule.rotation_config) {
     return schedule.getCurrentOncallUserId();
   }

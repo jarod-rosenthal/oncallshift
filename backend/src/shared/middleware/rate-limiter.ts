@@ -196,7 +196,7 @@ export const RATE_LIMIT_TIERS = {
   // Reasonable limit to prevent brute force while allowing normal usage
   auth: {
     windowMs: 5 * 60 * 1000,  // 5 minutes
-    maxRequests: 20,
+    maxRequests: 100,
     description: 'Authentication attempts',
   },
 
@@ -259,7 +259,7 @@ export const webhookRateLimiter = createRateLimiter({
 
 /**
  * Rate limiter for authentication endpoints
- * 100 requests per 15 minutes
+ * 100 requests per 5 minutes
  */
 export const authRateLimiter = createRateLimiter({
   windowMs: RATE_LIMIT_TIERS.auth.windowMs,
