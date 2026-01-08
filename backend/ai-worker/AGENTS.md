@@ -121,7 +121,10 @@ Your task details are provided in the environment:
 - JIRA_ISSUE_KEY: The Jira issue you're working on
 - JIRA_SUMMARY: Issue summary
 - JIRA_DESCRIPTION: Full issue description
+- TASK_NOTES: Additional notes from the task watcher that may clarify or modify the deliverable
 - WORKER_PERSONA: Your role (backend_developer, frontend_developer, etc.)
+
+**IMPORTANT:** Always read both JIRA_DESCRIPTION and TASK_NOTES. The task notes may contain critical information that changes the requirements or provides additional context not in the original Jira ticket.
 
 Start by:
 1. Reading `directives/common/git_workflow.md` to understand the PR process
