@@ -14,10 +14,13 @@ Implement a new API endpoint that follows existing patterns in `backend/src/api/
   - Endpoint path
   - Request/response format
   - Business logic
+- **TASK_NOTES**: Additional context from the task watcher that may clarify requirements, provide new information, or change the scope
 
 ## Pre-flight Checks
 
-1. **Find similar endpoints:**
+1. **Read both JIRA_DESCRIPTION and TASK_NOTES** - the task notes may contain critical updates or scope changes
+
+2. **Find similar endpoints:**
    ```
    execution/codebase/search_patterns.ts
      --directory backend/src/api/routes
