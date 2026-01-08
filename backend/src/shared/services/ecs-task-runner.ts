@@ -16,9 +16,11 @@ interface ECSTaskRunnerConfig {
 
 interface TaskEnvironment {
   TASK_ID: string;
+  ORG_ID: string;
   JIRA_ISSUE_KEY: string;
   JIRA_SUMMARY: string;
   JIRA_DESCRIPTION: string;
+  TASK_NOTES: string;
   GITHUB_REPO: string;
   WORKER_PERSONA: string;
   ANTHROPIC_API_KEY: string;
@@ -72,9 +74,11 @@ export class ECSTaskRunner {
     // Use haiku (cheapest model) for all personas until system is stable
     const environment: TaskEnvironment = {
       TASK_ID: task.id,
+      ORG_ID: task.orgId,
       JIRA_ISSUE_KEY: task.jiraIssueKey,
       JIRA_SUMMARY: task.summary,
       JIRA_DESCRIPTION: task.description || '',
+      TASK_NOTES: task.watcherNotes || '',
       GITHUB_REPO: task.githubRepo,
       WORKER_PERSONA: task.workerPersona,
       ANTHROPIC_API_KEY: credentials.anthropicApiKey,
