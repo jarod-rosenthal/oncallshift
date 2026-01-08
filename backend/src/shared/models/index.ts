@@ -75,3 +75,4 @@ export * from './AIWorkerToolEvent';
 export * from './AIWorkerToolPattern';
 export * from './AIWorkerLearningSession';
 export * from './AIWorkerPatternApplication';
+export * from './AIProviderConfig';
