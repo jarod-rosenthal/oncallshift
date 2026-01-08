@@ -7,11 +7,13 @@ import { cloudCredentialsAPI } from '../lib/api-client';
 import type { CloudCredential, CloudProvider, CloudAccessLog } from '../types/api';
 import { Cloud, Plus, Trash2, Eye, EyeOff, RefreshCw, CheckCircle, XCircle, Shield, Clock, AlertTriangle } from 'lucide-react';
 
-const PROVIDER_INFO: Record<CloudProvider, { name: string; color: string; icon: string }> = {
+// Only cloud providers - AI providers are managed in AI Settings
+const CLOUD_PROVIDERS: CloudProvider[] = ['aws', 'azure', 'gcp'];
+
+const PROVIDER_INFO: Partial<Record<CloudProvider, { name: string; color: string; icon: string }>> = {
   aws: { name: 'Amazon Web Services', color: 'bg-orange-500', icon: 'AWS' },
   azure: { name: 'Microsoft Azure', color: 'bg-blue-500', icon: 'Azure' },
   gcp: { name: 'Google Cloud Platform', color: 'bg-red-500', icon: 'GCP' },
-  anthropic: { name: 'Anthropic (Claude AI)', color: 'bg-amber-600', icon: 'AI' },
 };
 
 const AWS_SERVICES = ['ec2', 'ecs', 'lambda', 'rds', 's3', 'cloudwatch', 'cloudtrail', 'dynamodb', 'elasticache', 'sns', 'sqs'];
@@ -57,8 +59,6 @@ export function CloudCredentials() {
   const [gcpServiceAccountJson, setGcpServiceAccountJson] = useState('');
   const [gcpProjectId, setGcpProjectId] = useState('');
 
-  // Anthropic
-  const [anthropicApiKey, setAnthropicApiKey] = useState('');
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -70,7 +70,11 @@ export function CloudCredentials() {
     try {
       setIsLoading(true);
       const response = await cloudCredentialsAPI.list();
-      setCredentials(response?.credentials || []);
+      // Filter to only show cloud providers - AI providers are managed in AI Settings
+      const cloudOnlyCredentials = (response?.credentials || []).filter(
+        (c: CloudCredential) => CLOUD_PROVIDERS.includes(c.provider)
+      );
+      setCredentials(cloudOnlyCredentials);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load cloud credentials');
       setCredentials([]);
@@ -146,7 +150,6 @@ export function CloudCredentials() {
     setAzureSubscriptionId('');
     setGcpServiceAccountJson('');
     setGcpProjectId('');
-    setAnthropicApiKey('');
     setShowSecrets(false);
   };
 
@@ -181,10 +184,6 @@ export function CloudCredentials() {
           service_account_json: gcpServiceAccountJson,
           project_id: gcpProjectId,
         };
-      } else if (formProvider === 'anthropic') {
-        credentials = {
-          api_key: anthropicApiKey,
-        };
       }
 
       await cloudCredentialsAPI.create({
@@ -215,7 +214,7 @@ export function CloudCredentials() {
       case 'aws': return AWS_SERVICES;
       case 'azure': return AZURE_SERVICES;
       case 'gcp': return GCP_SERVICES;
-      case 'anthropic': return []; // AI provider, no services
+      default: return [];
     }
   };
 
@@ -307,8 +306,8 @@ export function CloudCredentials() {
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 ${PROVIDER_INFO[credential.provider].color} rounded-lg flex items-center justify-center text-white font-bold`}>
-                      {PROVIDER_INFO[credential.provider].icon}
+                    <div className={`w-12 h-12 ${PROVIDER_INFO[credential.provider]?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center text-white font-bold`}>
+                      {PROVIDER_INFO[credential.provider]?.icon || '?'}
                     </div>
                     <div>
                       <h3 className="font-semibold flex items-center gap-2">
@@ -318,7 +317,7 @@ export function CloudCredentials() {
                         )}
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {PROVIDER_INFO[credential.provider].name}
+                        {PROVIDER_INFO[credential.provider]?.name || credential.provider}
                       </p>
                     </div>
                   </div>
@@ -431,8 +430,8 @@ export function CloudCredentials() {
               {/* Provider Selection */}
               <div className="space-y-2">
                 <Label>Provider</Label>
-                <div className="grid grid-cols-4 gap-3">
-                  {(['aws', 'azure', 'gcp', 'anthropic'] as CloudProvider[]).map((provider) => (
+                <div className="grid grid-cols-3 gap-3">
+                  {CLOUD_PROVIDERS.map((provider) => (
                     <button
                       key={provider}
                       type="button"
@@ -446,10 +445,10 @@ export function CloudCredentials() {
                           : 'border-muted hover:border-primary/50'
                       }`}
                     >
-                      <div className={`w-10 h-10 ${PROVIDER_INFO[provider].color} rounded-lg flex items-center justify-center text-white font-bold mx-auto mb-2`}>
-                        {PROVIDER_INFO[provider].icon}
+                      <div className={`w-10 h-10 ${PROVIDER_INFO[provider]?.color} rounded-lg flex items-center justify-center text-white font-bold mx-auto mb-2`}>
+                        {PROVIDER_INFO[provider]?.icon}
                       </div>
-                      <span className="text-sm font-medium">{PROVIDER_INFO[provider].name}</span>
+                      <span className="text-sm font-medium">{PROVIDER_INFO[provider]?.name}</span>
                     </button>
                   ))}
                 </div>
@@ -659,39 +658,7 @@ export function CloudCredentials() {
                 </div>
               )}
 
-              {formProvider === 'anthropic' && (
-                <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium">Anthropic API Key</h4>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowSecrets(!showSecrets)}
-                    >
-                      {showSecrets ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Enter your Anthropic API key to enable AI-powered incident analysis.
-                    Get your key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">console.anthropic.com</a>
-                  </p>
-                  <div className="space-y-2">
-                    <Label htmlFor="anthropicApiKey">API Key</Label>
-                    <Input
-                      id="anthropicApiKey"
-                      value={anthropicApiKey}
-                      onChange={(e) => setAnthropicApiKey(e.target.value)}
-                      type={showSecrets ? 'text' : 'password'}
-                      placeholder="sk-ant-api03-..."
-                      required
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Access Control - hide for Anthropic */}
-              {formProvider !== 'anthropic' && (
+              {/* Access Control */}
               <div className="space-y-4">
                 <h4 className="font-medium">Access Control</h4>
 
@@ -762,10 +729,9 @@ export function CloudCredentials() {
                   </div>
                 </div>
               </div>
-              )}
 
               {/* Warning */}
-              {formPermissionLevel === 'read_write' && formProvider !== 'anthropic' && (
+              {formPermissionLevel === 'read_write' && (
                 <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
                   <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                   <div className="text-sm text-yellow-700">
@@ -807,7 +773,7 @@ export function CloudCredentials() {
               <div>
                 <h3 className="text-xl font-semibold">Access Logs</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {selectedCredential.name} - {PROVIDER_INFO[selectedCredential.provider].name}
+                  {selectedCredential.name} - {PROVIDER_INFO[selectedCredential.provider]?.name || selectedCredential.provider}
                 </p>
               </div>
               <Button variant="outline" onClick={() => setShowLogsModal(false)}>

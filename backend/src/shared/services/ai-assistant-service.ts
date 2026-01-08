@@ -155,7 +155,7 @@ export async function getAnthropicApiKey(orgId: string): Promise<string | null> 
 
     // Look for an enabled Anthropic credential for this org
     const credential = await credentialRepo.findOne({
-      where: { orgId, provider: 'anthropic' as any, enabled: true },
+      where: { orgId, provider: 'anthropic', enabled: true },
     });
 
     if (credential) {
