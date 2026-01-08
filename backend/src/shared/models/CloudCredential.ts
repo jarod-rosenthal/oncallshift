@@ -10,10 +10,20 @@ import {
 import { Organization } from './Organization';
 import { User } from './User';
 
-export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'anthropic';
+export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'anthropic' | 'openai' | 'google';
+export type AIProvider = 'anthropic' | 'openai' | 'google';
 export type CloudPermissionLevel = 'read_only' | 'read_write';
 
 export interface AnthropicCredentials {
+  api_key: string;
+}
+
+export interface OpenAICredentials {
+  api_key: string;
+  organization_id?: string; // Optional org ID for OpenAI
+}
+
+export interface GoogleAICredentials {
   api_key: string;
 }
 
@@ -41,7 +51,13 @@ export interface GCPCredentials {
   project_id: string;
 }
 
-export type CloudCredentialData = AWSCredentials | AzureCredentials | GCPCredentials | AnthropicCredentials;
+export type CloudCredentialData =
+  | AWSCredentials
+  | AzureCredentials
+  | GCPCredentials
+  | AnthropicCredentials
+  | OpenAICredentials
+  | GoogleAICredentials;
 
 @Entity('cloud_credentials')
 export class CloudCredential {
@@ -125,6 +141,10 @@ export class CloudCredential {
         return 'Google Cloud Platform';
       case 'anthropic':
         return 'Anthropic (Claude AI)';
+      case 'openai':
+        return 'OpenAI (GPT)';
+      case 'google':
+        return 'Google AI (Gemini)';
       default:
         return this.provider;
     }

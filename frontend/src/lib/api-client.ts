@@ -2357,4 +2357,76 @@ export const aiWorkerApprovalsAPI = {
   },
 };
 
+// AI Config API
+export interface AIConfigResponse {
+  default_provider: 'anthropic' | 'openai' | 'google';
+  capability_overrides: Record<string, string>;
+  model_preferences: Record<string, Record<string, string>>;
+  fallback_chain: string[];
+  enable_fallback: boolean;
+  configured_providers: Array<'anthropic' | 'openai' | 'google'>;
+  has_env_fallback: boolean;
+}
+
+export interface AIProviderInfo {
+  id: string;
+  name: string;
+  models: Array<{
+    id: string;
+    name: string;
+    capabilities: string[];
+    context_window: number;
+    max_output_tokens: number;
+    input_price_per_million: number;
+    output_price_per_million: number;
+  }>;
+}
+
+export const aiConfigAPI = {
+  getConfig: async (): Promise<AIConfigResponse> => {
+    const response = await apiClient.get<AIConfigResponse>('/ai-config');
+    return response.data;
+  },
+
+  updateConfig: async (data: {
+    default_provider?: 'anthropic' | 'openai' | 'google';
+    capability_overrides?: Record<string, string>;
+    model_preferences?: Record<string, Record<string, string>>;
+    fallback_chain?: string[];
+    enable_fallback?: boolean;
+  }): Promise<AIConfigResponse> => {
+    const response = await apiClient.put<AIConfigResponse>('/ai-config', data);
+    return response.data;
+  },
+
+  getProviders: async (): Promise<{ providers: AIProviderInfo[] }> => {
+    const response = await apiClient.get<{ providers: AIProviderInfo[] }>('/ai-config/providers');
+    return response.data;
+  },
+
+  getModels: async (): Promise<{ models: Array<{
+    id: string;
+    name: string;
+    provider: string;
+    provider_name: string;
+    capabilities: string[];
+    context_window: number;
+    max_output_tokens: number;
+    input_price_per_million: number;
+    output_price_per_million: number;
+  }> }> => {
+    const response = await apiClient.get('/ai-config/models');
+    return response.data;
+  },
+
+  testProvider: async (provider: 'anthropic' | 'openai' | 'google', apiKey: string): Promise<{
+    provider: string;
+    valid: boolean;
+    message: string;
+  }> => {
+    const response = await apiClient.post(`/ai-config/test/${provider}`, { api_key: apiKey });
+    return response.data;
+  },
+};
+
 export default apiClient;

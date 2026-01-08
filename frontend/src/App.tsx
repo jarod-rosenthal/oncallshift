@@ -44,6 +44,7 @@ const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Rep
 const Postmortems = lazy(() => import('./pages/Postmortems').then(m => ({ default: m.Postmortems })));
 const Tags = lazy(() => import('./pages/Tags').then(m => ({ default: m.Tags })));
 const CloudCredentials = lazy(() => import('./pages/CloudCredentials').then(m => ({ default: m.CloudCredentials })));
+const AISettings = lazy(() => import('./pages/AISettings').then(m => ({ default: m.AISettings })));
 const Account = lazy(() => import('./pages/Account').then(m => ({ default: m.Account })));
 const ApiKeys = lazy(() => import('./pages/ApiKeys').then(m => ({ default: m.ApiKeys })));
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ default: m.SetupWizard })));
@@ -393,6 +394,14 @@ function App() {
           element={
             <AdminWithLayout>
               <CloudCredentials />
+            </AdminWithLayout>
+          }
+        />
+        <Route
+          path="/settings/ai"
+          element={
+            <AdminWithLayout>
+              <AISettings />
             </AdminWithLayout>
           }
         />

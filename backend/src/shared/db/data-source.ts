@@ -78,6 +78,7 @@ import { AIWorkerToolEvent } from '../models/AIWorkerToolEvent';
 import { AIWorkerToolPattern } from '../models/AIWorkerToolPattern';
 import { AIWorkerLearningSession } from '../models/AIWorkerLearningSession';
 import { AIWorkerPatternApplication } from '../models/AIWorkerPatternApplication';
+import { AIProviderConfig } from '../models/AIProviderConfig';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -171,6 +172,7 @@ export async function createDataSource(): Promise<DataSource> {
       AIWorkerToolPattern,
       AIWorkerLearningSession,
       AIWorkerPatternApplication,
+      AIProviderConfig,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],
