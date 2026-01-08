@@ -15,10 +15,12 @@ Fix the reported bug by: reproducing it, understanding the root cause, writing a
   - Actual behavior
   - Error messages/stack traces (if available)
   - Affected endpoint/functionality
+- **TASK_NOTES**: Additional context from the task watcher that may clarify requirements, provide new information, or change the scope
 
 ## Pre-flight Checks
 
 1. **Understand the bug report:**
+   - **Read both JIRA_DESCRIPTION and TASK_NOTES** - the task notes may contain critical updates
    - Can you reproduce the issue from the description?
    - Is there a stack trace or error message?
    - Which component is affected (API, worker, database)?
