@@ -53,6 +53,7 @@ import aiWorkerTasksRoutes from './routes/ai-worker-tasks';
 import aiWorkerApprovalsRoutes from './routes/ai-worker-approvals';
 import aiWorkerWebhooksRoutes from './routes/ai-worker-webhooks';
 import superAdminRoutes from './routes/super-admin';
+import aiConfigRoutes from './routes/ai-config';
 import { captureRawBody, etagMiddleware } from '../shared/middleware';
 import { idempotencyMiddleware } from '../shared/middleware/idempotency';
 import { requestIdMiddleware } from '../shared/middleware/request-id';
@@ -364,6 +365,7 @@ export function createApp(): Express {
   app.use('/api/v1/ai-worker-tasks', idempotencyMiddleware, aiWorkerTasksRoutes); // AI worker tasks
   app.use('/api/v1/ai-worker-approvals', idempotencyMiddleware, aiWorkerApprovalsRoutes); // AI worker approvals
   app.use('/api/v1/super-admin', superAdminRoutes); // Super admin control center
+  app.use('/api/v1/ai-config', aiConfigRoutes); // AI provider configuration
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

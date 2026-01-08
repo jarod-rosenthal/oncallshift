@@ -1159,7 +1159,8 @@ export interface CreatePostmortemTemplateRequest {
 }
 
 // Cloud Credentials types
-export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'anthropic';
+export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'anthropic' | 'openai' | 'google';
+export type AIProvider = 'anthropic' | 'openai' | 'google';
 export type CloudPermissionLevel = 'read_only' | 'read_write';
 
 export interface CloudCredential {

@@ -109,7 +109,7 @@ function formatAccessLog(log: CloudAccessLog) {
 router.get(
   '/',
   [
-    query('provider').optional().isIn(['aws', 'azure', 'gcp', 'anthropic']),
+    query('provider').optional().isIn(['aws', 'azure', 'gcp', 'anthropic', 'openai', 'google']),
     query('enabled').optional().isBoolean().toBoolean(),
   ],
   async (req: Request, res: Response) => {
@@ -272,7 +272,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post(
   '/',
   [
-    body('provider').isIn(['aws', 'azure', 'gcp', 'anthropic']).withMessage('Invalid provider'),
+    body('provider').isIn(['aws', 'azure', 'gcp', 'anthropic', 'openai', 'google']).withMessage('Invalid provider'),
     body('name').isString().trim().notEmpty().withMessage('Name is required'),
     body('description').optional().isString(),
     body('credentials').isObject().withMessage('Credentials object is required'),
@@ -347,6 +347,24 @@ router.post(
         if (!credentials.service_account_json || !credentials.project_id) {
           return res.status(400).json({
             error: 'GCP credentials require service_account_json and project_id',
+          });
+        }
+      } else if (provider === 'anthropic') {
+        if (!credentials.api_key) {
+          return res.status(400).json({
+            error: 'Anthropic credentials require api_key',
+          });
+        }
+      } else if (provider === 'openai') {
+        if (!credentials.api_key) {
+          return res.status(400).json({
+            error: 'OpenAI credentials require api_key',
+          });
+        }
+      } else if (provider === 'google') {
+        if (!credentials.api_key) {
+          return res.status(400).json({
+            error: 'Google AI credentials require api_key',
           });
         }
       }
