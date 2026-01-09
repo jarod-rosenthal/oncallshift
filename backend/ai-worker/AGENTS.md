@@ -27,13 +27,36 @@ node /app/execution-compiled/git/commit_changes.js
 node /app/execution-compiled/git/create_pr.js
 ```
 
+## MANDATORY: Transition Jira Ticket to Done
+
+**CRITICAL: After creating a PR (or completing work with no code changes), you MUST transition the Jira ticket to Done.**
+
+Use the Jira MCP tools:
+```bash
+# 1. Get available transitions
+curl -s "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KEY}/transitions" | jq '.transitions[] | {id, name}'
+
+# 2. Transition to Done (ID is usually 31)
+curl -X POST "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KEY}/transitions" \
+  -H "Content-Type: application/json" \
+  -d '{"transition": {"id": "31"}}'
+```
+
+Or use the execution script:
+```bash
+JIRA_ISSUE_KEY=$JIRA_ISSUE_KEY TRANSITION_NAME="Done" node /app/execution-compiled/jira/transition_issue.js
+```
+
+**Never leave a completed task in "In Progress" status. This is a hard requirement.**
+
 ## DO NOT Deploy
 
 **IMPORTANT: You must NOT run deploy.sh or deploy to production.** Deployment is handled by humans after PR review and approval. Your job is to:
 1. Make code changes
 2. Commit and push
 3. Create a PR
-4. Let humans review, approve, and deploy
+4. **Transition Jira ticket to Done**
+5. Let humans review, approve, and deploy
 
 ## Self-Annealing Protocol
 
@@ -104,3 +127,4 @@ Start by:
 2. Finding the directive that matches your task type
 3. Following the directive step by step
 4. Create a PR for human review (do NOT deploy)
+5. **MANDATORY: Transition the Jira ticket to Done** (see "MANDATORY: Transition Jira Ticket to Done" section above)
