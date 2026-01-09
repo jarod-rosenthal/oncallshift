@@ -201,10 +201,11 @@ async function buildControlCenterData(orgId: string) {
   // Fallback: if cumulative cost not set, derive from all tasks with cost > 0
 	  let derivedCumulativeCost = Number(org?.aiWorkerCumulativeCost || 0);
 	  if (!derivedCumulativeCost || derivedCumulativeCost <= 0) {
+	    // Fallback: sum all task costs (use snake_case for raw SQL column names)
 	    const costSumRow = await taskRepo
 	      .createQueryBuilder("task")
-	      .where("task.orgId = :orgId", { orgId })
-	      .select("COALESCE(SUM(task.estimatedCostUsd), 0)", "sum")
+	      .where("task.org_id = :orgId", { orgId })
+	      .select("COALESCE(SUM(task.estimated_cost_usd), 0)", "sum")
 	      .getRawOne<{ sum: string }>();
 	    derivedCumulativeCost = Number(costSumRow?.sum || 0);
 	  }
