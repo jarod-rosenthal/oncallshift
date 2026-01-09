@@ -580,17 +580,17 @@ echo "[DEBUG] Working directory: $(pwd)"
 CLAUDE_STDERR_FILE="/tmp/claude-stderr.log"
 
 # Log parser script path (inside Docker container)
-LOG_PARSER_SCRIPT="/app/scripts/log-parser.js"
+LOG_PARSER_SCRIPT="/app/scripts/log-parser.cjs"
 
-# Export env vars for log-parser.js (including CLAUDE_MODEL for cost calculation)
+# Export env vars for log-parser.cjs (including CLAUDE_MODEL for cost calculation)
 export TASK_ID ORG_ID API_BASE_URL ORG_API_KEY CLAUDE_MODEL
 
 # Check if log-parser exists
 if [ -f "${LOG_PARSER_SCRIPT}" ]; then
-    echo "[Learning] Tool event capture enabled via log-parser.js"
+    echo "[Learning] Tool event capture enabled via log-parser.cjs"
     LOG_PARSER_CMD="node ${LOG_PARSER_SCRIPT}"
 else
-    echo "[Learning] log-parser.js not found, skipping tool event capture"
+    echo "[Learning] log-parser.cjs not found, skipping tool event capture"
     LOG_PARSER_CMD="cat"  # Passthrough if parser not available
 fi
 
@@ -641,7 +641,7 @@ fi
 # =============================================================================
 # Token Usage Tracking
 # =============================================================================
-# Token usage is tracked by log-parser.js which:
+# Token usage is tracked by log-parser.cjs which:
 # 1. Parses usage from the final result event (guaranteed accurate)
 # 2. Reports all 4 token types (input, output, cache_creation, cache_read)
 # 3. Posts to /api/v1/ai-worker-tasks/:id/usage on completion
@@ -650,7 +650,7 @@ fi
 # We extract basic token counts here only for Jira comment display.
 # Authoritative cost is in the Control Center (calculated server-side).
 
-echo "[Tokens] Token usage tracked by log-parser.js (reports to API on completion)"
+echo "[Tokens] Token usage tracked by log-parser.cjs (reports to API on completion)"
 echo "[Tokens] Cost calculated server-side using shared pricing config"
 echo "[Tokens] Model: ${CLAUDE_MODEL}"
 
