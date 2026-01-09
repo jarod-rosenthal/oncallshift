@@ -28,6 +28,7 @@ import { initJiraAIWorkerService, JiraAIWorkerService } from '../shared/services
 import { initGitHubService } from '../shared/services/github-service';
 import { getDataSource } from '../shared/db/data-source';
 import { logger } from '../shared/utils/logger';
+import { getCostTracker, initCostTracker } from '../shared/services/cost-tracker';
 
 interface QueueMessage {
   taskId: string;
@@ -67,6 +68,10 @@ class AIWorkerOrchestrator {
   }
 
   async initialize(): Promise<void> {
+    // Initialize CostTracker service
+    initCostTracker(this.dataSource);
+    logger.info('CostTracker service initialized');
+
     // Initialize Jira service
     if (process.env.JIRA_BASE_URL && process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN) {
       this.jiraService = initJiraAIWorkerService(this.dataSource, {
@@ -424,17 +429,30 @@ class AIWorkerOrchestrator {
         await this.logTaskEvent(task, 'error', `Task failed: ${task.errorMessage}`, { severity: 'error' as const });
       }
 
-      // Update cost (now with accurate token counts)
-      task.estimatedCostUsd = task.calculateCost();
-      await taskRepo.save(task);
-
-      logger.info('Task cost calculated', {
-        taskId: task.id,
-        inputTokens: task.claudeInputTokens,
-        outputTokens: task.claudeOutputTokens,
-        ecsTaskSeconds: task.ecsTaskSeconds,
-        estimatedCostUsd: task.estimatedCostUsd,
-      });
+      // Update cost and org cumulative cost via CostTracker
+      await taskRepo.save(task); // Save token data first
+      try {
+        const costResult = await getCostTracker().recordTaskCost(task.id);
+        logger.info('Task cost recorded via CostTracker', {
+          taskId: task.id,
+          inputTokens: task.claudeInputTokens,
+          outputTokens: task.claudeOutputTokens,
+          ecsTaskSeconds: task.ecsTaskSeconds,
+          taskCost: costResult.taskCost,
+          orgCumulativeCost: costResult.newCumulativeCost,
+          warningFlags: costResult.warningFlags,
+        });
+        if (costResult.warningFlags.length > 0) {
+          await this.logTaskEvent(task, 'warning', `Cost tracking warnings: ${costResult.warningFlags.join(', ')}`);
+        }
+      } catch (costError: any) {
+        logger.warn('CostTracker failed, falling back to local calculation', {
+          taskId: task.id,
+          error: costError.message,
+        });
+        task.estimatedCostUsd = task.calculateCost();
+        await taskRepo.save(task);
+      }
 
       // Set worker back to idle (workers are now persistent)
       if (task.assignedWorkerId) {
@@ -481,13 +499,14 @@ class AIWorkerOrchestrator {
     const resultMatch = output.match(/::result::(\w+)/);
     if (resultMatch) result.result = resultMatch[1];
 
-    const prUrlMatch = output.match(/::pr_url::(.+)/);
+    // Use \S+ to capture only non-whitespace (stops at tabs that separate markers on same line)
+    const prUrlMatch = output.match(/::pr_url::(\S+)/);
     if (prUrlMatch) result.prUrl = prUrlMatch[1].trim();
 
     const prNumberMatch = output.match(/::pr_number::(\d+)/);
     if (prNumberMatch) result.prNumber = parseInt(prNumberMatch[1], 10);
 
-    const branchMatch = output.match(/::branch::(.+)/);
+    const branchMatch = output.match(/::branch::(\S+)/);
     if (branchMatch) result.branch = branchMatch[1].trim();
 
     // Parse token usage
@@ -761,27 +780,32 @@ class AIWorkerOrchestrator {
         }
       }
 
-      // Calculate cost with whatever data we have
-      task.estimatedCostUsd = task.calculateCost();
-      logger.info('Failed task cost calculated', {
+      // Save task with token data first
+      await taskRepo.save(task);
+
+      // Record cost via CostTracker (updates org cumulative cost too)
+      const costResult = await getCostTracker().recordTaskCost(task.id);
+      logger.info('Failed task cost recorded via CostTracker', {
         taskId: task.id,
         inputTokens: task.claudeInputTokens,
         outputTokens: task.claudeOutputTokens,
         ecsTaskSeconds: task.ecsTaskSeconds,
-        estimatedCostUsd: task.estimatedCostUsd,
+        taskCost: costResult.taskCost,
+        orgCumulativeCost: costResult.newCumulativeCost,
+        warningFlags: costResult.warningFlags,
       });
     } catch (costError: any) {
-      logger.warn('Could not calculate cost for failed task', {
+      logger.warn('Could not record cost for failed task', {
         taskId: task.id,
         error: costError.message,
       });
+      // Fallback: at least save the local cost calculation
+      task.estimatedCostUsd = task.calculateCost();
+      await taskRepo.save(task);
     }
 
     await this.updateTaskStatus(task, 'failed');
     await this.logTaskEvent(task, 'error', error.message, { severity: 'error' });
-
-    // Save the task with cost info
-    await taskRepo.save(task);
 
     // Release worker
     if (task.assignedWorkerId) {

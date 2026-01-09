@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { AIWorkerTask } from './AIWorkerTask';
+import { calculateTotalCost, type TokenUsage } from '../config/pricing';
 
 export type AIWorkerTaskRunOutcome = 'success' | 'failed' | 'timeout' | 'killed' | 'cancelled';
 
@@ -52,6 +53,15 @@ export class AIWorkerTaskRun {
   @Column({ name: 'ecs_task_seconds', type: 'int', default: 0 })
   ecsTaskSeconds: number;
 
+  @Column({ name: 'claude_cache_creation_tokens', type: 'int', default: 0 })
+  claudeCacheCreationTokens: number;
+
+  @Column({ name: 'claude_cache_read_tokens', type: 'int', default: 0 })
+  claudeCacheReadTokens: number;
+
+  @Column({ name: 'worker_model', type: 'varchar', length: 50, default: 'sonnet' })
+  workerModel: string;
+
   @Column({ name: 'estimated_cost_usd', type: 'decimal', precision: 10, scale: 4, default: 0 })
   estimatedCostUsd: number;
 
@@ -84,14 +94,26 @@ export class AIWorkerTaskRun {
   }
 
   calculateCost(): number {
-    // Claude Sonnet pricing: $0.003/1K input, $0.015/1K output
-    const claudeCost = (this.claudeInputTokens / 1000) * 0.003 +
-                       (this.claudeOutputTokens / 1000) * 0.015;
+    // Use shared pricing config for consistent cost calculation
+    const tokens: TokenUsage = {
+      inputTokens: this.claudeInputTokens || 0,
+      outputTokens: this.claudeOutputTokens || 0,
+      cacheCreationTokens: this.claudeCacheCreationTokens || 0,
+      cacheReadTokens: this.claudeCacheReadTokens || 0,
+    };
+    return calculateTotalCost(tokens, this.workerModel || 'sonnet', this.ecsTaskSeconds || 0);
+  }
 
-    // Fargate Spot pricing: ~$0.04/hour for 2 vCPU, 4GB
-    const ecsCost = (this.ecsTaskSeconds / 3600) * 0.04;
-
-    return claudeCost + ecsCost;
+  /**
+   * Get token usage as a TokenUsage object for cost calculations
+   */
+  getTokenUsage(): TokenUsage {
+    return {
+      inputTokens: this.claudeInputTokens || 0,
+      outputTokens: this.claudeOutputTokens || 0,
+      cacheCreationTokens: this.claudeCacheCreationTokens || 0,
+      cacheReadTokens: this.claudeCacheReadTokens || 0,
+    };
   }
 
   getDurationFormatted(): string {

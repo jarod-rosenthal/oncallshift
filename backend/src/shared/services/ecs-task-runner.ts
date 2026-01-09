@@ -70,8 +70,15 @@ export class ECSTaskRunner {
     worker: AIWorkerInstance,
     credentials: { anthropicApiKey: string; githubToken: string; orgApiKey?: string }
   ): Promise<RunTaskResult> {
+    // Map full model ID to Claude CLI short name
+    const modelToCliName = (model: string): string => {
+      if (model.includes('opus')) return 'opus';
+      if (model.includes('haiku')) return 'haiku';
+      return 'sonnet'; // default
+    };
+
     // Build environment variables for the container
-    // Use haiku (cheapest model) for all personas until system is stable
+    // Model is determined by Jira labels (defaults to sonnet if no label)
     const environment: TaskEnvironment = {
       TASK_ID: task.id,
       ORG_ID: task.orgId,
@@ -84,7 +91,7 @@ export class ECSTaskRunner {
       ANTHROPIC_API_KEY: credentials.anthropicApiKey,
       GITHUB_TOKEN: credentials.githubToken,
       MAX_TURNS: String(worker.config.maxTurns || 50),
-      CLAUDE_MODEL: 'sonnet',
+      CLAUDE_MODEL: modelToCliName(task.workerModel || 'claude-sonnet-4-20250514'),
       // Self-recovery env vars
       RETRY_NUMBER: String(task.retryCount),
       PREVIOUS_RUN_CONTEXT: task.previousRunContext || '',

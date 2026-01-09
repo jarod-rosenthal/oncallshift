@@ -22,7 +22,8 @@ import { AIWorkerToolPattern } from "../../shared/models/AIWorkerToolPattern";
 import { AIWorkerPatternApplication } from "../../shared/models/AIWorkerPatternApplication";
 import { Organization } from "../../shared/models/Organization";
 import { logger } from "../../shared/utils/logger";
-import { ECS_FARGATE_SPOT_RATE_PER_HOUR } from "../../shared/config/pricing";
+import { calculateTotalCost, type TokenUsage } from "../../shared/config/pricing";
+import { getCostTracker } from "../../shared/services/cost-tracker";
 import {
   SQS,
   GetQueueAttributesCommand,
@@ -63,8 +64,37 @@ async function buildControlCenterData(orgId: string) {
 
   const org = await orgRepo.findOne({ where: { id: orgId } });
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // Calculate midnight Eastern time for today's stats reset
+  const getEasternMidnight = (): Date => {
+    const now = new Date();
+    // Get current time in Eastern timezone
+    const easternFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = easternFormatter.formatToParts(now);
+    const year = parts.find(p => p.type === 'year')?.value;
+    const month = parts.find(p => p.type === 'month')?.value;
+    const day = parts.find(p => p.type === 'day')?.value;
+
+    // Create midnight in Eastern time
+    const midnightEastern = new Date(`${year}-${month}-${day}T00:00:00-05:00`);
+
+    // Adjust for DST: check if we're in EDT (UTC-4) or EST (UTC-5)
+    const janOffset = new Date(`${year}-01-15T12:00:00`).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+    const julOffset = new Date(`${year}-07-15T12:00:00`).toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false });
+    const isDST = janOffset !== julOffset && now.getMonth() >= 2 && now.getMonth() <= 10;
+
+    if (isDST) {
+      // EDT: UTC-4
+      return new Date(`${year}-${month}-${day}T00:00:00-04:00`);
+    }
+    return midnightEastern;
+  };
+
+  const todayStart = getEasternMidnight();
 
   const workers = await workerRepo.find({
     order: { displayName: "ASC" },
@@ -112,13 +142,19 @@ async function buildControlCenterData(orgId: string) {
     if (Number(t.estimatedCostUsd) > 0) {
       return sum + Number(t.estimatedCostUsd);
     }
+    // Fallback: recalculate using shared pricing (includes Claude API + ECS cost)
     if (t.startedAt) {
       const endTime = t.completedAt || new Date();
       const durationSeconds = Math.floor(
         (endTime.getTime() - t.startedAt.getTime()) / 1000,
       );
-      const ecsCost = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
-      return sum + ecsCost;
+      const tokens: TokenUsage = {
+        inputTokens: t.claudeInputTokens || 0,
+        outputTokens: t.claudeOutputTokens || 0,
+        cacheCreationTokens: t.claudeCacheCreationTokens || 0,
+        cacheReadTokens: t.claudeCacheReadTokens || 0,
+      };
+      return sum + calculateTotalCost(tokens, t.workerModel || 'sonnet', durationSeconds);
     }
     return sum;
   }, 0);
@@ -259,12 +295,19 @@ async function buildControlCenterData(orgId: string) {
 
   const recentCompletedData = recentCompleted.map((t) => {
     let costUsd = Number(t.estimatedCostUsd);
+    // Fallback: recalculate using shared pricing (includes Claude API + ECS cost)
     if (costUsd === 0 && t.startedAt) {
       const endTime = t.completedAt || new Date();
       const durationSeconds = Math.floor(
         (endTime.getTime() - t.startedAt.getTime()) / 1000,
       );
-      costUsd = (durationSeconds / 3600) * ECS_FARGATE_SPOT_RATE_PER_HOUR;
+      const tokens: TokenUsage = {
+        inputTokens: t.claudeInputTokens || 0,
+        outputTokens: t.claudeOutputTokens || 0,
+        cacheCreationTokens: t.claudeCacheCreationTokens || 0,
+        cacheReadTokens: t.claudeCacheReadTokens || 0,
+      };
+      costUsd = calculateTotalCost(tokens, t.workerModel || 'sonnet', durationSeconds);
     }
     return {
       id: t.id,
@@ -1529,15 +1572,24 @@ router.post(
         (task.watcherNotes || "") +
         `\n[${new Date().toISOString()}] Cancelled: ${reason || "No reason provided"}`;
 
-      // Calculate cost from duration
+      // Calculate ECS duration
       if (task.startedAt) {
         task.ecsTaskSeconds = Math.floor(
           (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
         );
-        task.estimatedCostUsd = task.calculateCost();
       }
 
       await taskRepo.save(task);
+
+      // Record cost via CostTracker (updates org cumulative cost)
+      try {
+        await getCostTracker(dataSource).recordTaskCost(task.id);
+      } catch (costErr) {
+        logger.warn("Failed to record cost for cancelled task", { taskId, error: costErr });
+        // Fallback: local calculation only
+        task.estimatedCostUsd = task.calculateCost();
+        await taskRepo.save(task);
+      }
 
       logger.info("Task cancelled via Control Center", { taskId, reason });
 
@@ -1624,15 +1676,24 @@ router.post(
         (task.watcherNotes || "") +
         `\n[${new Date().toISOString()}] Cancelled via cancel-by-key: ${reason || "No reason provided"}`;
 
-      // Calculate cost from duration
+      // Calculate ECS duration
       if (task.startedAt) {
         task.ecsTaskSeconds = Math.floor(
           (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
         );
-        task.estimatedCostUsd = task.calculateCost();
       }
 
       await taskRepo.save(task);
+
+      // Record cost via CostTracker (updates org cumulative cost)
+      try {
+        await getCostTracker(dataSource).recordTaskCost(task.id);
+      } catch (costErr) {
+        logger.warn("Failed to record cost for cancelled task", { jiraKey, error: costErr });
+        // Fallback: local calculation only
+        task.estimatedCostUsd = task.calculateCost();
+        await taskRepo.save(task);
+      }
 
       logger.info("Task cancelled via cancel-by-key", {
         jiraKey,
@@ -1649,6 +1710,59 @@ router.post(
     } catch (error) {
       logger.error("Error cancelling task by key:", error);
       return res.status(500).json({ error: "Failed to cancel task" });
+    }
+  },
+);
+
+/**
+ * DELETE /api/v1/super-admin/control-center/tasks/:taskId
+ * Delete a task from history (removes from All Tasks view)
+ */
+router.delete(
+  "/control-center/tasks/:taskId",
+  [param("taskId").isUUID()],
+  authenticateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { taskId } = req.params;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Don't allow deleting running tasks
+      if (["queued", "dispatching", "claimed", "environment_setup", "executing", "manager_review", "revision_needed"].includes(task.status)) {
+        return res.status(400).json({
+          error: "Cannot delete a running task. Cancel it first.",
+          status: task.status,
+        });
+      }
+
+      await taskRepo.remove(task);
+
+      logger.info("Task deleted from history", {
+        taskId,
+        jiraIssueKey: task.jiraIssueKey,
+        status: task.status,
+      });
+
+      return res.json({
+        success: true,
+        message: "Task deleted",
+        taskId,
+      });
+    } catch (error) {
+      logger.error("Error deleting task:", error);
+      return res.status(500).json({ error: "Failed to delete task" });
     }
   },
 );
@@ -2077,17 +2191,27 @@ router.patch(
       if (status === "completed" || status === "failed") {
         task.completedAt = new Date();
 
-        // Calculate cost from duration
+        // Calculate ECS duration
         if (task.startedAt) {
           task.ecsTaskSeconds = Math.floor(
             (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
           );
-          // Use the model's calculateCost method which factors in ECS time
-          task.estimatedCostUsd = task.calculateCost();
         }
       }
 
       await taskRepo.save(task);
+
+      // Record cost via CostTracker if task is finished (updates org cumulative cost)
+      if (status === "completed" || status === "failed") {
+        try {
+          await getCostTracker(dataSource).recordTaskCost(task.id);
+        } catch (costErr) {
+          logger.warn("Failed to record cost for task", { taskId, error: costErr });
+          // Fallback: local calculation only
+          task.estimatedCostUsd = task.calculateCost();
+          await taskRepo.save(task);
+        }
+      }
 
       logger.info("Task status updated via control center", { taskId, status });
 

@@ -4,6 +4,28 @@ import { AIWorkerTask, AIWorkerPersona, AIWorkerTaskStatus } from '../models/AIW
 import { AIWorkerTaskLog } from '../models/AIWorkerTaskLog';
 import { logger } from '../utils/logger';
 
+// Label to Claude model mapping (case-insensitive, handles variations)
+const LABEL_MODEL_MAPPING: Record<string, string> = {
+  // Opus 4.5 variations
+  'opus': 'claude-opus-4-5-20251101',
+  'opus4': 'claude-opus-4-5-20251101',
+  'opus45': 'claude-opus-4-5-20251101',
+  'opus4.5': 'claude-opus-4-5-20251101',
+  'claudeopus': 'claude-opus-4-5-20251101',
+
+  // Sonnet 4 variations (explicit override)
+  'sonnet': 'claude-sonnet-4-20250514',
+  'sonnet4': 'claude-sonnet-4-20250514',
+  'claudesonnet': 'claude-sonnet-4-20250514',
+
+  // Haiku variations (for cheap/fast tasks)
+  'haiku': 'claude-3-5-haiku-20241022',
+  'claudehaiku': 'claude-3-5-haiku-20241022',
+};
+
+// Default worker model when no label specified
+const DEFAULT_WORKER_MODEL = 'claude-sonnet-4-20250514';
+
 // Label to persona mapping (highest priority - explicit user intent)
 const LABEL_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
   // Direct persona labels
@@ -230,6 +252,41 @@ export class JiraAIWorkerService {
   }
 
   /**
+   * Determine the Claude model for a Jira issue based on labels.
+   * Returns the default model if no model label is found.
+   */
+  private determineModel(issue: JiraIssue): string {
+    const labels = issue.fields.labels || [];
+
+    for (const label of labels) {
+      // Normalize: lowercase, remove hyphens/underscores/spaces/dots
+      const normalizedLabel = label.toLowerCase().replace(/[-_\s.]/g, '');
+
+      // Try normalized match
+      if (LABEL_MODEL_MAPPING[normalizedLabel]) {
+        logger.info('Model determined by label', {
+          issueKey: issue.key,
+          label,
+          model: LABEL_MODEL_MAPPING[normalizedLabel],
+        });
+        return LABEL_MODEL_MAPPING[normalizedLabel];
+      }
+
+      // Try original lowercase match
+      if (LABEL_MODEL_MAPPING[label.toLowerCase()]) {
+        logger.info('Model determined by label', {
+          issueKey: issue.key,
+          label,
+          model: LABEL_MODEL_MAPPING[label.toLowerCase()],
+        });
+        return LABEL_MODEL_MAPPING[label.toLowerCase()];
+      }
+    }
+
+    return DEFAULT_WORKER_MODEL;
+  }
+
+  /**
    * Determine the best persona for a Jira issue.
    * Priority order:
    * 1. Explicit label (e.g., 'frontend', 'backend', 'devops')
@@ -376,6 +433,9 @@ export class JiraAIWorkerService {
       return null;
     }
 
+    // Determine model from labels (defaults to Sonnet if no model label)
+    const workerModel = this.determineModel(issue);
+
     // Create task
     const task = taskRepo.create({
       orgId,
@@ -388,6 +448,7 @@ export class JiraAIWorkerService {
       description: this.extractDescription(issue.fields.description),
       jiraFields: issue.fields,
       workerPersona: persona,
+      workerModel,
       priority: this.mapPriority(issue.fields.priority?.name),
       githubRepo: this.config.defaultGithubRepo,
       status: 'queued' as AIWorkerTaskStatus,
@@ -398,6 +459,7 @@ export class JiraAIWorkerService {
       taskId: task.id,
       issueKey: issue.key,
       persona,
+      workerModel,
     });
 
     return task;

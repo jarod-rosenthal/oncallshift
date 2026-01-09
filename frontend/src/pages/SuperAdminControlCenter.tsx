@@ -689,6 +689,34 @@ export default function SuperAdminControlCenter() {
     }
   };
 
+  // Delete a task from history
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm("Delete this task from history? This cannot be undone.")) {
+      return;
+    }
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks/${taskId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (response.ok) {
+        fetchTaskList();
+        fetchData();
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to delete task");
+      }
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+    }
+  };
+
   // Reset cumulative cost to zero
   const handleResetCost = async () => {
     setResetCostLoading(true);
@@ -2257,7 +2285,7 @@ export default function SuperAdminControlCenter() {
 
         {(!data?.workers || data.workers.length === 0) && (
           <div className="bg-card border border-border rounded-lg p-8 text-center text-muted-foreground">
-            No workers configured
+            No workers active
           </div>
         )}
       </div>
@@ -2473,7 +2501,13 @@ export default function SuperAdminControlCenter() {
                         )}
                         {task.ecsTaskArn && (
                           <a
-                            href={`https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fpagerduty-lite-dev$252Fai-worker-executor`}
+                            href={(() => {
+                              // Extract task ID from ARN: arn:aws:ecs:us-east-1:xxx:task/cluster/taskid
+                              const taskIdFromArn = task.ecsTaskArn.split('/').pop() || '';
+                              const logGroup = encodeURIComponent('/ecs/pagerduty-lite-dev/ai-worker-executor');
+                              const logStream = encodeURIComponent(`ecs/ai-worker-executor/${taskIdFromArn}`);
+                              return `https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/${logGroup}/log-events/${logStream}`;
+                            })()}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-muted-foreground hover:text-primary flex items-center gap-1 text-xs"
@@ -2535,6 +2569,17 @@ export default function SuperAdminControlCenter() {
                             title="Cancel Task"
                           >
                             <StopCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                        {["completed", "failed", "cancelled", "review_approved", "review_rejected"].includes(
+                          task.status,
+                        ) && (
+                          <button
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="p-1.5 hover:bg-destructive/10 rounded text-destructive"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
