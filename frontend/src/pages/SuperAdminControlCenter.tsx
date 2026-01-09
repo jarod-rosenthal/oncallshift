@@ -27,6 +27,8 @@ import {
   Play,
   Power,
   Trash2,
+  Star,
+  Ban,
 } from "lucide-react";
 
 interface ControlCenterStats {
@@ -316,6 +318,7 @@ export default function SuperAdminControlCenter() {
   const [managerStatus, setManagerStatus] = useState<ManagerStatus | null>(
     null,
   );
+  const [managerModelLoading, setManagerModelLoading] = useState(false);
 
   // Create Worker/Task state
   const [showCreateWorkerModal, setShowCreateWorkerModal] = useState(false);
@@ -638,6 +641,35 @@ export default function SuperAdminControlCenter() {
       console.error("Failed to fetch manager status:", err);
     }
   }, []);
+
+  // Change manager model
+  const handleManagerModelChange = async (modelId: string) => {
+    setManagerModelLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/manager/model`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ modelId }),
+        },
+      );
+      if (response.ok) {
+        await fetchManagerStatus();
+      } else {
+        const error = await response.json();
+        console.error("Failed to update manager model:", error);
+      }
+    } catch (err) {
+      console.error("Failed to update manager model:", err);
+    } finally {
+      setManagerModelLoading(false);
+    }
+  };
 
   // Fetch task list with filters
   const fetchTaskList = useCallback(async () => {
@@ -1304,7 +1336,7 @@ export default function SuperAdminControlCenter() {
       case "revision_needed":
         return "text-orange-500";
       case "review_approved":
-        return "text-green-400";
+        return "text-yellow-500";
       case "review_rejected":
         return "text-red-400";
       default:
@@ -1656,9 +1688,22 @@ export default function SuperAdminControlCenter() {
                 </button>
               )}
             </div>
-            <span className="text-xs text-muted-foreground">
-              Reviews PRs using Opus 4.5
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Model:</span>
+              <select
+                className="text-xs bg-muted border border-border rounded px-2 py-1 text-foreground"
+                value={managerStatus.managers?.[0]?.modelId || "claude-sonnet-4-20250514"}
+                onChange={(e) => handleManagerModelChange(e.target.value)}
+                disabled={managerModelLoading}
+              >
+                <option value="claude-sonnet-4-20250514">Sonnet 4</option>
+                <option value="claude-opus-4-5-20251101">Opus 4.5</option>
+                <option value="claude-3-5-haiku-20241022">Haiku 3.5</option>
+              </select>
+              {managerModelLoading && (
+                <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />
+              )}
+            </div>
           </div>
 
           {/* Queue Stats */}
@@ -1742,54 +1787,6 @@ export default function SuperAdminControlCenter() {
             </div>
           </div>
 
-          {/* Manager Instances (if any) */}
-          {managerStatus.managers && managerStatus.managers.length > 0 && (
-            <div className="border-t border-border pt-3 mt-3">
-              <div className="text-xs text-muted-foreground mb-2">
-                Manager Instances
-              </div>
-              <div className="space-y-2">
-                {managerStatus.managers.map((manager) => (
-                  <div
-                    key={manager.id}
-                    className="flex items-center justify-between text-sm bg-muted/20 rounded p-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          manager.status === "working"
-                            ? "bg-green-500"
-                            : manager.status === "idle"
-                              ? "bg-yellow-500"
-                              : "bg-gray-500"
-                        }`}
-                      />
-                      <span className="font-medium">{manager.displayName}</span>
-                      <span className="text-xs text-muted-foreground">
-                        ({formatModelName(manager.modelId)})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs">
-                      <span className="text-green-500">
-                        {manager.approvalsCount} approved
-                      </span>
-                      <span className="text-red-500">
-                        {manager.rejectionsCount} rejected
-                      </span>
-                      <span className="text-orange-500">
-                        {manager.revisionsRequestedCount} revisions
-                      </span>
-                      <span className="text-muted-foreground">
-                        {manager.approvalRate > 0
-                          ? `${(manager.approvalRate * 100).toFixed(0)}% approval`
-                          : "-"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -2585,8 +2582,16 @@ export default function SuperAdminControlCenter() {
                           {task.status === "manager_review" && (
                             <Users className="w-3 h-3" />
                           )}
+                          {task.status === "review_approved" && (
+                            <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                          )}
+                          {task.status === "review_rejected" && (
+                            <Ban className="w-3 h-3" />
+                          )}
                           <span className="capitalize text-xs">
-                            {task.status.replace(/_/g, " ")}
+                            {task.status === "review_approved"
+                              ? "Manager Approved"
+                              : task.status.replace(/_/g, " ")}
                           </span>
                         </span>
                         {task.failureCategory && (
