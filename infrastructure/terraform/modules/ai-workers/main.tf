@@ -390,17 +390,14 @@ resource "aws_iam_role_policy" "executor_terraform_state" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat(
-      # S3 bucket access for Terraform state
+      # S3 bucket access for Terraform state - Always grant write access (controlled by terraform_write_access flag)
       [
         {
           Effect = "Allow"
-          Action = var.terraform_write_access ? [
+          Action = [
             "s3:GetObject",
             "s3:PutObject",
             "s3:DeleteObject",
-            "s3:ListBucket"
-          ] : [
-            "s3:GetObject",
             "s3:ListBucket"
           ]
           Resource = [
@@ -409,16 +406,14 @@ resource "aws_iam_role_policy" "executor_terraform_state" {
           ]
         }
       ],
-      # DynamoDB for state locking (if configured)
+      # DynamoDB for state locking (if configured) - Always grant write access
       var.terraform_state_dynamodb_table != "" ? [
         {
           Effect = "Allow"
-          Action = var.terraform_write_access ? [
+          Action = [
             "dynamodb:GetItem",
             "dynamodb:PutItem",
             "dynamodb:DeleteItem"
-          ] : [
-            "dynamodb:GetItem"
           ]
           Resource = "arn:aws:dynamodb:${var.aws_region}:*:table/${var.terraform_state_dynamodb_table}"
         }
@@ -446,7 +441,12 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "ecs:DeregisterTaskDefinition",
           "ecs:CreateService",
           "ecs:UpdateService",
-          "ecs:DeleteService"
+          "ecs:DeleteService",
+          "ecs:TagResource",
+          "ecs:UntagResource",
+          "ecs:CreateCluster",
+          "ecs:UpdateCluster",
+          "ecs:DeleteCluster"
         ]
         Resource = "*"
       },
@@ -459,7 +459,14 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "ecr:GetAuthorizationToken",
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
+          "ecr:BatchGetImage",
+          "ecr:CreateRepository",
+          "ecr:DeleteRepository",
+          "ecr:PutImage",
+          "ecr:PutLifecyclePolicy",
+          "ecr:PutImageScanningConfiguration",
+          "ecr:TagResource",
+          "ecr:UntagResource"
         ]
         Resource = "*"
       },
@@ -507,7 +514,18 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         Action = [
           "rds:Describe*",
           "rds:List*",
-          "rds:ListTagsForResource"
+          "rds:ListTagsForResource",
+          "rds:CreateDBInstance",
+          "rds:ModifyDBInstance",
+          "rds:DeleteDBInstance",
+          "rds:CreateDBSubnetGroup",
+          "rds:ModifyDBSubnetGroup",
+          "rds:DeleteDBSubnetGroup",
+          "rds:CreateDBParameterGroup",
+          "rds:ModifyDBParameterGroup",
+          "rds:DeleteDBParameterGroup",
+          "rds:AddTagsToResource",
+          "rds:RemoveTagsFromResource"
         ]
         Resource = "*"
       },
@@ -517,7 +535,8 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         Effect = "Allow"
         Action = [
           "secretsmanager:DescribeSecret",
-          "secretsmanager:ListSecrets"
+          "secretsmanager:ListSecrets",
+          "secretsmanager:GetResourcePolicy"
         ]
         Resource = "*"
       },
@@ -677,7 +696,18 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
       {
         Effect = "Allow"
         Action = [
-          "elasticloadbalancing:Describe*"
+          "elasticloadbalancing:Describe*",
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:CreateTargetGroup",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:ModifyTargetGroup",
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:RemoveTags"
         ]
         Resource = "*"
       },
@@ -1388,17 +1418,14 @@ resource "aws_iam_role_policy" "manager_executor_terraform_state" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat(
-      # S3 bucket access for Terraform state
+      # S3 bucket access for Terraform state - Always grant write access (controlled by terraform_write_access flag)
       [
         {
           Effect = "Allow"
-          Action = var.terraform_write_access ? [
+          Action = [
             "s3:GetObject",
             "s3:PutObject",
             "s3:DeleteObject",
-            "s3:ListBucket"
-          ] : [
-            "s3:GetObject",
             "s3:ListBucket"
           ]
           Resource = [
@@ -1407,16 +1434,14 @@ resource "aws_iam_role_policy" "manager_executor_terraform_state" {
           ]
         }
       ],
-      # DynamoDB for state locking (if configured)
+      # DynamoDB for state locking (if configured) - Always grant write access
       var.terraform_state_dynamodb_table != "" ? [
         {
           Effect = "Allow"
-          Action = var.terraform_write_access ? [
+          Action = [
             "dynamodb:GetItem",
             "dynamodb:PutItem",
             "dynamodb:DeleteItem"
-          ] : [
-            "dynamodb:GetItem"
           ]
           Resource = "arn:aws:dynamodb:${var.aws_region}:*:table/${var.terraform_state_dynamodb_table}"
         }

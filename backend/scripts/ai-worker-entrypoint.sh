@@ -179,7 +179,7 @@ send_log "git_operation" "Created branch: ${BRANCH_NAME}" "info"
 
 # Notify Jira that work is starting
 transition_jira_to_progress
-add_jira_comment "[AI Worker] ${WORKER_PERSONA//_/ } - Starting work on this task. Branch: ${BRANCH_NAME}, Repository: ${GITHUB_REPO}"
+# Note: Workers can add their own Jira comments via execution/jira/add_comment.ts when needed
 
 # =============================================================================
 # Task Complexity Detection
@@ -430,6 +430,7 @@ cat >> "${INSTRUCTIONS_FILE}" << EOF
 - ALWAYS run tests before creating PR (use \`node /app/execution-compiled/test/run_tests.js\`)
 - Keep commits atomic and well-described
 - Follow existing code patterns and conventions
+- TypeScript validation happens during deployment via ./deploy.sh (tsc not available in worker container)
 EOF
 
 # =============================================================================
