@@ -214,7 +214,7 @@ async function buildControlCenterData(orgId: string) {
     activeWorkers: workers.filter((w) => w.status === "working").length,
     queueDepth,
     todayCost: Math.round(todayCost * 100) / 100,
-    todayCompleted: todayTasks.filter((t) => t.status === "completed").length,
+    todayCompleted: todayTasks.filter((t) => ["completed", "review_approved"].includes(t.status)).length,
     todayFailed: todayTasks.filter((t) => t.status === "failed").length,
     cumulativeCost: derivedCumulativeCost,
     cumulativeCostResetAt: org?.aiWorkerCostResetAt || null,
