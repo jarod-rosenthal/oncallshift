@@ -73,6 +73,61 @@ const LABEL_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
   'documentation': 'tech_writer',
   'manager': 'project_manager',
   'pm': 'project_manager',
+
+  // Technology-specific labels -> devops
+  'terraform': 'devops_engineer',
+  'aws': 'devops_engineer',
+  'gcp': 'devops_engineer',
+  'azure': 'devops_engineer',
+  'kubernetes': 'devops_engineer',
+  'k8s': 'devops_engineer',
+  'docker': 'devops_engineer',
+  'ci': 'devops_engineer',
+  'cd': 'devops_engineer',
+  'cicd': 'devops_engineer',
+  'pipeline': 'devops_engineer',
+  'ecs': 'devops_engineer',
+  'ec2': 'devops_engineer',
+  'lambda': 'devops_engineer',
+  's3': 'devops_engineer',
+  'cloudfront': 'devops_engineer',
+  'rds': 'devops_engineer',
+
+  // Technology-specific labels -> frontend
+  'react': 'frontend_developer',
+  'vue': 'frontend_developer',
+  'angular': 'frontend_developer',
+  'css': 'frontend_developer',
+  'ui': 'frontend_developer',
+  'ux': 'frontend_developer',
+  'mobile': 'frontend_developer',
+
+  // Technology-specific labels -> backend
+  'api': 'backend_developer',
+  'database': 'backend_developer',
+  'db': 'backend_developer',
+  'graphql': 'backend_developer',
+  'rest': 'backend_developer',
+
+  // Technology-specific labels -> security
+  'auth': 'security_engineer',
+  'authentication': 'security_engineer',
+  'authorization': 'security_engineer',
+  'encryption': 'security_engineer',
+  'vulnerability': 'security_engineer',
+  'cve': 'security_engineer',
+  'owasp': 'security_engineer',
+};
+
+// Model label mapping
+const LABEL_MODEL_MAPPING: Record<string, string> = {
+  'opus': 'opus',
+  'opus4': 'opus',
+  'opus45': 'opus',
+  'haiku': 'haiku',
+  'claudehaiku': 'haiku',
+  'sonnet': 'sonnet',
+  'sonnet4': 'sonnet',
 };
 
 // Default persona mapping for Jira issue types (fallback if no label match)
@@ -283,10 +338,22 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       personaSource = `issueType:${issueType}`;
     }
 
-    logger.info('Determined persona for task', {
+    // Determine model from labels (default to sonnet)
+    let workerModel = 'sonnet';
+    for (const label of issueLabels) {
+      const normalizedLabel = label.toLowerCase().replace(/[-_\s.]/g, '');
+      const labelModel = LABEL_MODEL_MAPPING[normalizedLabel] || LABEL_MODEL_MAPPING[label.toLowerCase()];
+      if (labelModel) {
+        workerModel = labelModel;
+        break;
+      }
+    }
+
+    logger.info('Determined persona and model for task', {
       issueKey: issue.key,
       persona,
       personaSource,
+      workerModel,
       labels: issueLabels,
       issueType,
     });
@@ -308,7 +375,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
         sprint: issue.fields?.customfield_10020?.[0]?.name, // Sprint field
       },
       workerPersona: persona,
-      workerModel: 'sonnet', // Using Sonnet 4.5 for reliable execution
+      workerModel,
       githubRepo: process.env.DEFAULT_GITHUB_REPO || 'jarod-rosenthal/pagerduty-lite',
       priority: mapJiraPriority(issue.fields?.priority?.name),
       status: 'queued' as const,
