@@ -31,11 +31,24 @@ const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 // ============================================================================
 
 /**
- * Cooldown period (in minutes) after a task completes before allowing
+ * Default cooldown period (in minutes) after a task completes before allowing
  * the same Jira issue to trigger a new task via webhook.
  * This prevents tight webhook loops when Jira transitions fire.
+ * Can be overridden per-org via org.settings.aiWorkerCooldownMinutes
  */
-const WEBHOOK_COOLDOWN_MINUTES = 10;
+const DEFAULT_COOLDOWN_MINUTES = 10;
+
+/**
+ * Get the cooldown minutes for an organization
+ * Falls back to DEFAULT_COOLDOWN_MINUTES if not set
+ */
+function getCooldownMinutes(org: Organization): number {
+  const customCooldown = org.settings?.aiWorkerCooldownMinutes;
+  if (typeof customCooldown === 'number' && customCooldown >= 0) {
+    return customCooldown;
+  }
+  return DEFAULT_COOLDOWN_MINUTES;
+}
 
 // ============================================================================
 
@@ -159,11 +172,12 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     const taskRepo = dataSource.getRepository(AIWorkerTask);
 
     // Check for existing active task (any non-terminal status)
+    // Include review_approved as terminal since it means PR was approved
     const existingTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
-        status: Not(In(['completed', 'failed', 'cancelled'])),
+        status: Not(In(['completed', 'failed', 'cancelled', 'review_approved'])),
       },
     });
 
@@ -197,9 +211,13 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     }
 
     // Check for recently completed task (cooldown to avoid tight webhook loops).
-    // Configurable via WEBHOOK_COOLDOWN_MINUTES at top of file.
-    const cooldownTime = new Date(Date.now() - WEBHOOK_COOLDOWN_MINUTES * 60 * 1000);
-    const recentlyCompletedTask = await taskRepo.findOne({
+    // Configurable per-org via settings.aiWorkerCooldownMinutes.
+    // Include pr_created and review_pending since they're quasi-terminal states.
+    const cooldownMinutes = getCooldownMinutes(org);
+    const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000);
+
+    // First check by completedAt (for tasks that set it)
+    let recentlyCompletedTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
@@ -209,17 +227,35 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       order: { completedAt: 'DESC' },
     });
 
+    // Also check by updatedAt for pr_created/review_pending (they don't set completedAt)
+    if (!recentlyCompletedTask) {
+      recentlyCompletedTask = await taskRepo.findOne({
+        where: {
+          orgId: org.id,
+          jiraIssueKey: issue.key,
+          status: In(['pr_created', 'review_pending', 'manager_review']),
+          updatedAt: MoreThan(cooldownTime),
+        },
+        order: { updatedAt: 'DESC' },
+      });
+    }
+
     if (recentlyCompletedTask) {
-      logger.info('Ignoring webhook - task recently completed (cooldown period)', {
+      const timestamp = recentlyCompletedTask.completedAt || recentlyCompletedTask.updatedAt;
+      logger.info('Ignoring webhook - task recently completed or in progress (cooldown period)', {
         issueKey: issue.key,
         taskId: recentlyCompletedTask.id,
+        status: recentlyCompletedTask.status,
         completedAt: recentlyCompletedTask.completedAt,
+        updatedAt: recentlyCompletedTask.updatedAt,
+        cooldownMinutes,
       });
       return res.json({
-        message: `Task recently completed (cooldown period - ${WEBHOOK_COOLDOWN_MINUTES} minutes)`,
+        message: `Task recently active (cooldown period - ${cooldownMinutes} minutes)`,
         taskId: recentlyCompletedTask.id,
         issueKey: issue.key,
-        completedAt: recentlyCompletedTask.completedAt,
+        status: recentlyCompletedTask.status,
+        timestamp,
       });
     }
 
