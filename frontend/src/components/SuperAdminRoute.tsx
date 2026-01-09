@@ -11,7 +11,10 @@ export function SuperAdminRoute({ children }: SuperAdminRouteProps) {
 
   return (
     <ProtectedRoute>
-      {user?.role === 'super_admin' ? (
+      {/* Wait for user to load before checking role - prevents redirect on F5 refresh */}
+      {!user ? (
+        <div className="flex items-center justify-center min-h-screen">Loading...</div>
+      ) : user.role === 'super_admin' ? (
         children
       ) : (
         <Navigate to="/dashboard" replace />
