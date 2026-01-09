@@ -327,7 +327,7 @@ class AIWorkerOrchestrator {
       // Check exit code
       if (status.exitCode === 0) {
         // Success - check for PR and token usage
-        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 200 });
+        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 2000 });
         const prInfo = this.parseTaskOutput(logs.events.map(e => e.message).join('\n'));
 
         // Update token counts and model from parsed output
@@ -414,7 +414,7 @@ class AIWorkerOrchestrator {
         }
       } else {
         // Failure - still try to get token usage
-        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 200 });
+        const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 2000 });
         const prInfo = this.parseTaskOutput(logs.events.map(e => e.message).join('\n'));
 
         if (prInfo.inputTokens !== undefined) {
@@ -631,7 +631,8 @@ class AIWorkerOrchestrator {
     const taskRepo = this.dataSource.getRepository(AIWorkerTask);
     task.status = status;
 
-    if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+    // Set completedAt for terminal statuses so webhook cooldown check works
+    if (['completed', 'failed', 'cancelled', 'review_approved'].includes(status)) {
       task.completedAt = new Date();
     }
 
@@ -768,7 +769,7 @@ class AIWorkerOrchestrator {
 
         // Try to parse tokens from logs
         if (task.ecsTaskId) {
-          const logs = await ecsRunner.getTaskLogs(task.ecsTaskId, { limit: 200 });
+          const logs = await ecsRunner.getTaskLogs(task.ecsTaskId, { limit: 2000 });
           const logOutput = logs.events.map(e => e.message).join('\n');
           const prInfo = this.parseTaskOutput(logOutput);
           if (prInfo.inputTokens !== undefined) {

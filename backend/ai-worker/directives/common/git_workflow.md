@@ -59,9 +59,9 @@ This tells the orchestrator to skip automatic PR creation. Use this when:
 
 ## Before Creating PR
 
-1. Run `./deploy.sh` to verify changes work
-2. Ensure no TypeScript errors (deploy will catch these)
-3. Test the feature manually if possible
+1. Review your changes for obvious errors
+2. Ensure code follows existing patterns in the codebase
+3. **DO NOT run deploy.sh** - deployment is handled by humans after PR approval
 
 ## Self-Annealing Notes
 

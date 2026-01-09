@@ -1,57 +1,34 @@
 # Deploy and Verify
 
-Standard Operating Procedure for deploying changes.
+## IMPORTANT: AI Workers Must NOT Deploy
 
-## When to Deploy
+**Deployment is handled by humans only.** As an AI Worker, you must:
 
-Deploy after:
-- Making code changes that need verification
-- Fixing TypeScript errors
-- Completing a feature that needs testing
+1. Make your code changes
+2. Commit and push to your branch
+3. Create a Pull Request
+4. **STOP** - Do not run deploy.sh
 
-## How to Deploy
+Humans will:
+- Review the PR
+- Approve or request changes
+- Deploy after approval
 
-From the repository root:
-```bash
-./deploy.sh
-```
+## Why This Matters
 
-This takes 3-5 minutes and will:
-1. Build frontend (Vite) and upload to S3
-2. Build backend Docker image and push to ECR
-3. Update ECS services
-4. Run database migrations
-5. Invalidate CloudFront cache
+- Deployments affect production users
+- Untested deployments can cause outages
+- Human review catches issues AI might miss
+- Rollbacks are easier when humans control timing
 
-## Watching for Errors
+## What To Do Instead
 
-The deploy script will:
-- Show TypeScript compilation errors (fix these first!)
-- Show Docker build errors
-- Show deployment status
+After creating your PR:
+1. Add a Jira comment summarizing your changes
+2. Mark your work as complete
+3. Let the orchestrator know you're done
 
-If the deploy fails:
-1. Read the error message carefully
-2. Fix the issue in your code
-3. Run `./deploy.sh` again
-
-## Verifying Changes
-
-After deploy completes:
-1. Visit https://oncallshift.com to verify frontend changes
-2. Test API endpoints if you made backend changes
-3. Check CloudWatch logs for any runtime errors:
-   ```bash
-   aws logs tail /ecs/pagerduty-lite-dev/api --follow --region us-east-1
-   ```
-
-## Iteration Loop
-
-1. Make changes
-2. Run `./deploy.sh`
-3. If errors, fix and repeat step 2
-4. If successful, verify changes work
-5. If broken at runtime, check logs, fix, repeat
+The PR will be reviewed and deployed by a human.
 
 ## Self-Annealing Notes
 

@@ -27,15 +27,24 @@ const TASK_ID = process.env.TASK_ID;
 const ORG_ID = process.env.ORG_ID;
 const API_BASE_URL = process.env.API_BASE_URL || "https://oncallshift.com";
 const ORG_API_KEY = process.env.ORG_API_KEY;
+const INTERNAL_SERVICE_KEY = process.env.INTERNAL_SERVICE_KEY;
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || "10", 10);
 const BATCH_TIMEOUT_MS = parseInt(process.env.BATCH_TIMEOUT_MS || "5000", 10);
 
+// Check if we have valid auth (either internal key or org API key)
+const hasValidAuth = INTERNAL_SERVICE_KEY || ORG_API_KEY;
+
 // Validate required env vars
-if (!TASK_ID || !ORG_ID || !ORG_API_KEY) {
+if (!TASK_ID || !ORG_ID) {
   console.error(
-    "[log-parser] Missing required env vars: TASK_ID, ORG_ID, ORG_API_KEY",
+    "[log-parser] Missing required env vars: TASK_ID, ORG_ID",
   );
   // Don't exit - just pass through stdin to stdout
+}
+if (!hasValidAuth) {
+  console.error(
+    "[log-parser] Missing auth: need INTERNAL_SERVICE_KEY or ORG_API_KEY",
+  );
 }
 
 // State
@@ -400,10 +409,23 @@ function processLine(line) {
  * This function only reports raw token counts.
  */
 async function sendTokenUsage() {
-  if (!TASK_ID || !ORG_API_KEY) return;
+  // Always output structured markers for orchestrator backup parsing
+  // These go to stdout which ends up in CloudWatch logs
+  console.log(`::input_tokens::${tokenUsage.inputTokens}`);
+  console.log(`::output_tokens::${tokenUsage.outputTokens}`);
+  console.log(`::cache_creation_tokens::${tokenUsage.cacheCreationInputTokens}`);
+  console.log(`::cache_read_tokens::${tokenUsage.cacheReadInputTokens}`);
+  console.log(`::model::${modelUsed}`);
 
+  // Log to stderr for visibility
   console.error(`[log-parser] Token usage: input=${tokenUsage.inputTokens}, output=${tokenUsage.outputTokens}, cache_create=${tokenUsage.cacheCreationInputTokens}, cache_read=${tokenUsage.cacheReadInputTokens}`);
   console.error(`[log-parser] Model: ${modelUsed}`);
+
+  // Skip API call if no auth available
+  if (!TASK_ID || !hasValidAuth) {
+    console.error(`[log-parser] Skipping API call - no valid auth`);
+    return;
+  }
 
   const url = `${API_BASE_URL}/api/v1/ai-worker-tasks/${TASK_ID}/usage`;
   const body = JSON.stringify({
@@ -414,6 +436,17 @@ async function sendTokenUsage() {
     cacheReadTokens: tokenUsage.cacheReadInputTokens,
   });
 
+  // Build headers - prefer internal key, fallback to org API key
+  const headers = {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  };
+  if (INTERNAL_SERVICE_KEY) {
+    headers["X-Internal-Key"] = INTERNAL_SERVICE_KEY;
+  } else if (ORG_API_KEY) {
+    headers["Authorization"] = `Bearer ${ORG_API_KEY}`;
+  }
+
   return new Promise((resolve) => {
     const urlObj = new URL(url);
     const protocol = urlObj.protocol === "https:" ? https : http;
@@ -422,11 +455,7 @@ async function sendTokenUsage() {
       url,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${ORG_API_KEY}`,
-          "Content-Length": Buffer.byteLength(body),
-        },
+        headers,
       },
       (res) => {
         let data = "";
