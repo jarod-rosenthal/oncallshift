@@ -600,6 +600,11 @@ data "aws_secretsmanager_secret" "ai_worker_org_key" {
   name = "${var.project_name}-${var.environment}-ai-worker-org-key"
 }
 
+# Internal service key (for worker-to-API authentication with elevated privileges)
+data "aws_secretsmanager_secret" "internal_service_key" {
+  name = "${var.project_name}-${var.environment}-internal-service-key"
+}
+
 # API Service
 module "api_service" {
   source = "../../modules/ecs-service"
@@ -951,16 +956,18 @@ module "ai_workers" {
     aws_secretsmanager_secret.anthropic_api_key.arn,
     module.database.secret_arn,
     data.aws_secretsmanager_secret.jira_integration.arn,
-    data.aws_secretsmanager_secret.ai_worker_org_key.arn
+    data.aws_secretsmanager_secret.ai_worker_org_key.arn,
+    data.aws_secretsmanager_secret.internal_service_key.arn
   ]
 
   log_retention_days = var.log_retention_days
   enable_spot        = var.use_fargate_spot
 
   # Executor API integration
-  api_base_url             = "https://oncallshift.com"
-  org_api_key_secret_arn   = data.aws_secretsmanager_secret.ai_worker_org_key.arn
-  jira_credentials_secret_arn = data.aws_secretsmanager_secret.jira_integration.arn
+  api_base_url                    = "https://oncallshift.com"
+  org_api_key_secret_arn          = data.aws_secretsmanager_secret.ai_worker_org_key.arn
+  internal_service_key_secret_arn = data.aws_secretsmanager_secret.internal_service_key.arn
+  jira_credentials_secret_arn     = data.aws_secretsmanager_secret.jira_integration.arn
 
   # Terraform state access (read-only for terraform plan)
   terraform_state_bucket = "oncallshift"
