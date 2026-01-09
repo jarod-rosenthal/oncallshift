@@ -181,6 +181,7 @@ interface TaskWithRuns {
   summary: string;
   status: string;
   workerModel?: string;
+  workerPersona?: string;
   retryCount: number;
   maxRetries: number;
   lastHeartbeatAt: string | null;
@@ -2467,6 +2468,9 @@ export default function SuperAdminControlCenter() {
                   Model
                 </th>
                 <th className="text-left px-4 py-2 font-medium text-muted-foreground">
+                  Persona
+                </th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">
                   Links
                 </th>
                 <th className="text-center px-4 py-2 font-medium text-muted-foreground">
@@ -2483,14 +2487,14 @@ export default function SuperAdminControlCenter() {
             <tbody className="divide-y divide-border">
               {taskListLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center">
+                  <td colSpan={10} className="px-4 py-8 text-center">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-muted-foreground" />
                   </td>
                 </tr>
               ) : taskList.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-8 text-center text-muted-foreground"
                   >
                     No tasks found
@@ -2585,6 +2589,15 @@ export default function SuperAdminControlCenter() {
                       {task.workerModel ? (
                         <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-xs font-medium">
                           {task.workerModel}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {task.workerPersona ? (
+                        <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-xs font-medium">
+                          {task.workerPersona.replace(/_/g, " ")}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
