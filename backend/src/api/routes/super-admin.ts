@@ -1381,6 +1381,7 @@ router.post(
 /**
  * POST /api/v1/super-admin/control-center/tasks/:taskId/mark-manager-complete
  * Mark a manager task as completed (called by manager ECS task before exit)
+ * Creates AIWorkerReview record and updates manager stats
  */
 router.post(
   "/control-center/tasks/:taskId/mark-manager-complete",
@@ -1390,6 +1391,8 @@ router.post(
     body("feedback").optional().isString(),
     body("codeQualityScore").optional().isInt({ min: 1, max: 10 }),
     body("newTicketsCreated").optional().isInt({ min: 0 }),
+    body("inputTokens").optional().isInt({ min: 0 }),
+    body("outputTokens").optional().isInt({ min: 0 }),
   ],
   async (req: Request, res: Response) => {
     try {
@@ -1399,12 +1402,13 @@ router.post(
       }
 
       const { taskId } = req.params;
-      const { decision, feedback, codeQualityScore, newTicketsCreated } =
+      const { decision, feedback, codeQualityScore, newTicketsCreated, inputTokens, outputTokens } =
         req.body;
 
       const dataSource = await getDataSource();
       const taskRepo = dataSource.getRepository(AIWorkerTask);
       const managerRepo = dataSource.getRepository(AIWorkerInstance);
+      const reviewRepo = dataSource.getRepository(AIWorkerReview);
 
       const task = await taskRepo.findOne({ where: { id: taskId } });
       if (!task) {
@@ -1417,11 +1421,23 @@ router.post(
         });
       }
 
-      // Update task to completed
-      task.status = "completed";
-      task.completedAt = new Date();
+      // Determine task status based on decision
+      let newStatus: AIWorkerTaskStatus = "completed";
+      if (decision === "approved") {
+        newStatus = "review_approved";
+      } else if (decision === "rejected") {
+        newStatus = "review_rejected";
+      } else if (decision === "revision_needed") {
+        newStatus = "revision_needed";
+      }
 
-      // Store manager review results if provided
+      // Update task status
+      task.status = newStatus;
+      if (newStatus !== "revision_needed") {
+        task.completedAt = new Date();
+      }
+
+      // Store manager review results
       if (decision) {
         task.reviewDecision = decision;
       }
@@ -1434,21 +1450,63 @@ router.post(
 
       await taskRepo.save(task);
 
-      // Update manager instance to idle
+      // Create AIWorkerReview record to track this review
+      if (decision && task.reviewerManagerId) {
+        const reviewNumber = await reviewRepo.count({ where: { taskId } }) + 1;
+        const review = reviewRepo.create({
+          taskId,
+          managerId: task.reviewerManagerId,
+          reviewNumber,
+          decision: decision as "approved" | "rejected" | "revision_needed",
+          feedback: feedback || null,
+          prUrl: task.githubPrUrl || null,
+          codeQualityScore: codeQualityScore || null,
+          claudeInputTokens: inputTokens || 0,
+          claudeOutputTokens: outputTokens || 0,
+          startedAt: task.reviewRequestedAt || new Date(),
+          completedAt: new Date(),
+          durationSeconds: task.reviewRequestedAt
+            ? Math.floor((Date.now() - task.reviewRequestedAt.getTime()) / 1000)
+            : null,
+        });
+        review.estimatedCostUsd = review.calculateCost();
+        await reviewRepo.save(review);
+
+        logger.info(`Created AIWorkerReview record`, { reviewId: review.id, decision });
+      }
+
+      // Update manager instance stats
       if (task.reviewerManagerId) {
         const manager = await managerRepo.findOne({
           where: { id: task.reviewerManagerId },
         });
         if (manager) {
-          manager.status = "idle";
+          manager.status = newStatus === "revision_needed" ? "idle" : "idle";
           manager.currentTaskId = null;
+          manager.reviewCount = (manager.reviewCount || 0) + 1;
+
+          // Update decision-specific counts
+          if (decision === "approved") {
+            manager.approvalsCount = (manager.approvalsCount || 0) + 1;
+          } else if (decision === "rejected") {
+            manager.rejectionsCount = (manager.rejectionsCount || 0) + 1;
+          } else if (decision === "revision_needed") {
+            manager.revisionsRequestedCount = (manager.revisionsRequestedCount || 0) + 1;
+          }
+
           await managerRepo.save(manager);
+          logger.info(`Updated manager stats`, {
+            managerId: manager.id,
+            reviewCount: manager.reviewCount,
+            approvalsCount: manager.approvalsCount,
+          });
         }
       }
 
-      logger.info(`Manager marked task ${taskId} as completed`, {
+      logger.info(`Manager marked task ${taskId} as ${newStatus}`, {
         taskId,
         decision,
+        newStatus,
         newTicketsCreated,
       });
 
@@ -1456,6 +1514,7 @@ router.post(
         message: "Task marked as completed",
         taskId: task.id,
         status: task.status,
+        decision,
       });
     } catch (error) {
       logger.error("Error marking manager task as complete:", error);
@@ -2044,6 +2103,68 @@ router.get(
     } catch (error) {
       logger.error("Error fetching manager status:", error);
       return res.status(500).json({ error: "Failed to fetch manager status" });
+    }
+  },
+);
+
+/**
+ * PATCH /api/v1/super-admin/control-center/manager/model
+ * Update the Virtual Manager's model
+ */
+router.patch(
+  "/control-center/manager/model",
+  [body("modelId").isString().notEmpty()],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { modelId } = req.body;
+
+      // Validate model ID
+      const validModels = [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-5-20251101",
+        "claude-3-5-haiku-20241022",
+      ];
+      if (!validModels.includes(modelId)) {
+        return res.status(400).json({
+          error: "Invalid model ID",
+          validModels,
+        });
+      }
+
+      const dataSource = await getDataSource();
+      const instanceRepo = dataSource.getRepository(AIWorkerInstance);
+
+      // Find all manager instances and update their model
+      const managers = await instanceRepo.find({ where: { role: "manager" } });
+
+      if (managers.length === 0) {
+        return res.status(404).json({ error: "No manager instances found" });
+      }
+
+      for (const manager of managers) {
+        manager.modelId = modelId;
+        await instanceRepo.save(manager);
+      }
+
+      logger.info("Manager model updated", {
+        modelId,
+        managersUpdated: managers.length,
+      });
+
+      return res.json({
+        success: true,
+        message: "Manager model updated",
+        modelId,
+        managersUpdated: managers.length,
+      });
+    } catch (error) {
+      logger.error("Error updating manager model:", error);
+      return res.status(500).json({ error: "Failed to update manager model" });
     }
   },
 );

@@ -337,12 +337,12 @@ export async function handler(
           [taskId, managerId],
         );
       } else {
-        // Create new manager instance
+        // Create new manager instance with Sonnet 4 as default
         managerId = randomUUID();
         await client.query(
           `INSERT INTO ai_worker_instances
            (id, org_id, persona, display_name, description, status, role, model_id, current_task_id, last_task_at, created_at, updated_at)
-           VALUES ($1, $2, 'manager', 'Virtual Manager', 'Reviews PRs from workers and provides feedback', 'working', 'manager', 'claude-opus-4-5-20251101', $3, NOW(), NOW(), NOW())`,
+           VALUES ($1, $2, 'manager', 'Virtual Manager', 'Reviews PRs from workers and provides feedback', 'working', 'manager', 'claude-sonnet-4-20250514', $3, NOW(), NOW(), NOW())`,
           [managerId, orgId, taskId],
         );
       }

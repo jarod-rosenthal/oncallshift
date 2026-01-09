@@ -359,8 +359,8 @@ class AIWorkerOrchestrator {
           const hasReviewLabel = task.hasJiraReviewLabel();
 
           if (task.skipManagerReview || !hasReviewLabel) {
-            // Skip manager review - go directly to review_approved
-            await this.updateTaskStatus(task, 'review_approved');
+            // Skip manager review - go directly to completed (no manager approval)
+            await this.updateTaskStatus(task, 'completed');
             const skipReason = !hasReviewLabel ? 'no review label' : 'task configuration';
             await this.logTaskEvent(task, 'pr_created', `PR created (manager review skipped: ${skipReason}): ${prInfo.prUrl}`);
             logger.info('Manager review skipped', {
