@@ -648,13 +648,14 @@ module "api_service" {
     GITHUB_TOKEN = aws_secretsmanager_secret.github_token.arn
     SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
     JIRA_WEBHOOK_SECRET = data.aws_secretsmanager_secret.jira_webhook_secret.arn
+    INTERNAL_SERVICE_KEY = data.aws_secretsmanager_secret.internal_service_key.arn
     # Jira API credentials for task trigger
     JIRA_BASE_URL  = "${data.aws_secretsmanager_secret.jira_integration.arn}:base_url::"
     JIRA_EMAIL     = "${data.aws_secretsmanager_secret.jira_integration.arn}:email::"
     JIRA_API_TOKEN = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.jira_integration.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.jira_integration.arn, data.aws_secretsmanager_secret.internal_service_key.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -1018,15 +1019,16 @@ module "ai_worker_orchestrator" {
   }
 
   secrets = {
-    DATABASE_URL      = module.database.secret_arn
-    GITHUB_TOKEN      = aws_secretsmanager_secret.github_token.arn
-    ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
-    SENTRY_DSN        = data.aws_secretsmanager_secret.sentry_dsn.arn
+    DATABASE_URL         = module.database.secret_arn
+    GITHUB_TOKEN         = aws_secretsmanager_secret.github_token.arn
+    ANTHROPIC_API_KEY    = aws_secretsmanager_secret.anthropic_api_key.arn
+    SENTRY_DSN           = data.aws_secretsmanager_secret.sentry_dsn.arn
+    INTERNAL_SERVICE_KEY = data.aws_secretsmanager_secret.internal_service_key.arn
     # Jira integration credentials (from JSON secret)
-    JIRA_BASE_URL     = "${data.aws_secretsmanager_secret.jira_integration.arn}:base_url::"
-    JIRA_EMAIL        = "${data.aws_secretsmanager_secret.jira_integration.arn}:email::"
-    JIRA_API_TOKEN    = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
-    JIRA_PROJECT_KEY  = "${data.aws_secretsmanager_secret.jira_integration.arn}:project_key::"
+    JIRA_BASE_URL        = "${data.aws_secretsmanager_secret.jira_integration.arn}:base_url::"
+    JIRA_EMAIL           = "${data.aws_secretsmanager_secret.jira_integration.arn}:email::"
+    JIRA_API_TOKEN       = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
+    JIRA_PROJECT_KEY     = "${data.aws_secretsmanager_secret.jira_integration.arn}:project_key::"
   }
 
   secrets_arns = [
@@ -1034,7 +1036,8 @@ module "ai_worker_orchestrator" {
     aws_secretsmanager_secret.github_token.arn,
     aws_secretsmanager_secret.anthropic_api_key.arn,
     data.aws_secretsmanager_secret.sentry_dsn.arn,
-    data.aws_secretsmanager_secret.jira_integration.arn
+    data.aws_secretsmanager_secret.jira_integration.arn,
+    data.aws_secretsmanager_secret.internal_service_key.arn
   ]
 
   sqs_queue_arns = [
