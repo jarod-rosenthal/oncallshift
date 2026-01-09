@@ -29,7 +29,147 @@ import { calculateTotalCost, type TokenUsage } from "../../shared/config/pricing
 
 const router = Router();
 
-// All routes require authentication
+// Internal service key for worker-to-API communication
+const INTERNAL_SERVICE_KEY = process.env.INTERNAL_SERVICE_KEY;
+
+/**
+ * POST /api/v1/ai-worker-tasks/:id/usage
+ * Report token usage from Claude Code (called by running ECS tasks)
+ *
+ * This endpoint accepts internal service key auth (X-Internal-Key header)
+ * to allow workers to report usage without org API keys.
+ *
+ * MUST be defined BEFORE router.use(authenticateRequest) to bypass normal auth.
+ */
+router.post(
+  "/:id/usage",
+  [
+    param("id").isUUID(),
+    body("model").isString(),
+    body("inputTokens").isInt({ min: 0 }),
+    body("outputTokens").isInt({ min: 0 }),
+    body("cacheCreationTokens").optional().isInt({ min: 0 }),
+    body("cacheReadTokens").optional().isInt({ min: 0 }),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      // Check for internal service key (worker-to-API auth)
+      const internalKey = req.headers["x-internal-key"] as string;
+      const isInternalCall = INTERNAL_SERVICE_KEY && internalKey === INTERNAL_SERVICE_KEY;
+
+      // Also accept org API key auth (Bearer org_*)
+      const authHeader = req.headers.authorization;
+      const isOrgApiKey = authHeader?.startsWith("Bearer org_");
+
+      if (!isInternalCall && !isOrgApiKey) {
+        return res.status(401).json({
+          error: "Unauthorized. Provide X-Internal-Key header or Bearer org_* token.",
+        });
+      }
+
+      const { id } = req.params;
+      const {
+        model,
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens = 0,
+        cacheReadTokens = 0,
+      } = req.body;
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+      const orgRepo = dataSource.getRepository(Organization);
+
+      // For internal calls, look up task by ID only (no org scoping)
+      const task = await taskRepo.findOne({
+        where: { id },
+      });
+
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Idempotency check: reject if usage already reported
+      if (task.usageReportedAt) {
+        logger.warn("Duplicate usage report rejected", {
+          taskId: id,
+          previouslyReportedAt: task.usageReportedAt,
+        });
+        return res.status(409).json({
+          error: "Usage already reported for this task",
+          usageReportedAt: task.usageReportedAt,
+        });
+      }
+
+      // Update token counts
+      task.claudeInputTokens = inputTokens;
+      task.claudeOutputTokens = outputTokens;
+      task.claudeCacheCreationTokens = cacheCreationTokens;
+      task.claudeCacheReadTokens = cacheReadTokens;
+      task.workerModel = model;
+      task.usageReportedAt = new Date();
+
+      // Calculate ECS duration
+      if (task.startedAt) {
+        const durationSeconds = Math.floor(
+          (Date.now() - task.startedAt.getTime()) / 1000,
+        );
+        task.ecsTaskSeconds = durationSeconds;
+      }
+
+      // Calculate cost using shared pricing config
+      const tokens: TokenUsage = {
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+      };
+      const totalCost = calculateTotalCost(tokens, model, task.ecsTaskSeconds);
+      task.estimatedCostUsd = totalCost;
+
+      // Save task
+      await taskRepo.save(task);
+
+      // Update org cumulative cost (always, even for failed runs)
+      const org = await orgRepo.findOne({ where: { id: task.orgId } });
+      if (org) {
+        org.aiWorkerCumulativeCost =
+          Number(org.aiWorkerCumulativeCost || 0) + totalCost;
+        await orgRepo.save(org);
+      }
+
+      logger.info("Token usage reported for task", {
+        taskId: id,
+        model,
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+        ecsTaskSeconds: task.ecsTaskSeconds,
+        totalCost: totalCost.toFixed(4),
+        orgCumulativeCost: org?.aiWorkerCumulativeCost?.toFixed(4),
+        authMethod: isInternalCall ? "internal_key" : "org_api_key",
+      });
+
+      return res.json({
+        success: true,
+        taskId: id,
+        cost: totalCost,
+        tokens: { inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens },
+      });
+    } catch (error) {
+      logger.error("Error reporting token usage:", error);
+      return res.status(500).json({ error: "Failed to report token usage" });
+    }
+  },
+);
+
+// All other routes require authentication
 router.use(authenticateRequest);
 
 // Initialize SQS client
@@ -782,131 +922,6 @@ router.post(
     } catch (error) {
       logger.error("Error updating task heartbeat:", error);
       return res.status(500).json({ error: "Failed to update heartbeat" });
-    }
-  },
-);
-
-/**
- * POST /api/v1/ai-worker-tasks/:id/usage
- * Report token usage from Claude Code (called by running ECS tasks)
- *
- * This endpoint is idempotent - it rejects duplicate reports to prevent double-counting.
- * All costs (including failed runs) are added to the org's cumulative cost.
- */
-router.post(
-  "/:id/usage",
-  [
-    param("id").isUUID(),
-    body("model").isString(),
-    body("inputTokens").isInt({ min: 0 }),
-    body("outputTokens").isInt({ min: 0 }),
-    body("cacheCreationTokens").optional().isInt({ min: 0 }),
-    body("cacheReadTokens").optional().isInt({ min: 0 }),
-  ],
-  async (req: Request, res: Response) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
-
-      const orgId = req.orgId!;
-      const { id } = req.params;
-      const {
-        model,
-        inputTokens,
-        outputTokens,
-        cacheCreationTokens = 0,
-        cacheReadTokens = 0,
-      } = req.body;
-
-      const dataSource = await getDataSource();
-      const taskRepo = dataSource.getRepository(AIWorkerTask);
-      const orgRepo = dataSource.getRepository(Organization);
-
-      const task = await taskRepo.findOne({
-        where: { id, orgId },
-      });
-
-      if (!task) {
-        return res.status(404).json({ error: "Task not found" });
-      }
-
-      // Idempotency check: reject if usage already reported
-      if (task.usageReportedAt) {
-        logger.warn("Duplicate usage report rejected", {
-          taskId: id,
-          previouslyReportedAt: task.usageReportedAt,
-        });
-        return res.status(409).json({
-          error: "Usage already reported for this task",
-          usageReportedAt: task.usageReportedAt,
-        });
-      }
-
-      // Update token counts
-      task.claudeInputTokens = inputTokens;
-      task.claudeOutputTokens = outputTokens;
-      task.claudeCacheCreationTokens = cacheCreationTokens;
-      task.claudeCacheReadTokens = cacheReadTokens;
-      task.workerModel = model;
-      task.usageReportedAt = new Date();
-
-      // Calculate ECS duration
-      if (task.startedAt) {
-        const durationSeconds = Math.floor(
-          (Date.now() - task.startedAt.getTime()) / 1000,
-        );
-        task.ecsTaskSeconds = durationSeconds;
-      }
-
-      // Calculate cost using shared pricing config
-      const tokens: TokenUsage = {
-        inputTokens,
-        outputTokens,
-        cacheCreationTokens,
-        cacheReadTokens,
-      };
-      const totalCost = calculateTotalCost(tokens, model, task.ecsTaskSeconds);
-      task.estimatedCostUsd = totalCost;
-
-      // Save task
-      await taskRepo.save(task);
-
-      // Update org cumulative cost (always, even for failed runs)
-      const org = await orgRepo.findOne({ where: { id: orgId } });
-      if (org) {
-        org.aiWorkerCumulativeCost =
-          Number(org.aiWorkerCumulativeCost || 0) + totalCost;
-        await orgRepo.save(org);
-      }
-
-      logger.info("Token usage reported for task", {
-        taskId: id,
-        model,
-        inputTokens,
-        outputTokens,
-        cacheCreationTokens,
-        cacheReadTokens,
-        ecsTaskSeconds: task.ecsTaskSeconds,
-        totalCost: totalCost.toFixed(4),
-        orgCumulativeCost: org?.aiWorkerCumulativeCost?.toFixed(4),
-      });
-
-      return res.json({
-        taskId: task.id,
-        model: task.workerModel,
-        claudeInputTokens: task.claudeInputTokens,
-        claudeOutputTokens: task.claudeOutputTokens,
-        claudeCacheCreationTokens: task.claudeCacheCreationTokens,
-        claudeCacheReadTokens: task.claudeCacheReadTokens,
-        ecsTaskSeconds: task.ecsTaskSeconds,
-        estimatedCostUsd: task.estimatedCostUsd,
-        orgCumulativeCost: org?.aiWorkerCumulativeCost,
-      });
-    } catch (error) {
-      logger.error("Error reporting token usage:", error);
-      return res.status(500).json({ error: "Failed to report token usage" });
     }
   },
 );
