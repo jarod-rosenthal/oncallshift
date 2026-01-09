@@ -102,6 +102,12 @@ export class ECSTaskRunner {
       INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY || '',
     };
 
+    // Filter out empty values to let task definition secrets take effect
+    // Empty strings in overrides would override secrets with empty values
+    const filteredEnv = Object.entries(environment)
+      .filter(([, value]) => value !== '' && value !== undefined)
+      .map(([name, value]) => ({ name, value }));
+
     const command = new RunTaskCommand({
       cluster: this.config.cluster,
       taskDefinition: this.config.taskDefinition,
@@ -124,10 +130,7 @@ export class ECSTaskRunner {
         containerOverrides: [
           {
             name: this.config.containerName,
-            environment: Object.entries(environment).map(([name, value]) => ({
-              name,
-              value,
-            })),
+            environment: filteredEnv,
           },
         ],
       },

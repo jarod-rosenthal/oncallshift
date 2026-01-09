@@ -27,11 +27,96 @@ node /app/execution-compiled/git/commit_changes.js
 node /app/execution-compiled/git/create_pr.js
 ```
 
+---
+
+## Definition of Done (Required)
+
+**Every task is complete when ALL applicable items are met:**
+
+- [ ] Code follows existing patterns in the codebase
+- [ ] No security vulnerabilities introduced (OWASP Top 10 compliance)
+- [ ] For Terraform: State remains synchronized (ran `terraform plan` to verify)
+- [ ] For database changes: Migrations are reversible
+- [ ] For API changes: Changes are backwards compatible
+- [ ] PR created with Summary and Test Plan sections
+- [ ] Completion comment added to Jira (see below)
+- [ ] Jira ticket transitioned to Done
+
+---
+
+## MANDATORY: Document Your Work in Jira
+
+**You MUST add Jira comments to document your analysis and work.** This is critical for team visibility and learning.
+
+### Before Starting Work
+
+Add a brief comment explaining your approach:
+```
+[AI Worker Analysis]
+
+I will:
+1. [First step you plan to take]
+2. [Second step]
+...
+
+Files I expect to modify:
+- path/to/file1.ts
+- path/to/file2.ts
+```
+
+Use the execution script:
+```bash
+JIRA_KEY=$JIRA_ISSUE_KEY COMMENT="Your analysis message" node /app/execution-compiled/jira/add_comment.js
+```
+
+### After Completing Work
+
+**CRITICAL: Always add a completion comment before transitioning to Done.**
+
+Your completion comment MUST include:
+
+1. **What was done** - Brief summary of changes made
+2. **Files modified** - List key files changed (not every file, just important ones)
+3. **New artifacts** - Any new files, migrations, or resources created
+4. **Verification performed** - How you verified the changes work
+5. **Blockers encountered** - Issues faced and how they were resolved
+6. **Follow-up needed** - Any related work discovered that needs separate tickets
+
+Example completion comment:
+```
+[AI Worker Completion Report]
+
+## Summary
+Added test=terraform tag to ECS cluster resource.
+
+## Files Modified
+- infrastructure/terraform/environments/dev/main.tf (added tag to aws_ecs_cluster.main)
+
+## Verification
+- Ran terraform plan - shows 1 resource to be updated
+- Tag will be applied on next terraform apply
+
+## Blockers
+- None encountered
+
+## Follow-up
+- None required - this is a simple tag addition
+```
+
+**Never leave a ticket Done without a proper completion comment. Status updates alone are not sufficient.**
+
+---
+
 ## MANDATORY: Transition Jira Ticket to Done
 
 **CRITICAL: After creating a PR (or completing work with no code changes), you MUST transition the Jira ticket to Done.**
 
-Use the Jira MCP tools:
+Use the execution script:
+```bash
+JIRA_ISSUE_KEY=$JIRA_ISSUE_KEY TRANSITION_NAME="Done" node /app/execution-compiled/jira/transition_issue.js
+```
+
+Or use curl:
 ```bash
 # 1. Get available transitions
 curl -s "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KEY}/transitions" | jq '.transitions[] | {id, name}'
@@ -42,39 +127,53 @@ curl -X POST "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KE
   -d '{"transition": {"id": "31"}}'
 ```
 
-Or use the execution script:
-```bash
-JIRA_ISSUE_KEY=$JIRA_ISSUE_KEY TRANSITION_NAME="Done" node /app/execution-compiled/jira/transition_issue.js
-```
-
 **Never leave a completed task in "In Progress" status. This is a hard requirement.**
+
+---
 
 ## DO NOT Deploy
 
-**IMPORTANT: You must NOT run deploy.sh or deploy to production.** Deployment is handled by humans after PR review and approval. Your job is to:
+**IMPORTANT: You must NOT run deploy.sh or deploy to production.** Deployment is handled by humans after PR review and approval.
+
+Your workflow is:
 1. Make code changes
 2. Commit and push
 3. Create a PR
-4. **Transition Jira ticket to Done**
-5. Let humans review, approve, and deploy
+4. Add completion comment to Jira
+5. Transition Jira ticket to Done
+6. **STOP** - Let humans review, approve, and deploy
 
-## Self-Annealing Protocol
+---
 
-When an execution script fails:
+## Security Requirements
 
-1. **Read the error** - Understand what went wrong
-2. **Fix the script** - Modify the code in `execution/`
-3. **Test it works** - Run the script again with same inputs
-4. **Update the directive** - Add what you learned to the "Self-Annealing Notes" section
-5. **Continue** - The system is now stronger
+**Security is NOT optional. Never compromise on security best practices.**
 
-**Important:** Self-annealing improvements should be committed to a separate branch (`self-anneal/*`) and create a PR for human review.
+### Forbidden Actions
+- `NODE_TLS_REJECT_UNAUTHORIZED=0` - Never disable TLS validation
+- Hardcoded credentials in code or scripts
+- Overly permissive security groups (0.0.0.0/0 for non-public services)
+- `Resource: "*"` in IAM policies with destructive actions
+- Committing secrets to git
 
-## Key Principle
+### Required Practices
+- Use AWS Secrets Manager for all credentials
+- Scope IAM policies to specific ARN patterns
+- Validate all API inputs
+- Use HMAC signatures for webhook verification
 
-> "90% accuracy per step = 59% success over 5 steps. Push complexity into deterministic code."
+### When Making IAM Changes
+```hcl
+# WRONG - Too permissive
+Action   = ["s3:*"]
+Resource = "*"
 
-When you find yourself writing the same command multiple times, that's a sign it should be an execution script.
+# CORRECT - Scoped to project resources
+Action   = ["s3:GetObject", "s3:PutObject"]
+Resource = ["arn:aws:s3:::oncallshift-*/*"]
+```
+
+---
 
 ## No Code Changes Needed
 
@@ -94,6 +193,30 @@ Sometimes after investigation, you'll find that **no code changes are required**
 - The reported bug cannot be reproduced
 - The requested feature already exists
 
+---
+
+## Self-Annealing Protocol
+
+When an execution script fails:
+
+1. **Read the error** - Understand what went wrong
+2. **Fix the script** - Modify the code in `execution/`
+3. **Test it works** - Run the script again with same inputs
+4. **Update the directive** - Add what you learned to the "Self-Annealing Notes" section
+5. **Continue** - The system is now stronger
+
+**Important:** Self-annealing improvements should be committed to a separate branch (`self-anneal/*`) and create a PR for human review.
+
+---
+
+## Key Principle
+
+> "90% accuracy per step = 59% success over 5 steps. Push complexity into deterministic code."
+
+When you find yourself writing the same command multiple times, that's a sign it should be an execution script.
+
+---
+
 ## TypeScript and Type Checking
 
 **Important:** This container does NOT have project dev dependencies installed. Do NOT attempt to run:
@@ -111,6 +234,8 @@ cd /app && npx tsc --noEmit --skipLibCheck --target ES2022 --module commonjs /pa
 
 This won't catch all type errors (missing project types) but will catch syntax issues.
 
+---
+
 ## Current Task
 
 Your task details are provided in the environment:
@@ -122,9 +247,12 @@ Your task details are provided in the environment:
 
 **IMPORTANT:** Always read both JIRA_DESCRIPTION and TASK_NOTES. The task notes may contain critical information that changes the requirements or provides additional context not in the original Jira ticket.
 
-Start by:
-1. Reading `directives/common/git_workflow.md` to understand the PR process
-2. Finding the directive that matches your task type
-3. Following the directive step by step
-4. Create a PR for human review (do NOT deploy)
-5. **MANDATORY: Transition the Jira ticket to Done** (see "MANDATORY: Transition Jira Ticket to Done" section above)
+## Workflow Summary
+
+1. Read `directives/common/git_workflow.md` to understand the PR process
+2. Find and read the directive that matches your task type
+3. **Add analysis comment to Jira** explaining your approach
+4. Follow the directive step by step
+5. Create a PR for human review (do NOT deploy)
+6. **Add completion comment to Jira** with detailed summary
+7. **Transition the Jira ticket to Done**
