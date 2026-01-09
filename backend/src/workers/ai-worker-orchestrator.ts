@@ -41,6 +41,7 @@ type ManagerAction = 'review_pr' | 'analyze_learnings' | 'update_environment';
 interface ManagerInvokePayload {
   action: ManagerAction;
   taskId: string;
+  model?: string; // Claude model to use (from manager settings)
   changes?: Record<string, any>; // For update_environment action
 }
 
@@ -701,6 +702,16 @@ class AIWorkerOrchestrator {
   ): Promise<void> {
     try {
       const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+      const instanceRepo = this.dataSource.getRepository(AIWorkerInstance);
+
+      // Look up the manager's configured model
+      const manager = await instanceRepo.findOne({ where: { role: 'manager' } });
+      const managerModel = manager?.modelId || 'claude-sonnet-4-20250514';
+
+      // Get friendly model name for logs
+      const modelName = managerModel.includes('opus') ? 'Opus'
+        : managerModel.includes('haiku') ? 'Haiku'
+        : 'Sonnet';
 
       // For PR review, update task status so it shows in Active Workflows
       if (action === 'review_pr') {
@@ -710,17 +721,17 @@ class AIWorkerOrchestrator {
         await this.logTaskEvent(
           { id: taskId } as AIWorkerTask,
           'manager',
-          'Virtual Manager starting PR review (Opus 4.5)...'
+          `Virtual Manager starting PR review (${modelName})...`
         );
       } else if (action === 'analyze_learnings') {
         await this.logTaskEvent(
           { id: taskId } as AIWorkerTask,
           'manager',
-          'Virtual Manager starting learning analysis (Haiku)...'
+          `Virtual Manager starting learning analysis (${modelName})...`
         );
       }
 
-      const payload: ManagerInvokePayload = { action, taskId };
+      const payload: ManagerInvokePayload = { action, taskId, model: managerModel };
       if (changes) {
         payload.changes = changes;
       }
@@ -728,6 +739,7 @@ class AIWorkerOrchestrator {
       logger.info('Invoking Manager Lambda', {
         action,
         taskId,
+        model: managerModel,
         lambdaName: MANAGER_LAMBDA_NAME,
       });
 
