@@ -200,6 +200,21 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No issue in payload' });
     }
 
+    // Ignore webhooks for issues already in Done/Closed status
+    // This prevents creating new tasks when tickets are transitioned to Done
+    const issueStatus = issue.fields?.status?.name?.toLowerCase() || '';
+    if (issueStatus === 'done' || issueStatus === 'closed' || issueStatus === 'resolved') {
+      logger.info('Ignoring webhook - Jira issue is in terminal status', {
+        issueKey: issue.key,
+        status: issue.fields?.status?.name,
+      });
+      return res.json({
+        message: 'Issue in terminal status, ignoring webhook',
+        issueKey: issue.key,
+        status: issue.fields?.status?.name,
+      });
+    }
+
     // Check if the issue has the AI worker label or is assigned to AI
     const labels = issue.fields?.labels || [];
     const assignee = issue.fields?.assignee;
