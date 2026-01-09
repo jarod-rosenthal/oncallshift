@@ -342,12 +342,14 @@ export default function SuperAdminControlCenter() {
   const [streamingTerminals, setStreamingTerminals] = useState<Set<string>>(
     new Set(),
   );
-  const [terminalCursors, setTerminalCursors] = useState<Record<string, string | null>>({});
   const controlCenterStreamRef = useRef<EventSource | null>(null);
   // Track EventSource connections for SSE streaming
   const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
   // Fallback polling timers when SSE drops
   const pollIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  // Keep cursors out of state to avoid re-renders on every log line
+  const terminalCursorsRef = useRef<Record<string, string | null>>({});
+  const terminalSeenEventIdsRef = useRef<Record<string, Set<string>>>({});
   // Track terminal scroll containers for auto-scroll
   const terminalScrollRefs = useRef<Map<string, HTMLDivElement | null>>(
     new Map(),
@@ -741,7 +743,9 @@ export default function SuperAdminControlCenter() {
         setTerminalLogs((prev) => ({ ...prev, [taskId]: logLines }));
         if (result.logs && result.logs.length > 0) {
           const last = result.logs[result.logs.length - 1];
-          setTerminalCursors((prev) => ({ ...prev, [taskId]: last.id || null }));
+          if (last?.id && last?.timestamp) {
+            terminalCursorsRef.current[taskId] = `${new Date(last.timestamp).toISOString()}|${last.id}`;
+          }
         }
       }
     } catch (err) {
@@ -782,7 +786,8 @@ export default function SuperAdminControlCenter() {
 
       const token = localStorage.getItem("accessToken");
       const tokenParam = token ? `token=${encodeURIComponent(token)}` : "";
-      const sinceParam = terminalCursors[taskId] ? `since=${encodeURIComponent(terminalCursors[taskId]!)}` : "";
+      const sinceCursor = terminalCursorsRef.current[taskId];
+      const sinceParam = sinceCursor ? `since=${encodeURIComponent(sinceCursor)}` : "";
       const query = [tokenParam, sinceParam].filter(Boolean).join("&");
       const url = `${API_BASE}/api/v1/super-admin/control-center/logs/${taskId}/stream${query ? `?${query}` : ""}`;
 
@@ -798,6 +803,52 @@ export default function SuperAdminControlCenter() {
 
       eventSource.addEventListener("ping", () => {});
 
+      const onLogEvent = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          const eventId =
+            (event as MessageEvent).lastEventId ||
+            data.cursor ||
+            (data.timestamp && data.id
+              ? `${new Date(data.timestamp).toISOString()}|${data.id}`
+              : null);
+
+          if (eventId) {
+            if (!terminalSeenEventIdsRef.current[taskId]) {
+              terminalSeenEventIdsRef.current[taskId] = new Set();
+            }
+            const seen = terminalSeenEventIdsRef.current[taskId]!;
+            if (seen.has(eventId)) {
+              return;
+            }
+            seen.add(eventId);
+            // keep memory bounded
+            if (seen.size > 1000) {
+              terminalSeenEventIdsRef.current[taskId] = new Set(
+                Array.from(seen).slice(-500),
+              );
+            }
+          }
+
+          const logLine = `[${new Date(data.timestamp).toLocaleTimeString()}] ${data.message}`;
+          setTerminalLogs((prev) => {
+            const prevLines = prev[taskId] || [];
+            const nextLines = [...prevLines, logLine];
+            return {
+              ...prev,
+              [taskId]: nextLines.length > 500 ? nextLines.slice(-500) : nextLines,
+            };
+          });
+          if (eventId) {
+            terminalCursorsRef.current[taskId] = eventId;
+          }
+        } catch (err) {
+          console.error("Error parsing log SSE data:", err);
+        }
+      };
+
+      eventSource.addEventListener("log", onLogEvent);
+
       eventSource.onopen = () => {
         stopPolling(taskId); // stop any fallback poll once SSE opens
         setStreamingTerminals((prev) => new Set([...prev, taskId]));
@@ -807,14 +858,7 @@ export default function SuperAdminControlCenter() {
         try {
           const data = JSON.parse(event.data);
 
-          if (data.type === "log") {
-            const logLine = `[${new Date(data.timestamp).toLocaleTimeString()}] ${data.message}`;
-            setTerminalLogs((prev) => ({
-              ...prev,
-              [taskId]: [...(prev[taskId] || []), logLine],
-            }));
-            setTerminalCursors((prev) => ({ ...prev, [taskId]: data.id || prev[taskId] || null }));
-          } else if (data.type === "status") {
+          if (data.type === "status") {
             // Task status changed - refresh main data
             fetchData();
           } else if (data.type === "complete") {
@@ -826,6 +870,7 @@ export default function SuperAdminControlCenter() {
               newSet.delete(taskId);
               return newSet;
             });
+            stopPolling(taskId);
           }
         } catch (err) {
           console.error("Error parsing SSE data:", err);
@@ -833,24 +878,13 @@ export default function SuperAdminControlCenter() {
       };
 
       eventSource.onerror = () => {
-        // Connection error - fall back to polling and retry SSE after a delay
-        eventSource.close();
-        eventSourcesRef.current.delete(taskId);
+        // Let EventSource auto-reconnect; use polling while disconnected
         setStreamingTerminals((prev) => {
           const newSet = new Set(prev);
           newSet.delete(taskId);
           return newSet;
         });
-        // Pull latest logs to avoid user refresh and try to reconnect once network is back
-        fetchTerminalLogs(taskId);
-        // Start fallback polling so terminal keeps moving
         startPolling(taskId);
-        setTimeout(() => {
-          // Only retry if not already reconnected/closed
-          if (!eventSourcesRef.current.has(taskId)) {
-            startLogStream(taskId);
-          }
-        }, 5000);
       };
 
       eventSourcesRef.current.set(taskId, eventSource);
@@ -880,6 +914,7 @@ export default function SuperAdminControlCenter() {
       eventSourcesRef.current.clear();
       pollIntervalsRef.current.forEach((interval) => clearInterval(interval));
       pollIntervalsRef.current.clear();
+      terminalSeenEventIdsRef.current = {};
     };
   }, []);
 
