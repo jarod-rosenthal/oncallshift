@@ -163,14 +163,15 @@ async function buildControlCenterData(orgId: string) {
   }
 
   // Fallback: if cumulative cost not set, derive from all tasks with cost > 0
-  let derivedCumulativeCost = Number(org?.aiWorkerCumulativeCost || 0);
-  if (!derivedCumulativeCost || derivedCumulativeCost <= 0) {
-    const costSumRow = await taskRepo
-      .createQueryBuilder("task")
-      .select("COALESCE(SUM(task.estimatedCostUsd), 0)", "sum")
-      .getRawOne<{ sum: string }>();
-    derivedCumulativeCost = Number(costSumRow?.sum || 0);
-  }
+	  let derivedCumulativeCost = Number(org?.aiWorkerCumulativeCost || 0);
+	  if (!derivedCumulativeCost || derivedCumulativeCost <= 0) {
+	    const costSumRow = await taskRepo
+	      .createQueryBuilder("task")
+	      .where("task.orgId = :orgId", { orgId })
+	      .select("COALESCE(SUM(task.estimatedCostUsd), 0)", "sum")
+	      .getRawOne<{ sum: string }>();
+	    derivedCumulativeCost = Number(costSumRow?.sum || 0);
+	  }
 
   const stats = {
     totalWorkers: workers.length,
@@ -880,11 +881,33 @@ router.get(
       res.setHeader("X-Accel-Buffering", "no");
       if ((res as any).flushHeaders) (res as any).flushHeaders();
 
-      // Start cursor at provided since or last log id
-      let lastLogId: string | null = null;
-      if (since) {
-        lastLogId = since;
-      }
+      // Hint the client how long to wait before reconnect attempts
+      res.write("retry: 2000\n\n");
+
+      const parseCursor = (
+        raw: string | null,
+      ): { lastCreatedAt: Date; lastId: string } | null => {
+        if (!raw) return null;
+        const parts = raw.split("|");
+        if (parts.length !== 2) return null;
+        const createdAt = new Date(parts[0]);
+        if (Number.isNaN(createdAt.getTime())) return null;
+        const id = parts[1];
+        if (!id) return null;
+        return { lastCreatedAt: createdAt, lastId: id };
+      };
+
+      // Prefer Last-Event-ID (auto-managed by EventSource) then query param
+      const lastEventIdHeader = req.headers["last-event-id"];
+      const headerCursor =
+        typeof lastEventIdHeader === "string" ? lastEventIdHeader : null;
+      // Default to "now minus 5 minutes" to avoid sending huge history
+      let cursor =
+        parseCursor(headerCursor) ||
+        parseCursor(since) || {
+          lastCreatedAt: new Date(Date.now() - 5 * 60 * 1000),
+          lastId: "00000000-0000-0000-0000-000000000000",
+        };
       let lastStatus = task.status;
 
       const sendLogs = async () => {
@@ -907,12 +930,19 @@ router.get(
             .orderBy("log.createdAt", "ASC")
             .addOrderBy("log.id", "ASC");
 
-          if (lastLogId) {
-            qb.andWhere("log.id > :lastLogId", { lastLogId });
-          }
+          qb.andWhere(
+            "(log.createdAt > :lastCreatedAt OR (log.createdAt = :lastCreatedAt AND log.id > :lastId))",
+            {
+              lastCreatedAt: cursor.lastCreatedAt,
+              lastId: cursor.lastId,
+            },
+          );
 
           const newLogs = await qb.getMany();
           for (const log of newLogs) {
+            const eventId = `${log.createdAt.toISOString()}|${log.id}`;
+            res.write(`id: ${eventId}\n`);
+            res.write("event: log\n");
             res.write(
               `data: ${JSON.stringify({
                 type: "log",
@@ -925,9 +955,10 @@ router.get(
                 exitCode: log.exitCode,
                 filePath: log.filePath,
                 durationMs: log.durationMs,
+                cursor: eventId,
               })}\n\n`,
             );
-            lastLogId = log.id;
+            cursor = { lastCreatedAt: log.createdAt, lastId: log.id };
           }
 
           if (["completed", "failed", "cancelled"].includes(currentTask.status)) {
@@ -945,9 +976,25 @@ router.get(
       };
 
       // Send initial handshake
-      res.write(`data: ${JSON.stringify({ type: "connected", taskId, status: task.status, cursor: lastLogId })}\n\n`);
+      res.write(
+        `data: ${JSON.stringify({
+          type: "connected",
+          taskId,
+          status: task.status,
+          cursor: `${cursor.lastCreatedAt.toISOString()}|${cursor.lastId}`,
+        })}\n\n`,
+      );
 
-      const logInterval = setInterval(sendLogs, 1000);
+      let inFlight = false;
+      const logInterval = setInterval(async () => {
+        if (inFlight) return;
+        inFlight = true;
+        try {
+          await sendLogs();
+        } finally {
+          inFlight = false;
+        }
+      }, 1000);
       const pingInterval = setInterval(sendPing, 20000);
 
       req.on("close", () => {
