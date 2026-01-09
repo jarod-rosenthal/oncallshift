@@ -304,13 +304,13 @@ export default function SuperAdminControlCenter() {
   const [showCreateWorkerModal, setShowCreateWorkerModal] = useState(false);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [createWorkerForm, setCreateWorkerForm] = useState({
-    persona: "developer" as string,
+    persona: "backend_developer" as string,
     displayName: "",
     description: "",
   });
   const [createTaskForm, setCreateTaskForm] = useState({
     jiraIssueKey: "",
-    workerPersona: "developer" as string,
+    workerPersona: "backend_developer" as string,
   });
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -320,6 +320,12 @@ export default function SuperAdminControlCenter() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showResetCostModal, setShowResetCostModal] = useState(false);
   const [resetCostLoading, setResetCostLoading] = useState(false);
+
+  // Cooldown settings
+  const [cooldownMinutes, setCooldownMinutes] = useState<number>(10);
+  const [cooldownLoading, setCooldownLoading] = useState(false);
+  const [showCooldownInput, setShowCooldownInput] = useState(false);
+  const [tempCooldown, setTempCooldown] = useState<string>("10");
 
   // Terminal output state
   const [terminalLogs, setTerminalLogs] = useState<Record<string, string[]>>({});
@@ -424,6 +430,62 @@ export default function SuperAdminControlCenter() {
       console.error("Failed to fetch system status:", err);
     }
   }, []);
+
+  // Fetch cooldown settings
+  const fetchCooldownSettings = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/settings`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setCooldownMinutes(result.aiWorkerCooldownMinutes || 10);
+        setTempCooldown(String(result.aiWorkerCooldownMinutes || 10));
+      }
+    } catch (err) {
+      console.error("Failed to fetch cooldown settings:", err);
+    }
+  }, []);
+
+  // Update cooldown settings
+  const updateCooldownSettings = async (newCooldown: number) => {
+    setCooldownLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/settings`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ aiWorkerCooldownMinutes: newCooldown }),
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setCooldownMinutes(result.aiWorkerCooldownMinutes);
+        setTempCooldown(String(result.aiWorkerCooldownMinutes));
+        setShowCooldownInput(false);
+        setCreateSuccess(`Cooldown updated to ${result.aiWorkerCooldownMinutes} minutes`);
+        setTimeout(() => setCreateSuccess(null), 3000);
+      } else {
+        setCreateError("Failed to update cooldown");
+        setTimeout(() => setCreateError(null), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to update cooldown:", err);
+      setCreateError("Failed to update cooldown");
+      setTimeout(() => setCreateError(null), 3000);
+    } finally {
+      setCooldownLoading(false);
+    }
+  };
 
   // Toggle system on/off
   const toggleSystem = async () => {
@@ -606,7 +668,8 @@ export default function SuperAdminControlCenter() {
     fetchWatcherStatus();
     fetchManagerStatus();
     fetchTaskList();
-  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList]);
+    fetchCooldownSettings();
+  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList, fetchCooldownSettings]);
 
   // Fetch task runs for detail modal
   const fetchTaskRuns = useCallback(async (taskId: string) => {
@@ -1072,7 +1135,7 @@ export default function SuperAdminControlCenter() {
       }
       setCreateSuccess("Task queued successfully");
       setShowCreateTaskModal(false);
-      setCreateTaskForm({ jiraIssueKey: "", workerPersona: "developer" });
+      setCreateTaskForm({ jiraIssueKey: "", workerPersona: "backend_developer" });
       fetchData();
       fetchTaskList();
       setTimeout(() => setCreateSuccess(null), 3000);
@@ -1089,6 +1152,7 @@ export default function SuperAdminControlCenter() {
     fetchWatcherStatus();
     fetchManagerStatus();
     fetchTaskList();
+    fetchCooldownSettings();
 
     // Live updates via SSE when auto-refresh is enabled
     if (!autoRefresh) return;
@@ -1143,6 +1207,7 @@ export default function SuperAdminControlCenter() {
     fetchWatcherStatus,
     fetchManagerStatus,
     fetchTaskList,
+    fetchCooldownSettings,
     autoRefresh,
     statusFilter,
     searchQuery,
@@ -1347,6 +1412,53 @@ export default function SuperAdminControlCenter() {
               </span>
             )}
           </button>
+          {/* Cooldown Setting */}
+          <div className="relative flex items-center gap-1">
+            {showCooldownInput ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="1440"
+                  value={tempCooldown}
+                  onChange={(e) => setTempCooldown(e.target.value)}
+                  className="w-16 px-2 py-1 text-xs bg-muted border border-border rounded"
+                  disabled={cooldownLoading}
+                />
+                <span className="text-xs text-muted-foreground">min</span>
+                <button
+                  onClick={() => {
+                    const val = parseInt(tempCooldown, 10);
+                    if (!isNaN(val) && val >= 0 && val <= 1440) {
+                      updateCooldownSettings(val);
+                    }
+                  }}
+                  disabled={cooldownLoading}
+                  className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                >
+                  {cooldownLoading ? "..." : "Save"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCooldownInput(false);
+                    setTempCooldown(String(cooldownMinutes));
+                  }}
+                  className="px-2 py-1 text-xs bg-muted text-muted-foreground rounded hover:bg-muted/80"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowCooldownInput(true)}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-muted border border-border rounded hover:bg-muted/80"
+                title="Webhook cooldown: Time before same Jira issue can trigger new task"
+              >
+                <Clock className="w-3 h-3" />
+                <span>Cooldown: {cooldownMinutes}m</span>
+              </button>
+            )}
+          </div>
           <div className="w-px h-6 bg-border" />
           <button
             onClick={() => setShowCreateTaskModal(true)}

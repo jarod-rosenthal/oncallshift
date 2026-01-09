@@ -159,6 +159,12 @@ variable "org_api_key_secret_arn" {
   default     = ""
 }
 
+variable "internal_service_key_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing the internal service key for worker-to-API authentication"
+  type        = string
+  default     = ""
+}
+
 # Terraform state access for AI Workers
 variable "terraform_state_bucket" {
   description = "S3 bucket name containing Terraform state (enables terraform plan)"

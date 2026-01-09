@@ -33,6 +33,7 @@ interface TaskEnvironment {
   GLOBAL_TIMEOUT_AT?: string;
   API_BASE_URL?: string;
   ORG_API_KEY?: string;
+  INTERNAL_SERVICE_KEY?: string;
 }
 
 interface RunTaskResult {
@@ -98,6 +99,7 @@ export class ECSTaskRunner {
       GLOBAL_TIMEOUT_AT: task.globalTimeoutAt?.toISOString() || '',
       API_BASE_URL: process.env.API_BASE_URL || 'https://oncallshift.com',
       ORG_API_KEY: credentials.orgApiKey || '',
+      INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY || '',
     };
 
     const command = new RunTaskCommand({

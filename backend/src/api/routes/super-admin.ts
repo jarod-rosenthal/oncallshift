@@ -745,6 +745,85 @@ router.post("/control-center/reset-cost", async (req: Request, res: Response) =>
 });
 
 /**
+ * GET /api/v1/super-admin/control-center/settings
+ * Get AI Worker settings for the organization
+ */
+router.get("/control-center/settings", async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+    const dataSource = await getDataSource();
+    const orgRepo = dataSource.getRepository(Organization);
+
+    const org = await orgRepo.findOne({ where: { id: orgId } });
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const settings = org.settings || {};
+    return res.json({
+      aiWorkerCooldownMinutes: settings.aiWorkerCooldownMinutes ?? 10,
+    });
+  } catch (error) {
+    logger.error("Error fetching AI Worker settings:", error);
+    return res.status(500).json({ error: "Failed to fetch settings" });
+  }
+});
+
+/**
+ * PUT /api/v1/super-admin/control-center/settings
+ * Update AI Worker settings for the organization
+ */
+router.put(
+  "/control-center/settings",
+  [
+    body("aiWorkerCooldownMinutes")
+      .optional()
+      .isInt({ min: 0, max: 1440 })
+      .withMessage("Cooldown must be between 0 and 1440 minutes (24 hours)"),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const orgId = req.orgId!;
+      const { aiWorkerCooldownMinutes } = req.body;
+
+      const dataSource = await getDataSource();
+      const orgRepo = dataSource.getRepository(Organization);
+
+      const org = await orgRepo.findOne({ where: { id: orgId } });
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      // Update settings
+      const currentSettings = org.settings || {};
+      if (aiWorkerCooldownMinutes !== undefined) {
+        currentSettings.aiWorkerCooldownMinutes = aiWorkerCooldownMinutes;
+      }
+      org.settings = currentSettings;
+      await orgRepo.save(org);
+
+      logger.info("AI Worker settings updated", {
+        orgId,
+        aiWorkerCooldownMinutes: currentSettings.aiWorkerCooldownMinutes,
+      });
+
+      return res.json({
+        success: true,
+        aiWorkerCooldownMinutes: currentSettings.aiWorkerCooldownMinutes ?? 10,
+      });
+    } catch (error) {
+      logger.error("Error updating AI Worker settings:", error);
+      return res.status(500).json({ error: "Failed to update settings" });
+    }
+  }
+);
+
+/**
  * GET /api/v1/super-admin/control-center/logs/:taskId
  * Stream logs for a specific task (for CLI tool)
  */

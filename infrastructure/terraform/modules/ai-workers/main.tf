@@ -779,6 +779,12 @@ resource "aws_ecs_task_definition" "executor" {
           valueFrom = "${var.org_api_key_secret_arn}"
         }
       ] : [],
+      var.internal_service_key_secret_arn != "" ? [
+        {
+          name      = "INTERNAL_SERVICE_KEY"
+          valueFrom = "${var.internal_service_key_secret_arn}"
+        }
+      ] : [],
       var.jira_credentials_secret_arn != "" ? [
         {
           name      = "JIRA_BASE_URL"
@@ -1492,6 +1498,12 @@ resource "aws_ecs_task_definition" "manager_executor" {
         {
           name      = "ORG_API_KEY"
           valueFrom = "${var.org_api_key_secret_arn}"
+        }
+      ] : [],
+      var.internal_service_key_secret_arn != "" ? [
+        {
+          name      = "INTERNAL_SERVICE_KEY"
+          valueFrom = "${var.internal_service_key_secret_arn}"
         }
       ] : [],
       var.jira_credentials_secret_arn != "" ? [

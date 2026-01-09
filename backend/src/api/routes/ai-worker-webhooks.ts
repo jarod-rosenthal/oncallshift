@@ -26,22 +26,69 @@ const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 // Jira webhook secret - TODO: re-enable after debugging HMAC verification
 // const JIRA_WEBHOOK_SECRET = process.env.JIRA_WEBHOOK_SECRET;
 
-// Default persona mapping for Jira issue types
-const PERSONA_MAPPING: Record<string, string> = {
-  'Story': 'developer',
-  'Bug': 'developer',
-  'Task': 'developer',
-  'Sub-task': 'developer',
-  'Epic': 'pm',
-  'Initiative': 'pm',
+// ============================================================================
+// CONFIGURATION - Adjust these values as needed
+// ============================================================================
+
+/**
+ * Default cooldown period (in minutes) after a task completes before allowing
+ * the same Jira issue to trigger a new task via webhook.
+ * This prevents tight webhook loops when Jira transitions fire.
+ * Can be overridden per-org via org.settings.aiWorkerCooldownMinutes
+ */
+const DEFAULT_COOLDOWN_MINUTES = 10;
+
+/**
+ * Get the cooldown minutes for an organization
+ * Falls back to DEFAULT_COOLDOWN_MINUTES if not set
+ */
+function getCooldownMinutes(org: Organization): number {
+  const customCooldown = org.settings?.aiWorkerCooldownMinutes;
+  if (typeof customCooldown === 'number' && customCooldown >= 0) {
+    return customCooldown;
+  }
+  return DEFAULT_COOLDOWN_MINUTES;
+}
+
+// ============================================================================
+
+// ============================================================================
+// PERSONA CONFIGURATION
+// ============================================================================
+
+// Label to persona mapping (highest priority - explicit user intent)
+// These labels can be added to Jira issues to force a specific persona
+const LABEL_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
+  // Direct persona labels
+  'frontend': 'frontend_developer',
+  'backend': 'backend_developer',
+  'devops': 'devops_engineer',
+  'infra': 'devops_engineer',
+  'infrastructure': 'devops_engineer',
+  'security': 'security_engineer',
+  'qa': 'qa_engineer',
+  'test': 'qa_engineer',
+  'testing': 'qa_engineer',
+  'docs': 'tech_writer',
+  'documentation': 'tech_writer',
+  'manager': 'project_manager',
+  'pm': 'project_manager',
+};
+
+// Default persona mapping for Jira issue types (fallback if no label match)
+const PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
+  'Story': 'backend_developer',
+  'Bug': 'backend_developer',
+  'Task': 'backend_developer',
+  'Sub-task': 'backend_developer',
+  'Epic': 'project_manager',
+  'Initiative': 'project_manager',
   'Test': 'qa_engineer',
   'Test Task': 'qa_engineer',
-  'Infrastructure': 'devops',
-  'CI/CD': 'devops',
+  'Infrastructure': 'devops_engineer',
+  'CI/CD': 'devops_engineer',
   'Documentation': 'tech_writer',
   'Docs': 'tech_writer',
-  'Service Request': 'support',
-  'Support': 'support',
 };
 
 /*
@@ -125,11 +172,12 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     const taskRepo = dataSource.getRepository(AIWorkerTask);
 
     // Check for existing active task (any non-terminal status)
+    // Include review_approved as terminal since it means PR was approved
     const existingTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
-        status: Not(In(['completed', 'failed', 'cancelled'])),
+        status: Not(In(['completed', 'failed', 'cancelled', 'review_approved'])),
       },
     });
 
@@ -163,36 +211,85 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     }
 
     // Check for recently completed task (cooldown to avoid tight webhook loops).
-    // Previously 60 minutes; reduced to 5 minutes so manual re-runs (e.g., re-adding ai-worker label)
-    // get picked up quickly.
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const recentlyCompletedTask = await taskRepo.findOne({
+    // Configurable per-org via settings.aiWorkerCooldownMinutes.
+    // Include pr_created and review_pending since they're quasi-terminal states.
+    const cooldownMinutes = getCooldownMinutes(org);
+    const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000);
+
+    // First check by completedAt (for tasks that set it)
+    let recentlyCompletedTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
-        status: In(['completed', 'failed', 'cancelled']),
-        completedAt: MoreThan(fiveMinutesAgo),
+        status: In(['completed', 'failed', 'cancelled', 'review_approved']),
+        completedAt: MoreThan(cooldownTime),
       },
       order: { completedAt: 'DESC' },
     });
 
-    if (recentlyCompletedTask) {
-      logger.info('Ignoring webhook - task recently completed (cooldown period)', {
-        issueKey: issue.key,
-        taskId: recentlyCompletedTask.id,
-        completedAt: recentlyCompletedTask.completedAt,
-      });
-      return res.json({
-        message: 'Task recently completed (cooldown period - 5 minutes)',
-        taskId: recentlyCompletedTask.id,
-        issueKey: issue.key,
-        completedAt: recentlyCompletedTask.completedAt,
+    // Also check by updatedAt for pr_created/review_pending (they don't set completedAt)
+    if (!recentlyCompletedTask) {
+      recentlyCompletedTask = await taskRepo.findOne({
+        where: {
+          orgId: org.id,
+          jiraIssueKey: issue.key,
+          status: In(['pr_created', 'review_pending', 'manager_review']),
+          updatedAt: MoreThan(cooldownTime),
+        },
+        order: { updatedAt: 'DESC' },
       });
     }
 
-    // Determine persona from issue type
+    if (recentlyCompletedTask) {
+      const timestamp = recentlyCompletedTask.completedAt || recentlyCompletedTask.updatedAt;
+      logger.info('Ignoring webhook - task recently completed or in progress (cooldown period)', {
+        issueKey: issue.key,
+        taskId: recentlyCompletedTask.id,
+        status: recentlyCompletedTask.status,
+        completedAt: recentlyCompletedTask.completedAt,
+        updatedAt: recentlyCompletedTask.updatedAt,
+        cooldownMinutes,
+      });
+      return res.json({
+        message: `Task recently active (cooldown period - ${cooldownMinutes} minutes)`,
+        taskId: recentlyCompletedTask.id,
+        issueKey: issue.key,
+        status: recentlyCompletedTask.status,
+        timestamp,
+      });
+    }
+
+    // Determine persona - check labels first, then issue type
     const issueType = issue.fields?.issuetype?.name || 'Task';
-    const persona = (PERSONA_MAPPING[issueType] || 'developer') as AIWorkerPersona;
+    const issueLabels: string[] = issue.fields?.labels || [];
+
+    // Priority 1: Check for explicit persona label
+    let persona: AIWorkerPersona = 'backend_developer'; // default
+    let personaSource = 'default';
+
+    for (const label of issueLabels) {
+      const normalizedLabel = label.toLowerCase().replace(/[-_\s]/g, '');
+      const labelPersona = LABEL_PERSONA_MAPPING[normalizedLabel] || LABEL_PERSONA_MAPPING[label.toLowerCase()];
+      if (labelPersona) {
+        persona = labelPersona;
+        personaSource = `label:${label}`;
+        break;
+      }
+    }
+
+    // Priority 2: Fall back to issue type mapping
+    if (personaSource === 'default' && PERSONA_MAPPING[issueType]) {
+      persona = PERSONA_MAPPING[issueType];
+      personaSource = `issueType:${issueType}`;
+    }
+
+    logger.info('Determined persona for task', {
+      issueKey: issue.key,
+      persona,
+      personaSource,
+      labels: issueLabels,
+      issueType,
+    });
 
     // Create new task
     const taskData = {

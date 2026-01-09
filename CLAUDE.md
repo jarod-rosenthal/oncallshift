@@ -162,7 +162,7 @@ Use prefixes to indicate work type:
 
 ### Task Completion Reporting
 
-**After completing a ticket, update Jira with a completion comment.** This helps the team learn from each task.
+**After completing a ticket, you MUST update Jira with a completion comment AND transition the ticket to Done.** This helps the team learn from each task.
 
 **Required in completion comment:**
 
@@ -174,7 +174,12 @@ Use prefixes to indicate work type:
 6. **Follow-up needed** - Any related work discovered that needs separate tickets
 7. **Testing performed** - How the changes were verified
 
-Workers should add this as a comment on the ticket before marking it Done.
+**CRITICAL: After adding the completion comment, you MUST transition the Jira ticket to "Done" status.** Use the Jira MCP tools to:
+1. Add the completion comment via `jira_post` to `/rest/api/3/issue/{issueKey}/comment`
+2. Get available transitions via `jira_get` to `/rest/api/3/issue/{issueKey}/transitions`
+3. Transition to Done via `jira_post` to `/rest/api/3/issue/{issueKey}/transitions` with the Done transition ID
+
+Never leave a completed task in "In Progress" status.
 
 ### Branch Naming Convention
 
