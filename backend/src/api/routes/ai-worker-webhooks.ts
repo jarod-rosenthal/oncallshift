@@ -26,6 +26,19 @@ const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 // Jira webhook secret - TODO: re-enable after debugging HMAC verification
 // const JIRA_WEBHOOK_SECRET = process.env.JIRA_WEBHOOK_SECRET;
 
+// ============================================================================
+// CONFIGURATION - Adjust these values as needed
+// ============================================================================
+
+/**
+ * Cooldown period (in minutes) after a task completes before allowing
+ * the same Jira issue to trigger a new task via webhook.
+ * This prevents tight webhook loops when Jira transitions fire.
+ */
+const WEBHOOK_COOLDOWN_MINUTES = 10;
+
+// ============================================================================
+
 // Default persona mapping for Jira issue types
 const PERSONA_MAPPING: Record<string, string> = {
   'Story': 'developer',
@@ -163,15 +176,14 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     }
 
     // Check for recently completed task (cooldown to avoid tight webhook loops).
-    // Previously 60 minutes; reduced to 5 minutes so manual re-runs (e.g., re-adding ai-worker label)
-    // get picked up quickly.
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    // Configurable via WEBHOOK_COOLDOWN_MINUTES at top of file.
+    const cooldownTime = new Date(Date.now() - WEBHOOK_COOLDOWN_MINUTES * 60 * 1000);
     const recentlyCompletedTask = await taskRepo.findOne({
       where: {
         orgId: org.id,
         jiraIssueKey: issue.key,
-        status: In(['completed', 'failed', 'cancelled']),
-        completedAt: MoreThan(fiveMinutesAgo),
+        status: In(['completed', 'failed', 'cancelled', 'review_approved']),
+        completedAt: MoreThan(cooldownTime),
       },
       order: { completedAt: 'DESC' },
     });
@@ -183,7 +195,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
         completedAt: recentlyCompletedTask.completedAt,
       });
       return res.json({
-        message: 'Task recently completed (cooldown period - 5 minutes)',
+        message: `Task recently completed (cooldown period - ${WEBHOOK_COOLDOWN_MINUTES} minutes)`,
         taskId: recentlyCompletedTask.id,
         issueKey: issue.key,
         completedAt: recentlyCompletedTask.completedAt,
