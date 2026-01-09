@@ -71,7 +71,7 @@ router.get('/', [...paginationValidators], async (req: Request, res: Response) =
 router.post(
   '/',
   [
-    body('persona').isIn(['developer', 'qa_engineer', 'devops', 'tech_writer', 'support', 'pm'])
+    body('persona').isIn(['frontend_developer', 'backend_developer', 'devops_engineer', 'security_engineer', 'qa_engineer', 'tech_writer', 'project_manager'])
       .withMessage('Invalid persona'),
     body('displayName').isString().isLength({ min: 1, max: 100 }).withMessage('Display name is required'),
     body('description').optional().isString().isLength({ max: 500 }),

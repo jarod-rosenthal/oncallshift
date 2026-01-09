@@ -304,13 +304,13 @@ export default function SuperAdminControlCenter() {
   const [showCreateWorkerModal, setShowCreateWorkerModal] = useState(false);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [createWorkerForm, setCreateWorkerForm] = useState({
-    persona: "developer" as string,
+    persona: "backend_developer" as string,
     displayName: "",
     description: "",
   });
   const [createTaskForm, setCreateTaskForm] = useState({
     jiraIssueKey: "",
-    workerPersona: "developer" as string,
+    workerPersona: "backend_developer" as string,
   });
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -1072,7 +1072,7 @@ export default function SuperAdminControlCenter() {
       }
       setCreateSuccess("Task queued successfully");
       setShowCreateTaskModal(false);
-      setCreateTaskForm({ jiraIssueKey: "", workerPersona: "developer" });
+      setCreateTaskForm({ jiraIssueKey: "", workerPersona: "backend_developer" });
       fetchData();
       fetchTaskList();
       setTimeout(() => setCreateSuccess(null), 3000);

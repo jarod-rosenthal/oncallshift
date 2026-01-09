@@ -39,22 +39,43 @@ const WEBHOOK_COOLDOWN_MINUTES = 10;
 
 // ============================================================================
 
-// Default persona mapping for Jira issue types
-const PERSONA_MAPPING: Record<string, string> = {
-  'Story': 'developer',
-  'Bug': 'developer',
-  'Task': 'developer',
-  'Sub-task': 'developer',
-  'Epic': 'pm',
-  'Initiative': 'pm',
+// ============================================================================
+// PERSONA CONFIGURATION
+// ============================================================================
+
+// Label to persona mapping (highest priority - explicit user intent)
+// These labels can be added to Jira issues to force a specific persona
+const LABEL_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
+  // Direct persona labels
+  'frontend': 'frontend_developer',
+  'backend': 'backend_developer',
+  'devops': 'devops_engineer',
+  'infra': 'devops_engineer',
+  'infrastructure': 'devops_engineer',
+  'security': 'security_engineer',
+  'qa': 'qa_engineer',
+  'test': 'qa_engineer',
+  'testing': 'qa_engineer',
+  'docs': 'tech_writer',
+  'documentation': 'tech_writer',
+  'manager': 'project_manager',
+  'pm': 'project_manager',
+};
+
+// Default persona mapping for Jira issue types (fallback if no label match)
+const PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
+  'Story': 'backend_developer',
+  'Bug': 'backend_developer',
+  'Task': 'backend_developer',
+  'Sub-task': 'backend_developer',
+  'Epic': 'project_manager',
+  'Initiative': 'project_manager',
   'Test': 'qa_engineer',
   'Test Task': 'qa_engineer',
-  'Infrastructure': 'devops',
-  'CI/CD': 'devops',
+  'Infrastructure': 'devops_engineer',
+  'CI/CD': 'devops_engineer',
   'Documentation': 'tech_writer',
   'Docs': 'tech_writer',
-  'Service Request': 'support',
-  'Support': 'support',
 };
 
 /*
@@ -202,9 +223,37 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       });
     }
 
-    // Determine persona from issue type
+    // Determine persona - check labels first, then issue type
     const issueType = issue.fields?.issuetype?.name || 'Task';
-    const persona = (PERSONA_MAPPING[issueType] || 'developer') as AIWorkerPersona;
+    const issueLabels: string[] = issue.fields?.labels || [];
+
+    // Priority 1: Check for explicit persona label
+    let persona: AIWorkerPersona = 'backend_developer'; // default
+    let personaSource = 'default';
+
+    for (const label of issueLabels) {
+      const normalizedLabel = label.toLowerCase().replace(/[-_\s]/g, '');
+      const labelPersona = LABEL_PERSONA_MAPPING[normalizedLabel] || LABEL_PERSONA_MAPPING[label.toLowerCase()];
+      if (labelPersona) {
+        persona = labelPersona;
+        personaSource = `label:${label}`;
+        break;
+      }
+    }
+
+    // Priority 2: Fall back to issue type mapping
+    if (personaSource === 'default' && PERSONA_MAPPING[issueType]) {
+      persona = PERSONA_MAPPING[issueType];
+      personaSource = `issueType:${issueType}`;
+    }
+
+    logger.info('Determined persona for task', {
+      issueKey: issue.key,
+      persona,
+      personaSource,
+      labels: issueLabels,
+      issueType,
+    });
 
     // Create new task
     const taskData = {
