@@ -618,18 +618,42 @@ EOF
 echo "[Setup] Manager instructions created"
 cat "${INSTRUCTIONS_FILE}"
 
-# Select Claude model based on action
+# Select Claude model - use passed model if set, otherwise use action-based defaults
+if [ -n "${CLAUDE_MODEL}" ]; then
+    # Convert full model ID to short name for Claude CLI
+    if [[ "${CLAUDE_MODEL}" == *"opus"* ]]; then
+        CLAUDE_MODEL="opus"
+    elif [[ "${CLAUDE_MODEL}" == *"haiku"* ]]; then
+        CLAUDE_MODEL="haiku"
+    else
+        CLAUDE_MODEL="sonnet"
+    fi
+    echo "[Claude] Using configured model: ${CLAUDE_MODEL}"
+else
+    # Fallback to action-based model selection
+    case "${MANAGER_ACTION}" in
+        "review_pr")
+            CLAUDE_MODEL="opus"  # Best reasoning for code review
+            ;;
+        "analyze_learnings")
+            CLAUDE_MODEL="haiku"  # Fast and cheap for pattern extraction
+            ;;
+        "update_environment")
+            CLAUDE_MODEL="sonnet"  # Balanced for infrastructure changes
+            ;;
+    esac
+    echo "[Claude] Using action-based model: ${CLAUDE_MODEL}"
+fi
+
+# Set max turns based on action
 case "${MANAGER_ACTION}" in
     "review_pr")
-        CLAUDE_MODEL="opus"  # Best reasoning for code review
         MAX_TURNS=30
         ;;
     "analyze_learnings")
-        CLAUDE_MODEL="haiku"  # Fast and cheap for pattern extraction
         MAX_TURNS=20
         ;;
     "update_environment")
-        CLAUDE_MODEL="sonnet"  # Balanced for infrastructure changes
         MAX_TURNS=80  # Increased from 40 - needs time for file edits, commits, PR creation
         ;;
 esac

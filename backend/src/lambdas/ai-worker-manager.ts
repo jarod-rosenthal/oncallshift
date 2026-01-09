@@ -117,6 +117,7 @@ interface EnvironmentChange {
 interface ManagerEvent {
   action?: ManagerAction;
   taskId?: string;
+  model?: string; // Claude model to use (e.g., claude-sonnet-4-20250514)
   changes?: EnvironmentChange[];
 }
 
@@ -142,9 +143,10 @@ const ECS_CONFIG = {
 async function spawnManagerTask(
   action: ManagerAction,
   taskId: string,
+  model?: string,
   extraEnv: Record<string, string> = {},
 ): Promise<SpawnResult> {
-  console.log(`[Manager] Spawning ECS task for action: ${action}, taskId: ${taskId}`);
+  console.log(`[Manager] Spawning ECS task for action: ${action}, taskId: ${taskId}, model: ${model || 'default'}`);
 
   // Get org API key for ECS task authentication
   let orgApiKey: string;
@@ -162,6 +164,8 @@ async function spawnManagerTask(
     { name: "API_BASE_URL", value: process.env.API_BASE_URL || "https://oncallshift.com" },
     { name: "ORG_API_KEY", value: orgApiKey },
     { name: "AWS_REGION", value: process.env.REGION || "us-east-1" },
+    // Pass the selected Claude model if provided
+    ...(model ? [{ name: "CLAUDE_MODEL", value: model }] : []),
     ...Object.entries(extraEnv).map(([name, value]) => ({ name, value })),
   ];
 
@@ -349,8 +353,8 @@ export async function handler(
       console.log(`[Manager] Worker instance ${managerId} set to working`);
     }
 
-    // Spawn the ECS task
-    const result = await spawnManagerTask(action, taskId, extraEnv);
+    // Spawn the ECS task with the selected model
+    const result = await spawnManagerTask(action, taskId, event.model, extraEnv);
 
     if (result.success && result.ecsTaskArn) {
       // Store ECS task info in the database
