@@ -4,41 +4,51 @@
  * SINGLE SOURCE OF TRUTH for all Claude API and ECS cost calculations.
  * All cost calculations in the codebase should import from this file.
  *
- * Pricing as of January 2025:
- * - Claude 3 Haiku: $0.25/M input, $1.25/M output
- * - Claude Sonnet 4.5: $3/M input, $15/M output
- * - Claude Opus 4: $15/M input, $75/M output
- * - Cache write: 25% premium on input rate
- * - Cache read: 10% of input rate
+ * Pricing as of January 2025 (from https://www.anthropic.com/pricing):
+ * - Claude 3.5 Haiku: $0.80/M input, $4/M output
+ * - Claude Haiku 4.5: $1/M input, $5/M output
+ * - Claude Sonnet 4: $3/M input, $15/M output
+ * - Claude Opus 4.5: $5/M input, $25/M output
+ * - Cache write: 1.25x input rate
+ * - Cache read: 0.1x input rate
  */
 
-// Per-token rates (divide by 1000 to get per-1K rate)
+// Per-token rates (per 1K tokens - divide MTok rate by 1000)
 export const MODEL_PRICING = {
-  // Full model names (as returned by Claude API)
-  'claude-3-haiku-20240307': {
-    input: 0.00025,
-    output: 0.00125,
-    cacheWrite: 0.0003125,
-    cacheRead: 0.000025,
+  // Claude 3.5 Haiku ($0.80/M input, $4/M output)
+  'claude-3-5-haiku-20241022': {
+    input: 0.0008,
+    output: 0.004,
+    cacheWrite: 0.001,      // 1.25x input
+    cacheRead: 0.00008,     // 0.1x input
   },
-  'claude-sonnet-4-5-20250929': {
+  // Claude Haiku 4.5 ($1/M input, $5/M output)
+  'claude-haiku-4-5-20251001': {
+    input: 0.001,
+    output: 0.005,
+    cacheWrite: 0.00125,    // 1.25x input
+    cacheRead: 0.0001,      // 0.1x input
+  },
+  // Claude Sonnet 4 ($3/M input, $15/M output)
+  'claude-sonnet-4-20250514': {
     input: 0.003,
     output: 0.015,
     cacheWrite: 0.00375,
     cacheRead: 0.0003,
   },
-  'claude-opus-4-20250514': {
-    input: 0.015,
-    output: 0.075,
-    cacheWrite: 0.01875,
-    cacheRead: 0.0015,
+  // Claude Opus 4.5 ($5/M input, $25/M output)
+  'claude-opus-4-5-20251101': {
+    input: 0.005,
+    output: 0.025,
+    cacheWrite: 0.00625,
+    cacheRead: 0.0005,
   },
-  // Short aliases (used in AI Worker config)
+  // Short aliases (default to latest versions)
   haiku: {
-    input: 0.00025,
-    output: 0.00125,
-    cacheWrite: 0.0003125,
-    cacheRead: 0.000025,
+    input: 0.001,           // Haiku 4.5 pricing
+    output: 0.005,
+    cacheWrite: 0.00125,
+    cacheRead: 0.0001,
   },
   sonnet: {
     input: 0.003,
@@ -47,10 +57,10 @@ export const MODEL_PRICING = {
     cacheRead: 0.0003,
   },
   opus: {
-    input: 0.015,
-    output: 0.075,
-    cacheWrite: 0.01875,
-    cacheRead: 0.0015,
+    input: 0.005,           // Opus 4.5 pricing
+    output: 0.025,
+    cacheWrite: 0.00625,
+    cacheRead: 0.0005,
   },
 } as const;
 
