@@ -2665,6 +2665,129 @@ router.post(
 );
 
 /**
+ * POST /api/v1/super-admin/workers/reset-all-stuck
+ * Reset all workers in "working" status that have no active ECS task
+ */
+router.post("/workers/reset-all-stuck", async (_req: Request, res: Response) => {
+  try {
+    const dataSource = await getDataSource();
+    const workerRepo = dataSource.getRepository(AIWorkerInstance);
+    const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+    // Find all workers in "working" status
+    const stuckWorkers = await workerRepo.find({
+      where: { status: "working" },
+    });
+
+    if (stuckWorkers.length === 0) {
+      return res.json({
+        success: true,
+        message: "No stuck workers found",
+        resetCount: 0,
+      });
+    }
+
+    const resetWorkers: string[] = [];
+
+    for (const worker of stuckWorkers) {
+      // Clear task assignment if any
+      if (worker.currentTaskId) {
+        await taskRepo
+          .createQueryBuilder()
+          .update(AIWorkerTask)
+          .set({ assignedWorkerId: null })
+          .where("id = :taskId AND assigned_worker_id = :workerId", {
+            taskId: worker.currentTaskId,
+            workerId: worker.id,
+          })
+          .execute();
+      }
+
+      // Reset to idle
+      worker.status = "idle";
+      worker.currentTaskId = null;
+      await workerRepo.save(worker);
+      resetWorkers.push(worker.displayName);
+    }
+
+    logger.info("Reset all stuck workers", { resetCount: resetWorkers.length, workers: resetWorkers });
+
+    return res.json({
+      success: true,
+      message: `Reset ${resetWorkers.length} stuck worker(s)`,
+      resetCount: resetWorkers.length,
+      workers: resetWorkers,
+    });
+  } catch (error) {
+    logger.error("Error resetting stuck workers:", error);
+    return res.status(500).json({ error: "Failed to reset stuck workers" });
+  }
+});
+
+/**
+ * PATCH /api/v1/super-admin/workers/:id/reset
+ * Force reset a stuck worker to idle status
+ */
+router.patch(
+  "/workers/:id/reset",
+  [param("id").isUUID().withMessage("Valid worker ID required")],
+  async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      const dataSource = await getDataSource();
+      const workerRepo = dataSource.getRepository(AIWorkerInstance);
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      const workerId = req.params.id;
+      const worker = await workerRepo.findOne({ where: { id: workerId } });
+      if (!worker) {
+        return res.status(404).json({ error: "Worker not found" });
+      }
+
+      const previousStatus = worker.status;
+
+      // Clear any task assignments
+      if (worker.currentTaskId) {
+        await taskRepo
+          .createQueryBuilder()
+          .update(AIWorkerTask)
+          .set({ assignedWorkerId: null })
+          .where("id = :taskId AND assigned_worker_id = :workerId", {
+            taskId: worker.currentTaskId,
+            workerId,
+          })
+          .execute();
+      }
+
+      // Reset worker to idle
+      worker.status = "idle";
+      worker.currentTaskId = null;
+      await workerRepo.save(worker);
+
+      logger.info("Worker reset to idle", {
+        workerId,
+        previousStatus,
+        displayName: worker.displayName,
+      });
+
+      return res.json({
+        success: true,
+        message: "Worker reset to idle",
+        workerId,
+        previousStatus,
+      });
+    } catch (error) {
+      logger.error("Error resetting worker:", error);
+      return res.status(500).json({ error: "Failed to reset worker" });
+    }
+  },
+);
+
+/**
  * DELETE /api/v1/super-admin/workers/:id
  * Delete a worker (only if idle)
  */
