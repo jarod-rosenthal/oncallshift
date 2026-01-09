@@ -436,6 +436,12 @@ export class JiraAIWorkerService {
     // Determine model from labels (defaults to Sonnet if no model label)
     const workerModel = this.determineModel(issue);
 
+    // Check for review label - enables manager review
+    const labels = issue.fields.labels || [];
+    const hasReviewLabel = labels.some(
+      (l) => l.toLowerCase() === 'review'
+    );
+
     // Create task
     const task = taskRepo.create({
       orgId,
@@ -452,6 +458,7 @@ export class JiraAIWorkerService {
       priority: this.mapPriority(issue.fields.priority?.name),
       githubRepo: this.config.defaultGithubRepo,
       status: 'queued' as AIWorkerTaskStatus,
+      skipManagerReview: !hasReviewLabel, // Enable manager review when "review" label is present
     });
 
     await taskRepo.save(task);

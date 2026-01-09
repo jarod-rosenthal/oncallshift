@@ -364,6 +364,11 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       }
     }
 
+    // Check for review label - enables manager review
+    const hasReviewLabel = issueLabels.some(
+      (l: string) => l.toLowerCase() === 'review'
+    );
+
     logger.info('Determined persona and model for task', {
       issueKey: issue.key,
       persona,
@@ -371,6 +376,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       workerModel,
       labels: issueLabels,
       issueType,
+      hasReviewLabel,
     });
 
     // Create new task
@@ -394,6 +400,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       githubRepo: process.env.DEFAULT_GITHUB_REPO || 'jarod-rosenthal/pagerduty-lite',
       priority: mapJiraPriority(issue.fields?.priority?.name),
       status: 'queued' as const,
+      skipManagerReview: !hasReviewLabel, // Enable manager review when "review" label is present
     };
     const task = taskRepo.create(taskData);
 

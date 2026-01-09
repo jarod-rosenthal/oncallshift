@@ -159,14 +159,17 @@ export async function handler(event?: WatcherEvent): Promise<WatcherResult> {
       return { ...result, stuckTasksKilled: cancelResult.rowCount || 0 };
     }
 
+    // 0. Dispatch orphaned queued tasks (queued but not in SQS)
+    await dispatchOrphanedQueuedTasks(client, result);
+
     // 0a. Reset orphaned failed tasks (failed without next_retry_at)
     await resetOrphanedFailedTasks(client, result);
 
     // 0b. Reset orphaned revision tasks (revision_needed without next_retry_at)
     await resetOrphanedRevisionTasks(client, result);
 
-    // NOTE: We do NOT dispatch tasks here - that's the orchestrator's job
-    // The watcher only handles cleanup, retries (via SQS), and monitoring
+    // NOTE: Task execution is handled by the orchestrator service
+    // The watcher re-queues orphaned tasks to SQS and handles cleanup/retries
 
     // 1. Detect and handle stuck tasks
     await handleStuckTasks(client, result);
@@ -191,6 +194,61 @@ export async function handler(event?: WatcherEvent): Promise<WatcherResult> {
     return result;
   } finally {
     await client.end();
+  }
+}
+
+/**
+ * Dispatch orphaned queued tasks - tasks stuck in 'queued' status for 2+ minutes.
+ * This catches tasks that were queued but never made it to SQS (e.g., after watcher restart).
+ */
+async function dispatchOrphanedQueuedTasks(
+  client: Client,
+  result: WatcherResult,
+): Promise<void> {
+  // Find tasks that have been queued for more than 2 minutes (likely missed by orchestrator)
+  const orphanedQuery = `
+    SELECT id, jira_issue_key
+    FROM ai_worker_tasks
+    WHERE status = 'queued'
+      AND updated_at < NOW() - INTERVAL '2 minutes'
+      AND created_at > NOW() - INTERVAL '24 hours'
+  `;
+
+  const { rows: orphanedTasks } = await client.query(orphanedQuery);
+
+  if (orphanedTasks.length > 0) {
+    console.log(`[Watcher] Found ${orphanedTasks.length} orphaned queued tasks to dispatch`);
+  }
+
+  for (const task of orphanedTasks) {
+    try {
+      // Send to SQS queue for orchestrator to pick up
+      if (queueUrl) {
+        await sqs.send(
+          new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: "execute" }),
+          }),
+        );
+
+        // Update watcher_notes to track this
+        await client.query(
+          `UPDATE ai_worker_tasks
+           SET watcher_notes = COALESCE(watcher_notes, '') || $1
+           WHERE id = $2`,
+          [
+            `\n[${new Date().toISOString()}] Watcher re-queued orphaned task to SQS`,
+            task.id,
+          ],
+        );
+
+        console.log(`[Watcher] Re-queued orphaned task ${task.jira_issue_key} to SQS`);
+        result.tasksDispatched++;
+      }
+    } catch (error: any) {
+      console.error(`[Watcher] Error dispatching orphaned task ${task.id}:`, error);
+      result.errors.push(`Dispatch ${task.id}: ${error.message}`);
+    }
   }
 }
 
