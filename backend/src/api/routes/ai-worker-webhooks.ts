@@ -578,9 +578,10 @@ async function handlePullRequestReviewEvent(payload: any): Promise<void> {
       approval.autoApprove(`GitHub review approved by ${reviewer}`);
       await approvalRepo.save(approval);
 
-      // Update task status
+      // Update task status and record who approved
       if (task.status === 'pr_created' || task.status === 'review_pending') {
         task.status = 'review_approved';
+        task.githubApprovedBy = reviewer; // Store GitHub username who approved
         await taskRepo.save(task);
       }
     } else if (reviewState === 'CHANGES_REQUESTED') {

@@ -109,6 +109,7 @@ interface CompletedTask {
   durationMinutes: number | null;
   completedAt: string;
   githubPrUrl: string | null;
+  githubApprovedBy?: string | null;
 }
 
 interface ControlCenterData {
@@ -200,6 +201,7 @@ interface TaskWithRuns {
   githubPrUrl: string | null;
   githubPrNumber: number | null;
   githubBranch: string | null;
+  githubApprovedBy?: string | null;
   runs?: TaskRun[];
 }
 
@@ -2590,7 +2592,9 @@ export default function SuperAdminControlCenter() {
                           )}
                           <span className="capitalize text-xs">
                             {task.status === "review_approved"
-                              ? "PR Approved"
+                              ? task.githubApprovedBy === "bot-oncallshift"
+                                ? "Manager Approved"
+                                : "PR Approved"
                               : task.status === "pr_created"
                                 ? "Review Requested"
                                 : task.status.replace(/_/g, " ")}

@@ -219,6 +219,14 @@ export class AIWorkerTask {
   })
   reviewDecision: string | null; // 'approved', 'revision_needed', 'rejected'
 
+  @Column({
+    name: "github_approved_by",
+    type: "varchar",
+    length: 100,
+    nullable: true,
+  })
+  githubApprovedBy: string | null; // GitHub username who approved the PR
+
   @Column({ name: "code_quality_score", type: "int", nullable: true })
   codeQualityScore: number | null; // 1-10 score from manager
 
