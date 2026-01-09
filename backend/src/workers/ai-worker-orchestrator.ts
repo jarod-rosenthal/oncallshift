@@ -359,23 +359,18 @@ class AIWorkerOrchestrator {
           const hasReviewLabel = task.hasJiraReviewLabel();
 
           if (task.skipManagerReview || !hasReviewLabel) {
-            // Skip manager review - go directly to completed (no manager approval)
-            await this.updateTaskStatus(task, 'completed');
+            // Skip manager review - wait for human PR approval on GitHub
+            await this.updateTaskStatus(task, 'pr_created');
             const skipReason = !hasReviewLabel ? 'no review label' : 'task configuration';
-            await this.logTaskEvent(task, 'pr_created', `PR created (manager review skipped: ${skipReason}): ${prInfo.prUrl}`);
-            logger.info('Manager review skipped', {
+            await this.logTaskEvent(task, 'pr_created', `PR created, awaiting human review: ${prInfo.prUrl}`);
+            logger.info('PR created, awaiting human review', {
               taskId: task.id,
               prUrl: prInfo.prUrl,
               reason: skipReason,
               hasReviewLabel,
               skipManagerReview: task.skipManagerReview,
             });
-            // Update Jira (adds comment and transitions to Done)
-            if (this.jiraService) {
-              await this.jiraService.updateJiraFromTask(task);
-            }
-            // Trigger post-completion actions (e.g., manager label for environment updates)
-            await this.triggerPostCompletionActions(task);
+            // Don't update Jira to Done yet - wait for PR approval
           } else {
             // Normal flow - send to manager for review (Jira has 'review' label)
             await this.updateTaskStatus(task, 'pr_created');
