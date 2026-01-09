@@ -1336,7 +1336,7 @@ export default function SuperAdminControlCenter() {
       case "revision_needed":
         return "text-orange-500";
       case "review_approved":
-        return "text-yellow-500";
+        return "text-green-500";
       case "review_rejected":
         return "text-red-400";
       default:
@@ -2590,8 +2590,10 @@ export default function SuperAdminControlCenter() {
                           )}
                           <span className="capitalize text-xs">
                             {task.status === "review_approved"
-                              ? "Manager Approved"
-                              : task.status.replace(/_/g, " ")}
+                              ? "PR Approved"
+                              : task.status === "pr_created"
+                                ? "Review Requested"
+                                : task.status.replace(/_/g, " ")}
                           </span>
                         </span>
                         {task.failureCategory && (

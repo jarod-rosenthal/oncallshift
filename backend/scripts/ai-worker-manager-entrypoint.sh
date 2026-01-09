@@ -77,6 +77,16 @@ echo "https://${GITHUB_TOKEN}@github.com" > ~/.git-credentials
 git config --global user.name "Virtual Manager"
 git config --global user.email "ai-manager@oncallshift.com"
 
+# Configure gh CLI for PR reviews
+echo "[Setup] Configuring GitHub CLI..."
+export GH_TOKEN="${GITHUB_TOKEN}"
+# Verify gh auth works
+if gh auth status > /dev/null 2>&1; then
+    echo "[Setup] GitHub CLI authenticated successfully"
+else
+    echo "[WARN] GitHub CLI auth check failed - PR reviews may not work"
+fi
+
 # Start heartbeat
 start_heartbeat
 
@@ -142,9 +152,19 @@ case "${MANAGER_ACTION}" in
    - **REVISION_NEEDED**: Has fixable issues, provide specific feedback
    - **REJECT**: Fundamental problems, cannot be fixed with revisions
 
-4. Post your feedback to both Jira and GitHub PR (REQUIRED)
+4. **Submit your review to GitHub (REQUIRED)**:
 
-5. Create new Jira tickets for significant issues found (if any):
+   **If APPROVE:**
+   \`\`\`bash
+   gh pr review ${PR_NUMBER} --approve --body "Your approval message here"
+   \`\`\`
+
+   **If REVISION_NEEDED or REJECT:**
+   \`\`\`bash
+   gh pr review ${PR_NUMBER} --request-changes --body "Your detailed feedback here"
+   \`\`\`
+
+6. Create new Jira tickets for significant issues found (if any):
 
    **When to create new tickets:**
    - Security vulnerabilities discovered
@@ -199,7 +219,7 @@ case "${MANAGER_ACTION}" in
    **Note:** Only create tickets for issues that should be tracked separately.
    Simple fixes should just be noted in the PR review feedback.
 
-6. Output your decision:
+7. Output your decision:
    \`\`\`
    ::review_decision::approved|revision_needed|rejected
    ::code_quality_score::1-10

@@ -326,6 +326,57 @@ export class GitHubService {
     return { pr, checksStatus, reviewStatus, canMerge };
   }
 
+  // ==================== PR Reviews ====================
+
+  /**
+   * Submit a PR review (approve, request changes, or comment)
+   */
+  async submitPRReview(
+    repo: string,
+    prNumber: number,
+    options: {
+      event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+      body: string;
+    }
+  ): Promise<GitHubReview> {
+    const { owner, repo: repoName } = this.parseRepo(repo);
+    const review = await this.request<GitHubReview>(
+      'POST',
+      `/repos/${owner}/${repoName}/pulls/${prNumber}/reviews`,
+      {
+        event: options.event,
+        body: options.body,
+      }
+    );
+    logger.info('Submitted PR review', {
+      repo,
+      prNumber,
+      event: options.event,
+      reviewId: review.id,
+    });
+    return review;
+  }
+
+  /**
+   * Approve a PR with an optional comment
+   */
+  async approvePR(repo: string, prNumber: number, comment?: string): Promise<GitHubReview> {
+    return this.submitPRReview(repo, prNumber, {
+      event: 'APPROVE',
+      body: comment || 'Approved by Virtual Manager',
+    });
+  }
+
+  /**
+   * Request changes on a PR with required feedback
+   */
+  async requestChanges(repo: string, prNumber: number, feedback: string): Promise<GitHubReview> {
+    return this.submitPRReview(repo, prNumber, {
+      event: 'REQUEST_CHANGES',
+      body: feedback,
+    });
+  }
+
   // ==================== Comments ====================
 
   async addPRComment(repo: string, prNumber: number, body: string): Promise<void> {

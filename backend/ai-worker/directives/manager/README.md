@@ -33,9 +33,12 @@ Your `MANAGER_ACTION` environment variable determines what you do:
    - Are there test coverage gaps?
    - Does it follow project coding standards?
 3. Decide: APPROVE, REVISION_NEEDED, or REJECT
-4. Post feedback to both Jira and GitHub PR
-5. If approved, transition Jira to "Done"
-6. If revision needed, set `next_retry_at` so worker retries
+4. **Submit formal review to GitHub (REQUIRED)**:
+   - If APPROVE: `gh pr review PR_NUMBER --approve --body "Approval message"`
+   - If REVISION_NEEDED/REJECT: `gh pr review PR_NUMBER --request-changes --body "Feedback"`
+5. Post feedback to Jira
+6. If approved, transition Jira to "Done"
+7. If revision needed, set `next_retry_at` so worker retries
 
 **Output format:**
 ```
