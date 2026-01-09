@@ -81,7 +81,7 @@ echo "📝 Image digest: $IMAGE_DIGEST"
 # 7b. Build and push AI Worker Docker image
 # AI Worker has its own Dockerfile with Claude Code CLI and development tools
 AI_WORKER_ECR_REPO="593971626975.dkr.ecr.us-east-1.amazonaws.com/pagerduty-lite-dev-ai-worker"
-AI_WORKER_VERSION="v20"  # Increment this when making AI worker changes
+AI_WORKER_VERSION="v21"  # Increment this when making AI worker changes
 echo "🤖 Building AI Worker Docker image..."
 cd backend
 docker build -f Dockerfile.ai-worker -t $AI_WORKER_ECR_REPO:$AI_WORKER_VERSION -t $AI_WORKER_ECR_REPO:latest .
