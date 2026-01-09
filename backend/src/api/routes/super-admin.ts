@@ -311,6 +311,7 @@ async function buildControlCenterData(orgId: string) {
           : null,
       completedAt: t.completedAt,
       githubPrUrl: t.githubPrUrl,
+      githubApprovedBy: t.githubApprovedBy,
     };
   });
 
@@ -378,6 +379,7 @@ async function buildTaskList(
       githubPrUrl: t.githubPrUrl,
       githubPrNumber: t.githubPrNumber,
       githubBranch: t.githubBranch,
+      githubApprovedBy: t.githubApprovedBy,
       createdAt: t.createdAt,
     })),
     total,
