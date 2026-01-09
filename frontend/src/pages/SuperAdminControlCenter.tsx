@@ -187,6 +187,7 @@ interface TaskWithRuns {
   workerPersona?: string;
   retryCount: number;
   maxRetries: number;
+  revisionCount: number;
   lastHeartbeatAt: string | null;
   globalTimeoutAt: string | null;
   nextRetryAt: string | null;
@@ -2677,11 +2678,22 @@ export default function SuperAdminControlCenter() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span
-                        className={task.retryCount > 0 ? "text-yellow-500" : ""}
-                      >
-                        {task.retryCount}/{task.maxRetries}
-                      </span>
+                      {/* Show revisionCount for revision tasks, retryCount for others */}
+                      {task.revisionCount > 0 || task.status === "revision_needed" || task.status === "review_rejected" ? (
+                        <span
+                          className={task.revisionCount > 0 ? "text-yellow-500" : ""}
+                          title="Revision attempts"
+                        >
+                          {task.revisionCount}/3
+                        </span>
+                      ) : (
+                        <span
+                          className={task.retryCount > 0 ? "text-yellow-500" : ""}
+                          title="Retry attempts"
+                        >
+                          {task.retryCount}/{task.maxRetries}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       ${task.estimatedCostUsd.toFixed(2)}
@@ -2779,9 +2791,13 @@ export default function SuperAdminControlCenter() {
               {/* Task Info Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <div className="text-xs text-muted-foreground">Retries</div>
+                  <div className="text-xs text-muted-foreground">
+                    {selectedTask.revisionCount > 0 ? "Revisions" : "Retries"}
+                  </div>
                   <div className="font-medium">
-                    {selectedTask.retryCount}/{selectedTask.maxRetries}
+                    {selectedTask.revisionCount > 0
+                      ? `${selectedTask.revisionCount}/3`
+                      : `${selectedTask.retryCount}/${selectedTask.maxRetries}`}
                   </div>
                 </div>
                 <div>
