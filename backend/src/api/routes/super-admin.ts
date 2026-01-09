@@ -26,7 +26,6 @@ import { calculateTotalCost, type TokenUsage } from "../../shared/config/pricing
 import { getCostTracker } from "../../shared/services/cost-tracker";
 import {
   SQS,
-  GetQueueAttributesCommand,
   SendMessageCommand,
 } from "@aws-sdk/client-sqs";
 import { ECS, StopTaskCommand, UpdateServiceCommand, ListTasksCommand } from "@aws-sdk/client-ecs";
@@ -159,23 +158,13 @@ async function buildControlCenterData(orgId: string) {
     return sum;
   }, 0);
 
-  let queueDepth = 0;
-  if (queueUrl) {
-    try {
-      const queueAttrs = await sqs.send(
-        new GetQueueAttributesCommand({
-          QueueUrl: queueUrl,
-          AttributeNames: ["ApproximateNumberOfMessages"],
-        }),
-      );
-      queueDepth = parseInt(
-        queueAttrs.Attributes?.ApproximateNumberOfMessages || "0",
-        10,
-      );
-    } catch (err) {
-      logger.warn("Failed to get SQS queue depth:", err);
-    }
-  }
+  // Get queue depth from database (count of tasks in 'queued' status)
+  // This is more reliable than SQS ApproximateNumberOfMessages
+  const queueDepth = await taskRepo
+    .createQueryBuilder("task")
+    .where("task.org_id = :orgId", { orgId })
+    .andWhere("task.status = :status", { status: "queued" })
+    .getCount();
 
   const activeTaskIds = activeTasks.map((t) => t.id);
   let taskLogs: AIWorkerTaskLog[] = [];
@@ -198,17 +187,14 @@ async function buildControlCenterData(orgId: string) {
     });
   }
 
-  // Fallback: if cumulative cost not set, derive from all tasks with cost > 0
-	  let derivedCumulativeCost = Number(org?.aiWorkerCumulativeCost || 0);
-	  if (!derivedCumulativeCost || derivedCumulativeCost <= 0) {
-	    // Fallback: sum all task costs (use snake_case for raw SQL column names)
-	    const costSumRow = await taskRepo
-	      .createQueryBuilder("task")
-	      .where("task.org_id = :orgId", { orgId })
-	      .select("COALESCE(SUM(task.estimated_cost_usd), 0)", "sum")
-	      .getRawOne<{ sum: string }>();
-	    derivedCumulativeCost = Number(costSumRow?.sum || 0);
-	  }
+  // ALWAYS calculate cumulative cost from task sum (single source of truth)
+  // This ensures consistency even if org.aiWorkerCumulativeCost gets out of sync
+  const costSumRow = await taskRepo
+    .createQueryBuilder("task")
+    .where("task.org_id = :orgId", { orgId })
+    .select("COALESCE(SUM(task.estimated_cost_usd), 0)", "sum")
+    .getRawOne<{ sum: string }>();
+  const derivedCumulativeCost = Number(costSumRow?.sum || 0);
 
   const stats = {
     totalWorkers: workers.length,

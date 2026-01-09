@@ -258,6 +258,22 @@ const PERSONA_CONFIG: Record<
   },
 };
 
+/**
+ * Format full model IDs into friendly display names
+ * e.g., "claude-haiku-4-0-20250414" → "Haiku 4"
+ */
+function formatModelName(modelId: string | undefined | null): string {
+  if (!modelId) return "Sonnet 4"; // Default
+  const lower = modelId.toLowerCase();
+  if (lower.includes("opus") && lower.includes("4-5")) return "Opus 4.5";
+  if (lower.includes("opus")) return "Opus";
+  if (lower.includes("haiku")) return "Haiku 4";
+  if (lower.includes("sonnet")) return "Sonnet 4";
+  // Fallback: extract the model family name
+  const match = modelId.match(/claude-(\w+)/i);
+  return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : modelId;
+}
+
 export default function SuperAdminControlCenter() {
   const [data, setData] = useState<ControlCenterData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1750,7 +1766,7 @@ export default function SuperAdminControlCenter() {
                       />
                       <span className="font-medium">{manager.displayName}</span>
                       <span className="text-xs text-muted-foreground">
-                        ({manager.modelId})
+                        ({formatModelName(manager.modelId)})
                       </span>
                     </div>
                     <div className="flex items-center gap-4 text-xs">
@@ -1858,7 +1874,7 @@ export default function SuperAdminControlCenter() {
                       </span>
                       {task.workerModel && (
                         <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-[10px] font-medium">
-                          {task.workerModel}
+                          {formatModelName(task.workerModel)}
                         </span>
                       )}
                       <span
@@ -2588,7 +2604,7 @@ export default function SuperAdminControlCenter() {
                     <td className="px-4 py-3">
                       {task.workerModel ? (
                         <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-xs font-medium">
-                          {task.workerModel}
+                          {formatModelName(task.workerModel)}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
