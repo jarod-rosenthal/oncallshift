@@ -430,7 +430,29 @@ class AIWorkerOrchestrator {
       }
 
       // Update cost and org cumulative cost via CostTracker
-      await taskRepo.save(task); // Save token data first
+      // IMPORTANT: Refetch task from DB to get token values reported by log-parser via API
+      // The log-parser sends token usage to /usage endpoint which updates the task directly.
+      // If we don't refetch, we'll overwrite those values with 0s from our in-memory object.
+      const latestTask = await taskRepo.findOne({ where: { id: task.id } });
+      logger.info('Refetched task for token preservation', {
+        taskId: task.id,
+        foundLatestTask: !!latestTask,
+        latestInputTokens: latestTask?.claudeInputTokens,
+        latestOutputTokens: latestTask?.claudeOutputTokens,
+        latestUsageReportedAt: latestTask?.usageReportedAt,
+        currentInputTokens: task.claudeInputTokens,
+      });
+      if (latestTask) {
+        // Preserve token values from DB (set by log-parser via API)
+        task.claudeInputTokens = latestTask.claudeInputTokens;
+        task.claudeOutputTokens = latestTask.claudeOutputTokens;
+        task.claudeCacheCreationTokens = latestTask.claudeCacheCreationTokens;
+        task.claudeCacheReadTokens = latestTask.claudeCacheReadTokens;
+        task.workerModel = latestTask.workerModel;
+        task.estimatedCostUsd = latestTask.estimatedCostUsd;
+        task.usageReportedAt = latestTask.usageReportedAt;
+      }
+      await taskRepo.save(task); // Save with preserved token data
       try {
         const costResult = await getCostTracker().recordTaskCost(task.id);
         logger.info('Task cost recorded via CostTracker', {

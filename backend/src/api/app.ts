@@ -353,6 +353,7 @@ export function createApp(): Express {
   app.use('/api/v1/webhook-subscriptions', idempotencyMiddleware, webhookSubscriptionsRoutes);
   app.use('/api/v1/reports', idempotencyMiddleware, reportsRoutes);
   app.use('/api/v1/ai-worker', aiWorkerWebhooksRoutes); // Jira/GitHub webhooks - NO AUTH (moved before conferenceBridges to avoid auth middleware)
+  app.use('/api/v1/ai-worker-tasks', idempotencyMiddleware, aiWorkerTasksRoutes); // AI worker tasks - MUST be before conferenceBridges (it has /api/v1 catch-all with auth)
   app.use('/api/v1', conferenceBridgesRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
   app.use('/api/v1/postmortems', idempotencyMiddleware, postmortemsRoutes);
@@ -362,7 +363,6 @@ export function createApp(): Express {
   app.use('/api/v1/api-keys', idempotencyMiddleware, apiKeysRoutes); // Organization API key management
   app.use('/api/v1/onboarding', onboardingRoutes); // AI-powered conversational onboarding
   app.use('/api/v1/ai-workers', idempotencyMiddleware, aiWorkersRoutes); // AI worker instances
-  app.use('/api/v1/ai-worker-tasks', idempotencyMiddleware, aiWorkerTasksRoutes); // AI worker tasks
   app.use('/api/v1/ai-worker-approvals', idempotencyMiddleware, aiWorkerApprovalsRoutes); // AI worker approvals
   app.use('/api/v1/super-admin', superAdminRoutes); // Super admin control center
   app.use('/api/v1/ai-config', aiConfigRoutes); // AI provider configuration
