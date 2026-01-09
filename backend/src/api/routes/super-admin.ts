@@ -1423,14 +1423,32 @@ router.post(
         });
       }
 
+      // Circuit breaker: max 3 revision attempts
+      const MAX_REVISIONS = 3;
+
       // Determine task status based on decision
       let newStatus: AIWorkerTaskStatus = "completed";
+
       if (decision === "approved") {
         newStatus = "review_approved";
       } else if (decision === "rejected") {
         newStatus = "review_rejected";
       } else if (decision === "revision_needed") {
-        newStatus = "revision_needed";
+        // Check circuit breaker before allowing another revision
+        if ((task.revisionCount || 0) >= MAX_REVISIONS) {
+          logger.warn(`Circuit breaker triggered: task ${taskId} has reached max revisions (${MAX_REVISIONS})`, {
+            taskId,
+            revisionCount: task.revisionCount,
+          });
+          newStatus = "review_rejected";
+          // Append circuit breaker note to feedback
+          const circuitBreakerNote = `\n\n---\n**Circuit Breaker Triggered**: This task has exceeded the maximum of ${MAX_REVISIONS} revision attempts and has been automatically rejected.`;
+          req.body.feedback = (feedback || "") + circuitBreakerNote;
+        } else {
+          newStatus = "revision_needed";
+          // Increment revision count
+          task.revisionCount = (task.revisionCount || 0) + 1;
+        }
       }
 
       // Update task status
@@ -1451,6 +1469,34 @@ router.post(
       }
 
       await taskRepo.save(task);
+
+      // Event-driven retry: immediately dispatch revision_needed tasks to SQS
+      // This eliminates the 5-minute wait for the Watcher to poll
+      if (newStatus === "revision_needed" && queueUrl) {
+        try {
+          await sqs.send(
+            new SendMessageCommand({
+              QueueUrl: queueUrl,
+              MessageBody: JSON.stringify({
+                taskId: task.id,
+                action: "retry",
+              }),
+              MessageGroupId: task.id, // FIFO queue deduplication
+              MessageDeduplicationId: `revision-${task.id}-${task.revisionCount}`,
+            })
+          );
+          logger.info(`Dispatched revision retry to SQS immediately`, {
+            taskId: task.id,
+            revisionCount: task.revisionCount,
+          });
+        } catch (sqsError) {
+          // Log but don't fail - Watcher will pick it up eventually
+          logger.warn(`Failed to dispatch revision retry to SQS, Watcher will pick up`, {
+            taskId: task.id,
+            error: sqsError instanceof Error ? sqsError.message : "Unknown error",
+          });
+        }
+      }
 
       // Create AIWorkerReview record to track this review
       if (decision && task.reviewerManagerId) {
