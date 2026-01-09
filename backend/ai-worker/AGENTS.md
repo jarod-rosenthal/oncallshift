@@ -25,38 +25,15 @@ You operate within a 3-layer architecture that separates concerns:
 node /app/execution-compiled/jira/add_comment.js
 node /app/execution-compiled/git/commit_changes.js
 node /app/execution-compiled/git/create_pr.js
-node /app/execution-compiled/deploy/run_deploy.js
 ```
 
-## Deploying Your Changes
+## DO NOT Deploy
 
-**You have the ability to deploy to production.** Use this to verify your changes work.
-
-### When to Deploy
-- After making code changes that need verification
-- After fixing a TypeScript error or bug
-- When you want to confirm a feature works
-
-### How to Deploy
-```bash
-# From the repository root
-./deploy.sh
-```
-
-This takes 3-5 minutes and will:
-1. Build frontend → S3
-2. Build backend → ECR → ECS
-3. Run migrations
-4. Invalidate CloudFront
-
-### Iteration Loop
-1. Make changes
-2. Commit & push
-3. Run `./deploy.sh`
-4. Verify it works
-5. If broken, fix and repeat
-
-**See `directives/common/deploy_and_verify.md` for detailed deployment SOP.**
+**IMPORTANT: You must NOT run deploy.sh or deploy to production.** Deployment is handled by humans after PR review and approval. Your job is to:
+1. Make code changes
+2. Commit and push
+3. Create a PR
+4. Let humans review, approve, and deploy
 
 ## Self-Annealing Protocol
 
@@ -101,11 +78,7 @@ Sometimes after investigation, you'll find that **no code changes are required**
 - `npm run build` - Will fail (no tsc)
 - `npm run typecheck` - Will fail
 
-**Instead, rely on the deploy script to validate types.** When you run `./deploy.sh`:
-1. The backend build step compiles TypeScript
-2. If there are type errors, the build will fail with clear error messages
-3. Fix the errors and re-run deploy
-4. This is faster than waiting for CI
+**Instead, use quick syntax validation or rely on CI to catch type errors.**
 
 **Quick syntax validation** (if needed):
 ```bash
@@ -130,4 +103,4 @@ Start by:
 1. Reading `directives/common/git_workflow.md` to understand the PR process
 2. Finding the directive that matches your task type
 3. Following the directive step by step
-4. **Deploy and verify your changes work before creating a PR**
+4. Create a PR for human review (do NOT deploy)
