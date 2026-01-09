@@ -651,14 +651,26 @@ class AIWorkerOrchestrator {
 
   private async updateTaskStatus(task: AIWorkerTask, status: AIWorkerTaskStatus): Promise<void> {
     const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+
+    // Use targeted update to avoid overwriting token values set by log-parser via API
+    // The log-parser calls /usage endpoint which saves tokens directly to DB.
+    // If we use taskRepo.save(task), we overwrite those values with 0s from our stale in-memory object.
+    const isTerminal = ['completed', 'failed', 'cancelled', 'review_approved'].includes(status);
+    const completedAt = isTerminal ? new Date() : undefined;
+
+    await taskRepo.update(
+      { id: task.id },
+      {
+        status,
+        ...(completedAt && { completedAt }),
+      }
+    );
+
+    // Update in-memory object to match (for subsequent operations)
     task.status = status;
-
-    // Set completedAt for terminal statuses so webhook cooldown check works
-    if (['completed', 'failed', 'cancelled', 'review_approved'].includes(status)) {
-      task.completedAt = new Date();
+    if (completedAt) {
+      task.completedAt = completedAt;
     }
-
-    await taskRepo.save(task);
   }
 
   private async logTaskEvent(
