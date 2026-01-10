@@ -369,6 +369,9 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       (l: string) => l.toLowerCase() === 'review'
     );
 
+    // Check if deployment is enabled via label
+    const deploymentEnabled = issueLabels.includes('ai-worker-deploy');
+
     logger.info('Determined persona and model for task', {
       issueKey: issue.key,
       persona,
@@ -377,6 +380,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       labels: issueLabels,
       issueType,
       hasReviewLabel,
+      deploymentEnabled,
     });
 
     // Create new task
@@ -401,6 +405,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       priority: mapJiraPriority(issue.fields?.priority?.name),
       status: 'queued' as const,
       skipManagerReview: !hasReviewLabel, // Enable manager review when "review" label is present
+      deploymentEnabled, // Enable autonomous deployment if label present
     };
     const task = taskRepo.create(taskData);
 
@@ -488,21 +493,70 @@ async function handlePullRequestEvent(payload: any): Promise<void> {
 
   if (!pr) return;
 
-  // Find task by PR number
+  // Find task by PR number or branch name (handles race condition where webhook arrives before worker reports PR number)
   const dataSource = await getDataSource();
   const taskRepo = dataSource.getRepository(AIWorkerTask);
   const logRepo = dataSource.getRepository(AIWorkerTaskLog);
 
-  const task = await taskRepo.findOne({
+  let task = await taskRepo.findOne({
     where: { githubPrNumber: pr.number },
   });
 
+  // Fallback: If PR number not found, try finding by branch name
+  // This handles the race condition where GitHub webhook arrives before worker reports the PR number
+  if (!task && pr.head?.ref) {
+    const branchName = pr.head.ref;
+    task = await taskRepo.findOne({
+      where: { githubBranch: branchName },
+    });
+
+    // If found by branch, update the task with the PR number
+    if (task) {
+      task.githubPrNumber = pr.number;
+      task.githubPrUrl = pr.html_url;
+      await taskRepo.save(task);
+      logger.info('Task found by branch and updated with PR number', {
+        taskId: task.id,
+        prNumber: pr.number,
+        branch: branchName
+      });
+    }
+  }
+
   if (!task) {
-    logger.info('No task found for PR', { prNumber: pr.number });
+    logger.info('No task found for PR', { prNumber: pr.number, branch: pr.head?.ref });
     return;
   }
 
   switch (action) {
+    case 'opened':
+      // PR was created - trigger deployment if enabled (dev environment workflow)
+      // In dev, we deploy immediately to test, then approve PR for merge to main
+      if (task.deploymentEnabled) {
+        logger.info('PR created with deployment enabled, queuing deployment', {
+          taskId: task.id,
+          jiraKey: task.jiraIssueKey,
+          prNumber: pr.number,
+        });
+
+        const SQS = (await import('@aws-sdk/client-sqs')).SQS;
+        const SendMessageCommand = (await import('@aws-sdk/client-sqs')).SendMessageCommand;
+        const sqs = new SQS({ region: process.env.AWS_REGION || 'us-east-1' });
+        const queueUrl = process.env.AI_WORKER_QUEUE_URL;
+
+        if (!queueUrl) {
+          logger.error('AI_WORKER_QUEUE_URL not set, cannot trigger deployment', { taskId: task.id });
+        } else {
+          await sqs.send(new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: 'deploy' }),
+          }));
+
+          logger.info('Deployment queued successfully after PR creation', { taskId: task.id, prNumber: pr.number });
+        }
+      }
+      break;
+
     case 'closed':
       if (pr.merged) {
         // PR was merged
@@ -617,29 +671,8 @@ async function handlePullRequestReviewEvent(payload: any): Promise<void> {
       approvedBy: reviewer
     });
 
-    // Trigger deployment workflow if enabled
-    if (task.deploymentEnabled) {
-      logger.info('Deployment enabled, queuing deployment task', {
-        taskId: task.id,
-        jiraKey: task.jiraIssueKey,
-      });
-
-      const SQS = (await import('@aws-sdk/client-sqs')).SQS;
-      const SendMessageCommand = (await import('@aws-sdk/client-sqs')).SendMessageCommand;
-      const sqs = new SQS({ region: process.env.AWS_REGION || 'us-east-1' });
-      const queueUrl = process.env.AI_WORKER_QUEUE_URL;
-
-      if (!queueUrl) {
-        logger.error('AI_WORKER_QUEUE_URL not set, cannot trigger deployment', { taskId: task.id });
-      } else {
-        await sqs.send(new SendMessageCommand({
-          QueueUrl: queueUrl,
-          MessageBody: JSON.stringify({ taskId: task.id, action: 'deploy' }),
-        }));
-
-        logger.info('Deployment queued successfully', { taskId: task.id });
-      }
-    }
+    // Note: Deployment happens when PR is created (case 'opened'), not when approved
+    // In dev environment, PR approval is just a signal to merge, deployment already happened
   } else if (reviewState === 'CHANGES_REQUESTED') {
     // Don't auto-reject, but log it
     const changeLog = AIWorkerTaskLog.create(

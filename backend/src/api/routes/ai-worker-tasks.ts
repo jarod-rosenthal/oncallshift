@@ -33,6 +33,17 @@ const router = Router();
 // Internal service key for worker-to-API communication
 const INTERNAL_SERVICE_KEY = process.env.INTERNAL_SERVICE_KEY;
 
+// Model label mapping (same as webhook handler)
+const LABEL_MODEL_MAPPING: Record<string, string> = {
+  'opus': 'opus',
+  'opus4': 'opus',
+  'opus45': 'opus',
+  'haiku': 'haiku',
+  'claudehaiku': 'haiku',
+  'sonnet': 'sonnet',
+  'sonnet4': 'sonnet',
+};
+
 /**
  * POST /api/v1/ai-worker-tasks/:id/usage
  * Report token usage from Claude Code (called by running ECS tasks)
@@ -456,6 +467,23 @@ router.post(
       const labels = (jiraIssue?.fields?.labels as string[]) || [];
       const deploymentEnabled = labels.includes('ai-worker-deploy');
 
+      // Determine model from labels (default to sonnet)
+      let workerModel = 'sonnet';
+      for (const label of labels) {
+        const normalizedLabel = label.toLowerCase().replace(/[-_\s.]/g, '');
+        const labelModel = LABEL_MODEL_MAPPING[normalizedLabel] || LABEL_MODEL_MAPPING[label.toLowerCase()];
+        if (labelModel) {
+          workerModel = labelModel;
+          break;
+        }
+      }
+
+      logger.info("Model selection for task", {
+        jiraIssueKey,
+        workerModel,
+        labels,
+      });
+
       // Create the task with Jira details if available
       const task = taskRepo.create({
         orgId,
@@ -468,6 +496,7 @@ router.post(
         description: jiraIssue?.description || null,
         jiraFields: jiraIssue?.fields || {},
         workerPersona,
+        workerModel, // Set model from label (haiku, sonnet, opus)
         githubRepo: "jarod-rosenthal/pagerduty-lite",
         priority: jiraIssue?.priority
           ? PRIORITY_MAPPING[jiraIssue.priority] || 3
@@ -489,6 +518,7 @@ router.post(
         logger.info(`Task ${task.id} queued for execution`, {
           jiraIssueKey,
           workerPersona,
+          workerModel,
           deploymentEnabled,
         });
       } else {
@@ -503,6 +533,8 @@ router.post(
         taskId: task.id,
         jiraIssueKey,
         workerPersona,
+        workerModel,
+        deploymentEnabled,
         status: task.status,
       });
     } catch (error) {
