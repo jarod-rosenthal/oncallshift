@@ -240,11 +240,12 @@ class AIWorkerOrchestrator {
     try {
       // CRITICAL: Per-persona concurrency limiting
       // Only allow 1 active task per persona to prevent deploy conflicts
+      // Note: pr_created, manager_review, review_pending are "waiting" states, not "active"
       const activeTaskForPersona = await taskRepo.findOne({
         where: {
           orgId: task.orgId,
           workerPersona: task.workerPersona,
-          status: In(['claimed', 'environment_setup', 'executing', 'pr_created', 'manager_review']),
+          status: In(['claimed', 'environment_setup', 'executing', 'revision_needed', 'deployment_pending', 'deploying', 'deployed_validating']),
           id: Not(task.id), // Exclude current task
         },
       });
