@@ -41,6 +41,12 @@ export type AIWorkerTaskStatus =
   | "review_pending" // Waiting for human approval (fallback)
   | "review_approved" // Approved, merging
   | "review_rejected" // Rejected, needs changes
+  | "deployment_pending" // Approved, queued for deployment
+  | "deploying" // Deployment in progress
+  | "deployed_validating" // Deployed, running validation checks
+  | "validation_failed" // Validation checks failed, needs retry
+  | "deployment_failed" // Deployment failed, needs retry
+  | "awaiting_destructive_approval" // Destructive action detected, needs human approval
   | "completed" // Successfully finished
   | "failed" // Error occurred
   | "blocked" // Cannot proceed (missing info, etc.)
@@ -271,6 +277,35 @@ export class AIWorkerTask {
 
   @Column({ name: "self_anneal_count", type: "int", default: 0 })
   selfAnnealCount: number;
+
+  // Per-persona concurrency limiting
+  @Column({ name: "persona_wait_count", type: "int", default: 0 })
+  personaWaitCount: number;
+
+  // Autonomous deployment fields
+  @Column({ name: "deployment_enabled", type: "boolean", default: false })
+  deploymentEnabled: boolean;
+
+  @Column({ name: "deploy_retry_count", type: "int", default: 0 })
+  deployRetryCount: number;
+
+  @Column({ name: "max_deploy_retries", type: "int", default: 5 })
+  maxDeployRetries: number;
+
+  @Column({ name: "validation_attempt_count", type: "int", default: 0 })
+  validationAttemptCount: number;
+
+  @Column({ name: "last_validation_error", type: "text", nullable: true })
+  lastValidationError: string | null;
+
+  @Column({ name: "last_deployment_at", type: "timestamp", nullable: true })
+  lastDeploymentAt: Date | null;
+
+  @Column({ name: "requires_approval", type: "boolean", default: false })
+  requiresApproval: boolean;
+
+  @Column({ name: "approval_reason", type: "text", nullable: true })
+  approvalReason: string | null;
 
   // Learning system fields
   @Column({ name: "tool_error_count", type: "int", default: 0 })

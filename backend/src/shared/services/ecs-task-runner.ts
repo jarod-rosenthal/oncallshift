@@ -313,6 +313,106 @@ export class ECSTaskRunner {
     };
   }
 
+  // ==================== Deployment & Validation Tasks ====================
+
+  /**
+   * Run deployment task
+   * Spawns an ECS task that runs the deployment script
+   */
+  async runDeploymentTask(task: AIWorkerTask): Promise<RunTaskResult> {
+    const environment = {
+      TASK_ID: task.id,
+      REPO_PATH: '/workspace',
+      GITHUB_REPO: task.githubRepo,
+      GITHUB_BRANCH: task.githubBranch || 'main',
+      API_BASE_URL: process.env.API_BASE_URL || 'https://oncallshift.com',
+      AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+    };
+
+    const command = new RunTaskCommand({
+      cluster: this.config.cluster,
+      taskDefinition: process.env.DEPLOYMENT_TASK_DEFINITION || 'pagerduty-lite-dev-ai-worker-deployment',
+      launchType: 'FARGATE',
+      networkConfiguration: {
+        awsvpcConfiguration: {
+          subnets: this.config.subnets,
+          securityGroups: this.config.securityGroups,
+          assignPublicIp: 'ENABLED',
+        },
+      },
+      overrides: {
+        containerOverrides: [
+          {
+            name: 'deployment',
+            environment: Object.entries(environment).map(([name, value]) => ({ name, value: String(value) })),
+          },
+        ],
+      },
+    });
+
+    const response = await this.ecs.send(command);
+
+    if (!response.tasks || response.tasks.length === 0 || !response.tasks[0].taskArn) {
+      throw new Error('Failed to run deployment task');
+    }
+
+    const task_arn = response.tasks[0].taskArn;
+    const taskId = task_arn.split('/').pop()!;
+
+    logger.info('Deployment task started', { taskArn: task_arn, taskId });
+
+    return { taskArn: task_arn, taskId };
+  }
+
+  /**
+   * Run validation task
+   * Spawns an ECS task that runs post-deployment validation
+   */
+  async runValidationTask(task: AIWorkerTask): Promise<RunTaskResult> {
+    const environment = {
+      TASK_ID: task.id,
+      REPO_PATH: '/workspace',
+      GITHUB_REPO: task.githubRepo,
+      GITHUB_BRANCH: task.githubBranch || 'main',
+      API_BASE_URL: process.env.API_BASE_URL || 'https://oncallshift.com',
+      AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+    };
+
+    const command = new RunTaskCommand({
+      cluster: this.config.cluster,
+      taskDefinition: process.env.VALIDATION_TASK_DEFINITION || 'pagerduty-lite-dev-ai-worker-validation',
+      launchType: 'FARGATE',
+      networkConfiguration: {
+        awsvpcConfiguration: {
+          subnets: this.config.subnets,
+          securityGroups: this.config.securityGroups,
+          assignPublicIp: 'ENABLED',
+        },
+      },
+      overrides: {
+        containerOverrides: [
+          {
+            name: 'validation',
+            environment: Object.entries(environment).map(([name, value]) => ({ name, value: String(value) })),
+          },
+        ],
+      },
+    });
+
+    const response = await this.ecs.send(command);
+
+    if (!response.tasks || response.tasks.length === 0 || !response.tasks[0].taskArn) {
+      throw new Error('Failed to run validation task');
+    }
+
+    const task_arn = response.tasks[0].taskArn;
+    const taskId = task_arn.split('/').pop()!;
+
+    logger.info('Validation task started', { taskArn: task_arn, taskId });
+
+    return { taskArn: task_arn, taskId };
+  }
+
   // ==================== Cost Estimation ====================
 
   calculateTaskCost(durationSeconds: number): number {

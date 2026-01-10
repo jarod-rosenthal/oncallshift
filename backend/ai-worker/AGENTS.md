@@ -131,10 +131,18 @@ curl -X POST "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KE
 
 ---
 
-## DO NOT Deploy
+## Deployment (Optional - Task-Specific)
 
-**IMPORTANT: You must NOT run deploy.sh or deploy to production.** Deployment is handled by humans after PR review and approval.
+**Deployment is ONLY enabled when explicitly configured on the task.**
 
+IF the Jira ticket has the `ai-worker-deploy` label OR deployment_enabled=true:
+1. After PR is approved, deployment will be automatically attempted
+2. DO NOT manually trigger deployment - the orchestrator handles this
+3. Safety checks run automatically before deployment
+4. If validation fails, you'll be respawned to fix the issues
+5. Max 5 deployment retry attempts before escalating to human
+
+**If deployment is NOT enabled (default):**
 Your workflow is:
 1. Make code changes
 2. Commit and push
@@ -142,6 +150,8 @@ Your workflow is:
 4. Add completion comment to Jira
 5. Transition Jira ticket to Done
 6. **STOP** - Let humans review, approve, and deploy
+
+**NEVER manually run deploy.sh yourself** - deployment is orchestrated by the system.
 
 ---
 

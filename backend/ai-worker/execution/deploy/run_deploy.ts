@@ -3,7 +3,7 @@
 /**
  * Deploy changes to production
  *
- * This script runs the deploy.sh script and captures output.
+ * This script runs safety checks before deployment, then executes deploy.sh.
  * Use this after your changes are committed and pushed to verify they work.
  *
  * Inputs (environment variables):
@@ -11,18 +11,26 @@
  *
  * Outputs (JSON to stdout):
  * - success: boolean
+ * - requiresApproval?: boolean - True if safety checks require human approval
+ * - approvalReason?: string - Summary of why approval is needed
+ * - safetyCheckResult?: SafetyCheckResult - Detailed safety check results
  * - frontendDeployed: boolean
  * - backendDeployed: boolean
  * - cloudFrontInvalidated: boolean
  * - duration: number (seconds)
  * - error?: string
+ * - logs?: string
  */
 
 import { execSync } from "child_process";
 import * as path from "path";
+import { checkDeploymentSafety, SafetyCheckResult } from "./check_deployment_safety.js";
 
-interface Output {
+interface DeploymentResult {
   success: boolean;
+  requiresApproval?: boolean;
+  approvalReason?: string;
+  safetyCheckResult?: SafetyCheckResult;
   frontendDeployed: boolean;
   backendDeployed: boolean;
   cloudFrontInvalidated: boolean;
@@ -32,7 +40,7 @@ interface Output {
 }
 
 async function main(): Promise<void> {
-  const output: Output = {
+  const output: DeploymentResult = {
     success: false,
     frontendDeployed: false,
     backendDeployed: false,
@@ -51,9 +59,30 @@ async function main(): Promise<void> {
 
     const deployScript = path.join(repoPath, "deploy.sh");
 
-    console.error("[Deploy] Starting deployment...");
+    console.error("[Deploy] Running safety checks before deployment...");
 
-    // Run deploy.sh and capture output
+    // Step 1: Run safety checks
+    const safetyCheckResult = await checkDeploymentSafety();
+    output.safetyCheckResult = safetyCheckResult;
+
+    // Step 2: Check if approval is required
+    if (safetyCheckResult.requiresApproval) {
+      console.error("[Deploy] Safety checks require human approval");
+      console.error("[Deploy] Risks detected:", safetyCheckResult.summary);
+
+      output.requiresApproval = true;
+      output.approvalReason = generateApprovalReason(safetyCheckResult);
+
+      // Return early without deploying
+      output.duration = Math.round((Date.now() - startTime) / 1000);
+      console.log(JSON.stringify(output, null, 2));
+      process.exit(0); // Exit successfully but don't deploy
+      return;
+    }
+
+    console.error("[Deploy] Safety checks passed, proceeding with deployment...");
+
+    // Step 3: Run deploy.sh
     const result = execSync(`bash ${deployScript}`, {
       cwd: repoPath,
       encoding: "utf-8",
@@ -105,6 +134,37 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify(output, null, 2));
   process.exit(output.success ? 0 : 1);
+}
+
+/**
+ * Generate a human-readable approval reason from safety check results
+ */
+function generateApprovalReason(safetyCheck: SafetyCheckResult): string {
+  const { summary, risks } = safetyCheck;
+
+  if (!summary) {
+    return "Safety checks detected risks that require human approval";
+  }
+
+  const parts: string[] = [];
+
+  if (summary.high > 0) {
+    parts.push(`${summary.high} high-severity risk${summary.high > 1 ? 's' : ''}`);
+  }
+  if (summary.medium > 0) {
+    parts.push(`${summary.medium} medium-severity risk${summary.medium > 1 ? 's' : ''}`);
+  }
+
+  const reason = `Deployment blocked: ${parts.join(', ')} detected.`;
+
+  // Add most severe risk examples
+  const highRisks = risks.filter((r: { severity: string }) => r.severity === 'high').slice(0, 2);
+  if (highRisks.length > 0) {
+    const examples = highRisks.map((r: { description: string }) => `- ${r.description}`).join('\n');
+    return `${reason}\n\nExamples:\n${examples}`;
+  }
+
+  return reason;
 }
 
 main();

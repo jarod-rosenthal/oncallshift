@@ -439,6 +439,10 @@ router.post(
       // Fetch Jira issue details
       const jiraIssue = await fetchJiraIssue(jiraIssueKey);
 
+      // Check if the Jira issue has the 'ai-worker-deploy' label
+      const labels = (jiraIssue?.fields?.labels as string[]) || [];
+      const deploymentEnabled = labels.includes('ai-worker-deploy');
+
       // Create the task with Jira details if available
       const task = taskRepo.create({
         orgId,
@@ -456,6 +460,7 @@ router.post(
           ? PRIORITY_MAPPING[jiraIssue.priority] || 3
           : 3,
         status: "queued",
+        deploymentEnabled, // Enable autonomous deployment if label present
       });
 
       await taskRepo.save(task);
@@ -471,6 +476,7 @@ router.post(
         logger.info(`Task ${task.id} queued for execution`, {
           jiraIssueKey,
           workerPersona,
+          deploymentEnabled,
         });
       } else {
         logger.warn("No queue URL configured, task created but not queued", {
