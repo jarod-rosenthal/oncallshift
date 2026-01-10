@@ -52,46 +52,49 @@ export function inferPersonaFromJiraIssue(
   const text = `${summary} ${description}`;
 
   // Priority 1: Keyword-based inference from summary/description (PRIMARY)
-  // Frontend keywords
-  if (
-    /\b(react|component|ui|ux|frontend|css|tailwind|mobile|react native|expo)\b/.test(text)
-  ) {
-    return "frontend_developer";
+  // Score ALL personas by keyword matches, pick the highest score
+  const personaScores: Record<WorkerPersona, number> = {
+    frontend_developer: 0,
+    backend_developer: 0,
+    devops_engineer: 0,
+    security_engineer: 0,
+    qa_engineer: 0,
+    tech_writer: 0,
+    project_manager: 0,
+  };
+
+  const keywordPatterns: Record<WorkerPersona, RegExp> = {
+    frontend_developer: /\b(react|component|ui|ux|frontend|css|tailwind|mobile|react native|expo|vite|tailwindcss)\b/gi,
+    backend_developer: /\b(api|endpoint|typeorm|sql|backend|server|lambda|express|route|controller)\b/gi,
+    devops_engineer: /\b(terraform|infrastructure|cicd|deployment|docker|kubernetes|aws|cloudfront|s3|rds|cloudwatch|ecs|ecr|vpc|iam)\b/gi,
+    security_engineer: /\b(security|vulnerability|cve|encryption|authentication|authorization|cors|xss|sql injection|owasp)\b/gi,
+    qa_engineer: /\b(test|testing|qa|e2e|unit test|integration test|playwright|jest|coverage|spec)\b/gi,
+    tech_writer: /\b(documentation|docs|readme|guide|tutorial|api docs|openapi|docusaurus)\b/gi,
+    project_manager: /\b(roadmap|planning|coordination|milestone|sprint|epic|backlog)\b/gi,
+  };
+
+  // Count matches for each persona
+  for (const [persona, pattern] of Object.entries(keywordPatterns)) {
+    const matches = text.match(pattern);
+    if (matches) {
+      personaScores[persona as WorkerPersona] = matches.length;
+    }
   }
 
-  // Backend keywords
-  if (
-    /\b(api|endpoint|database|migration|typeorm|sql|backend|server|lambda|ecs)\b/.test(text)
-  ) {
-    return "backend_developer";
+  // Find persona with highest score
+  let maxScore = 0;
+  let bestPersona: WorkerPersona | null = null;
+
+  for (const [persona, score] of Object.entries(personaScores)) {
+    if (score > maxScore) {
+      maxScore = score;
+      bestPersona = persona as WorkerPersona;
+    }
   }
 
-  // DevOps keywords
-  if (
-    /\b(terraform|infrastructure|cicd|deployment|docker|kubernetes|aws|cloudfront|s3|rds)\b/.test(text)
-  ) {
-    return "devops_engineer";
-  }
-
-  // Security keywords
-  if (
-    /\b(security|vulnerability|cve|encryption|authentication|authorization|cors|xss|sql injection)\b/.test(text)
-  ) {
-    return "security_engineer";
-  }
-
-  // QA keywords
-  if (
-    /\b(test|testing|qa|e2e|unit test|integration test|playwright|jest|coverage)\b/.test(text)
-  ) {
-    return "qa_engineer";
-  }
-
-  // Tech writer keywords
-  if (
-    /\b(documentation|docs|readme|guide|tutorial|api docs|openapi)\b/.test(text)
-  ) {
-    return "tech_writer";
+  // If we found a clear winner (score > 0), use it
+  if (bestPersona && maxScore > 0) {
+    return bestPersona;
   }
 
   // Priority 2: Component-based inference
@@ -214,22 +217,35 @@ export function getPersonaRationale(
     }
   }
 
-  // Check for keywords
-  const keywordMap: Record<WorkerPersona, RegExp> = {
-    frontend_developer: /\b(react|component|ui|frontend|mobile)\b/,
-    backend_developer: /\b(api|endpoint|database|backend|server)\b/,
-    devops_engineer: /\b(terraform|infrastructure|cicd|deployment|docker)\b/,
-    security_engineer: /\b(security|vulnerability|encryption|authentication)\b/,
-    qa_engineer: /\b(test|testing|qa|e2e|coverage)\b/,
-    tech_writer: /\b(documentation|docs|readme|guide)\b/,
-    project_manager: /\b(roadmap|planning|coordination)\b/,
+  // Calculate keyword scores to show rationale
+  const keywordPatterns: Record<WorkerPersona, RegExp> = {
+    frontend_developer: /\b(react|component|ui|ux|frontend|css|tailwind|mobile|react native|expo|vite)\b/gi,
+    backend_developer: /\b(api|endpoint|typeorm|sql|backend|server|lambda|express|route)\b/gi,
+    devops_engineer: /\b(terraform|infrastructure|cicd|deployment|docker|kubernetes|aws|cloudfront|s3|rds|cloudwatch|ecs)\b/gi,
+    security_engineer: /\b(security|vulnerability|cve|encryption|authentication|authorization|cors|xss)\b/gi,
+    qa_engineer: /\b(test|testing|qa|e2e|unit test|integration test|playwright|jest|coverage)\b/gi,
+    tech_writer: /\b(documentation|docs|readme|guide|tutorial|api docs|openapi)\b/gi,
+    project_manager: /\b(roadmap|planning|coordination|milestone|sprint|epic)\b/gi,
   };
 
-  const pattern = keywordMap[inferredPersona];
-  if (pattern && pattern.test(text)) {
-    const match = text.match(pattern);
-    return `Keyword match: "${match?.[0]}" in summary/description`;
+  const personaScores: Record<string, number> = {};
+  let totalMatches = 0;
+
+  for (const [persona, pattern] of Object.entries(keywordPatterns)) {
+    const matches = text.match(pattern);
+    if (matches && matches.length > 0) {
+      personaScores[persona] = matches.length;
+      totalMatches += matches.length;
+    }
   }
 
-  return "Default inference based on issue type";
+  if (totalMatches > 0) {
+    const scoreStr = Object.entries(personaScores)
+      .filter(([_, score]) => score > 0)
+      .map(([persona, score]) => `${persona.replace('_', ' ')}=${score}`)
+      .join(', ');
+    return `Keyword scoring: ${scoreStr}`;
+  }
+
+  return "Default inference (no keywords matched)";
 }
