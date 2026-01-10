@@ -35,11 +35,14 @@ export type AIWorkerTaskStatus =
   | "claimed" // Worker picked up task
   | "environment_setup" // Fargate task starting
   | "executing" // Claude agent running
-  | "pr_created" // PR created, awaiting review
+  | "pr_created" // DEPRECATED - Use review_requested or pr_merged
   | "manager_review" // Virtual Manager reviewing PR
   | "revision_needed" // Manager requested changes, worker picks back up
   | "review_pending" // Waiting for human approval (fallback)
-  | "review_approved" // Approved, merging
+  | "review_requested" // NEW - Risky PR created, waiting for human review (TERMINAL)
+  | "review_approved" // DEPRECATED - Use pr_approved
+  | "pr_approved" // NEW - Human approved risky PR, ready to requeue for deployment
+  | "pr_merged" // NEW - PR deployed and merged successfully (TERMINAL)
   | "review_rejected" // Rejected, needs changes
   | "deployment_pending" // Approved, queued for deployment
   | "deploying" // Deployment in progress
@@ -47,7 +50,7 @@ export type AIWorkerTaskStatus =
   | "validation_failed" // Validation checks failed, needs retry
   | "deployment_failed" // Deployment failed, needs retry
   | "awaiting_destructive_approval" // Destructive action detected, needs human approval
-  | "completed" // Successfully finished
+  | "completed" // No code changes needed (TERMINAL)
   | "failed" // Error occurred
   | "blocked" // Cannot proceed (missing info, etc.)
   | "cancelled"; // Manually cancelled
@@ -348,20 +351,78 @@ export class AIWorkerTask {
   runs: AIWorkerTaskRun[];
 
   // Helper methods
-  isActive(): boolean {
-    return ["claimed", "environment_setup", "executing"].includes(this.status);
+
+  /**
+   * Terminal states - task is done, no further action needed
+   * These tasks free up persona slots and drop off Active Workflows after 10 min
+   */
+  isTerminal(): boolean {
+    return [
+      "completed",           // No code changes needed
+      "review_requested",    // Risky PR created, waiting for human (TERMINAL)
+      "pr_merged",           // Successfully deployed and merged
+      "failed",
+      "cancelled",
+      "review_rejected",
+      "deployment_failed",
+      "validation_failed",
+    ].includes(this.status);
   }
 
+  /**
+   * Active states - task is executing or deploying
+   * These tasks occupy persona slots and show in Active Workflows
+   */
+  isActive(): boolean {
+    return [
+      "claimed",
+      "environment_setup",
+      "executing",
+      "revision_needed",
+      "deployment_pending",
+      "deploying",
+      "deployed_validating",
+    ].includes(this.status);
+  }
+
+  /**
+   * Waiting states - task created PR/review, waiting for human action
+   * These tasks do NOT block persona slots but may show in Active Workflows
+   */
+  isWaiting(): boolean {
+    return [
+      "pr_created",          // Legacy
+      "review_requested",    // NEW - Risky PR (TERMINAL, but also a waiting state)
+      "pr_approved",         // Approved, about to requeue
+      "manager_review",
+      "review_pending",
+      "review_approved",     // Legacy
+      "awaiting_destructive_approval",
+    ].includes(this.status);
+  }
+
+  /**
+   * Check if this task status frees up the persona slot
+   * Returns true for terminal states AND waiting states
+   */
+  freesPersonaSlot(): boolean {
+    return this.isTerminal() || this.isWaiting();
+  }
+
+  /**
+   * @deprecated Use isTerminal() instead
+   */
   isComplete(): boolean {
-    return ["completed", "failed", "cancelled"].includes(this.status);
+    return this.isTerminal();
   }
 
   canRetry(): boolean {
-    return this.status === "failed" && this.retryCount < this.maxRetries;
+    return (this.status === "failed" || this.status === "cancelled")
+      && this.retryCount < this.maxRetries;
   }
 
   canCancel(): boolean {
-    return !this.isComplete();
+    return !this.isTerminal();
   }
 
   getDurationSeconds(): number | null {
