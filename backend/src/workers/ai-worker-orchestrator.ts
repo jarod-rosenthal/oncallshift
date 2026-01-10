@@ -152,7 +152,7 @@ class AIWorkerOrchestrator {
     const command = new ReceiveMessageCommand({
       QueueUrl: this.queueUrl,
       MaxNumberOfMessages: 1,
-      WaitTimeSeconds: 20, // Long polling
+      WaitTimeSeconds: 1, // Poll every second for fast pickup
       VisibilityTimeout: 3600, // 1 hour
     });
 
