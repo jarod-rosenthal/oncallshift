@@ -224,7 +224,8 @@ interface TaskWithRuns {
   runs?: TaskRun[];
 }
 
-// Persona slot status for concurrency limiting visualization
+// Persona slot status for concurrency limiting visualization - REMOVED: Feature removed from UI
+/*
 interface PersonaSlot {
   persona: string;
   occupied: {
@@ -247,6 +248,7 @@ interface PersonaSlotsData {
     totalQueued: number;
   };
 }
+*/
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -373,8 +375,8 @@ export default function SuperAdminControlCenter() {
   );
   const [managerModelLoading, setManagerModelLoading] = useState(false);
 
-  // Persona slots state (concurrency limiting visualization)
-  const [personaSlots, setPersonaSlots] = useState<PersonaSlotsData | null>(null);
+  // Persona slots state (concurrency limiting visualization) - REMOVED: Feature removed from UI
+  // const [personaSlots, setPersonaSlots] = useState<PersonaSlotsData | null>(null);
 
   // Create Worker/Task state
   const [showCreateWorkerModal, setShowCreateWorkerModal] = useState(false);
@@ -529,7 +531,8 @@ export default function SuperAdminControlCenter() {
     }
   }, []);
 
-  // Fetch persona slots (concurrency limiting status)
+  // Fetch persona slots (concurrency limiting status) - REMOVED: Feature removed from UI
+  /*
   const fetchPersonaSlots = useCallback(async () => {
     try {
       const token = localStorage.getItem("accessToken");
@@ -547,6 +550,7 @@ export default function SuperAdminControlCenter() {
       console.error("Failed to fetch persona slots:", err);
     }
   }, []);
+  */
 
   // Update cooldown settings
   const updateCooldownSettings = async (newCooldown: number) => {
@@ -795,8 +799,8 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus();
     fetchTaskList();
     fetchCooldownSettings();
-    fetchPersonaSlots();
-  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList, fetchCooldownSettings, fetchPersonaSlots]);
+    // fetchPersonaSlots(); // REMOVED: Feature removed from UI
+  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList, fetchCooldownSettings]);
 
   // Fetch task runs for detail modal
   const fetchTaskRuns = useCallback(async (taskId: string) => {
@@ -1345,7 +1349,7 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus();
     fetchTaskList();
     fetchCooldownSettings();
-    fetchPersonaSlots();
+    // fetchPersonaSlots(); // REMOVED: Feature removed from UI
 
     // Live updates via SSE
     const token = localStorage.getItem("accessToken");
@@ -1399,7 +1403,7 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus,
     fetchTaskList,
     fetchCooldownSettings,
-    fetchPersonaSlots,
+    // fetchPersonaSlots, // REMOVED: Feature removed from UI
     statusFilter,
     searchQuery,
   ]);
@@ -1655,10 +1659,10 @@ export default function SuperAdminControlCenter() {
             ) : (
               <button
                 onClick={() => setShowCooldownInput(true)}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-muted border border-border rounded hover:bg-muted/80"
+                className="flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-lg hover:bg-muted/80 text-sm"
                 title="Webhook cooldown: Time before same Jira issue can trigger new task"
               >
-                <Clock className="w-3 h-3" />
+                <Clock className="w-4 h-4" />
                 <span>Cooldown: {cooldownMinutes}m</span>
               </button>
             )}
@@ -1708,154 +1712,6 @@ export default function SuperAdminControlCenter() {
           <button onClick={() => setCreateError(null)} className="font-bold">
             &times;
           </button>
-        </div>
-      )}
-
-      {/* System Overview Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <Users className="w-4 h-4" />
-            <span className="text-xs uppercase">Workers</span>
-          </div>
-          <div className="text-2xl font-bold">
-            {data?.stats.totalWorkers || 0}
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <Cpu className="w-4 h-4" />
-            <span className="text-xs uppercase">Active</span>
-          </div>
-          <div className="text-2xl font-bold text-green-500">
-            {data?.stats.activeWorkers || 0}
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <Clock className="w-4 h-4" />
-            <span className="text-xs uppercase">Queue</span>
-          </div>
-          <div className="text-2xl font-bold text-yellow-500">
-            {data?.stats.queueDepth || 0}
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <CheckCircle className="w-4 h-4" />
-            <span className="text-xs uppercase">Completed</span>
-          </div>
-          <div className="text-2xl font-bold text-green-500">
-            {data?.stats.todayCompleted || 0}
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <XCircle className="w-4 h-4" />
-            <span className="text-xs uppercase">Failed</span>
-          </div>
-          <div className="text-2xl font-bold text-red-500">
-            {data?.stats.todayFailed || 0}
-          </div>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <DollarSign className="w-4 h-4" />
-              <span className="text-xs uppercase">Cumulative Cost</span>
-            </div>
-            <button
-              onClick={() => setShowResetCostModal(true)}
-              className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
-              title="Reset cumulative cost to $0.00"
-            >
-              <RotateCcw className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="text-2xl font-bold">
-            ${formatCost(data?.stats.cumulativeCost)}
-          </div>
-          {data?.stats.cumulativeCostResetAt && (
-            <div className="text-xs text-muted-foreground mt-1">
-              Reset {new Date(data.stats.cumulativeCostResetAt).toLocaleDateString()}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Persona Slots Panel - Shows per-persona concurrency status */}
-      {personaSlots && (
-        <div className="bg-card border border-border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-cyan-500" />
-              <h3 className="font-semibold">Persona Slots</h3>
-              <span className="text-xs text-muted-foreground">
-                (1 task per persona max)
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <span className="text-green-500">
-                {personaSlots.summary.availableSlots} available
-              </span>
-              <span className="text-yellow-500">
-                {personaSlots.summary.occupiedSlots} active
-              </span>
-              {personaSlots.summary.totalQueued > 0 && (
-                <span className="text-orange-500">
-                  {personaSlots.summary.totalQueued} queued
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
-            {personaSlots.slots.map((slot) => {
-              const config = PERSONA_CONFIG[slot.persona] || {
-                emoji: "👤",
-                title: slot.persona,
-              };
-              const isOccupied = !!slot.occupied;
-              return (
-                <div
-                  key={slot.persona}
-                  className={`relative p-3 rounded-lg border transition-all ${
-                    isOccupied
-                      ? "bg-yellow-500/10 border-yellow-500/30"
-                      : "bg-green-500/5 border-green-500/20"
-                  }`}
-                  title={
-                    isOccupied
-                      ? `${slot.occupied?.jiraKey}: ${slot.occupied?.summary}`
-                      : `${config.title} - Available`
-                  }
-                >
-                  <div className="text-center">
-                    <div className="text-xl mb-1">{config.emoji}</div>
-                    <div className="text-xs font-medium truncate">
-                      {config.title.split(" ")[0]}
-                    </div>
-                    {isOccupied ? (
-                      <div className="mt-1">
-                        <div className="text-xs text-yellow-500 font-mono truncate">
-                          {slot.occupied?.jiraKey}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground capitalize">
-                          {slot.occupied?.status.replace(/_/g, " ")}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-1 text-xs text-green-500">Ready</div>
-                    )}
-                    {slot.queuedCount > 0 && (
-                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-xs rounded-full flex items-center justify-center">
-                        {slot.queuedCount}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 
@@ -1924,6 +1780,81 @@ export default function SuperAdminControlCenter() {
               {managerModelLoading && (
                 <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />
               )}
+            </div>
+          </div>
+
+          {/* System Overview Stats */}
+          <div className="border-t border-border pt-4 mb-4">
+            <div className="text-xs text-muted-foreground mb-3">System Overview</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <Users className="w-4 h-4" />
+                  <span className="text-xs uppercase">Workers</span>
+                </div>
+                <div className="text-2xl font-bold">
+                  {data?.stats.totalWorkers || 0}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <Cpu className="w-4 h-4" />
+                  <span className="text-xs uppercase">Active</span>
+                </div>
+                <div className="text-2xl font-bold text-green-500">
+                  {data?.stats.activeWorkers || 0}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <Clock className="w-4 h-4" />
+                  <span className="text-xs uppercase">Queue</span>
+                </div>
+                <div className="text-2xl font-bold text-yellow-500">
+                  {data?.stats.queueDepth || 0}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="text-xs uppercase">Completed</span>
+                </div>
+                <div className="text-2xl font-bold text-green-500">
+                  {data?.stats.todayCompleted || 0}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <XCircle className="w-4 h-4" />
+                  <span className="text-xs uppercase">Failed</span>
+                </div>
+                <div className="text-2xl font-bold text-red-500">
+                  {data?.stats.todayFailed || 0}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <DollarSign className="w-4 h-4" />
+                    <span className="text-xs uppercase">Cumulative Cost</span>
+                  </div>
+                  <button
+                    onClick={() => setShowResetCostModal(true)}
+                    className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                    title="Reset cumulative cost to $0.00"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="text-2xl font-bold">
+                  ${formatCost(data?.stats.cumulativeCost)}
+                </div>
+                {data?.stats.cumulativeCostResetAt && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Reset {new Date(data.stats.cumulativeCostResetAt).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
