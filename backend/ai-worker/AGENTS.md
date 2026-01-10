@@ -133,16 +133,29 @@ curl -X POST "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KE
 
 ## Deployment (Optional - Task-Specific)
 
-**Deployment is ONLY enabled when explicitly configured on the task.**
+**Deployment is ONLY enabled when the Jira ticket has the `ai-worker-deploy` label.**
 
-IF the Jira ticket has the `ai-worker-deploy` label OR deployment_enabled=true:
-1. After PR is approved, deployment will be automatically attempted
-2. DO NOT manually trigger deployment - the orchestrator handles this
-3. Safety checks run automatically before deployment
-4. If validation fails, you'll be respawned to fix the issues
-5. Max 5 deployment retry attempts before escalating to human
+### WITH `ai-worker-deploy` label (Deploy-Enabled Tasks):
+Your workflow is:
+1. Make code changes
+2. Commit changes to your branch
+3. **Run deployment script: `cd /home/aiworker/workspace && ./deploy.sh`**
+4. **Watch deployment progress** - the script will show build/deploy status
+5. **Verify deployment succeeded:**
+   - Check health endpoint: `curl -s https://oncallshift.com/health | jq .`
+   - For backend changes: Check API is responding
+   - For frontend changes: Verify CloudFront invalidation completed
+6. **If deployment fails:** Fix the issue, commit again, re-run `./deploy.sh`
+7. **After successful deployment:** Create PR with summary
+8. **Merge the PR immediately** UNLESS the Jira ticket has a `review` label:
+   - **NO `review` label:** Merge PR with `gh pr merge <PR_NUMBER> --squash --delete-branch`
+   - **HAS `review` label:** Leave PR open for Manager review, do not merge
+9. Add completion comment to Jira noting deployment and merge status
+10. Transition Jira ticket to Done
 
-**If deployment is NOT enabled (default):**
+**IMPORTANT:** Do NOT create a PR before deploying. Deploy first, verify it works, then create and optionally merge the PR.
+
+### WITHOUT `ai-worker-deploy` label (Default - No Deployment):
 Your workflow is:
 1. Make code changes
 2. Commit and push
@@ -150,8 +163,6 @@ Your workflow is:
 4. Add completion comment to Jira
 5. Transition Jira ticket to Done
 6. **STOP** - Let humans review, approve, and deploy
-
-**NEVER manually run deploy.sh yourself** - deployment is orchestrated by the system.
 
 ---
 
