@@ -97,6 +97,15 @@ interface ActiveTask {
   githubPrUrl?: string | null;
   recentLogs: TaskLog[];
   steps: TaskStep[];
+  // Deployment fields
+  deploymentEnabled?: boolean;
+  deployRetryCount?: number;
+  maxDeployRetries?: number;
+  validationAttemptCount?: number;
+  lastValidationError?: string | null;
+  lastDeploymentAt?: string | null;
+  requiresApproval?: boolean;
+  approvalReason?: string | null;
 }
 
 interface CompletedTask {
@@ -199,11 +208,44 @@ interface TaskWithRuns {
   startedAt: string | null;
   completedAt: string | null;
   ecsTaskArn: string | null;
+  // Deployment fields
+  deploymentEnabled?: boolean;
+  deployRetryCount?: number;
+  maxDeployRetries?: number;
+  validationAttemptCount?: number;
+  lastValidationError?: string | null;
+  lastDeploymentAt?: string | null;
+  requiresApproval?: boolean;
+  approvalReason?: string | null;
   githubPrUrl: string | null;
   githubPrNumber: number | null;
   githubBranch: string | null;
   githubApprovedBy?: string | null;
   runs?: TaskRun[];
+}
+
+// Persona slot status for concurrency limiting visualization
+interface PersonaSlot {
+  persona: string;
+  occupied: {
+    taskId: string;
+    jiraKey: string;
+    summary: string;
+    status: string;
+    startedAt: string | null;
+    lastHeartbeat: string | null;
+  } | null;
+  queuedCount: number;
+}
+
+interface PersonaSlotsData {
+  slots: PersonaSlot[];
+  summary: {
+    totalSlots: number;
+    occupiedSlots: number;
+    availableSlots: number;
+    totalQueued: number;
+  };
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -330,6 +372,9 @@ export default function SuperAdminControlCenter() {
     null,
   );
   const [managerModelLoading, setManagerModelLoading] = useState(false);
+
+  // Persona slots state (concurrency limiting visualization)
+  const [personaSlots, setPersonaSlots] = useState<PersonaSlotsData | null>(null);
 
   // Create Worker/Task state
   const [showCreateWorkerModal, setShowCreateWorkerModal] = useState(false);
@@ -481,6 +526,25 @@ export default function SuperAdminControlCenter() {
       }
     } catch (err) {
       console.error("Failed to fetch cooldown settings:", err);
+    }
+  }, []);
+
+  // Fetch persona slots (concurrency limiting status)
+  const fetchPersonaSlots = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/persona-slots`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setPersonaSlots(result);
+      }
+    } catch (err) {
+      console.error("Failed to fetch persona slots:", err);
     }
   }, []);
 
@@ -731,7 +795,8 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus();
     fetchTaskList();
     fetchCooldownSettings();
-  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList, fetchCooldownSettings]);
+    fetchPersonaSlots();
+  }, [fetchData, fetchSystemStatus, fetchWatcherStatus, fetchManagerStatus, fetchTaskList, fetchCooldownSettings, fetchPersonaSlots]);
 
   // Fetch task runs for detail modal
   const fetchTaskRuns = useCallback(async (taskId: string) => {
@@ -811,6 +876,33 @@ export default function SuperAdminControlCenter() {
       console.error("Failed to cancel task:", err);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Approve destructive change
+  const handleApproveDestructive = async (taskId: string) => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks/${taskId}/approve-destructive`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (response.ok) {
+        // Refresh to show updated status
+        fetchData();
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to approve: ${errorData.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      console.error("Failed to approve destructive change:", err);
+      alert("Failed to approve destructive change. Check console for details.");
     }
   };
 
@@ -1253,6 +1345,7 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus();
     fetchTaskList();
     fetchCooldownSettings();
+    fetchPersonaSlots();
 
     // Live updates via SSE
     const token = localStorage.getItem("accessToken");
@@ -1306,6 +1399,7 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus,
     fetchTaskList,
     fetchCooldownSettings,
+    fetchPersonaSlots,
     statusFilter,
     searchQuery,
   ]);
@@ -1387,6 +1481,19 @@ export default function SuperAdminControlCenter() {
         return "text-blue-500";
       case "review_rejected":
         return "text-red-400";
+      // Deployment statuses
+      case "deployment_pending":
+        return "text-blue-400";
+      case "deploying":
+        return "text-yellow-600";
+      case "deployed_validating":
+        return "text-cyan-500";
+      case "validation_failed":
+        return "text-orange-600";
+      case "deployment_failed":
+        return "text-red-600";
+      case "awaiting_destructive_approval":
+        return "text-purple-600";
       default:
         return "text-gray-400";
     }
@@ -1676,6 +1783,82 @@ export default function SuperAdminControlCenter() {
         </div>
       </div>
 
+      {/* Persona Slots Panel - Shows per-persona concurrency status */}
+      {personaSlots && (
+        <div className="bg-card border border-border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-cyan-500" />
+              <h3 className="font-semibold">Persona Slots</h3>
+              <span className="text-xs text-muted-foreground">
+                (1 task per persona max)
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-green-500">
+                {personaSlots.summary.availableSlots} available
+              </span>
+              <span className="text-yellow-500">
+                {personaSlots.summary.occupiedSlots} active
+              </span>
+              {personaSlots.summary.totalQueued > 0 && (
+                <span className="text-orange-500">
+                  {personaSlots.summary.totalQueued} queued
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+            {personaSlots.slots.map((slot) => {
+              const config = PERSONA_CONFIG[slot.persona] || {
+                emoji: "👤",
+                title: slot.persona,
+              };
+              const isOccupied = !!slot.occupied;
+              return (
+                <div
+                  key={slot.persona}
+                  className={`relative p-3 rounded-lg border transition-all ${
+                    isOccupied
+                      ? "bg-yellow-500/10 border-yellow-500/30"
+                      : "bg-green-500/5 border-green-500/20"
+                  }`}
+                  title={
+                    isOccupied
+                      ? `${slot.occupied?.jiraKey}: ${slot.occupied?.summary}`
+                      : `${config.title} - Available`
+                  }
+                >
+                  <div className="text-center">
+                    <div className="text-xl mb-1">{config.emoji}</div>
+                    <div className="text-xs font-medium truncate">
+                      {config.title.split(" ")[0]}
+                    </div>
+                    {isOccupied ? (
+                      <div className="mt-1">
+                        <div className="text-xs text-yellow-500 font-mono truncate">
+                          {slot.occupied?.jiraKey}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground capitalize">
+                          {slot.occupied?.status.replace(/_/g, " ")}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-xs text-green-500">Ready</div>
+                    )}
+                    {slot.queuedCount > 0 && (
+                      <div className="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-xs rounded-full flex items-center justify-center">
+                        {slot.queuedCount}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Manager Status Panel (with Watcher indicator) */}
       {managerStatus && (
         <div className="bg-card border border-border rounded-lg p-4">
@@ -1869,11 +2052,18 @@ export default function SuperAdminControlCenter() {
                 revision_needed: 1, // Goes back to executing
                 review_pending: 3,
                 review_approved: 4,
+                // Deployment statuses (after review)
+                deployment_pending: 4,
+                deploying: 4,
+                deployed_validating: 4,
+                awaiting_destructive_approval: 3, // Paused at review stage
                 completed: 4,
                 failed: -1,
                 blocked: -1,
                 cancelled: -1,
                 review_rejected: -1,
+                deployment_failed: -1,
+                validation_failed: -1,
               };
 
               // If task has no PR but is past executing, treat PR step as completed
@@ -1882,7 +2072,10 @@ export default function SuperAdminControlCenter() {
 
               const currentStageIndex = statusToStage[task.status] ?? 0;
               const isFailed =
-                task.status === "failed" || task.status === "blocked";
+                task.status === "failed" ||
+                task.status === "blocked" ||
+                task.status === "deployment_failed" ||
+                task.status === "validation_failed";
               const isRevision = task.status === "revision_needed";
 
               return (
@@ -2023,6 +2216,48 @@ export default function SuperAdminControlCenter() {
                     <div className="mt-3 flex items-center gap-2 text-xs text-orange-500 bg-orange-500/10 rounded px-3 py-2">
                       <RotateCcw className="w-3 h-3" />
                       Revision requested - worker will address feedback
+                    </div>
+                  )}
+
+                  {/* Deployment Info */}
+                  {task.deploymentEnabled && task.deployRetryCount !== undefined && task.deployRetryCount > 0 && (
+                    <div className="mt-3 flex items-center gap-2 text-xs text-blue-500 bg-blue-500/10 rounded px-3 py-2">
+                      <Zap className="w-3 h-3" />
+                      Deploy Attempt {task.deployRetryCount}/{task.maxDeployRetries || 5}
+                    </div>
+                  )}
+
+                  {/* Validation Error Alert */}
+                  {task.status === "validation_failed" && task.lastValidationError && (
+                    <div className="mt-3 text-xs bg-orange-500/10 border border-orange-500/30 rounded px-3 py-2">
+                      <div className="flex items-center gap-2 text-orange-500 font-medium mb-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Validation Failed
+                      </div>
+                      <pre className="text-muted-foreground whitespace-pre-wrap break-words text-[11px] leading-relaxed">
+                        {task.lastValidationError}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Destructive Approval Notice */}
+                  {task.status === "awaiting_destructive_approval" && (
+                    <div className="mt-3 bg-purple-500/10 border border-purple-500/30 rounded px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs text-purple-500 font-medium mb-2">
+                        <Shield className="w-3 h-3" />
+                        Destructive Change Detected - Approval Required
+                      </div>
+                      {task.approvalReason && (
+                        <p className="text-xs text-muted-foreground mb-3">
+                          {task.approvalReason}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => handleApproveDestructive(task.id)}
+                        className="px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white rounded text-xs font-medium transition-colors"
+                      >
+                        Approve Destructive Change
+                      </button>
                     </div>
                   )}
 

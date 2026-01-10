@@ -12,6 +12,7 @@ import { AIWorkerInstance } from "../../shared/models/AIWorkerInstance";
 import {
   AIWorkerTask,
   AIWorkerTaskStatus,
+  AIWorkerPersona,
 } from "../../shared/models/AIWorkerTask";
 import { AIWorkerTaskLog } from "../../shared/models/AIWorkerTaskLog";
 import { AIWorkerTaskRun } from "../../shared/models/AIWorkerTaskRun";
@@ -117,11 +118,23 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
           "manager_review",
           "revision_needed",
           "review_pending",
+          "deployment_pending",
+          "deploying",
+          "deployed_validating",
+          "awaiting_destructive_approval",
         ]),
       },
       {
         ...orgFilter,
-        status: In(["completed", "failed", "cancelled", "review_rejected", "review_approved"]),
+        status: In([
+          "completed",
+          "failed",
+          "cancelled",
+          "review_rejected",
+          "review_approved",
+          "deployment_failed",
+          "validation_failed",
+        ]),
         completedAt: MoreThan(tenMinutesAgo),
       },
     ],
@@ -288,6 +301,15 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
         severity: l.severity,
       })),
       steps,
+      // Deployment fields
+      deploymentEnabled: t.deploymentEnabled,
+      deployRetryCount: t.deployRetryCount,
+      maxDeployRetries: t.maxDeployRetries,
+      validationAttemptCount: t.validationAttemptCount,
+      lastValidationError: t.lastValidationError,
+      lastDeploymentAt: t.lastDeploymentAt,
+      requiresApproval: t.requiresApproval,
+      approvalReason: t.approvalReason,
     };
   });
 
@@ -825,6 +847,108 @@ router.put(
     }
   }
 );
+
+/**
+ * GET /api/v1/super-admin/control-center/persona-slots
+ * Get persona slot status showing which personas have active tasks
+ * Used for monitoring per-persona concurrency limiting
+ */
+router.get("/control-center/persona-slots", async (req: Request, res: Response) => {
+  try {
+    const orgId = req.orgId!;
+    const dataSource = await getDataSource();
+    const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+    // All possible personas
+    const allPersonas: AIWorkerPersona[] = [
+      "frontend_developer",
+      "backend_developer",
+      "devops_engineer",
+      "security_engineer",
+      "qa_engineer",
+      "tech_writer",
+      "project_manager",
+      "manager",
+    ];
+
+    // Active statuses that occupy a persona slot
+    const activeStatuses: AIWorkerTaskStatus[] = [
+      "claimed",
+      "environment_setup",
+      "executing",
+      "pr_created",
+      "manager_review",
+    ];
+
+    // Get active tasks grouped by persona
+    const activeTasks = await taskRepo.find({
+      where: {
+        orgId,
+        status: In(activeStatuses),
+      },
+      select: [
+        "id",
+        "workerPersona",
+        "status",
+        "jiraIssueKey",
+        "summary",
+        "startedAt",
+        "lastHeartbeatAt",
+      ],
+    });
+
+    // Get queued tasks grouped by persona
+    const queuedTasks = await taskRepo
+      .createQueryBuilder("t")
+      .select("t.worker_persona", "persona")
+      .addSelect("COUNT(*)", "count")
+      .where("t.org_id = :orgId", { orgId })
+      .andWhere("t.status = :status", { status: "queued" })
+      .groupBy("t.worker_persona")
+      .getRawMany();
+
+    const queuedByPersona: Record<string, number> = {};
+    for (const row of queuedTasks) {
+      queuedByPersona[row.persona] = parseInt(row.count, 10);
+    }
+
+    // Build slot status for each persona
+    const slots = allPersonas.map((persona) => {
+      const activeTask = activeTasks.find((t) => t.workerPersona === persona);
+      return {
+        persona,
+        occupied: activeTask
+          ? {
+              taskId: activeTask.id,
+              jiraKey: activeTask.jiraIssueKey,
+              summary: activeTask.summary,
+              status: activeTask.status,
+              startedAt: activeTask.startedAt,
+              lastHeartbeat: activeTask.lastHeartbeatAt,
+            }
+          : null,
+        queuedCount: queuedByPersona[persona] || 0,
+      };
+    });
+
+    // Summary stats
+    const occupiedCount = slots.filter((s) => s.occupied).length;
+    const totalQueued = Object.values(queuedByPersona).reduce((a, b) => a + b, 0);
+
+    return res.json({
+      slots,
+      summary: {
+        totalSlots: allPersonas.length,
+        occupiedSlots: occupiedCount,
+        availableSlots: allPersonas.length - occupiedCount,
+        totalQueued,
+      },
+    });
+  } catch (error) {
+    logger.error("Error fetching persona slots:", error);
+    return res.status(500).json({ error: "Failed to fetch persona slots" });
+  }
+});
 
 /**
  * GET /api/v1/super-admin/control-center/logs/:taskId
@@ -1902,6 +2026,91 @@ router.post(
     } catch (error) {
       logger.error("Error cancelling task by key:", error);
       return res.status(500).json({ error: "Failed to cancel task" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/tasks/:taskId/approve-destructive
+ * Approve a destructive change and transition task to deployment_pending
+ */
+router.post(
+  "/control-center/tasks/:taskId/approve-destructive",
+  [param("taskId").isUUID()],
+  authenticateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      // Verify user is super_admin
+      if (req.user?.role !== "super_admin") {
+        return res.status(403).json({ error: "Forbidden: super_admin role required" });
+      }
+
+      const { taskId } = req.params;
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      // Find task
+      const task = await taskRepo.findOne({ where: { id: taskId } });
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      // Verify task is awaiting approval
+      if (task.status !== "awaiting_destructive_approval") {
+        return res.status(400).json({
+          error: `Task is not awaiting approval (current status: ${task.status})`,
+        });
+      }
+
+      // Transition to deployment_pending
+      task.status = "deployment_pending";
+      task.requiresApproval = false;
+      await taskRepo.save(task);
+
+      // Send message to SQS to trigger deployment workflow
+      if (queueUrl) {
+        try {
+          await sqs.send(
+            new SendMessageCommand({
+              QueueUrl: queueUrl,
+              MessageBody: JSON.stringify({
+                type: "deployment",
+                taskId: task.id,
+                jiraIssueKey: task.jiraIssueKey,
+                approvedBy: req.user.email,
+                approvedAt: new Date().toISOString(),
+              }),
+            }),
+          );
+          logger.info("Queued deployment for approved task", {
+            taskId: task.id,
+            jiraKey: task.jiraIssueKey,
+            approvedBy: req.user.email,
+          });
+        } catch (sqsErr) {
+          logger.error("Failed to queue deployment message", { error: sqsErr, taskId });
+        }
+      }
+
+      logger.info("Destructive change approved", {
+        taskId: task.id,
+        jiraKey: task.jiraIssueKey,
+        approvedBy: req.user.email,
+      });
+
+      return res.json({
+        message: "Destructive change approved",
+        taskId: task.id,
+        status: task.status,
+      });
+    } catch (error) {
+      logger.error("Error approving destructive change:", error);
+      return res.status(500).json({ error: "Failed to approve destructive change" });
     }
   },
 );

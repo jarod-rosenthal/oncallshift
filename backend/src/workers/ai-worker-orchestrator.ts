@@ -18,7 +18,7 @@ initSentry({ workerName: 'ai-worker-orchestrator' });
 import { SQS, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { ECS } from '@aws-sdk/client-ecs';
-import { DataSource } from 'typeorm';
+import { DataSource, In, Not } from 'typeorm';
 import { AIWorkerTask, AIWorkerTaskStatus } from '../shared/models/AIWorkerTask';
 import { AIWorkerInstance } from '../shared/models/AIWorkerInstance';
 import { AIWorkerTaskLog } from '../shared/models/AIWorkerTaskLog';
@@ -29,10 +29,21 @@ import { initGitHubService } from '../shared/services/github-service';
 import { getDataSource } from '../shared/db/data-source';
 import { logger } from '../shared/utils/logger';
 import { getCostTracker, initCostTracker } from '../shared/services/cost-tracker';
+import { DeployCircuitBreaker } from '../shared/services/deploy-circuit-breaker';
+
+// TODO: Validation result types will be needed when implementing validation workflow
+// interface ValidationResult {
+//   success: boolean;
+//   checks: {
+//     typescript: { passed: boolean; errors?: string[] };
+//     healthCheck: { passed: boolean; status?: number; error?: string };
+//   };
+//   timestamp: Date;
+// }
 
 interface QueueMessage {
   taskId: string;
-  action: 'execute' | 'retry' | 'cancel' | 'check_status';
+  action: 'execute' | 'retry' | 'cancel' | 'check_status' | 'deploy' | 'validate';
 }
 
 // Manager Lambda actions
@@ -43,6 +54,20 @@ interface ManagerInvokePayload {
   taskId: string;
   model?: string; // Claude model to use (from manager settings)
   changes?: Record<string, any>; // For update_environment action
+}
+
+// Deployment result from run_deploy.ts
+interface DeploymentResult {
+  success: boolean;
+  requiresApproval?: boolean;
+  approvalReason?: string;
+  safetyCheckResult?: any;
+  frontendDeployed: boolean;
+  backendDeployed: boolean;
+  cloudFrontInvalidated: boolean;
+  duration: number;
+  error?: string;
+  logs?: string;
 }
 
 // Manager Lambda name for event-driven invocation
@@ -57,6 +82,7 @@ class AIWorkerOrchestrator {
   private running = false;
   private jiraService: JiraAIWorkerService | null = null;
   private ecsCluster: string;
+  private circuitBreaker: DeployCircuitBreaker;
 
   constructor(dataSource: DataSource, queueUrl: string) {
     this.dataSource = dataSource;
@@ -66,6 +92,7 @@ class AIWorkerOrchestrator {
     this.ecs = new ECS({ region });
     this.lambda = new LambdaClient({ region });
     this.ecsCluster = process.env.ECS_CLUSTER_NAME || 'pagerduty-lite-dev';
+    this.circuitBreaker = new DeployCircuitBreaker(this.dataSource.getRepository(AIWorkerTask));
   }
 
   async initialize(): Promise<void> {
@@ -168,6 +195,15 @@ class AIWorkerOrchestrator {
       case 'check_status':
         await this.checkTaskStatus(message.taskId);
         break;
+      case 'deploy':
+        // Deployment workflow triggered by review approval
+        await this.startDeploymentWorkflow(message.taskId);
+        break;
+      case 'validate':
+        // Validation triggered after deployment completes
+        // NOTE: This would be called by the deployment task, not via SQS
+        logger.warn('Validate action should not be called via SQS', { taskId: message.taskId });
+        break;
       default:
         logger.warn('Unknown action', { action: message.action });
     }
@@ -202,6 +238,33 @@ class AIWorkerOrchestrator {
     logger.info('Task claimed successfully', { taskId, jiraIssueKey: task.jiraIssueKey });
 
     try {
+      // CRITICAL: Per-persona concurrency limiting
+      // Only allow 1 active task per persona to prevent deploy conflicts
+      const activeTaskForPersona = await taskRepo.findOne({
+        where: {
+          orgId: task.orgId,
+          workerPersona: task.workerPersona,
+          status: In(['claimed', 'environment_setup', 'executing', 'pr_created', 'manager_review']),
+          id: Not(task.id), // Exclude current task
+        },
+      });
+
+      if (activeTaskForPersona) {
+        // Persona slot is occupied - requeue with backoff
+        logger.info('Persona slot occupied, requeueing task', {
+          taskId: task.id,
+          persona: task.workerPersona,
+          blockingTaskId: activeTaskForPersona.id,
+          blockingJiraKey: activeTaskForPersona.jiraIssueKey,
+        });
+
+        await this.requeueTaskWithBackoff(task, 'persona_slot_occupied', {
+          blockingTaskId: activeTaskForPersona.id,
+          blockingJiraKey: activeTaskForPersona.jiraIssueKey,
+        });
+        return;
+      }
+
       await this.logTaskEvent(task, 'status_change', 'Task claimed by orchestrator');
 
       // Find available worker
@@ -411,13 +474,32 @@ class AIWorkerOrchestrator {
       } else {
         // Failure - still try to get token usage
         const logs = await ecsRunner.getTaskLogs(task.ecsTaskId!, { limit: 2000 });
-        const prInfo = this.parseTaskOutput(logs.events.map(e => e.message).join('\n'));
+        const logOutput = logs.events.map(e => e.message).join('\n');
+        const prInfo = this.parseTaskOutput(logOutput);
 
         if (prInfo.inputTokens !== undefined) {
           task.claudeInputTokens = prInfo.inputTokens;
         }
         if (prInfo.outputTokens !== undefined) {
           task.claudeOutputTokens = prInfo.outputTokens;
+        }
+
+        // Check for rebase conflict - special handling to retry from scratch
+        if (prInfo.result === 'rebase_conflict') {
+          logger.warn('Rebase conflict detected, will retry task from scratch', {
+            taskId: task.id,
+            jiraIssueKey: task.jiraIssueKey,
+            conflictFiles: prInfo.conflictFiles,
+          });
+
+          await this.logTaskEvent(task, 'rebase_conflict',
+            `Rebase conflict with files: ${prInfo.conflictFiles?.join(', ') || 'unknown'}. Retrying from scratch.`,
+            { severity: 'warning', metadata: { conflictFiles: prInfo.conflictFiles } }
+          );
+
+          // Reset task for retry from scratch (clean slate with fresh main)
+          await this.retryTaskFromScratch(task, 'rebase_conflict');
+          return;
         }
 
         task.errorMessage = status.reason || `Exit code: ${status.exitCode}`;
@@ -511,11 +593,18 @@ class AIWorkerOrchestrator {
     outputTokens?: number;
     claudeCost?: number;
     model?: string;
+    conflictFiles?: string[];
   } {
     const result: any = {};
 
     const resultMatch = output.match(/::result::(\w+)/);
     if (resultMatch) result.result = resultMatch[1];
+
+    // Parse rebase conflict files
+    const conflictFilesMatch = output.match(/::conflict_files::([^\n]+)/);
+    if (conflictFilesMatch) {
+      result.conflictFiles = conflictFilesMatch[1].split(',').map((f: string) => f.trim()).filter(Boolean);
+    }
 
     // Use \S+ to capture only non-whitespace (stops at tabs that separate markers on same line)
     const prUrlMatch = output.match(/::pr_url::(\S+)/);
@@ -651,7 +740,8 @@ class AIWorkerOrchestrator {
     // Use targeted update to avoid overwriting token values set by log-parser via API
     // The log-parser calls /usage endpoint which saves tokens directly to DB.
     // If we use taskRepo.save(task), we overwrite those values with 0s from our stale in-memory object.
-    const isTerminal = ['completed', 'failed', 'cancelled', 'review_approved'].includes(status);
+    // NOTE: 'review_approved' is NOT terminal - deployment workflow continues after approval
+    const isTerminal = ['completed', 'failed', 'cancelled'].includes(status);
     const completedAt = isTerminal ? new Date() : undefined;
 
     await taskRepo.update(
@@ -868,6 +958,393 @@ class AIWorkerOrchestrator {
     // Trigger Manager analyses after task failure
     await this.triggerPostCompletionActions(task);
   }
+
+  /**
+   * Retry a task from scratch (clean slate)
+   * Used when rebase conflicts occur - the task needs to re-clone from fresh main
+   */
+  private async retryTaskFromScratch(task: AIWorkerTask, reason: string): Promise<void> {
+    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+    const workerRepo = this.dataSource.getRepository(AIWorkerInstance);
+
+    logger.info('Retrying task from scratch', {
+      taskId: task.id,
+      jiraIssueKey: task.jiraIssueKey,
+      reason,
+      retryCount: task.retryCount,
+    });
+
+    // Release the worker
+    if (task.assignedWorkerId) {
+      const worker = await workerRepo.findOne({ where: { id: task.assignedWorkerId } });
+      if (worker) {
+        worker.status = 'idle';
+        worker.currentTaskId = null;
+        await workerRepo.save(worker);
+      }
+    }
+
+    // Reset task for fresh retry
+    task.status = 'queued';
+    task.retryCount = (task.retryCount || 0) + 1;
+    task.ecsTaskArn = null;
+    task.ecsTaskId = null;
+    task.assignedWorkerId = null;
+    task.githubBranch = null; // Clear branch so a fresh one is created
+    task.errorMessage = `Retrying from scratch due to: ${reason}`;
+    await taskRepo.save(task);
+
+    // Check retry limit
+    if (task.retryCount > task.maxRetries) {
+      await this.updateTaskStatus(task, 'failed');
+      await this.logTaskEvent(task, 'error',
+        `Task exceeded max retries (${task.maxRetries}) due to ${reason}`,
+        { severity: 'error' }
+      );
+      return;
+    }
+
+    // Requeue immediately via SQS
+    await this.sqs.send(
+      new (await import('@aws-sdk/client-sqs')).SendMessageCommand({
+        QueueUrl: this.queueUrl,
+        MessageBody: JSON.stringify({ taskId: task.id, action: 'execute' }),
+      })
+    );
+
+    logger.info('Task requeued for fresh retry', {
+      taskId: task.id,
+      retryCount: task.retryCount,
+      reason,
+    });
+  }
+
+  /**
+   * Requeue a task with exponential backoff
+   * Used when persona slot is occupied or other temporary conditions prevent execution
+   */
+  private async requeueTaskWithBackoff(
+    task: AIWorkerTask,
+    reason: string,
+    metadata?: Record<string, any>
+  ): Promise<void> {
+    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+
+    // Calculate backoff delay: 30s, 60s, 120s, 240s, max 5min
+    const baseDelay = 30;
+    const maxDelay = 300;
+    const retryCount = task.personaWaitCount || 0;
+    const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxDelay);
+
+    // Update task back to queued with incremented wait count
+    task.status = 'queued';
+    task.personaWaitCount = retryCount + 1;
+    await taskRepo.save(task);
+
+    await this.logTaskEvent(task, 'requeued', `Task requeued (${reason}), will retry in ${delay}s`, {
+      metadata: {
+        reason,
+        personaWaitCount: task.personaWaitCount,
+        delaySeconds: delay,
+        ...metadata,
+      },
+    });
+
+    // Schedule requeue after delay
+    setTimeout(async () => {
+      try {
+        await this.sqs.send(
+          new (await import('@aws-sdk/client-sqs')).SendMessageCommand({
+            QueueUrl: this.queueUrl,
+            MessageBody: JSON.stringify({ taskId: task.id, action: 'execute' }),
+          })
+        );
+        logger.info('Task requeued after backoff', {
+          taskId: task.id,
+          delay,
+          personaWaitCount: task.personaWaitCount,
+        });
+      } catch (error) {
+        logger.error('Failed to requeue task after backoff', { taskId: task.id, error });
+      }
+    }, delay * 1000);
+  }
+
+  /**
+   * Handle review approval - check if deployment should be triggered
+   * Called after PR is approved (human or manager)
+   */
+  async handleReviewApproved(task: AIWorkerTask): Promise<void> {
+    logger.info('Handling review approval', {
+      taskId: task.id,
+      jiraKey: task.jiraIssueKey,
+      deploymentEnabled: task.deploymentEnabled,
+    });
+
+    // Check if deployment is enabled for this task
+    if (!task.deploymentEnabled) {
+      // No deployment - mark as completed
+      await this.updateTaskStatus(task, 'completed');
+      await this.logTaskEvent(task, 'status_change', 'PR approved, no deployment configured - task complete');
+
+      // Update Jira to Done
+      if (this.jiraService) {
+        await this.jiraService.updateJiraFromTask(task);
+      }
+
+      logger.info('Task completed without deployment', { taskId: task.id });
+      return;
+    }
+
+    // Deployment enabled - start deployment workflow
+    logger.info('Deployment enabled, starting workflow', { taskId: task.id });
+    await this.startDeploymentWorkflow(task.id);
+  }
+
+  /**
+   * Start deployment workflow for a reviewed task
+   * Checks circuit breaker, updates status, spawns deployment ECS task
+   */
+  async startDeploymentWorkflow(taskId: string): Promise<void> {
+    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+
+    const task = await taskRepo.findOne({ where: { id: taskId } });
+    if (!task) {
+      logger.error('Task not found for deployment', { taskId });
+      return;
+    }
+
+    logger.info('Starting deployment workflow', {
+      taskId: task.id,
+      jiraKey: task.jiraIssueKey,
+      deployRetryCount: task.deployRetryCount,
+    });
+
+    // Check circuit breaker - can we retry?
+    const canDeploy = await this.circuitBreaker.canAttemptDeploy(taskId);
+    if (!canDeploy) {
+      logger.error('Circuit breaker open - cannot deploy', {
+        taskId: task.id,
+        deployRetryCount: task.deployRetryCount,
+        lastDeploymentAt: task.lastDeploymentAt,
+      });
+
+      // TODO: Add deployment_failed status once schema updated
+      await this.updateTaskStatus(task, 'failed');
+      await this.logTaskEvent(
+        task,
+        'error',
+        'Deployment blocked by circuit breaker (too many recent failures)',
+        { severity: 'error' }
+      );
+
+      // Update Jira
+      if (this.jiraService) {
+        await this.jiraService.updateJiraFromTask(task);
+      }
+
+      return;
+    }
+
+    // TODO: Add deployment_pending status once schema updated
+    await this.logTaskEvent(task, 'status_change', 'Starting deployment to production');
+
+    // Spawn deployment ECS task
+    try {
+      const ecsRunner = getECSTaskRunner();
+
+      // Record deployment attempt
+      await this.circuitBreaker.recordAttempt(taskId);
+
+      const { taskArn, taskId: ecsTaskId } = await ecsRunner.runDeploymentTask(task);
+
+      // TODO: Store deployment ECS task info once schema updated
+      // For now, log it
+      await this.logTaskEvent(task, 'status_change', `Deployment task started: ${ecsTaskId}`, {
+        metadata: { deploymentEcsTaskArn: taskArn, deploymentEcsTaskId: ecsTaskId }
+      });
+
+      logger.info('Deployment task spawned', {
+        taskId: task.id,
+        ecsTaskArn: taskArn,
+        ecsTaskId,
+      });
+
+      // Monitor deployment completion in background
+      // Pass the ECS task info since we can't store it yet
+      this.monitorDeploymentCompletion(task, taskArn, ecsTaskId).catch(error => {
+        logger.error('Error monitoring deployment completion', { taskId: task.id, error });
+      });
+
+    } catch (error: any) {
+      logger.error('Failed to spawn deployment task', { taskId: task.id, error: error.message });
+
+      await this.updateTaskStatus(task, 'failed');
+      await this.logTaskEvent(
+        task,
+        'error',
+        `Deployment spawn failed: ${error.message}`,
+        { severity: 'error' }
+      );
+
+      // Update Jira
+      if (this.jiraService) {
+        await this.jiraService.updateJiraFromTask(task);
+      }
+    }
+  }
+
+  /**
+   * Monitor deployment task completion
+   */
+  private async monitorDeploymentCompletion(task: AIWorkerTask, taskArn: string, ecsTaskId: string): Promise<void> {
+    try {
+      const ecsRunner = getECSTaskRunner();
+      const status = await ecsRunner.waitForTaskCompletion(taskArn, {
+        timeoutMs: 900000, // 15 minutes for deployment
+        pollIntervalMs: 30000,
+      });
+
+      // Get deployment logs
+      const logs = await ecsRunner.getTaskLogs(ecsTaskId, { limit: 2000 });
+      const logOutput = logs.events.map(e => e.message).join('\n');
+
+      // Parse deployment result from logs
+      const deploymentResult = this.parseDeploymentResult(logOutput);
+
+      if (status.exitCode === 0 && deploymentResult.success) {
+        // Deployment succeeded
+        await this.handleDeploymentComplete(task.id, deploymentResult);
+      } else {
+        // Deployment failed
+        const errorMsg = deploymentResult.error || status.reason || 'Unknown deployment failure';
+
+        await this.updateTaskStatus(task, 'failed');
+        await this.logTaskEvent(
+          task,
+          'error',
+          `Deployment failed: ${errorMsg}`,
+          { severity: 'error', metadata: { logs: logOutput.slice(-1000) } }
+        );
+
+        // Update Jira
+        if (this.jiraService) {
+          await this.jiraService.updateJiraFromTask(task);
+        }
+      }
+
+    } catch (error: any) {
+      logger.error('Error monitoring deployment', { taskId: task.id, error: error.message });
+
+      await this.updateTaskStatus(task, 'failed');
+      await this.logTaskEvent(
+        task,
+        'error',
+        `Deployment monitoring failed: ${error.message}`,
+        { severity: 'error' }
+      );
+
+      // Update Jira
+      if (this.jiraService) {
+        await this.jiraService.updateJiraFromTask(task);
+      }
+    }
+  }
+
+  /**
+   * Parse deployment result from log output
+   */
+  private parseDeploymentResult(logOutput: string): DeploymentResult {
+    try {
+      // Look for JSON output from run_deploy.ts
+      const jsonMatch = logOutput.match(/\{[\s\S]*"success"[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (error) {
+      logger.warn('Failed to parse deployment result JSON', { error });
+    }
+
+    // Fallback - check for success markers
+    const success = logOutput.includes('Deployment completed successfully');
+    const frontendDeployed = logOutput.includes('Frontend deployed');
+    const backendDeployed = logOutput.includes('Backend deployed');
+    const cloudFrontInvalidated = logOutput.includes('CloudFront invalidation');
+
+    return {
+      success,
+      frontendDeployed,
+      backendDeployed,
+      cloudFrontInvalidated,
+      duration: 0,
+      logs: logOutput,
+    };
+  }
+
+  /**
+   * Handle deployment completion
+   * Checks if approval needed for destructive changes, or starts validation
+   */
+  async handleDeploymentComplete(taskId: string, deploymentResult: DeploymentResult): Promise<void> {
+    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
+
+    const task = await taskRepo.findOne({ where: { id: taskId } });
+    if (!task) {
+      logger.error('Task not found for deployment completion', { taskId });
+      return;
+    }
+
+    logger.info('Handling deployment completion', {
+      taskId: task.id,
+      success: deploymentResult.success,
+      requiresApproval: deploymentResult.requiresApproval,
+    });
+
+    // TODO: Store deployment metadata once schema updated
+    await this.logTaskEvent(task, 'status_change', 'Deployment completed successfully', {
+      metadata: { deploymentResult }
+    });
+
+    // Check if destructive approval required
+    if (deploymentResult.requiresApproval) {
+      // TODO: Add awaiting_destructive_approval status once schema updated
+      await this.logTaskEvent(
+        task,
+        'approval_requested',
+        `Deployment requires approval: ${deploymentResult.approvalReason}`,
+        { severity: 'warning', metadata: { safetyCheckResult: deploymentResult.safetyCheckResult } }
+      );
+
+      // TODO: Create approval request for destructive_deploy type once schema updated
+      logger.info('Deployment requires manual approval', { taskId: task.id });
+      return;
+    }
+
+    // No approval needed - record success and mark complete (skip validation for now)
+    await this.circuitBreaker.reset(taskId);
+
+    await this.updateTaskStatus(task, 'completed');
+    await this.logTaskEvent(
+      task,
+      'status_change',
+      `Deployment completed (${deploymentResult.duration}s) - task complete`,
+      { metadata: { deploymentResult } }
+    );
+
+    // TODO: Start validation workflow once validation task runner is set up
+    logger.info('Deployment successful, task marked complete', { taskId: task.id });
+
+    // Update Jira
+    if (this.jiraService) {
+      await this.jiraService.updateJiraFromTask(task);
+    }
+  }
+
+  // ==================== Validation Workflow (TODO: Implement later) ====================
+  // Validation workflow methods will be implemented once:
+  // 1. Schema is updated with validation tracking fields
+  // 2. Validation ECS task definition is created
+  // 3. Retry logic is fully tested
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));

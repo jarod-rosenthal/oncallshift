@@ -616,6 +616,30 @@ async function handlePullRequestReviewEvent(payload: any): Promise<void> {
       jiraKey: task.jiraIssueKey,
       approvedBy: reviewer
     });
+
+    // Trigger deployment workflow if enabled
+    if (task.deploymentEnabled) {
+      logger.info('Deployment enabled, queuing deployment task', {
+        taskId: task.id,
+        jiraKey: task.jiraIssueKey,
+      });
+
+      const SQS = (await import('@aws-sdk/client-sqs')).SQS;
+      const SendMessageCommand = (await import('@aws-sdk/client-sqs')).SendMessageCommand;
+      const sqs = new SQS({ region: process.env.AWS_REGION || 'us-east-1' });
+      const queueUrl = process.env.AI_WORKER_QUEUE_URL;
+
+      if (!queueUrl) {
+        logger.error('AI_WORKER_QUEUE_URL not set, cannot trigger deployment', { taskId: task.id });
+      } else {
+        await sqs.send(new SendMessageCommand({
+          QueueUrl: queueUrl,
+          MessageBody: JSON.stringify({ taskId: task.id, action: 'deploy' }),
+        }));
+
+        logger.info('Deployment queued successfully', { taskId: task.id });
+      }
+    }
   } else if (reviewState === 'CHANGES_REQUESTED') {
     // Don't auto-reject, but log it
     const changeLog = AIWorkerTaskLog.create(
