@@ -80,7 +80,7 @@ export class ECSTaskRunner {
     };
 
     // Build environment variables for the container
-    // Model is determined by Jira labels (defaults to sonnet if no label)
+    // Model is determined by Jira labels (defaults to haiku3.5 if no label)
     const environment: TaskEnvironment = {
       TASK_ID: task.id,
       ORG_ID: task.orgId,
@@ -94,7 +94,7 @@ export class ECSTaskRunner {
       ANTHROPIC_API_KEY: credentials.anthropicApiKey,
       GITHUB_TOKEN: credentials.githubToken,
       MAX_TURNS: String(worker.config.maxTurns || 50),
-      CLAUDE_MODEL: modelToCliName(task.workerModel || 'claude-sonnet-4-20250514'),
+      CLAUDE_MODEL: modelToCliName(task.workerModel || 'claude-haiku-3-5-20241022'),
       // Self-recovery env vars
       RETRY_NUMBER: String(task.retryCount),
       PREVIOUS_RUN_CONTEXT: task.previousRunContext || '',
