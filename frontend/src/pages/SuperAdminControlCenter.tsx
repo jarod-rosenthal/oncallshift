@@ -2991,7 +2991,7 @@ export default function SuperAdminControlCenter() {
                             <RotateCcw className="w-4 h-4" />
                           </button>
                         )}
-                        {["executing", "queued", "environment_setup"].includes(
+                        {["executing", "queued", "environment_setup", "pr_created", "manager_review", "revision_needed"].includes(
                           task.status,
                         ) && (
                           <button
