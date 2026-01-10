@@ -151,7 +151,7 @@ Your workflow is:
    BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
    ECR_REPO="593971626975.dkr.ecr.us-east-1.amazonaws.com/pagerduty-lite-dev-api"
 
-   /usr/local/bin/executor \
+   /kaniko/executor \
      --context=/home/aiworker/workspace \
      --dockerfile=Dockerfile \
      --destination=$ECR_REPO:$GIT_SHA \
