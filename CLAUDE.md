@@ -519,6 +519,30 @@ The deploy script handles:
 
 **IMPORTANT: Always run `./deploy.sh` after making UI code changes** so the user can view them at https://oncallshift.com. The frontend is served from S3/CloudFront and changes are not visible until deployed.
 
+#### AI Worker Orchestrator Deployment
+
+**When changes affect ONLY the orchestrator,** use the dedicated orchestrator deployment script to ensure TypeScript is properly rebuilt:
+
+```bash
+./deploy-orchestrator.sh    # Deploy orchestrator with explicit TypeScript rebuild
+```
+
+**Use this script when:**
+- Modifying `backend/src/workers/ai-worker-orchestrator.ts`
+- Modifying `backend/src/shared/models/AIWorkerTask.ts` (especially status-related logic)
+- Modifying any orchestrator-specific logic
+- You've deployed before but the orchestrator is still running old code
+
+**The script ensures:**
+1. Backend TypeScript is explicitly rebuilt with `npm run build`
+2. Docker image is built with a unique versioned tag (not just `:latest`)
+3. New image is pushed to ECR
+4. Orchestrator service is force-redeployed
+5. New task starts and old task is terminated
+6. Logs are checked to verify new code is running
+
+**Why this exists:** The main `deploy.sh` doesn't always trigger TypeScript rebuilds, which can result in stale compiled JavaScript being packaged in Docker images. This dedicated script guarantees the orchestrator gets the latest code.
+
 ### Infrastructure
 ```bash
 cd infrastructure/terraform/environments/dev
