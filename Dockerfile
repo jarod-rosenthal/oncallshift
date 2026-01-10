@@ -41,8 +41,20 @@ COPY backend/src ./src
 # Build TypeScript
 RUN npm run build
 
+# Capture build metadata as build args
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
 # Production stage
 FROM node:20.18-alpine
+
+# Re-declare ARGs for this stage
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+# Set environment variables for runtime access
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
 
 WORKDIR /app
 

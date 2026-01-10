@@ -664,7 +664,14 @@ class AIWorkerOrchestrator {
     }
 
     if (!task.canRetry()) {
-      logger.info('Task cannot be retried', { taskId, retryCount: task.retryCount, maxRetries: task.maxRetries });
+      logger.info('Task cannot be retried', {
+        taskId,
+        status: task.status,
+        retryCount: task.retryCount,
+        maxRetries: task.maxRetries,
+        statusCheck: `status === "failed": ${task.status === "failed"}, status === "cancelled": ${task.status === "cancelled"}`,
+        retryCountCheck: `retryCount < maxRetries: ${task.retryCount < task.maxRetries}`,
+      });
       return;
     }
 

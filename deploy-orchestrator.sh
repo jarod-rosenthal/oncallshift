@@ -1,16 +1,21 @@
 #!/bin/bash
 set -e
 
-echo "🤖 AI Worker Orchestrator Deployment Script"
-echo "============================================"
+echo "🤖 AI Worker Orchestrator Deployment"
+echo "====================================="
 echo ""
 
-# Get git commit for versioning
-COMMIT=$(git rev-parse --short HEAD)
-TIMESTAMP=$(date +%s)
-VERSION="orch-${COMMIT}-${TIMESTAMP}"
+# Configuration
+AWS_REGION="us-east-1"
+ECR_REPO="REDACTED_ECR_REGISTRY/pagerduty-lite-dev-api"
+ECS_CLUSTER="pagerduty-lite-dev"
+ECS_SERVICE="pagerduty-lite-dev-aiw-orch"
 
-echo "📝 Version: $VERSION"
+# Get git commit SHA and build time for versioning
+GIT_SHA=$(git rev-parse --short HEAD)
+BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+echo "📝 Version: $GIT_SHA"
+echo "📝 Build time: $BUILD_TIME"
 echo ""
 
 # Step 1: Rebuild backend TypeScript
@@ -21,83 +26,73 @@ cd ..
 echo "✅ TypeScript compiled"
 echo ""
 
-# Step 2: Build Docker image with unique version tag
+# Step 2: Build Docker image with metadata
 echo "🐳 Building Docker image..."
-docker build -t pagerduty-lite-dev-api:${VERSION} -f Dockerfile .
-echo "✅ Docker image built: ${VERSION}"
+docker build \
+  --build-arg GIT_COMMIT=$GIT_SHA \
+  --build-arg BUILD_TIME="$BUILD_TIME" \
+  -t $ECR_REPO:$GIT_SHA \
+  .
+echo "✅ Docker image built: $GIT_SHA"
 echo ""
 
-# Step 3: Login to ECR
+# Step 3: Login to ECR and push
 echo "🔐 Logging into ECR..."
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin REDACTED_ECR_REGISTRY
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin REDACTED_ECR_REGISTRY
 echo "✅ Logged into ECR"
 echo ""
 
-# Step 4: Tag and push to ECR
-ECR_REPO="REDACTED_ECR_REGISTRY/pagerduty-lite-dev-api"
-echo "⬆️  Pushing to ECR..."
-docker tag pagerduty-lite-dev-api:${VERSION} ${ECR_REPO}:${VERSION}
-docker push ${ECR_REPO}:${VERSION}
-
-# Also update latest tag
-docker tag pagerduty-lite-dev-api:${VERSION} ${ECR_REPO}:latest
-docker push ${ECR_REPO}:latest
-echo "✅ Pushed to ECR: ${VERSION} and :latest"
+echo "⬆️  Pushing versioned image to ECR..."
+docker push $ECR_REPO:$GIT_SHA
+echo "✅ Pushed to ECR: $GIT_SHA"
 echo ""
 
-# Step 5: Force new deployment of orchestrator service
-echo "🔄 Force redeploying AI Worker Orchestrator..."
-aws ecs update-service \
-  --cluster pagerduty-lite-dev \
-  --service pagerduty-lite-dev-aiw-orch \
-  --force-new-deployment \
-  --region us-east-1 \
-  --query 'service.{serviceName:serviceName,desiredCount:desiredCount}' \
-  --output table
-
+# Step 4: Update Terraform with new image tag
+echo "🏗️  Updating Terraform..."
+cd infrastructure/terraform/environments/dev
+echo "image_tag = \"$GIT_SHA\"" > terraform.tfvars
+terraform apply -auto-approve -target=module.ai_worker_orchestrator
+cd ../../../../
+echo "✅ Terraform updated with new image tag"
 echo ""
-echo "⏳ Waiting for new orchestrator task to start (max 2 minutes)..."
 
-# Wait for new task to be running
-for i in {1..24}; do
-  RUNNING_COUNT=$(aws ecs describe-services \
-    --cluster pagerduty-lite-dev \
-    --services pagerduty-lite-dev-aiw-orch \
-    --region us-east-1 \
-    --query 'services[0].runningCount' \
+# Step 5: Verify deployment
+echo "🔍 Verifying orchestrator deployment..."
+echo "   Waiting for new task to stabilize (20 seconds)..."
+sleep 20
+
+# Check task is running with new image
+TASK_ARN=$(aws ecs list-tasks \
+  --cluster $ECS_CLUSTER \
+  --service-name $ECS_SERVICE \
+  --desired-status RUNNING \
+  --region $AWS_REGION \
+  --query 'taskArns[0]' \
+  --output text)
+
+if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
+  TASK_IMAGE=$(aws ecs describe-tasks \
+    --cluster $ECS_CLUSTER \
+    --tasks "$TASK_ARN" \
+    --region $AWS_REGION \
+    --query 'tasks[0].containers[0].image' \
     --output text)
 
-  if [ "$RUNNING_COUNT" -ge "1" ]; then
-    echo "✅ New orchestrator task is running!"
-    break
+  if echo "$TASK_IMAGE" | grep -q "$GIT_SHA"; then
+    echo "✅ Deployment verified! Running version: $GIT_SHA"
+  else
+    echo "⚠️  Warning: Task image doesn't match expected version"
+    echo "   Expected tag: $GIT_SHA"
+    echo "   Running: $TASK_IMAGE"
   fi
-
-  echo "   Waiting... ($i/24)"
-  sleep 5
-done
-
-# Step 6: Verify new code is running by checking logs
-echo ""
-echo "🔍 Verifying new code is running..."
-sleep 10  # Wait for logs to appear
-
-RECENT_LOG=$(aws logs tail /ecs/pagerduty-lite-dev/aiw-orch --since 30s --region us-east-1 2>&1 | grep "Initializing\|starting" | tail -1)
-
-if [ -n "$RECENT_LOG" ]; then
-  echo "✅ Orchestrator logs detected - service is running"
-  echo "   Latest log: $RECENT_LOG"
 else
-  echo "⚠️  No recent logs found - check manually"
+  echo "⚠️  Warning: Could not find running task"
 fi
 
 echo ""
-echo "============================================"
-echo "✅ Deployment complete!"
-echo ""
-echo "📊 Check status:"
-echo "   aws ecs describe-services --cluster pagerduty-lite-dev --services pagerduty-lite-dev-aiw-orch --region us-east-1"
+echo "====================================="
+echo "✅ Orchestrator deployment complete!"
 echo ""
 echo "📋 View logs:"
 echo "   aws logs tail /ecs/pagerduty-lite-dev/aiw-orch --follow --region us-east-1"
 echo ""
-echo "🧪 Now you can retry OCS-159 from Control Center"
