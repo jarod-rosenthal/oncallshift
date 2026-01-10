@@ -325,8 +325,9 @@ async function deployAndValidate() {
 The AI worker autonomous deployment flow uses validation like this:
 
 ```typescript
-// Phase 3: Deploy
-await runCommand('./deploy.sh');
+// Phase 3: Deploy using direct commands (Kaniko + AWS CLI)
+// See execution/deploy/run_deploy.ts for the implementation
+await runDeployment({ backend: true, frontend: true });
 
 // Phase 4: Validate
 const validation = await validateDeployment();
