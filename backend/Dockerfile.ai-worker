@@ -82,14 +82,19 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /
     && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Kaniko executor from the kaniko stage
+# Copy Kaniko executor and full /kaniko directory from the kaniko stage
 # Kaniko can build and push Docker images without requiring Docker daemon
-COPY --from=kaniko /kaniko/executor /usr/local/bin/executor
+COPY --from=kaniko /kaniko /kaniko
+ENV PATH="/kaniko:${PATH}"
+ENV DOCKER_CONFIG=/kaniko/.docker
+ENV DOCKER_CREDENTIAL_GCR_CONFIG=/kaniko/.config/gcloud/docker_credential_gcr_config.json
 
 # Create non-root user and set up directories
 RUN useradd -m -s /bin/bash aiworker \
     && mkdir -p /home/aiworker/go/bin /home/aiworker/go/pkg /home/aiworker/go/src \
-    && chown -R aiworker:aiworker /home/aiworker
+    && chown -R aiworker:aiworker /home/aiworker \
+    && chown -R aiworker:aiworker /kaniko \
+    && chmod -R 755 /kaniko
 WORKDIR /home/aiworker
 
 # Install Claude Code CLI globally
@@ -146,7 +151,7 @@ RUN echo "=== Installed Tools ===" && \
     terraform --version && \
     go version && \
     docker --version && \
-    /usr/local/bin/executor version && \
+    /kaniko/executor version && \
     make --version | head -1 && \
     claude --version && \
     echo "=== All tools installed successfully ==="
