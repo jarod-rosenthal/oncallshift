@@ -114,10 +114,7 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
           "claimed",
           "environment_setup",
           "executing",
-          "pr_created",
-          "manager_review",
           "revision_needed",
-          "review_pending",
           "deployment_pending",
           "deploying",
           "deployed_validating",
@@ -132,6 +129,9 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
           "cancelled",
           "review_rejected",
           "review_approved",
+          "review_pending", // Waiting for review - drop after 10 min
+          "pr_created", // PR created, waiting - drop after 10 min
+          "manager_review", // Under review - drop after 10 min
           "deployment_failed",
           "validation_failed",
         ]),
