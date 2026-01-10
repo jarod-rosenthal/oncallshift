@@ -417,12 +417,41 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       persona,
     });
 
-    // Queue the task for execution
+    // Queue the task for execution (for durability)
     if (queueUrl) {
       await sqs.send(new SendMessageCommand({
         QueueUrl: queueUrl,
         MessageBody: JSON.stringify({ taskId: task.id, action: 'execute' }),
       }));
+    }
+
+    // PUSH-BASED: Immediately trigger task processing
+    try {
+      const triggerUrl = `http://localhost:${process.env.PORT || 3000}/api/v1/ai-worker-tasks/${task.id}/trigger`;
+      const internalKey = process.env.INTERNAL_SERVICE_KEY;
+
+      const triggerResponse = await fetch(triggerUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Key': internalKey || '',
+        },
+      });
+
+      if (!triggerResponse.ok) {
+        logger.warn('Failed to immediately trigger task, will be picked up by orchestrator', {
+          taskId: task.id,
+          status: triggerResponse.status,
+        });
+      } else {
+        logger.info('Task triggered immediately (push-based)', { taskId: task.id });
+      }
+    } catch (triggerError) {
+      logger.warn('Error triggering task immediately, will be picked up by orchestrator', {
+        taskId: task.id,
+        error: triggerError,
+      });
+      // Non-fatal - task will be processed by orchestrator poll if this fails
     }
 
     return res.status(201).json({
@@ -559,15 +588,25 @@ async function handlePullRequestEvent(payload: any): Promise<void> {
 
     case 'closed':
       if (pr.merged) {
-        // PR was merged
-        task.status = 'completed';
+        // PR was merged - set terminal status based on previous state
+        if (task.status === 'review_requested' || task.status === 'pr_approved') {
+          // Risky PR was approved and merged
+          task.status = 'pr_merged';
+        } else {
+          // Safe PR was auto-merged or legacy completed task
+          task.status = 'pr_merged';
+        }
         task.completedAt = new Date();
         await taskRepo.save(task);
 
         const log = AIWorkerTaskLog.create(task.id, 'git_operation', `PR #${pr.number} was merged`, { severity: 'info' });
         await logRepo.save(logRepo.create(log));
 
-        logger.info('Task completed via PR merge', { taskId: task.id, prNumber: pr.number });
+        logger.info('PR merged, task completed', {
+          taskId: task.id,
+          prNumber: pr.number,
+          finalStatus: task.status
+        });
       } else {
         // PR was closed without merge
         const log = AIWorkerTaskLog.create(task.id, 'warning', `PR #${pr.number} was closed without merge`, { severity: 'warning' });
@@ -660,19 +699,39 @@ async function handlePullRequestReviewEvent(payload: any): Promise<void> {
       await approvalRepo.save(approval);
     }
 
-    // Update task status and record who approved (for ANY status, not just pr_created/review_pending)
-    task.status = 'review_approved';
-    task.githubApprovedBy = reviewer; // Store GitHub username who approved
-    await taskRepo.save(task);
+    // Check if this was a risky PR waiting for review
+    if (task.status === 'review_requested') {
+      // Human approved risky PR - transition to pr_approved and REQUEUE for deployment
+      task.status = 'pr_approved';
+      task.githubApprovedBy = reviewer;
+      await taskRepo.save(task);
 
-    logger.info('Task updated to review_approved', {
-      taskId: task.id,
-      jiraKey: task.jiraIssueKey,
-      approvedBy: reviewer
-    });
+      logger.info('Risky PR approved, requeueing for deployment', {
+        taskId: task.id,
+        prNumber: pr.number,
+        reviewer
+      });
 
-    // Note: Deployment happens when PR is created (case 'opened'), not when approved
-    // In dev environment, PR approval is just a signal to merge, deployment already happened
+      // Requeue the task for deployment via SQS
+      if (queueUrl) {
+        await sqs.send(new SendMessageCommand({
+          QueueUrl: queueUrl,
+          MessageBody: JSON.stringify({ taskId: task.id, action: 'deploy_approved_pr' }),
+        }));
+        logger.info('Task requeued for deployment after PR approval', { taskId: task.id });
+      }
+    } else {
+      // Regular approval (legacy workflow or already deployed)
+      task.status = 'review_approved';
+      task.githubApprovedBy = reviewer;
+      await taskRepo.save(task);
+
+      logger.info('Task updated to review_approved', {
+        taskId: task.id,
+        jiraKey: task.jiraIssueKey,
+        approvedBy: reviewer
+      });
+    }
   } else if (reviewState === 'CHANGES_REQUESTED') {
     // Don't auto-reject, but log it
     const changeLog = AIWorkerTaskLog.create(

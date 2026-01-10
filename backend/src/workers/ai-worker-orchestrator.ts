@@ -15,7 +15,7 @@ import { initSentry } from '../shared/config/sentry';
 // Initialize Sentry for this worker
 initSentry({ workerName: 'ai-worker-orchestrator' });
 
-import { SQS, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs';
+import { SQS } from '@aws-sdk/client-sqs'; // Push-based mode - no longer polling
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { ECS } from '@aws-sdk/client-ecs';
 import { DataSource, In, Not } from 'typeorm';
@@ -41,7 +41,9 @@ import { DeployCircuitBreaker } from '../shared/services/deploy-circuit-breaker'
 //   timestamp: Date;
 // }
 
-interface QueueMessage {
+// Unused in push-based mode - tasks triggered via HTTP endpoint
+// @ts-ignore
+interface _QueueMessage_UNUSED {
   taskId: string;
   action: 'execute' | 'retry' | 'cancel' | 'check_status' | 'deploy' | 'validate';
 }
@@ -128,18 +130,20 @@ class AIWorkerOrchestrator {
 
   async start(): Promise<void> {
     this.running = true;
-    logger.info('AI Worker Orchestrator starting...');
+    logger.info('AI Worker Orchestrator starting (PUSH-BASED MODE)...');
 
     await this.initialize();
 
-    // Start polling loop
+    // PUSH-BASED MODE: Tasks are now triggered immediately via HTTP endpoint
+    // /api/v1/ai-worker-tasks/:id/trigger instead of SQS polling
+    // This orchestrator process stays alive for monitoring and background tasks
+    logger.info('✓ Push-based mode enabled - tasks execute immediately when created/retried');
+    logger.info('✓ HTTP trigger endpoint: POST /api/v1/ai-worker-tasks/:id/trigger');
+    logger.info('✓ SQS polling disabled');
+
+    // Keep process alive for monitoring tasks
     while (this.running) {
-      try {
-        await this.pollQueue();
-      } catch (error) {
-        logger.error('Error in polling loop', { error });
-        await this.sleep(5000);
-      }
+      await this.sleep(60000); // Sleep 1 minute at a time
     }
   }
 
@@ -148,66 +152,8 @@ class AIWorkerOrchestrator {
     logger.info('AI Worker Orchestrator stopping...');
   }
 
-  private async pollQueue(): Promise<void> {
-    const command = new ReceiveMessageCommand({
-      QueueUrl: this.queueUrl,
-      MaxNumberOfMessages: 1,
-      WaitTimeSeconds: 20, // Long polling
-      VisibilityTimeout: 3600, // 1 hour
-    });
+  // REMOVED in push-based mode - kept for reference
 
-    const response = await this.sqs.send(command);
-
-    if (!response.Messages || response.Messages.length === 0) {
-      return;
-    }
-
-    for (const message of response.Messages) {
-      try {
-        const body = JSON.parse(message.Body || '{}') as QueueMessage;
-        await this.processMessage(body);
-
-        // Delete message on success
-        await this.sqs.send(new DeleteMessageCommand({
-          QueueUrl: this.queueUrl,
-          ReceiptHandle: message.ReceiptHandle!,
-        }));
-      } catch (error) {
-        logger.error('Error processing message', { error, messageId: message.MessageId });
-        // Message will be returned to queue after visibility timeout
-      }
-    }
-  }
-
-  private async processMessage(message: QueueMessage): Promise<void> {
-    logger.info('Processing message', { action: message.action, taskId: message.taskId });
-
-    switch (message.action) {
-      case 'execute':
-        await this.executeTask(message.taskId);
-        break;
-      case 'retry':
-        await this.retryTask(message.taskId);
-        break;
-      case 'cancel':
-        await this.cancelTask(message.taskId);
-        break;
-      case 'check_status':
-        await this.checkTaskStatus(message.taskId);
-        break;
-      case 'deploy':
-        // Deployment workflow triggered by review approval
-        await this.startDeploymentWorkflow(message.taskId);
-        break;
-      case 'validate':
-        // Validation triggered after deployment completes
-        // NOTE: This would be called by the deployment task, not via SQS
-        logger.warn('Validate action should not be called via SQS', { taskId: message.taskId });
-        break;
-      default:
-        logger.warn('Unknown action', { action: message.action });
-    }
-  }
 
   private async executeTask(taskId: string): Promise<void> {
     const taskRepo = this.dataSource.getRepository(AIWorkerTask);
@@ -654,86 +600,8 @@ class AIWorkerOrchestrator {
     await this.logTaskEvent(task, 'approval_requested', 'PR review requested');
   }
 
-  private async retryTask(taskId: string): Promise<void> {
-    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
 
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      logger.error('Task not found for retry', { taskId });
-      return;
-    }
 
-    if (!task.canRetry()) {
-      logger.info('Task cannot be retried', { taskId, retryCount: task.retryCount, maxRetries: task.maxRetries });
-      return;
-    }
-
-    task.retryCount++;
-    task.status = 'queued';
-    task.errorMessage = null;
-    task.ecsTaskArn = null;
-    task.ecsTaskId = null;
-    await taskRepo.save(task);
-
-    await this.logTaskEvent(task, 'retry', `Retry attempt ${task.retryCount}/${task.maxRetries}`);
-
-    // Re-execute
-    await this.executeTask(taskId);
-  }
-
-  private async cancelTask(taskId: string): Promise<void> {
-    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
-    const workerRepo = this.dataSource.getRepository(AIWorkerInstance);
-
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task) {
-      logger.error('Task not found for cancel', { taskId });
-      return;
-    }
-
-    // Stop ECS task if running
-    if (task.ecsTaskArn && task.status === 'executing') {
-      const ecsRunner = getECSTaskRunner();
-      await ecsRunner.stopTask(task.ecsTaskArn, 'Cancelled by user');
-    }
-
-    // Release worker
-    if (task.assignedWorkerId) {
-      const worker = await workerRepo.findOne({ where: { id: task.assignedWorkerId } });
-      if (worker) {
-        worker.status = 'idle';
-        worker.currentTaskId = null;
-        worker.tasksCancelled++;
-        await workerRepo.save(worker);
-      }
-    }
-
-    await this.updateTaskStatus(task, 'cancelled');
-    await this.logTaskEvent(task, 'status_change', 'Task cancelled');
-
-    // Update Jira
-    if (this.jiraService) {
-      await this.jiraService.updateJiraFromTask(task);
-    }
-  }
-
-  private async checkTaskStatus(taskId: string): Promise<void> {
-    const taskRepo = this.dataSource.getRepository(AIWorkerTask);
-
-    const task = await taskRepo.findOne({ where: { id: taskId } });
-    if (!task || !task.ecsTaskArn) {
-      return;
-    }
-
-    const ecsRunner = getECSTaskRunner();
-    const status = await ecsRunner.getTaskStatus(task.ecsTaskArn);
-
-    logger.info('Task status check', {
-      taskId,
-      ecsStatus: status.status,
-      exitCode: status.exitCode,
-    });
-  }
 
   private async updateTaskStatus(task: AIWorkerTask, status: AIWorkerTaskStatus): Promise<void> {
     const taskRepo = this.dataSource.getRepository(AIWorkerTask);
