@@ -43,7 +43,7 @@ export class AIWorkerInstance {
   @Column({ type: 'varchar', length: 20, default: 'worker' })
   role: AIWorkerRole;
 
-  @Column({ name: 'model_id', type: 'varchar', length: 100, default: 'claude-sonnet-4-20250514' })
+  @Column({ name: 'model_id', type: 'varchar', length: 100, default: 'claude-3-5-haiku-20241022' })
   modelId: string;
 
   @Column({ name: 'current_task_id', type: 'uuid', nullable: true })

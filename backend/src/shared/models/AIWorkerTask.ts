@@ -246,7 +246,7 @@ export class AIWorkerTask {
     name: "worker_model",
     type: "varchar",
     length: 50,
-    default: "claude-sonnet-4-20250514",
+    default: "claude-3-5-haiku-20241022",
   })
   workerModel: string;
 

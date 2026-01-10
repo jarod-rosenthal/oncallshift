@@ -467,8 +467,8 @@ router.post(
       const labels = (jiraIssue?.fields?.labels as string[]) || [];
       const deploymentEnabled = labels.includes('ai-worker-deploy');
 
-      // Determine model from labels (default to sonnet)
-      let workerModel = 'sonnet';
+      // Determine model from labels (default to haiku for cost optimization)
+      let workerModel = 'haiku';
       for (const label of labels) {
         const normalizedLabel = label.toLowerCase().replace(/[-_\s.]/g, '');
         const labelModel = LABEL_MODEL_MAPPING[normalizedLabel] || LABEL_MODEL_MAPPING[label.toLowerCase()];
