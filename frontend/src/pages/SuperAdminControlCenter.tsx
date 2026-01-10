@@ -1979,8 +1979,6 @@ export default function SuperAdminControlCenter() {
                 environment_setup: 1,
                 executing: 1,
                 pr_created: 2,
-                review_requested: 2,      // NEW - Risky PR waiting for review
-                pr_approved: 2,           // NEW - Approved, about to deploy
                 manager_review: 3,
                 revision_needed: 1, // Goes back to executing
                 review_pending: 3,
@@ -1990,8 +1988,7 @@ export default function SuperAdminControlCenter() {
                 deploying: 4,
                 deployed_validating: 4,
                 awaiting_destructive_approval: 3, // Paused at review stage
-                completed: 4,             // No code changes
-                pr_merged: 4,             // NEW - Successfully deployed and merged
+                completed: 4,
                 failed: -1,
                 blocked: -1,
                 cancelled: -1,
@@ -2045,20 +2042,12 @@ export default function SuperAdminControlCenter() {
                             ? "bg-red-500/10 text-red-500"
                             : isRevision
                               ? "bg-orange-500/10 text-orange-500"
-                              : task.status === "completed" || task.status === "pr_merged"
+                              : task.status === "completed"
                                 ? "bg-green-500/10 text-green-500"
-                                : task.status === "review_requested"
-                                  ? "bg-yellow-500/10 text-yellow-500"
-                                  : task.status === "pr_approved"
-                                    ? "bg-cyan-500/10 text-cyan-500"
-                                    : "bg-blue-500/10 text-blue-500"
+                                : "bg-blue-500/10 text-blue-500"
                         }`}
                       >
-                        {task.status === "completed" ? "No Changes" :
-                         task.status === "pr_merged" ? "Deployed & Merged" :
-                         task.status === "review_requested" ? "Awaiting Review" :
-                         task.status === "pr_approved" ? "Approved, Deploying" :
-                         task.status.replace(/_/g, " ")}
+                        {task.status.replace(/_/g, " ")}
                       </span>
                     </div>
                   </div>
