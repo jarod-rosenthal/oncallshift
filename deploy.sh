@@ -104,6 +104,10 @@ echo "📝 Updating Terraform variable: image_tag = \"$GIT_SHA\""
 # Preserve existing tfvars and only update image_tag line
 if [ -f terraform.tfvars ]; then
   sed -i "s/^image_tag.*$/image_tag   = \"$GIT_SHA\"/" terraform.tfvars
+  # Ensure domain_name is present (may have been accidentally removed)
+  if ! grep -q "^domain_name" terraform.tfvars; then
+    echo 'domain_name = "oncallshift.com"' >> terraform.tfvars
+  fi
 else
   # Create new file with both required variables
   cat > terraform.tfvars <<EOF
