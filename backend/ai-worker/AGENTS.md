@@ -133,27 +133,55 @@ curl -X POST "https://oncallshift.atlassian.net/rest/api/3/issue/${JIRA_ISSUE_KE
 
 ## Deployment (Optional - Task-Specific)
 
-**Deployment is ONLY enabled when the Jira ticket has the `ai-worker-deploy` label.**
+**Deployment is ONLY enabled when the Jira ticket has the `deploy` label.**
 
-### WITH `ai-worker-deploy` label (Deploy-Enabled Tasks):
+### WITH `deploy` label (Deploy-Enabled Tasks):
 Your workflow is:
 1. Make code changes
 2. Commit changes to your branch
-3. **Run deployment script: `cd /home/aiworker/workspace && ./deploy.sh`**
-4. **Watch deployment progress** - the script will show build/deploy status
-5. **Verify deployment succeeded:**
-   - Check health endpoint: `curl -s https://oncallshift.com/health | jq .`
-   - For backend changes: Check API is responding
-   - For frontend changes: Verify CloudFront invalidation completed
-6. **If deployment fails:** Fix the issue, commit again, re-run `./deploy.sh`
-7. **After successful deployment:** Create PR with summary
-8. **Merge the PR immediately** UNLESS the Jira ticket has a `review` label:
-   - **NO `review` label:** Merge PR with `gh pr merge <PR_NUMBER> --squash --delete-branch`
-   - **HAS `review` label:** Leave PR open for Manager review, do not merge
-9. Add completion comment to Jira noting deployment and merge status
-10. Transition Jira ticket to Done
+3. **Deploy backend changes (ONLY if you modified backend code):**
+   ```bash
+   cd /home/aiworker/workspace
 
-**IMPORTANT:** Do NOT create a PR before deploying. Deploy first, verify it works, then create and optionally merge the PR.
+   # Build TypeScript
+   cd backend && npm run build && cd ..
+
+   # Build and push Docker image with Kaniko (daemonless image builder)
+   GIT_SHA=$(git rev-parse --short HEAD)
+   BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+   ECR_REPO="REDACTED_ECR_REGISTRY/pagerduty-lite-dev-api"
+
+   /usr/local/bin/executor \
+     --context=/home/aiworker/workspace \
+     --dockerfile=Dockerfile \
+     --destination=$ECR_REPO:$GIT_SHA \
+     --build-arg GIT_COMMIT=$GIT_SHA \
+     --build-arg BUILD_TIME="$BUILD_TIME"
+
+   # Force ECS service to deploy new image
+   aws ecs update-service \
+     --cluster pagerduty-lite-dev \
+     --service pagerduty-lite-dev-api \
+     --force-new-deployment \
+     --region us-east-1
+
+   # Wait for deployment to stabilize
+   sleep 30
+   ```
+4. **Verify deployment succeeded:**
+   - Check health endpoint: `curl -s https://oncallshift.com/health | jq .`
+   - For API changes: Test your endpoint works
+5. **After successful deployment:** Create PR with summary
+6. **Merge the PR immediately** UNLESS the Jira ticket has a `review` label:
+   - **NO `review` label:** Merge PR with `gh pr merge <PR_NUMBER> --squash --delete-branch`
+   - **HAS `review` label:** Leave PR open for human review, do not merge
+7. Add completion comment to Jira noting deployment and merge status
+8. Transition Jira ticket to Done
+
+**IMPORTANT Notes:**
+- Deploy BEFORE creating PR (verify it works in production first)
+- If you only changed frontend code, skip deployment - frontend is deployed separately
+- If deployment fails, fix the issue and retry
 
 ### WITHOUT `ai-worker-deploy` label (Default - No Deployment):
 Your workflow is:

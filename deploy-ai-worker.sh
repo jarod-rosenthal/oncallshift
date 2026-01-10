@@ -7,52 +7,66 @@ echo "🚀 Deploying AI Worker image..."
 AWS_REGION="us-east-1"
 ECR_REPO="REDACTED_ECR_REGISTRY/pagerduty-lite-dev-ai-worker"
 
+# Get git commit SHA for versioned tag
+GIT_SHA=$(git rev-parse --short HEAD)
+echo "Git SHA: $GIT_SHA"
+
 # 1. Login to ECR
 echo "📝 Logging into ECR..."
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
 
-# 2. Build Docker image
+# 2. Build Docker image with versioned tag
 echo "🔨 Building AI Worker Docker image..."
 cd backend
-docker build -f Dockerfile.ai-worker -t $ECR_REPO:latest .
+docker build -f Dockerfile.ai-worker -t $ECR_REPO:$GIT_SHA .
 cd ..
 
 # 3. Push to ECR
-echo "⬆️  Pushing to ECR..."
-docker push $ECR_REPO:latest
+echo "⬆️  Pushing to ECR (tag: $GIT_SHA)..."
+docker push $ECR_REPO:$GIT_SHA
 
-# 4. Update Manager Executor task definition to use :latest
-echo "🔄 Updating Manager Executor task definition..."
-TASK_DEF_ARN=$(aws ecs describe-task-definition \
-  --task-definition pagerduty-lite-dev-ai-worker-manager-executor \
+# 4. Update Executor task definition
+echo "🔄 Updating Executor task definition..."
+EXECUTOR_TASK_DEF=$(aws ecs describe-task-definition \
+  --task-definition pagerduty-lite-dev-ai-worker-executor \
   --region $AWS_REGION \
-  --query 'taskDefinition.taskDefinitionArn' \
-  --output text)
+  --query 'taskDefinition' \
+  --output json)
 
-echo "Current task definition: $TASK_DEF_ARN"
+EXECUTOR_NEW=$(echo "$EXECUTOR_TASK_DEF" | jq --arg tag "$GIT_SHA" '
+  del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy) |
+  .containerDefinitions[0].image = "REDACTED_ECR_REGISTRY/pagerduty-lite-dev-ai-worker:" + $tag
+')
 
-# Register new task definition with :latest tag
-TASK_DEF_JSON=$(aws ecs describe-task-definition \
+echo "Registering new Executor revision with image tag: $GIT_SHA"
+aws ecs register-task-definition \
+  --cli-input-json "$EXECUTOR_NEW" \
+  --region $AWS_REGION \
+  --query 'taskDefinition.{family:family,revision:revision,image:containerDefinitions[0].image}' \
+  --output table
+
+# 5. Update Manager Executor task definition
+echo "🔄 Updating Manager Executor task definition..."
+MANAGER_TASK_DEF=$(aws ecs describe-task-definition \
   --task-definition pagerduty-lite-dev-ai-worker-manager-executor \
   --region $AWS_REGION \
   --query 'taskDefinition' \
   --output json)
 
-# Remove read-only fields and update image tag
-NEW_TASK_DEF=$(echo "$TASK_DEF_JSON" | jq '
+MANAGER_NEW=$(echo "$MANAGER_TASK_DEF" | jq --arg tag "$GIT_SHA" '
   del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy) |
-  .containerDefinitions[0].image = "REDACTED_ECR_REGISTRY/pagerduty-lite-dev-ai-worker:latest"
+  .containerDefinitions[0].image = "REDACTED_ECR_REGISTRY/pagerduty-lite-dev-ai-worker:" + $tag
 ')
 
-echo "$NEW_TASK_DEF" | jq '.containerDefinitions[0].image'
-
-# Register new revision
+echo "Registering new Manager Executor revision with image tag: $GIT_SHA"
 aws ecs register-task-definition \
-  --cli-input-json "$NEW_TASK_DEF" \
+  --cli-input-json "$MANAGER_NEW" \
   --region $AWS_REGION \
   --query 'taskDefinition.{family:family,revision:revision,image:containerDefinitions[0].image}' \
   --output table
 
-echo "✅ AI Worker image deployed successfully!"
 echo ""
-echo "Manager Executor will use the updated image on next task spawn."
+echo "✅ AI Worker image deployed successfully!"
+echo "   Image: $ECR_REPO:$GIT_SHA"
+echo ""
+echo "Both Executor and Manager Executor will use the updated image on next task spawn."
