@@ -353,8 +353,8 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
       personaSource = `issueType:${issueType}`;
     }
 
-    // Determine model from labels (default to sonnet)
-    let workerModel = 'sonnet';
+    // Determine model from labels (default to haiku for cost optimization)
+    let workerModel = 'haiku';
     for (const label of issueLabels) {
       const normalizedLabel = label.toLowerCase().replace(/[-_\s.]/g, '');
       const labelModel = LABEL_MODEL_MAPPING[normalizedLabel] || LABEL_MODEL_MAPPING[label.toLowerCase()];

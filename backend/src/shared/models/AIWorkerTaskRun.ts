@@ -59,7 +59,7 @@ export class AIWorkerTaskRun {
   @Column({ name: 'claude_cache_read_tokens', type: 'int', default: 0 })
   claudeCacheReadTokens: number;
 
-  @Column({ name: 'worker_model', type: 'varchar', length: 50, default: 'sonnet' })
+  @Column({ name: 'worker_model', type: 'varchar', length: 50, default: 'haiku' })
   workerModel: string;
 
   @Column({ name: 'estimated_cost_usd', type: 'decimal', precision: 10, scale: 4, default: 0 })

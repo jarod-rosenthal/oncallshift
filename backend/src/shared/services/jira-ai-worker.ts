@@ -433,7 +433,7 @@ export class JiraAIWorkerService {
       return null;
     }
 
-    // Determine model from labels (defaults to Sonnet if no model label)
+    // Determine model from labels (defaults to Haiku if no model label)
     const workerModel = this.determineModel(issue);
 
     // Check for review label - enables manager review
