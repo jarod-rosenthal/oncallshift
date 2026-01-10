@@ -59,14 +59,14 @@ This tells the orchestrator to skip automatic PR creation. Use this when:
 
 ## Before Creating PR
 
-**For tasks WITH `ai-worker-deploy` label:**
+**For tasks WITH `deploy` label:**
 1. Make code changes
 2. Commit to branch
-3. **Run `./deploy.sh` and verify deployment**
+3. **Deploy using direct commands** (see `deploy_and_verify.md`)
 4. **THEN create PR** after successful deployment
 5. Merge PR (unless `review` label present)
 
-**For tasks WITHOUT `ai-worker-deploy` label:**
+**For tasks WITHOUT `deploy` label:**
 1. Review your changes for obvious errors
 2. Ensure code follows existing patterns in the codebase
 3. Create PR - humans will review and deploy

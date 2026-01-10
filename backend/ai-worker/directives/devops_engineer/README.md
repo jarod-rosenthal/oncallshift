@@ -64,7 +64,11 @@ CMD ["node", "dist/server.js"]
 | `infrastructure/terraform/environments/dev/` | Dev environment config |
 | `.github/workflows/` | GitHub Actions workflows |
 | `backend/Dockerfile` | Main API container |
-| `deploy.sh` | Deployment script |
+| `backend/Dockerfile.ai-worker` | AI Worker container |
+
+## Direct Deployment (No Docker Daemon)
+
+Use Kaniko for daemonless Docker builds and AWS CLI for deployment. See `directives/common/deploy_and_verify.md` for full commands.
 
 ## Best Practices
 
