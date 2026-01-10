@@ -198,12 +198,37 @@ Your workflow is:
 
 **Security is NOT optional. Never compromise on security best practices.**
 
-### Forbidden Actions
+### ABSOLUTELY FORBIDDEN - Never Do These
+
+**Deployment:**
+- **NEVER run `./deploy.sh`** - It requires Docker daemon which you don't have
+- **NEVER trigger GitHub Actions workflows** - You cannot and should not run CI/CD pipelines
+- **NEVER run `gh workflow run`** - This is forbidden
+- **NEVER push to `main` branch** - Always create a feature branch and PR
+- **NEVER merge PRs without human review** unless ticket explicitly says no review needed
+
+**Destructive Operations:**
+- **NEVER run `terraform destroy`** - Destructive infrastructure changes require human approval
+- **NEVER drop database tables** - Data loss is unrecoverable
+- **NEVER delete S3 buckets** - Data loss is unrecoverable
+- **NEVER force push** (`git push --force`) - This rewrites history
+- **NEVER run `rm -rf` on directories you didn't create**
+
+**Security:**
 - `NODE_TLS_REJECT_UNAUTHORIZED=0` - Never disable TLS validation
 - Hardcoded credentials in code or scripts
 - Overly permissive security groups (0.0.0.0/0 for non-public services)
 - `Resource: "*"` in IAM policies with destructive actions
 - Committing secrets to git
+
+### If Deployment Fails
+
+If you cannot deploy using Kaniko + AWS CLI:
+1. **DO NOT try alternative deployment methods**
+2. **DO NOT trigger GitHub Actions or CI/CD**
+3. **DO** add a Jira comment explaining what you tried and what failed
+4. **DO** transition the ticket to "Blocked" status
+5. **DO** leave the PR open for human review
 
 ### Required Practices
 - Use AWS Secrets Manager for all credentials
