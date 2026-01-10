@@ -46,8 +46,14 @@ variable "secrets_arns" {
 }
 
 variable "github_token_secret_arn" {
-  description = "ARN of the Secrets Manager secret containing the GitHub PAT"
+  description = "ARN of the Secrets Manager secret containing the GitHub PAT for workers"
   type        = string
+}
+
+variable "manager_github_token_secret_arn" {
+  description = "ARN of the Secrets Manager secret containing the GitHub PAT for manager reviews (separate account for PR approvals)"
+  type        = string
+  default     = ""
 }
 
 variable "anthropic_api_key_secret_arn" {

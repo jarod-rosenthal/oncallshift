@@ -24,7 +24,7 @@ const LABEL_MODEL_MAPPING: Record<string, string> = {
 };
 
 // Default worker model when no label specified
-const DEFAULT_WORKER_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_WORKER_MODEL = 'claude-3-5-haiku-20241022';
 
 // Label to persona mapping (highest priority - explicit user intent)
 const LABEL_PERSONA_MAPPING: Record<string, AIWorkerPersona> = {

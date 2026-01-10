@@ -534,10 +534,24 @@ async function handlePullRequestEvent(payload: any): Promise<void> {
 async function handlePullRequestReviewEvent(payload: any): Promise<void> {
   const { action, review, pull_request: pr } = payload;
 
-  if (!pr || !review) return;
+  logger.info('Processing pull_request_review event', {
+    action,
+    prNumber: pr?.number,
+    reviewState: review?.state,
+    hasReview: !!review,
+    hasPr: !!pr
+  });
+
+  if (!pr || !review) {
+    logger.info('Missing PR or review in payload', { hasPr: !!pr, hasReview: !!review });
+    return;
+  }
 
   // Only process submitted reviews
-  if (action !== 'submitted') return;
+  if (action !== 'submitted') {
+    logger.info('Ignoring non-submitted review', { action });
+    return;
+  }
 
   const dataSource = await getDataSource();
   const taskRepo = dataSource.getRepository(AIWorkerTask);
@@ -552,6 +566,13 @@ async function handlePullRequestReviewEvent(payload: any): Promise<void> {
     logger.info('No task found for PR review', { prNumber: pr.number });
     return;
   }
+
+  logger.info('Found task for PR review', {
+    taskId: task.id,
+    jiraKey: task.jiraIssueKey,
+    currentStatus: task.status,
+    prNumber: pr.number
+  });
 
   const reviewState = review.state?.toUpperCase();
   const reviewer = review.user?.login;
@@ -573,27 +594,37 @@ async function handlePullRequestReviewEvent(payload: any): Promise<void> {
     },
   });
 
-  if (approval) {
-    if (reviewState === 'APPROVED') {
+  if (reviewState === 'APPROVED') {
+    logger.info('PR approved, updating task', {
+      taskId: task.id,
+      currentStatus: task.status,
+      reviewer
+    });
+
+    if (approval) {
       approval.autoApprove(`GitHub review approved by ${reviewer}`);
       await approvalRepo.save(approval);
-
-      // Update task status and record who approved
-      if (task.status === 'pr_created' || task.status === 'review_pending') {
-        task.status = 'review_approved';
-        task.githubApprovedBy = reviewer; // Store GitHub username who approved
-        await taskRepo.save(task);
-      }
-    } else if (reviewState === 'CHANGES_REQUESTED') {
-      // Don't auto-reject, but log it
-      const changeLog = AIWorkerTaskLog.create(
-        task.id,
-        'warning',
-        `Changes requested by ${reviewer}: ${review.body || 'No comment'}`,
-        { severity: 'warning' }
-      );
-      await logRepo.save(logRepo.create(changeLog));
     }
+
+    // Update task status and record who approved (for ANY status, not just pr_created/review_pending)
+    task.status = 'review_approved';
+    task.githubApprovedBy = reviewer; // Store GitHub username who approved
+    await taskRepo.save(task);
+
+    logger.info('Task updated to review_approved', {
+      taskId: task.id,
+      jiraKey: task.jiraIssueKey,
+      approvedBy: reviewer
+    });
+  } else if (reviewState === 'CHANGES_REQUESTED') {
+    // Don't auto-reject, but log it
+    const changeLog = AIWorkerTaskLog.create(
+      task.id,
+      'warning',
+      `Changes requested by ${reviewer}: ${review.body || 'No comment'}`,
+      { severity: 'warning' }
+    );
+    await logRepo.save(logRepo.create(changeLog));
   }
 }
 

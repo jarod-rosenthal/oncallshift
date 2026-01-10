@@ -31,7 +31,7 @@ import {
 import { ECS, StopTaskCommand, UpdateServiceCommand, ListTasksCommand } from "@aws-sdk/client-ecs";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { EventBridgeClient, EnableRuleCommand, DisableRuleCommand, DescribeRuleCommand } from "@aws-sdk/client-eventbridge";
-import { MoreThan, In } from "typeorm";
+import { MoreThan, In, LessThan } from "typeorm";
 import { body, param, query, validationResult } from "express-validator";
 
 const router = Router();
@@ -53,13 +53,16 @@ const watcherRuleName =
   process.env.AI_WORKER_WATCHER_RULE || `${ecsCluster}-ai-worker-watcher-schedule`;
 
 // Shared builders so SSE and REST endpoints stay in sync
-async function buildControlCenterData(orgId: string) {
+async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = false) {
   const dataSource = await getDataSource();
   const workerRepo = dataSource.getRepository(AIWorkerInstance);
   const taskRepo = dataSource.getRepository(AIWorkerTask);
   const logRepo = dataSource.getRepository(AIWorkerTaskLog);
   const conversationRepo = dataSource.getRepository(AIWorkerConversation);
   const orgRepo = dataSource.getRepository(Organization);
+
+  // Super admins see all orgs' data; regular users see only their org
+  const orgFilter = isSuperAdmin ? {} : { orgId };
 
   const org = await orgRepo.findOne({ where: { id: orgId } });
 
@@ -103,6 +106,7 @@ async function buildControlCenterData(orgId: string) {
   const activeTasks = await taskRepo.find({
     where: [
       {
+        ...orgFilter,
         status: In([
           "queued",
           "dispatching",
@@ -116,6 +120,7 @@ async function buildControlCenterData(orgId: string) {
         ]),
       },
       {
+        ...orgFilter,
         status: In(["completed", "failed", "cancelled", "review_rejected", "review_approved"]),
         completedAt: MoreThan(tenMinutesAgo),
       },
@@ -125,6 +130,7 @@ async function buildControlCenterData(orgId: string) {
 
   const recentCompleted = await taskRepo.find({
     where: {
+      ...orgFilter,
       status: In(["completed", "failed", "cancelled"]),
       completedAt: MoreThan(todayStart),
     },
@@ -134,6 +140,7 @@ async function buildControlCenterData(orgId: string) {
 
   const todayTasks = await taskRepo.find({
     where: {
+      ...orgFilter,
       createdAt: MoreThan(todayStart),
     },
   });
@@ -160,11 +167,13 @@ async function buildControlCenterData(orgId: string) {
 
   // Get queue depth from database (count of tasks in 'queued' status)
   // This is more reliable than SQS ApproximateNumberOfMessages
-  const queueDepth = await taskRepo
+  const queueDepthQuery = taskRepo
     .createQueryBuilder("task")
-    .where("task.org_id = :orgId", { orgId })
-    .andWhere("task.status = :status", { status: "queued" })
-    .getCount();
+    .andWhere("task.status = :status", { status: "queued" });
+  if (!isSuperAdmin) {
+    queueDepthQuery.andWhere("task.org_id = :orgId", { orgId });
+  }
+  const queueDepth = await queueDepthQuery.getCount();
 
   const activeTaskIds = activeTasks.map((t) => t.id);
   let taskLogs: AIWorkerTaskLog[] = [];
@@ -189,11 +198,13 @@ async function buildControlCenterData(orgId: string) {
 
   // ALWAYS calculate cumulative cost from task sum (single source of truth)
   // This ensures consistency even if org.aiWorkerCumulativeCost gets out of sync
-  const costSumRow = await taskRepo
+  const costSumQuery = taskRepo
     .createQueryBuilder("task")
-    .where("task.org_id = :orgId", { orgId })
-    .select("COALESCE(SUM(task.estimated_cost_usd), 0)", "sum")
-    .getRawOne<{ sum: string }>();
+    .select("COALESCE(SUM(task.estimated_cost_usd), 0)", "sum");
+  if (!isSuperAdmin) {
+    costSumQuery.where("task.org_id = :orgId", { orgId });
+  }
+  const costSumRow = await costSumQuery.getRawOne<{ sum: string }>();
   const derivedCumulativeCost = Number(costSumRow?.sum || 0);
 
   const stats = {
@@ -609,7 +620,8 @@ router.use(requireSuperAdmin);
 router.get("/control-center", async (req: Request, res: Response) => {
   try {
     const orgId = req.orgId!;
-    const data = await buildControlCenterData(orgId);
+    const isSuperAdmin = req.user?.role === "super_admin";
+    const data = await buildControlCenterData(orgId, isSuperAdmin);
     return res.json(data);
   } catch (error) {
     logger.error("Error fetching control center data:", error);
@@ -630,6 +642,7 @@ router.get("/control-center/stream", async (req: Request, res: Response): Promis
       res.status(401).end();
       return;
     }
+    const isSuperAdmin = req.user?.role === "super_admin";
 
     const statusFilter = (req.query.status as AIWorkerTaskStatus | undefined) || undefined;
     const search = (req.query.search as string | undefined) || undefined;
@@ -648,7 +661,7 @@ router.get("/control-center/stream", async (req: Request, res: Response): Promis
       try {
         const [controlCenter, systemStatus, watcherStatus, managerStatus, tasks] =
           await Promise.all([
-            buildControlCenterData(orgId),
+            buildControlCenterData(orgId, isSuperAdmin),
             buildSystemStatus(),
             buildWatcherStatus(),
             buildManagerStatus(),
@@ -1393,6 +1406,7 @@ router.post(
     param("taskId").isUUID(),
     body("decision").optional().isString(),
     body("feedback").optional().isString(),
+    body("managerModel").optional().isString(),
     body("codeQualityScore").optional().isInt({ min: 1, max: 10 }),
     body("newTicketsCreated").optional().isInt({ min: 0 }),
     body("inputTokens").optional().isInt({ min: 0 }),
@@ -1406,7 +1420,7 @@ router.post(
       }
 
       const { taskId } = req.params;
-      const { decision, feedback, codeQualityScore, newTicketsCreated, inputTokens, outputTokens } =
+      const { decision, feedback, managerModel, codeQualityScore, newTicketsCreated, inputTokens, outputTokens } =
         req.body;
 
       const dataSource = await getDataSource();
@@ -1465,6 +1479,9 @@ router.post(
       }
       if (feedback) {
         task.reviewFeedback = feedback;
+      }
+      if (managerModel) {
+        task.managerReviewModel = managerModel;
       }
       if (codeQualityScore !== undefined) {
         task.codeQualityScore = codeQualityScore;
@@ -3555,6 +3572,124 @@ router.get(
     } catch (error) {
       logger.error("Error fetching tool events:", error);
       return res.status(500).json({ error: "Failed to fetch tool events" });
+    }
+  },
+);
+
+/**
+ * POST /api/v1/super-admin/control-center/tasks/cancel-stuck
+ * Cancel all stuck tasks (tasks that haven't had activity in X minutes)
+ */
+router.post(
+  "/control-center/tasks/cancel-stuck",
+  [
+    body("olderThanMinutes").optional().isInt({ min: 5, max: 1440 }),
+  ],
+  authenticateRequest,
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const minutes = req.body.olderThanMinutes || 30;
+      const cutoff = new Date(Date.now() - minutes * 60 * 1000);
+
+      const dataSource = await getDataSource();
+      const taskRepo = dataSource.getRepository(AIWorkerTask);
+
+      // Find all stuck tasks (active statuses with no recent activity)
+      const stuckStatuses: AIWorkerTaskStatus[] = [
+        "queued",
+        "dispatching",
+        "claimed",
+        "environment_setup",
+        "executing",
+        "manager_review",
+      ];
+
+      const stuckTasks = await taskRepo.find({
+        where: {
+          status: In(stuckStatuses),
+          updatedAt: LessThan(cutoff),
+        },
+      });
+
+      if (stuckTasks.length === 0) {
+        return res.json({
+          message: "No stuck tasks found",
+          cancelled: 0,
+          cutoffMinutes: minutes,
+        });
+      }
+
+      // Cancel each stuck task
+      const cancelledTasks: Array<{ id: string; jiraKey: string; previousStatus: string }> = [];
+
+      for (const task of stuckTasks) {
+        // Stop ECS task if running
+        if (task.ecsTaskArn) {
+          try {
+            await ecs.send(
+              new StopTaskCommand({
+                cluster: ecsCluster,
+                task: task.ecsTaskArn,
+                reason: `Stuck job cleanup - no activity for ${minutes} minutes`,
+              }),
+            );
+          } catch (err) {
+            logger.warn("Failed to stop ECS task during stuck cleanup:", err);
+          }
+        }
+
+        const previousStatus = task.status;
+        task.status = "cancelled";
+        task.completedAt = new Date();
+        task.errorMessage = `Stuck job cleanup - no activity for ${minutes} minutes`;
+        task.watcherNotes =
+          (task.watcherNotes || "") +
+          `\n[${new Date().toISOString()}] Cancelled: Stuck job cleanup (${minutes} min timeout)`;
+
+        if (task.startedAt) {
+          task.ecsTaskSeconds = Math.floor(
+            (task.completedAt.getTime() - task.startedAt.getTime()) / 1000,
+          );
+        }
+
+        await taskRepo.save(task);
+
+        // Record cost
+        try {
+          await getCostTracker(dataSource).recordTaskCost(task.id);
+        } catch (costErr) {
+          logger.warn("Failed to record cost for stuck task", { taskId: task.id });
+          task.estimatedCostUsd = task.calculateCost();
+          await taskRepo.save(task);
+        }
+
+        cancelledTasks.push({
+          id: task.id,
+          jiraKey: task.jiraIssueKey,
+          previousStatus,
+        });
+      }
+
+      logger.info("Stuck tasks cleanup completed", {
+        cancelled: cancelledTasks.length,
+        cutoffMinutes: minutes,
+        tasks: cancelledTasks.map(t => t.jiraKey),
+      });
+
+      return res.json({
+        message: `Cancelled ${cancelledTasks.length} stuck task(s)`,
+        cancelled: cancelledTasks.length,
+        cutoffMinutes: minutes,
+        tasks: cancelledTasks,
+      });
+    } catch (error) {
+      logger.error("Error cancelling stuck tasks:", error);
+      return res.status(500).json({ error: "Failed to cancel stuck tasks" });
     }
   },
 );

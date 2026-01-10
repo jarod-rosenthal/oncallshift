@@ -605,6 +605,16 @@ data "aws_secretsmanager_secret" "internal_service_key" {
   name = "${var.project_name}-${var.environment}-internal-service-key"
 }
 
+# Manager GitHub token (separate account for PR reviews/approvals)
+data "aws_secretsmanager_secret" "manager_github_token" {
+  name = "${var.project_name}-${var.environment}-manager-github-token"
+}
+
+# GitHub webhook secret (for AI worker webhook validation)
+data "aws_secretsmanager_secret" "github_webhook_secret" {
+  name = "${var.project_name}-${var.environment}-github-webhook-secret"
+}
+
 # API Service
 module "api_service" {
   source = "../../modules/ecs-service"
@@ -646,6 +656,7 @@ module "api_service" {
     ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
     CREDENTIAL_ENCRYPTION_KEY = aws_secretsmanager_secret.credential_encryption_key.arn
     GITHUB_TOKEN = aws_secretsmanager_secret.github_token.arn
+    GITHUB_WEBHOOK_SECRET = data.aws_secretsmanager_secret.github_webhook_secret.arn
     SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
     JIRA_WEBHOOK_SECRET = data.aws_secretsmanager_secret.jira_webhook_secret.arn
     INTERNAL_SERVICE_KEY = data.aws_secretsmanager_secret.internal_service_key.arn
@@ -655,7 +666,7 @@ module "api_service" {
     JIRA_API_TOKEN = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.jira_integration.arn, data.aws_secretsmanager_secret.internal_service_key.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.github_webhook_secret.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.jira_integration.arn, data.aws_secretsmanager_secret.internal_service_key.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,
@@ -950,15 +961,17 @@ module "ai_workers" {
   private_subnet_ids = module.networking.private_subnet_ids
   security_group_ids = [module.networking.ecs_security_group_id]
 
-  github_token_secret_arn      = aws_secretsmanager_secret.github_token.arn
-  anthropic_api_key_secret_arn = aws_secretsmanager_secret.anthropic_api_key.arn
+  github_token_secret_arn         = aws_secretsmanager_secret.github_token.arn
+  manager_github_token_secret_arn = data.aws_secretsmanager_secret.manager_github_token.arn
+  anthropic_api_key_secret_arn    = aws_secretsmanager_secret.anthropic_api_key.arn
   secrets_arns = [
     aws_secretsmanager_secret.github_token.arn,
     aws_secretsmanager_secret.anthropic_api_key.arn,
     module.database.secret_arn,
     data.aws_secretsmanager_secret.jira_integration.arn,
     data.aws_secretsmanager_secret.ai_worker_org_key.arn,
-    data.aws_secretsmanager_secret.internal_service_key.arn
+    data.aws_secretsmanager_secret.internal_service_key.arn,
+    data.aws_secretsmanager_secret.manager_github_token.arn
   ]
 
   log_retention_days = var.log_retention_days

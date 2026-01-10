@@ -219,13 +219,25 @@ case "${MANAGER_ACTION}" in
    **Note:** Only create tickets for issues that should be tracked separately.
    Simple fixes should just be noted in the PR review feedback.
 
-7. Output your decision:
+7. Output your decision (IMPORTANT: use EXACTLY one of the three values):
    \`\`\`
-   ::review_decision::approved|revision_needed|rejected
-   ::code_quality_score::1-10
+   ::review_decision::approved
+   \`\`\`
+   OR
+   \`\`\`
+   ::review_decision::revision_needed
+   \`\`\`
+   OR
+   \`\`\`
+   ::review_decision::rejected
+   \`\`\`
+
+   Then add these additional fields:
+   \`\`\`
+   ::code_quality_score::8
    ::jira_updated::true
-   ::new_tickets_created::N (where N is the number of new tickets, or 0)
-   ::feedback::Your detailed feedback
+   ::new_tickets_created::0
+   ::feedback::Your detailed feedback here (single line, no newlines)
    \`\`\`
 
 ## Jira Task Summary
@@ -730,24 +742,30 @@ if [ "${CLAUDE_EXIT_CODE}" -eq 0 ]; then
     send_log "system" "Manager completed successfully" "info"
 
     # Parse output markers from Claude's response
-    DECISION=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::review_decision::\K[^:]+' | head -1 || echo "")
+    # Use stricter regex to match only valid decision values
+    DECISION=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::review_decision::\K(approved|revision_needed|rejected)' | head -1 || echo "")
     CODE_QUALITY=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::code_quality_score::\K[0-9]+' | head -1 || echo "")
     NEW_TICKETS=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::new_tickets_created::\K[0-9]+' | head -1 || echo "0")
-    FEEDBACK=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::feedback::\K.+' | head -1 || echo "")
+    FEEDBACK=$(cat "${CLAUDE_OUTPUT_FILE}" 2>/dev/null | grep -oP '::feedback::\K[^\n]+' | head -1 || echo "")
+
+    echo "[Manager] Parsed: decision=${DECISION}, codeQuality=${CODE_QUALITY}, newTickets=${NEW_TICKETS}"
+    echo "[Manager] Feedback: ${FEEDBACK:0:100}..."
 
     # Mark task as completed via API
     if [ -n "${API_BASE_URL}" ] && [ -n "${ORG_API_KEY}" ]; then
         echo "[Manager] Marking task as completed..."
 
-        # Build JSON payload with available fields
+        # Build JSON payload with available fields (including model used)
         PAYLOAD=$(jq -n \
             --arg decision "$DECISION" \
             --arg feedback "$FEEDBACK" \
+            --arg managerModel "$CLAUDE_MODEL" \
             --argjson codeQuality "${CODE_QUALITY:-null}" \
             --argjson newTickets "${NEW_TICKETS:-0}" \
             '{
                 decision: (if $decision != "" then $decision else null end),
                 feedback: (if $feedback != "" then $feedback else null end),
+                managerModel: $managerModel,
                 codeQualityScore: $codeQuality,
                 newTicketsCreated: $newTickets
             }')
