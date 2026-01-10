@@ -336,6 +336,13 @@ ${JIRA_SUMMARY}
 ## Description
 ${JIRA_DESCRIPTION:-No description provided}
 
+## Jira Labels
+${JIRA_LABELS:-No labels}
+
+$(if echo "${JIRA_LABELS:-}" | grep -q "ai-worker-deploy"; then
+echo "**DEPLOYMENT ENABLED:** This task has the \`ai-worker-deploy\` label. You MUST deploy after making changes."
+fi)
+
 ## Environment
 - **Branch**: ${BRANCH_NAME}
 - **Repository**: ${GITHUB_REPO}

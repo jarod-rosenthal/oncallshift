@@ -20,6 +20,7 @@ interface TaskEnvironment {
   JIRA_ISSUE_KEY: string;
   JIRA_SUMMARY: string;
   JIRA_DESCRIPTION: string;
+  JIRA_LABELS?: string;
   TASK_NOTES: string;
   GITHUB_REPO: string;
   WORKER_PERSONA: string;
@@ -86,6 +87,7 @@ export class ECSTaskRunner {
       JIRA_ISSUE_KEY: task.jiraIssueKey,
       JIRA_SUMMARY: task.summary,
       JIRA_DESCRIPTION: task.description || '',
+      JIRA_LABELS: (task.jiraFields?.labels || []).join(','),
       TASK_NOTES: task.watcherNotes || '',
       GITHUB_REPO: task.githubRepo,
       WORKER_PERSONA: task.workerPersona,
