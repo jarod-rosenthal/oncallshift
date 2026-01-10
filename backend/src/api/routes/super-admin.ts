@@ -106,6 +106,7 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
   const activeTasks = await taskRepo.find({
     where: [
+      // Clause 1: Active execution statuses - always show (no time filter)
       {
         ...orgFilter,
         status: In([
@@ -121,12 +122,22 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
           "awaiting_destructive_approval",
         ]),
       },
+      // Clause 2: Truly terminal statuses - show for 10 min after completedAt
       {
         ...orgFilter,
         status: In([
           "completed",
           "failed",
           "cancelled",
+        ]),
+        completedAt: MoreThan(tenMinutesAgo),
+      },
+      // Clause 3: Quasi-terminal statuses - show for 10 min after updatedAt
+      // These statuses don't have completedAt set, so use updatedAt instead
+      // FIX: Previously these required completedAt which was never set, causing tasks to disappear
+      {
+        ...orgFilter,
+        status: In([
           "review_rejected",
           "review_approved",
           "review_pending", // Waiting for review - drop after 10 min
@@ -135,7 +146,7 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
           "deployment_failed",
           "validation_failed",
         ]),
-        completedAt: MoreThan(tenMinutesAgo),
+        updatedAt: MoreThan(tenMinutesAgo),
       },
     ],
     order: { createdAt: "DESC" },
