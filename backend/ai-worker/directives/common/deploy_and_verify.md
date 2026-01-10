@@ -1,34 +1,37 @@
 # Deploy and Verify
 
-## IMPORTANT: AI Workers Must NOT Deploy
+## Deployment Workflow
 
-**Deployment is handled by humans only.** As an AI Worker, you must:
+**Deployment depends on the task configuration:**
 
+### Tasks WITH `ai-worker-deploy` Label
+You MUST deploy and verify:
+1. Make your code changes
+2. Commit to your branch
+3. **Run `./deploy.sh`** from `/home/aiworker/workspace`
+4. **Watch the deployment** - verify build completes successfully
+5. **Verify deployment:**
+   - Check health: `curl -s https://oncallshift.com/health | jq .`
+   - For backend: Ensure API responds correctly
+   - For frontend: Verify CloudFront invalidation completed
+6. **If deployment fails:** Fix the issue, commit, re-deploy
+7. **After successful deployment:** Create PR
+8. **Merge PR** (unless `review` label present)
+
+### Tasks WITHOUT `ai-worker-deploy` Label (Default)
+Do NOT deploy:
 1. Make your code changes
 2. Commit and push to your branch
 3. Create a Pull Request
-4. **STOP** - Do not run deploy.sh
+4. **STOP** - Humans will review and deploy
 
-Humans will:
-- Review the PR
-- Approve or request changes
-- Deploy after approval
+## Why Deploy First (When Enabled)?
 
-## Why This Matters
-
-- Deployments affect production users
-- Untested deployments can cause outages
-- Human review catches issues AI might miss
-- Rollbacks are easier when humans control timing
-
-## What To Do Instead
-
-After creating your PR:
-1. Add a Jira comment summarizing your changes
-2. Mark your work as complete
-3. Let the orchestrator know you're done
-
-The PR will be reviewed and deployed by a human.
+This is a **dev environment** workflow:
+- Test changes in production immediately
+- Verify they work before creating PR
+- Catch issues faster
+- Manager review focuses on code quality, not deployment approval
 
 ## Self-Annealing Notes
 
