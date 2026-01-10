@@ -754,6 +754,8 @@ module "api_service" {
   fargate_spot_percentage  = var.fargate_spot_percentage
 
   log_retention_days = var.log_retention_days
+
+  image_tag = var.image_tag
 }
 
 # Notification Worker Service
@@ -830,6 +832,8 @@ module "notification_worker" {
   fargate_spot_percentage  = var.fargate_spot_percentage
 
   log_retention_days = var.log_retention_days
+
+  image_tag = var.image_tag
 }
 
 # Alert Processor Worker Service
@@ -886,6 +890,8 @@ module "alert_processor" {
   fargate_spot_percentage  = var.fargate_spot_percentage
 
   log_retention_days = var.log_retention_days
+
+  image_tag = var.image_tag
 }
 
 # Escalation Timer Worker Service
@@ -941,6 +947,8 @@ module "escalation_timer" {
   fargate_spot_percentage  = var.fargate_spot_percentage
 
   log_retention_days = var.log_retention_days
+
+  image_tag = var.image_tag
 }
 
 # =============================================================================
@@ -1100,6 +1108,8 @@ module "ai_worker_orchestrator" {
   fargate_spot_percentage = var.fargate_spot_percentage
 
   log_retention_days = var.log_retention_days
+
+  image_tag = var.image_tag
 }
 
 # =============================================================================

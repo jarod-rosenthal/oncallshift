@@ -172,3 +172,10 @@ variable "enable_proxy_debug_logging" {
   type        = bool
   default     = false
 }
+
+# Docker image tag (git commit SHA) - updated by deploy.sh
+variable "image_tag" {
+  description = "Docker image tag (git commit SHA, not 'latest')"
+  type        = string
+  default     = "latest" # Temporary default during migration, will be removed
+}

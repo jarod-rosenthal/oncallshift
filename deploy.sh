@@ -48,9 +48,11 @@ S3_BUCKET="oncallshift-dev-web"
 
 echo "🚀 Starting deployment..."
 
-# 1. Get git commit SHA for versioning
+# 1. Get git commit SHA and build time for versioning
 GIT_SHA=$(git rev-parse --short HEAD)
+BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 echo "📝 Using git commit: $GIT_SHA"
+echo "📝 Build time: $BUILD_TIME"
 
 # 2. Login to ECR
 echo "📝 Logging into ECR..."
@@ -65,14 +67,17 @@ echo "📤 Uploading frontend to S3..."
 aws s3 sync frontend/dist/ s3://$S3_BUCKET/ --delete
 
 # 5. Build Docker image (backend only - frontend is served from S3/CloudFront)
+# Pass build metadata as build args for version tracking
 echo "🔨 Building Docker image with version $GIT_SHA..."
-docker build -t $ECR_REPO:$GIT_SHA -t $ECR_REPO:latest .
+docker build \
+  --build-arg GIT_COMMIT=$GIT_SHA \
+  --build-arg BUILD_TIME="$BUILD_TIME" \
+  -t $ECR_REPO:$GIT_SHA \
+  .
 
-# 6. Push both tags to ECR
+# 6. Push versioned tag to ECR (NOT :latest - use git SHA for cache invalidation)
 echo "⬆️  Pushing versioned image to ECR..."
 docker push $ECR_REPO:$GIT_SHA
-echo "⬆️  Pushing latest tag to ECR..."
-docker push $ECR_REPO:latest
 
 # 7. Get image digest for exact version tracking
 IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REPO:$GIT_SHA | cut -d'@' -f2)
@@ -93,6 +98,11 @@ docker push $AI_WORKER_ECR_REPO:latest
 # 8. Deploy Terraform infrastructure changes
 echo "🏗️  Deploying Terraform infrastructure..."
 cd infrastructure/terraform/environments/dev
+
+# Update Terraform variable with new image tag (forces new task definition)
+echo "📝 Updating Terraform variable: image_tag = \"$GIT_SHA\""
+echo "image_tag = \"$GIT_SHA\"" > terraform.tfvars
+
 terraform init -upgrade
 echo "📝 Planning Terraform changes..."
 terraform plan -out=tfplan
@@ -205,6 +215,38 @@ echo ""
 echo "✅ Deployment initiated successfully!"
 echo "⏳ ECS deployment will take 2-3 minutes"
 echo "⏳ CloudFront invalidation will take 1-2 minutes"
+
+# 12. Verify deployment - check that running code matches expected version
+echo ""
+echo "🔍 Verifying deployment..."
+echo "   Expected version: $GIT_SHA"
+echo "   Waiting for new tasks to stabilize (30 seconds)..."
+sleep 30
+
+# Check API version endpoint
+API_URL="https://oncallshift.com/version"
+DEPLOYED_VERSION=$(curl -s "$API_URL" | jq -r '.version' 2>/dev/null || echo "unknown")
+
+if [ "$DEPLOYED_VERSION" = "$GIT_SHA" ]; then
+  echo "✅ Deployment verified! Running version: $DEPLOYED_VERSION"
+  echo ""
+elif [ "$DEPLOYED_VERSION" = "unknown" ]; then
+  echo "⚠️  Warning: Could not fetch version endpoint"
+  echo "   This might be normal if the API is still starting"
+  echo "   Verify manually: curl $API_URL"
+  echo ""
+else
+  echo "❌ DEPLOYMENT VERIFICATION FAILED!"
+  echo "   Expected: $GIT_SHA"
+  echo "   Got:      $DEPLOYED_VERSION"
+  echo ""
+  echo "🔄 The deployed code does not match the expected version."
+  echo "   This means old code is still running!"
+  echo "   Check ECS task status:"
+  echo "   aws ecs describe-tasks --cluster $ECS_CLUSTER --tasks \$(aws ecs list-tasks --cluster $ECS_CLUSTER --service-name $ECS_SERVICE --region $AWS_REGION --query 'taskArns[0]' --output text) --region $AWS_REGION"
+  exit 1
+fi
+
 echo ""
 echo "Monitor deployment:"
 echo "  aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --region $AWS_REGION | jq '.services[0].deployments'"

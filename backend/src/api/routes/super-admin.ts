@@ -2148,6 +2148,15 @@ router.delete(
         });
       }
 
+      // Clear any worker instance references to this task before deleting
+      const workerRepo = dataSource.getRepository(AIWorkerInstance);
+      await workerRepo
+        .createQueryBuilder()
+        .update()
+        .set({ currentTaskId: null })
+        .where("current_task_id = :taskId", { taskId })
+        .execute();
+
       await taskRepo.remove(task);
 
       logger.info("Task deleted from history", {

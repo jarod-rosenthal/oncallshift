@@ -148,6 +148,15 @@ export function createApp(): Express {
     });
   });
 
+  // Version endpoint - returns build metadata for deployment verification
+  app.get('/version', (_req, res) => {
+    res.status(200).json({
+      version: process.env.GIT_COMMIT || 'unknown',
+      buildTime: process.env.BUILD_TIME || 'unknown',
+      service: 'oncallshift-api',
+      nodeVersion: process.version,
+    });
+  });
 
   // Swagger API Documentation
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
