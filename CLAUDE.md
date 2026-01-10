@@ -503,6 +503,8 @@ eas update --branch preview --message "Description of changes"
 
 ### Deployment
 
+#### For Human Developers (Local Machine)
+
 **ALWAYS use the `deploy.sh` script for ALL deployments.** Never manually build/push Docker images or upload frontend files.
 
 ```bash
@@ -518,6 +520,16 @@ The deploy script handles:
 **Never skip this step** - both frontend and backend must be deployed together to maintain consistency.
 
 **IMPORTANT: Always run `./deploy.sh` after making UI code changes** so the user can view them at https://oncallshift.com. The frontend is served from S3/CloudFront and changes are not visible until deployed.
+
+#### For AI Workers (ECS Container)
+
+**AI Workers MUST NOT use deploy.sh** - it requires Docker daemon which is unavailable in the container.
+
+Instead, use direct deployment commands as documented in `/app/directives/common/deploy_and_verify.md`:
+- **Backend:** Use Kaniko (`/kaniko/executor`) for Docker builds, then AWS CLI for ECS deployment
+- **Frontend:** Use `npm run build` then `aws s3 sync` and `aws cloudfront create-invalidation`
+
+See the ai-worker directives for complete deployment instructions.
 
 #### AI Worker Orchestrator Deployment
 
