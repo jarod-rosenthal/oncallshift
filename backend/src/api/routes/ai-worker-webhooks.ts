@@ -370,7 +370,7 @@ router.post('/jira/webhook', async (req: Request, res: Response) => {
     );
 
     // Check if deployment is enabled via label
-    const deploymentEnabled = issueLabels.includes('ai-worker-deploy');
+    const deploymentEnabled = issueLabels.includes('deploy');
 
     logger.info('Determined persona and model for task', {
       issueKey: issue.key,
