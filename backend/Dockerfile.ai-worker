@@ -8,7 +8,11 @@
 # - Terraform
 # - Go (for Terraform provider development)
 # - Docker CLI (for container operations)
+# - Kaniko (daemonless Docker image builder)
 # - Common utilities: jq, curl, make, zip, unzip
+
+# Kaniko stage - Copy executor binary from official Kaniko image
+FROM gcr.io/kaniko-project/executor:v1.23.0 AS kaniko
 
 FROM node:20-slim
 
@@ -78,6 +82,10 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /
     && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy Kaniko executor from the kaniko stage
+# Kaniko can build and push Docker images without requiring Docker daemon
+COPY --from=kaniko /kaniko/executor /usr/local/bin/executor
+
 # Create non-root user and set up directories
 RUN useradd -m -s /bin/bash aiworker \
     && mkdir -p /home/aiworker/go/bin /home/aiworker/go/pkg /home/aiworker/go/src \
@@ -138,6 +146,7 @@ RUN echo "=== Installed Tools ===" && \
     terraform --version && \
     go version && \
     docker --version && \
+    /usr/local/bin/executor version && \
     make --version | head -1 && \
     claude --version && \
     echo "=== All tools installed successfully ==="
