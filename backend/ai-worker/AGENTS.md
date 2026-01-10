@@ -183,7 +183,7 @@ Your workflow is:
 - If you only changed frontend code, skip deployment - frontend is deployed separately
 - If deployment fails, fix the issue and retry
 
-### WITHOUT `ai-worker-deploy` label (Default - No Deployment):
+### WITHOUT `deploy` label (Default - No Deployment):
 Your workflow is:
 1. Make code changes
 2. Commit and push
