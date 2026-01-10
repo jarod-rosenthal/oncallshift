@@ -279,6 +279,14 @@ function formatModelName(modelId: string | undefined | null): string {
   return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : modelId;
 }
 
+/**
+ * Format cost for display - always 2 decimal places, round normally.
+ */
+function formatCost(cost: number | undefined | null): string {
+  if (cost === undefined || cost === null) return "0.00";
+  return cost.toFixed(2);
+}
+
 export default function SuperAdminControlCenter() {
   const [data, setData] = useState<ControlCenterData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -340,9 +348,11 @@ export default function SuperAdminControlCenter() {
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
   const [deleteWorkerId, setDeleteWorkerId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [showResetCostModal, setShowResetCostModal] = useState(false);
   const [resetCostLoading, setResetCostLoading] = useState(false);
+  const [cancelStuckLoading, setCancelStuckLoading] = useState(false);
+  const [showCancelStuckModal, setShowCancelStuckModal] = useState(false);
+  const [cancelStuckMinutes, setCancelStuckMinutes] = useState("30");
 
   // Cooldown settings
   const [cooldownMinutes, setCooldownMinutes] = useState<number>(10);
@@ -866,6 +876,44 @@ export default function SuperAdminControlCenter() {
     }
   };
 
+  // Cancel all stuck tasks
+  const handleCancelStuck = async () => {
+    setCancelStuckLoading(true);
+    try {
+      const token = localStorage.getItem("accessToken");
+      const minutes = parseInt(cancelStuckMinutes, 10) || 30;
+      const response = await fetch(
+        `${API_BASE}/api/v1/super-admin/control-center/tasks/cancel-stuck`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ olderThanMinutes: minutes }),
+        },
+      );
+      if (response.ok) {
+        const result = await response.json();
+        setShowCancelStuckModal(false);
+        setCreateSuccess(result.message || `Cancelled ${result.cancelled} stuck tasks`);
+        setTimeout(() => setCreateSuccess(null), 5000);
+        fetchData();
+        fetchTaskList();
+      } else {
+        const err = await response.json();
+        setCreateError(err.error || "Failed to cancel stuck tasks");
+        setTimeout(() => setCreateError(null), 5000);
+      }
+    } catch (err) {
+      console.error("Failed to cancel stuck tasks:", err);
+      setCreateError("Failed to cancel stuck tasks");
+      setTimeout(() => setCreateError(null), 5000);
+    } finally {
+      setCancelStuckLoading(false);
+    }
+  };
+
   // Fetch terminal logs for a task
   const fetchTerminalLogs = useCallback(async (taskId: string) => {
     setTerminalLoading((prev) => new Set([...prev, taskId]));
@@ -1206,9 +1254,7 @@ export default function SuperAdminControlCenter() {
     fetchTaskList();
     fetchCooldownSettings();
 
-    // Live updates via SSE when auto-refresh is enabled
-    if (!autoRefresh) return;
-
+    // Live updates via SSE
     const token = localStorage.getItem("accessToken");
     const params = new URLSearchParams();
     if (token) params.set("token", token);
@@ -1260,7 +1306,6 @@ export default function SuperAdminControlCenter() {
     fetchManagerStatus,
     fetchTaskList,
     fetchCooldownSettings,
-    autoRefresh,
     statusFilter,
     searchQuery,
   ]);
@@ -1339,7 +1384,7 @@ export default function SuperAdminControlCenter() {
       case "revision_needed":
         return "text-orange-500";
       case "review_approved":
-        return "text-green-500";
+        return "text-blue-500";
       case "review_rejected":
         return "text-red-400";
       default:
@@ -1513,29 +1558,19 @@ export default function SuperAdminControlCenter() {
           </div>
           <div className="w-px h-6 bg-border" />
           <button
+            onClick={() => setShowCancelStuckModal(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500/30 rounded-lg text-sm"
+            title="Cancel all tasks stuck for more than X minutes"
+          >
+            <Ban className="w-4 h-4" />
+            Cancel Stuck
+          </button>
+          <button
             onClick={() => setShowCreateTaskModal(true)}
             className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm"
           >
             <Play className="w-4 h-4" />
             Run Task
-          </button>
-          <button
-            onClick={() => setShowCreateWorkerModal(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-muted/80 rounded-lg text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add Worker
-          </button>
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              autoRefresh
-                ? "bg-green-500/20 text-green-500 border border-green-500/30"
-                : "bg-muted text-muted-foreground border border-border"
-            }`}
-            title={autoRefresh ? "Auto-refresh ON (10s)" : "Auto-refresh OFF"}
-          >
-            {autoRefresh ? "Auto: ON" : "Auto: OFF"}
           </button>
           <span className="text-xs text-muted-foreground">
             {lastUpdated?.toLocaleTimeString() || "Never"}
@@ -1631,7 +1666,7 @@ export default function SuperAdminControlCenter() {
             </button>
           </div>
           <div className="text-2xl font-bold">
-            ${data?.stats.cumulativeCost?.toFixed(2) || "0.00"}
+            ${formatCost(data?.stats.cumulativeCost)}
           </div>
           {data?.stats.cumulativeCostResetAt && (
             <div className="text-xs text-muted-foreground mt-1">
@@ -3152,7 +3187,7 @@ export default function SuperAdminControlCenter() {
               <p className="text-sm text-muted-foreground">
                 Current cost:{" "}
                 <span className="text-foreground font-medium">
-                  ${data?.stats.cumulativeCost?.toFixed(2) || "0.00"}
+                  ${formatCost(data?.stats.cumulativeCost)}
                 </span>
               </p>
               <p className="text-xs text-amber-500">
@@ -3177,6 +3212,67 @@ export default function SuperAdminControlCenter() {
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 )}
                 Reset to $0.00
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Stuck Tasks Modal */}
+      {showCancelStuckModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg w-full max-w-md">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2 text-red-500">
+                <Ban className="w-4 h-4" />
+                Cancel Stuck Tasks
+              </h3>
+              <button
+                onClick={() => setShowCancelStuckModal(false)}
+                className="p-1 hover:bg-muted rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Cancel all tasks that have been stuck (no activity) for more than:
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="5"
+                  max="1440"
+                  value={cancelStuckMinutes}
+                  onChange={(e) => setCancelStuckMinutes(e.target.value)}
+                  className="w-20 px-3 py-2 bg-muted border border-border rounded text-center"
+                  disabled={cancelStuckLoading}
+                />
+                <span className="text-sm text-muted-foreground">minutes</span>
+              </div>
+              <p className="text-xs text-red-500">
+                This will cancel all queued, executing, and reviewing tasks with no recent activity.
+              </p>
+            </div>
+
+            <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
+              <button
+                onClick={() => setShowCancelStuckModal(false)}
+                className="px-4 py-2 bg-muted hover:bg-muted/80 rounded-lg"
+                disabled={cancelStuckLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCancelStuck}
+                disabled={cancelStuckLoading}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2"
+              >
+                {cancelStuckLoading && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                Cancel Stuck Tasks
               </button>
             </div>
           </div>

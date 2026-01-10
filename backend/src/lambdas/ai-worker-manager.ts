@@ -173,10 +173,16 @@ async function spawnManagerTask(
     const command = new RunTaskCommand({
       cluster: ECS_CONFIG.cluster,
       taskDefinition: ECS_CONFIG.taskDefinition,
+      // Use Fargate Spot preferred, regular Fargate as fallback when Spot unavailable
       capacityProviderStrategy: [
         {
           capacityProvider: "FARGATE_SPOT",
-          weight: 1,
+          weight: 2,  // Prefer Spot (higher weight)
+          base: 0,
+        },
+        {
+          capacityProvider: "FARGATE",
+          weight: 1,  // Fallback to regular Fargate
           base: 0,
         },
       ],

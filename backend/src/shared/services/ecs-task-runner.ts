@@ -111,11 +111,16 @@ export class ECSTaskRunner {
     const command = new RunTaskCommand({
       cluster: this.config.cluster,
       taskDefinition: this.config.taskDefinition,
-      // Use capacity provider strategy for Fargate Spot (don't set launchType with capacityProviderStrategy)
+      // Use capacity provider strategy with Fargate Spot preferred, regular Fargate as fallback
       capacityProviderStrategy: [
         {
           capacityProvider: 'FARGATE_SPOT',
-          weight: 1,
+          weight: 2,  // Prefer Spot (higher weight)
+          base: 0,
+        },
+        {
+          capacityProvider: 'FARGATE',
+          weight: 1,  // Fallback to regular Fargate if Spot unavailable
           base: 0,
         },
       ],
