@@ -26,6 +26,7 @@ import { paginationValidators } from "../../shared/validators/pagination";
 import { SQS, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { In } from "typeorm";
 import { calculateTotalCost, type TokenUsage } from "../../shared/config/pricing";
+import { inferPersonaFromJiraIssue, getPersonaRationale } from "../../shared/services/persona-inference";
 
 const router = Router();
 
@@ -406,12 +407,26 @@ router.post(
       }
 
       const orgId = req.orgId!;
-      const { jiraIssueKey, workerPersona = "backend_developer" } = req.body;
+      const { jiraIssueKey, workerPersona: explicitPersona } = req.body;
 
       const dataSource = await getDataSource();
       const taskRepo = dataSource.getRepository(AIWorkerTask);
 
-      // Check for existing active task
+      // Fetch Jira issue details first (needed for persona inference and duplicate check)
+      const jiraIssue = await fetchJiraIssue(jiraIssueKey);
+
+      // Infer the appropriate persona from Jira metadata
+      const workerPersona = inferPersonaFromJiraIssue(jiraIssue, explicitPersona);
+      const personaRationale = getPersonaRationale(jiraIssue, workerPersona);
+
+      logger.info("Persona inference for task", {
+        jiraIssueKey,
+        inferredPersona: workerPersona,
+        rationale: personaRationale,
+        wasExplicit: !!explicitPersona,
+      });
+
+      // Check for existing active task (race condition prevention)
       const existing = await taskRepo.findOne({
         where: {
           orgId,
@@ -433,11 +448,9 @@ router.post(
           error: "Task already in progress for this Jira issue",
           existingTaskId: existing.id,
           status: existing.status,
+          assignedPersona: existing.workerPersona,
         });
       }
-
-      // Fetch Jira issue details
-      const jiraIssue = await fetchJiraIssue(jiraIssueKey);
 
       // Check if the Jira issue has the 'ai-worker-deploy' label
       const labels = (jiraIssue?.fields?.labels as string[]) || [];
