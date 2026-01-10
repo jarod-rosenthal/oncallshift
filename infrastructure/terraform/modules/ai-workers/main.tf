@@ -754,7 +754,7 @@ resource "aws_ecs_task_definition" "executor" {
   container_definitions = jsonencode([
     {
       name      = "ai-worker-executor"
-      image     = "${aws_ecr_repository.ai_worker.repository_url}:v25"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v26"
       essential = true
 
       environment = [
@@ -1470,7 +1470,7 @@ resource "aws_ecs_task_definition" "manager_executor" {
   container_definitions = jsonencode([
     {
       name      = "ai-worker-manager-executor"
-      image     = "${aws_ecr_repository.ai_worker.repository_url}:v25"
+      image     = "${aws_ecr_repository.ai_worker.repository_url}:v26"
       essential = true
 
       # Override entrypoint to use Manager-specific script
