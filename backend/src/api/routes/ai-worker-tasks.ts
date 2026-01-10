@@ -416,8 +416,8 @@ router.post(
       const jiraIssue = await fetchJiraIssue(jiraIssueKey);
 
       // Infer the appropriate persona from Jira metadata
-      const workerPersona = inferPersonaFromJiraIssue(jiraIssue, explicitPersona);
-      const personaRationale = getPersonaRationale(jiraIssue, workerPersona);
+      const workerPersona = inferPersonaFromJiraIssue(jiraIssue || undefined, explicitPersona);
+      const personaRationale = getPersonaRationale(jiraIssue || undefined, workerPersona);
 
       logger.info("Persona inference for task", {
         jiraIssueKey,
