@@ -124,14 +124,16 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
       {
         ...orgFilter,
         status: In([
-          "completed",
+          "completed",              // No code changes (terminal)
+          "pr_merged",              // NEW - Successfully deployed and merged (terminal)
+          "review_requested",       // NEW - Risky PR waiting for review (terminal)
           "failed",
           "cancelled",
           "review_rejected",
           "review_approved",
-          "review_pending", // Waiting for review - drop after 10 min
-          "pr_created", // PR created, waiting - drop after 10 min
-          "manager_review", // Under review - drop after 10 min
+          "review_pending",         // Waiting for review - drop after 10 min
+          "pr_created",             // PR created, waiting - drop after 10 min
+          "manager_review",         // Under review - drop after 10 min
           "deployment_failed",
           "validation_failed",
         ]),
@@ -225,7 +227,9 @@ async function buildControlCenterData(orgId: string, isSuperAdmin: boolean = fal
     activeWorkers: workers.filter((w) => w.status === "working").length,
     queueDepth,
     todayCost: Math.round(todayCost * 100) / 100,
-    todayCompleted: todayTasks.filter((t) => ["completed", "review_approved"].includes(t.status)).length,
+    todayCompleted: todayTasks.filter((t) =>
+      ["completed", "pr_merged", "review_approved"].includes(t.status)
+    ).length,
     todayFailed: todayTasks.filter((t) => t.status === "failed").length,
     cumulativeCost: derivedCumulativeCost,
     cumulativeCostResetAt: org?.aiWorkerCostResetAt || null,
@@ -1490,7 +1494,7 @@ router.post(
 
       await taskRepo.save(task);
 
-      // Send retry message to queue
+      // Send retry message to queue (for durability)
       if (queueUrl) {
         await sqs.send(
           new SendMessageCommand({
@@ -1498,6 +1502,35 @@ router.post(
             MessageBody: JSON.stringify({ taskId: task.id, action: "retry" }),
           }),
         );
+      }
+
+      // PUSH-BASED: Immediately trigger task processing
+      try {
+        const triggerUrl = `http://localhost:${process.env.PORT || 3000}/api/v1/ai-worker-tasks/${task.id}/trigger`;
+        const internalKey = process.env.INTERNAL_SERVICE_KEY;
+
+        const triggerResponse = await fetch(triggerUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Internal-Key": internalKey || "",
+          },
+        });
+
+        if (!triggerResponse.ok) {
+          logger.warn("Failed to immediately trigger task, will be picked up by orchestrator", {
+            taskId,
+            status: triggerResponse.status,
+          });
+        } else {
+          logger.info("Task triggered immediately (push-based)", { taskId });
+        }
+      } catch (triggerError) {
+        logger.warn("Error triggering task immediately, will be picked up by orchestrator", {
+          taskId,
+          error: triggerError,
+        });
+        // Non-fatal - task will be processed by orchestrator poll if this fails
       }
 
       logger.info("Manual retry triggered for task", {
