@@ -16,7 +16,7 @@ export type WorkerPersona =
 
 interface JiraIssue {
   summary?: string;
-  description?: string;
+  description?: string | null;  // fetchJiraIssue returns null, not undefined
   issueType?: string;
   labels?: string[];
   fields?: Record<string, any>;
@@ -47,7 +47,7 @@ export function inferPersonaFromJiraIssue(
 
   const labels = jiraIssue.labels || [];
   const summary = (jiraIssue.summary || "").toLowerCase();
-  const description = (jiraIssue.description || "").toLowerCase();
+  const description = (jiraIssue.description || "").toLowerCase();  // null coerces to ""
   const issueType = (jiraIssue.issueType || "").toLowerCase();
   const text = `${summary} ${description}`;
 
