@@ -27,6 +27,7 @@ describe('Auth - Register', () => {
             (e: any) => e.path === 'email' || e.param === 'email'
           );
           expect(emailError).toBeDefined();
+          expect(emailError.msg).toBe('Valid email is required');
         }
       });
 
@@ -46,6 +47,7 @@ describe('Auth - Register', () => {
             (e: any) => e.path === 'email' || e.param === 'email'
           );
           expect(emailError).toBeDefined();
+          expect(emailError.msg).toBe('Valid email is required');
         }
       });
 
