@@ -1,3 +1,86 @@
+/**
+ * Rate Limiting Middleware and Configuration
+ *
+ * This module implements a comprehensive rate limiting system for the OnCallShift API.
+ * It uses an in-memory sliding window counter to track request counts per client.
+ *
+ * Architecture Overview:
+ * =====================
+ *
+ * 1. CLIENT IDENTIFICATION (Key Extraction)
+ *    - API Key (if authenticated via authenticateApiKey middleware)
+ *    - X-API-Key header (for service-to-service calls)
+ *    - IP address (fallback for unauthenticated requests)
+ *
+ * 2. RATE LIMIT TIERS (Seven categories with different limits)
+ *    ┌─────────────────────────────────────────────────────────┐
+ *    │ Tier      │ Window  │ Limit │ Use Case                  │
+ *    ├─────────────────────────────────────────────────────────┤
+ *    │ read      │ 1 min   │ 1000  │ GET requests              │
+ *    │ write     │ 1 min   │ 300   │ POST/PUT/PATCH/DELETE     │
+ *    │ expensive │ 1 min   │ 60    │ AI, analytics, reports    │
+ *    │ webhook   │ 1 min   │ 100   │ Alert ingestion           │
+ *    │ auth      │ 5 min   │ 100   │ Login/registration        │
+ *    │ search    │ 1 min   │ 120   │ Full-text search          │
+ *    │ bulk      │ 1 min   │ 10    │ Import/export             │
+ *    └─────────────────────────────────────────────────────────┘
+ *
+ * 3. ENFORCEMENT LOCATIONS
+ *    - Global: app.use('/api/v1', methodBasedRateLimiter()) applies read/write tiers
+ *    - Expensive: /api/v1/ai-*, /api/v1/analytics (60 req/min)
+ *    - Bulk: /api/v1/import, /api/v1/export, /api/v1/semantic-import (10 req/min)
+ *    - Route-level: Individual routes can apply custom limiters
+ *
+ * 4. RESPONSE HEADERS (Standard rate limit headers)
+ *    - X-RateLimit-Limit: Maximum requests allowed in window
+ *    - X-RateLimit-Remaining: Requests remaining before limit
+ *    - X-RateLimit-Reset: Unix timestamp when window resets
+ *    - Retry-After: Seconds to wait (429 responses only)
+ *
+ * 5. ERROR RESPONSE (When limit exceeded)
+ *    HTTP 429 Too Many Requests with:
+ *    {
+ *      "error": "Too many requests",
+ *      "message": "Rate limit exceeded. Maximum N requests per M seconds.",
+ *      "retryAfter": seconds_to_wait
+ *    }
+ *
+ * 6. MEMORY MANAGEMENT (Automatic cleanup)
+ *    - Entries older than 5 minutes are removed every 60 seconds
+ *    - In-memory store only (not persisted to database)
+ *    - Suitable for single-instance deployments
+ *    - For multi-instance deployments, consider Redis backend
+ *
+ * Implementation Notes:
+ * ====================
+ *
+ * - Uses sliding window counter algorithm (not fixed/token bucket)
+ * - Key extraction is pluggable via custom keyExtractor function
+ * - All timestamps use milliseconds for accuracy
+ * - No external dependencies (pure Node.js Map)
+ *
+ * Testing Recommendations:
+ * =======================
+ * - Unit tests: RateLimitStore.check() with various edge cases
+ * - Integration tests: Express middleware behavior with mock requests
+ * - Load tests: Verify cleanup doesn't block under high concurrency
+ * - E2E tests: Verify API returns 429 after exceeding limits
+ *
+ * Monitoring & Alerts:
+ * ===================
+ * - Log warnings when limits are exceeded (includes key, limit, window)
+ * - Consider dashboard metrics for rate limit hit rates by tier
+ * - Monitor for suspicious patterns (same key hitting limits repeatedly)
+ *
+ * Future Improvements:
+ * ====================
+ * - Redis backend for distributed deployments
+ * - Configurable cleanup interval
+ * - Per-user custom limits based on subscription tier
+ * - Rate limit bypass for internal/trusted clients
+ * - Graphite/Prometheus metrics export
+ */
+
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 
