@@ -63,7 +63,19 @@ import { notFound, internalError } from '../shared/utils/problem-details';
 export function createApp(): Express {
   const app = express();
 
-  // Security middleware - allow inline scripts for demo page and React app
+  // Security middleware - Configure HTTP security headers using helmet.js
+  // These headers implement critical OWASP Top 10 protections:
+  // - Content-Security-Policy (CSP): Prevents XSS attacks by restricting content sources
+  // - Strict-Transport-Security (HSTS): Forces HTTPS-only communication, preventing downgrade attacks
+  // - X-Frame-Options: Prevents clickjacking by controlling embedding in iframes
+  // - X-Content-Type-Options: Prevents MIME sniffing attacks
+  //
+  // CSP Directives:
+  // - 'script-src': Allow inline scripts for React/demo functionality (trade-off for dev convenience)
+  // - 'style-src': Allow inline styles for styling flexibility
+  // - 'img-src': Allow images from S3 and Dicebear API for avatars
+  // - 'connect-src': Allow connections to API, Anthropic (AI), and localhost in dev
+  // - 'upgrade-insecure-requests': Disabled for demo (no SSL), should enable in production
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
@@ -76,16 +88,19 @@ export function createApp(): Express {
       },
     },
     // Strict-Transport-Security: Force HTTPS for 1 year (OCS-79)
+    // Prevents man-in-the-middle attacks by requiring encrypted connections
     hsts: {
       maxAge: 31536000, // 1 year in seconds
       includeSubDomains: true,
       preload: true,
     },
     // X-Frame-Options: Prevent clickjacking (OCS-79)
+    // Denies embedding the application in iframes to prevent click-based attacks
     frameguard: {
       action: 'deny',
     },
     // X-Content-Type-Options: Prevent MIME sniffing (OCS-79)
+    // Prevents browsers from interpreting responses as different MIME types
     noSniff: true,
   }));
 
