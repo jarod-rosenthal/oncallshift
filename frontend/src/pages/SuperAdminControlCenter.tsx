@@ -429,8 +429,22 @@ export default function SuperAdminControlCenter() {
     new Set(),
   );
   const controlCenterStreamRef = useRef<EventSource | null>(null);
-  // Track EventSource connections for SSE streaming
-  const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  // Track EventSource connections for SSE streaming with their listeners for proper cleanup
+  const eventSourcesRef = useRef<
+    Map<
+      string,
+      {
+        source: EventSource;
+        listeners: {
+          ping: () => void;
+          log: (event: MessageEvent) => void;
+          open: () => void;
+          message: (event: MessageEvent) => void;
+          error: () => void;
+        };
+      }
+    >
+  >(new Map());
   // Fallback polling timers when SSE drops
   const pollIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   // Keep cursors out of state to avoid re-renders on every log line
@@ -1088,7 +1102,8 @@ export default function SuperAdminControlCenter() {
       // We'll use a workaround by including token in query params
       const eventSource = new EventSource(url);
 
-      eventSource.addEventListener("ping", () => {});
+      // Store event listeners for proper cleanup - prevents memory leak
+      const pingHandler = () => {};
 
       const onLogEvent = (event: MessageEvent) => {
         try {
@@ -1134,14 +1149,12 @@ export default function SuperAdminControlCenter() {
         }
       };
 
-      eventSource.addEventListener("log", onLogEvent);
-
-      eventSource.onopen = () => {
+      const onOpenHandler = () => {
         stopPolling(taskId); // stop any fallback poll once SSE opens
         setStreamingTerminals((prev) => new Set([...prev, taskId]));
       };
 
-      eventSource.onmessage = (event) => {
+      const onMessageHandler = (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
 
@@ -1149,41 +1162,66 @@ export default function SuperAdminControlCenter() {
             // Task status changed - refresh main data
             fetchData();
           } else if (data.type === "complete") {
-            // Task completed - close stream
-            eventSource.close();
-            eventSourcesRef.current.delete(taskId);
-            setStreamingTerminals((prev) => {
-              const newSet = new Set(prev);
-              newSet.delete(taskId);
-              return newSet;
-            });
-            stopPolling(taskId);
+            // Task completed - close stream with proper cleanup
+            stopLogStream(taskId);
           }
         } catch (err) {
           console.error("Error parsing SSE data:", err);
         }
       };
 
-      eventSource.onerror = () => {
-        // Let EventSource auto-reconnect; use polling while disconnected
+      const onErrorHandler = () => {
+        // On error, fallback to polling but prevent duplicate intervals
         setStreamingTerminals((prev) => {
           const newSet = new Set(prev);
           newSet.delete(taskId);
           return newSet;
         });
-        startPolling(taskId);
+        // Only start polling if not already polling
+        if (!pollIntervalsRef.current.has(taskId)) {
+          startPolling(taskId);
+        }
       };
 
-      eventSourcesRef.current.set(taskId, eventSource);
+      // Add event listeners
+      eventSource.addEventListener("ping", pingHandler);
+      eventSource.addEventListener("log", onLogEvent);
+      eventSource.onopen = onOpenHandler;
+      eventSource.onmessage = onMessageHandler;
+      eventSource.onerror = onErrorHandler;
+
+      // Store both the EventSource and its listeners for cleanup
+      eventSourcesRef.current.set(taskId, {
+        source: eventSource,
+        listeners: {
+          ping: pingHandler,
+          log: onLogEvent,
+          open: onOpenHandler,
+          message: onMessageHandler,
+          error: onErrorHandler,
+        },
+      });
     },
     [fetchTerminalLogs, fetchData, startPolling, stopPolling],
   );
 
   // Stop SSE log streaming for a task
   const stopLogStream = useCallback((taskId: string) => {
-    const eventSource = eventSourcesRef.current.get(taskId);
-    if (eventSource) {
+    const entry = eventSourcesRef.current.get(taskId);
+    if (entry) {
+      const { source: eventSource, listeners } = entry;
+
+      // Remove all event listeners before closing to prevent memory leak
+      eventSource.removeEventListener("ping", listeners.ping);
+      eventSource.removeEventListener("log", listeners.log);
+      eventSource.onopen = null;
+      eventSource.onmessage = null;
+      eventSource.onerror = null;
+
+      // Close the connection
       eventSource.close();
+
+      // Clean up references
       eventSourcesRef.current.delete(taskId);
       setStreamingTerminals((prev) => {
         const newSet = new Set(prev);
@@ -1197,10 +1235,24 @@ export default function SuperAdminControlCenter() {
   // Cleanup SSE connections on unmount
   useEffect(() => {
     return () => {
-      eventSourcesRef.current.forEach((es) => es.close());
+      // Properly cleanup all EventSource connections with listener removal
+      eventSourcesRef.current.forEach((entry, _taskId) => {
+        const { source, listeners } = entry;
+        // Remove all event listeners to prevent memory leak
+        source.removeEventListener("ping", listeners.ping);
+        source.removeEventListener("log", listeners.log);
+        source.onopen = null;
+        source.onmessage = null;
+        source.onerror = null;
+        source.close();
+      });
       eventSourcesRef.current.clear();
+
+      // Clear polling intervals
       pollIntervalsRef.current.forEach((interval) => clearInterval(interval));
       pollIntervalsRef.current.clear();
+
+      // Clear seen event IDs
       terminalSeenEventIdsRef.current = {};
     };
   }, []);
