@@ -6,6 +6,7 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger';
 import { logger } from '../shared/utils/logger';
 import { Sentry, isSentryEnabled } from '../shared/config/sentry';
+import compression from 'compression';
 
 // Import routes
 import authRoutes from './routes/auth';
