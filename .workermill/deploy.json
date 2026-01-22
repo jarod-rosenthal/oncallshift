@@ -1,0 +1,16 @@
+{
+  "$schema": "https://workermill.com/schemas/deploy.json",
+  "version": "1",
+  "region": "us-east-1",
+  "frontend": {
+    "bucket": "oncallshift-dev-frontend-593971626975",
+    "cdnDistributionId": "E7BQGD7BWAB8B",
+    "buildDir": "./frontend/dist"
+  },
+  "backend": {
+    "ecrRepo": "593971626975.dkr.ecr.us-east-1.amazonaws.com/oncallshift-dev/backend",
+    "ecsCluster": "oncallshift-dev",
+    "ecsService": "oncallshift-dev-backend",
+    "healthCheckUrl": "https://oncallshift.com/api/health"
+  }
+}
