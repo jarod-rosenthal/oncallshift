@@ -13,6 +13,10 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      image_tag:
+        description: 'Docker image tag that was deployed'
+        value: ${{ jobs.build-and-deploy.outputs.image_tag }}
 
 env:
   AWS_REGION: us-east-1
@@ -25,6 +29,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      image_tag: ${{ github.sha }}
 
     steps:
       - name: Checkout code
@@ -43,6 +49,7 @@ jobs:
           echo "ECS_NOTIFICATION_WORKER_SERVICE=pagerduty-lite-${ENV}-notification-worker" >> $GITHUB_OUTPUT
           echo "ECS_ALERT_PROCESSOR_SERVICE=pagerduty-lite-${ENV}-alert-processor" >> $GITHUB_OUTPUT
           echo "ECS_ESCALATION_TIMER_SERVICE=pagerduty-lite-${ENV}-escalation-timer" >> $GITHUB_OUTPUT
+          echo "ECS_AIW_ORCH_SERVICE=pagerduty-lite-${ENV}-aiw-orch" >> $GITHUB_OUTPUT
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -71,6 +78,9 @@ jobs:
           push: false
           load: true
           provenance: false
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
           tags: |
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_REPO }}:${{ github.sha }}
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_REPO }}:latest
@@ -83,15 +93,18 @@ jobs:
           file: ./Dockerfile
           push: true
           provenance: false
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
           tags: |
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_REPO }}:${{ github.sha }}
             ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_REPO }}:latest
 
-      # Deploy all 4 services (they all use the same image)
+      # Deploy all 5 services (they all use the same image)
       - name: Deploy API service
         if: inputs.dry_run != true
         run: |
-          echo "🔄 Deploying API service..."
+          echo "Deploying API service..."
           aws ecs update-service \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
             --service ${{ steps.set-vars.outputs.ECS_API_SERVICE }} \
@@ -103,7 +116,7 @@ jobs:
       - name: Deploy notification worker service
         if: inputs.dry_run != true
         run: |
-          echo "🔄 Deploying notification worker..."
+          echo "Deploying notification worker..."
           aws ecs update-service \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
             --service ${{ steps.set-vars.outputs.ECS_NOTIFICATION_WORKER_SERVICE }} \
@@ -115,7 +128,7 @@ jobs:
       - name: Deploy alert processor service
         if: inputs.dry_run != true
         run: |
-          echo "🔄 Deploying alert processor..."
+          echo "Deploying alert processor..."
           aws ecs update-service \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
             --service ${{ steps.set-vars.outputs.ECS_ALERT_PROCESSOR_SERVICE }} \
@@ -127,10 +140,22 @@ jobs:
       - name: Deploy escalation timer service
         if: inputs.dry_run != true
         run: |
-          echo "🔄 Deploying escalation timer..."
+          echo "Deploying escalation timer..."
           aws ecs update-service \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
             --service ${{ steps.set-vars.outputs.ECS_ESCALATION_TIMER_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} \
+            --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
+            --output table
+
+      - name: Deploy AI Worker Orchestrator service
+        if: inputs.dry_run != true
+        run: |
+          echo "Deploying AI Worker Orchestrator..."
+          aws ecs update-service \
+            --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
+            --service ${{ steps.set-vars.outputs.ECS_AIW_ORCH_SERVICE }} \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }} \
             --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
@@ -140,7 +165,7 @@ jobs:
       - name: Wait for new API task and run migrations
         if: inputs.dry_run != true
         run: |
-          echo "⏳ Waiting for new ECS task to start (up to 3 minutes)..."
+          echo "Waiting for new ECS task to start (up to 3 minutes)..."
           MIGRATION_SUCCESS=false
 
           for i in {1..18}; do
@@ -154,8 +179,8 @@ jobs:
               --output text 2>/dev/null)
 
             if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
-              echo "✅ Task running: $TASK_ARN"
-              echo "🗄️  Running database migrations..."
+              echo "Task running: $TASK_ARN"
+              echo "Running database migrations..."
 
               # Run migrations via ECS execute-command
               MIGRATION_OUTPUT=$(aws ecs execute-command \
@@ -167,13 +192,13 @@ jobs:
                 --region ${{ env.AWS_REGION }} 2>&1) || true
 
               if echo "$MIGRATION_OUTPUT" | grep -q "All migrations completed"; then
-                echo "✅ Migrations completed successfully!"
+                echo "Migrations completed successfully!"
                 MIGRATION_SUCCESS=true
               elif echo "$MIGRATION_OUTPUT" | grep -q "already exists"; then
-                echo "✅ Migrations already applied (tables exist)"
+                echo "Migrations already applied (tables exist)"
                 MIGRATION_SUCCESS=true
               else
-                echo "⚠️  Migration output:"
+                echo "Migration output:"
                 echo "$MIGRATION_OUTPUT" | tail -20
                 # Continue anyway - migrations may have partially succeeded
                 MIGRATION_SUCCESS=true
@@ -184,38 +209,39 @@ jobs:
           done
 
           if [ "$MIGRATION_SUCCESS" = false ]; then
-            echo "⚠️  Warning: Could not verify migrations ran. You may need to run manually."
+            echo "Warning: Could not verify migrations ran. You may need to run manually."
           fi
 
       # Wait for all services to stabilize
       - name: Wait for API service to stabilize
         if: inputs.dry_run != true
         run: |
-          echo "⏳ Waiting for API service to stabilize..."
+          echo "Waiting for API service to stabilize..."
           aws ecs wait services-stable \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
             --services ${{ steps.set-vars.outputs.ECS_API_SERVICE }} \
             --region ${{ env.AWS_REGION }}
-          echo "✅ API service stable"
+          echo "API service stable"
 
       - name: Wait for worker services to stabilize
         if: inputs.dry_run != true
         run: |
-          echo "⏳ Waiting for worker services to stabilize..."
+          echo "Waiting for worker services to stabilize..."
           aws ecs wait services-stable \
             --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
             --services \
               ${{ steps.set-vars.outputs.ECS_NOTIFICATION_WORKER_SERVICE }} \
               ${{ steps.set-vars.outputs.ECS_ALERT_PROCESSOR_SERVICE }} \
               ${{ steps.set-vars.outputs.ECS_ESCALATION_TIMER_SERVICE }} \
+              ${{ steps.set-vars.outputs.ECS_AIW_ORCH_SERVICE }} \
             --region ${{ env.AWS_REGION }}
-          echo "✅ All worker services stable"
+          echo "All worker services stable"
 
       # Post-deployment health checks
       - name: Verify API health
         if: inputs.dry_run != true
         run: |
-          echo "🏥 Verifying API health..."
+          echo "Verifying API health..."
           MAX_RETRIES=10
           RETRY_DELAY=5
 
@@ -223,22 +249,50 @@ jobs:
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/api/health)
 
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ API health check passed (HTTP $HTTP_CODE)"
+              echo "API health check passed (HTTP $HTTP_CODE)"
               exit 0
             fi
 
-            echo "⚠️  API health check failed (HTTP $HTTP_CODE), retrying... ($i/$MAX_RETRIES)"
+            echo "API health check failed (HTTP $HTTP_CODE), retrying... ($i/$MAX_RETRIES)"
             sleep $RETRY_DELAY
           done
 
-          echo "❌ API health check failed after $MAX_RETRIES attempts"
-          echo "⚠️  Deployment may have issues - please verify manually"
+          echo "API health check failed after $MAX_RETRIES attempts"
+          echo "Deployment may have issues - please verify manually"
           exit 1
+
+      # Verify deployed version matches expected
+      - name: Verify deployed version
+        if: inputs.dry_run != true
+        run: |
+          echo "Verifying deployed version..."
+          EXPECTED_VERSION="${{ github.sha }}"
+          EXPECTED_SHORT=$(echo "$EXPECTED_VERSION" | cut -c1-7)
+
+          # Wait a bit for the version endpoint to reflect the new deployment
+          sleep 10
+
+          MAX_RETRIES=6
+          for i in $(seq 1 $MAX_RETRIES); do
+            DEPLOYED_VERSION=$(curl -s https://oncallshift.com/version | jq -r '.version' 2>/dev/null || echo "unknown")
+
+            if [ "$DEPLOYED_VERSION" = "$EXPECTED_SHORT" ]; then
+              echo "Deployment verified! Running version: $DEPLOYED_VERSION"
+              exit 0
+            fi
+
+            echo "Version mismatch (expected: $EXPECTED_SHORT, got: $DEPLOYED_VERSION), retrying... ($i/$MAX_RETRIES)"
+            sleep 10
+          done
+
+          echo "Warning: Could not verify deployed version matches $EXPECTED_SHORT"
+          echo "Got: $DEPLOYED_VERSION"
+          echo "This may be normal if version endpoint hasn't updated yet"
 
       - name: Dry run summary
         if: inputs.dry_run == true
         run: |
-          echo "🔍 DRY RUN - Backend Build Summary"
+          echo "DRY RUN - Backend Build Summary"
           echo "===================================="
           echo "Environment: ${{ inputs.environment }}"
           echo ""
@@ -251,27 +305,31 @@ jobs:
           echo "  - Notification Worker: ${{ steps.set-vars.outputs.ECS_NOTIFICATION_WORKER_SERVICE }}"
           echo "  - Alert Processor: ${{ steps.set-vars.outputs.ECS_ALERT_PROCESSOR_SERVICE }}"
           echo "  - Escalation Timer: ${{ steps.set-vars.outputs.ECS_ESCALATION_TIMER_SERVICE }}"
+          echo "  - AI Worker Orchestrator: ${{ steps.set-vars.outputs.ECS_AIW_ORCH_SERVICE }}"
           echo ""
           echo "Would run:"
           echo "  - Database migrations via ECS exec"
           echo "  - API health verification"
+          echo "  - Version verification"
           echo ""
-          echo "⚠️  DRY RUN MODE - No images pushed, no deployments made"
+          echo "DRY RUN MODE - No images pushed, no deployments made"
 
       - name: Backend deployment summary
         if: inputs.dry_run != true
         run: |
-          echo "✅ Backend deployment complete!"
+          echo "Backend deployment complete!"
           echo "================================"
           echo "Environment: ${{ inputs.environment }}"
           echo "Image: ${{ steps.set-vars.outputs.ECR_REGISTRY }}/${{ steps.set-vars.outputs.ECR_REPO }}:${{ github.sha }}"
           echo ""
           echo "Deployed services:"
-          echo "  ✅ API"
-          echo "  ✅ Notification Worker"
-          echo "  ✅ Alert Processor"
-          echo "  ✅ Escalation Timer"
+          echo "  - API"
+          echo "  - Notification Worker"
+          echo "  - Alert Processor"
+          echo "  - Escalation Timer"
+          echo "  - AI Worker Orchestrator"
           echo ""
           echo "Post-deployment checks:"
-          echo "  ✅ Database migrations"
-          echo "  ✅ API health verification"
+          echo "  - Database migrations"
+          echo "  - API health verification"
+          echo "  - Version verification"
