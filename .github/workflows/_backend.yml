@@ -162,8 +162,11 @@ jobs:
             --output table
 
       # Wait for new task to start, then run migrations
+      # Note: ECS execute-command requires Session Manager plugin which may not be available
+      # Migrations also run automatically on container startup, so this is optional
       - name: Wait for new API task and run migrations
         if: inputs.dry_run != true
+        continue-on-error: true
         run: |
           echo "Waiting for new ECS task to start (up to 3 minutes)..."
           MIGRATION_SUCCESS=false
