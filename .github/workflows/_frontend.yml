@@ -42,19 +42,24 @@ jobs:
         run: |
           ENV="${{ inputs.environment }}"
 
-          # Set S3 bucket per environment
-          echo "S3_BUCKET=pagerduty-lite-${ENV}-web" >> $GITHUB_OUTPUT
+          # S3 bucket name follows oncallshift naming convention
+          echo "S3_BUCKET=oncallshift-${ENV}-web" >> $GITHUB_OUTPUT
 
-          # Dynamically look up CloudFront distribution ID by comment/alias
-          DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Aliases.Items, 'oncallshift.com') || contains(Comment, 'pagerduty-lite-${ENV}')].Id" --output text | head -1)
-
-          if [ -z "$DIST_ID" ]; then
-            # Fallback: find distribution with matching S3 origin
-            DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?contains(DomainName, 'pagerduty-lite-${ENV}-web')]].Id" --output text | head -1)
+          # CloudFront distribution ID - hardcoded for dev environment
+          # In production, this could be looked up dynamically
+          if [ "$ENV" = "dev" ]; then
+            echo "CLOUDFRONT_DIST_ID=REDACTED_CLOUDFRONT_DIST_ID" >> $GITHUB_OUTPUT
+          else
+            # Try to find CloudFront distribution dynamically
+            DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Aliases.Items, 'oncallshift.com') || contains(Comment, 'oncallshift-${ENV}')].Id" --output text | head -1)
+            if [ -z "$DIST_ID" ]; then
+              # Fallback: find distribution with matching S3 origin
+              DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?contains(DomainName, 'oncallshift-${ENV}-web')]].Id" --output text | head -1)
+            fi
+            echo "CLOUDFRONT_DIST_ID=${DIST_ID}" >> $GITHUB_OUTPUT
           fi
 
-          echo "CLOUDFRONT_DIST_ID=${DIST_ID}" >> $GITHUB_OUTPUT
-          echo "Found CloudFront Distribution: ${DIST_ID}"
+          echo "Found CloudFront Distribution: ${DIST_ID:-REDACTED_CLOUDFRONT_DIST_ID}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,36 +68,71 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc -b
 
       - name: Build frontend
         working-directory: frontend
         run: npm run build
         env:
-          VITE_API_URL: ${{ inputs.environment == 'prod' && 'https://oncallshift.com' || 'https://oncallshift.com' }}
+          VITE_API_URL: https://oncallshift.com
 
       - name: Deploy to S3
         if: inputs.dry_run != true
         run: |
+          echo "Uploading frontend to S3..."
           aws s3 sync frontend/dist/ s3://${{ steps.set-vars.outputs.S3_BUCKET }}/ --delete
+          echo "Frontend uploaded to S3"
 
       - name: Invalidate CloudFront cache
         if: inputs.dry_run != true
         run: |
           DIST_ID="${{ steps.set-vars.outputs.CLOUDFRONT_DIST_ID }}"
           if [ -n "$DIST_ID" ]; then
-            aws cloudfront create-invalidation \
+            echo "Invalidating CloudFront cache..."
+            INVALIDATION_ID=$(aws cloudfront create-invalidation \
               --distribution-id $DIST_ID \
-              --paths "/*"
-            echo "CloudFront cache invalidated"
+              --paths "/*" \
+              --query 'Invalidation.Id' \
+              --output text)
+            echo "CloudFront invalidation created: $INVALIDATION_ID"
           else
             echo "No CloudFront distribution ID configured for this environment"
           fi
 
+      # Verify frontend is accessible
+      - name: Verify frontend health
+        if: inputs.dry_run != true
+        run: |
+          echo "Verifying frontend is accessible..."
+          # Wait for CloudFront invalidation to propagate
+          sleep 30
+
+          MAX_RETRIES=6
+          RETRY_DELAY=10
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/)
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Frontend health check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+
+            echo "Frontend check returned HTTP $HTTP_CODE, retrying... ($i/$MAX_RETRIES)"
+            sleep $RETRY_DELAY
+          done
+
+          echo "Warning: Frontend returned HTTP $HTTP_CODE after $MAX_RETRIES attempts"
+          echo "This may be due to CloudFront caching - verify manually"
+
       - name: Dry run summary
         if: inputs.dry_run == true
         run: |
-          echo "🔍 DRY RUN - Frontend Build Summary"
+          echo "DRY RUN - Frontend Build Summary"
           echo "===================================="
           echo "Environment: ${{ inputs.environment }}"
           echo ""
@@ -103,12 +143,14 @@ jobs:
           echo "  - S3 Bucket: ${{ steps.set-vars.outputs.S3_BUCKET }}"
           echo "  - CloudFront Distribution: ${{ steps.set-vars.outputs.CLOUDFRONT_DIST_ID }}"
           echo ""
-          echo "⚠️  DRY RUN MODE - No files uploaded, no cache invalidated"
+          echo "DRY RUN MODE - No files uploaded, no cache invalidated"
 
       - name: Frontend deployment summary
         if: inputs.dry_run != true
         run: |
-          echo "✅ Frontend deployment complete!"
+          echo "Frontend deployment complete!"
+          echo "================================"
           echo "Environment: ${{ inputs.environment }}"
           echo "S3 Bucket: ${{ steps.set-vars.outputs.S3_BUCKET }}"
           echo "CloudFront: ${{ steps.set-vars.outputs.CLOUDFRONT_DIST_ID }}"
+          echo "URL: https://oncallshift.com"

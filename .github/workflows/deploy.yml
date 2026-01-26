@@ -1,6 +1,11 @@
-name: Deploy Pipeline
+name: Deploy
 
-# Manual trigger only - no automatic deployments
+# Manual trigger only - designed for CLI usage with `gh workflow run deploy`
+# Examples:
+#   gh workflow run deploy                              # Full deployment (backend + frontend)
+#   gh workflow run deploy -f deploy_backend=false     # Frontend only
+#   gh workflow run deploy -f deploy_frontend=false    # Backend only
+#   gh workflow run deploy -f dry_run=true             # Dry run (build only)
 on:
   workflow_dispatch:
     inputs:
@@ -24,7 +29,7 @@ on:
         default: false
         type: boolean
       deploy_backend:
-        description: 'Deploy Backend (API + Workers)'
+        description: 'Deploy Backend (API + all workers)'
         required: false
         default: true
         type: boolean
@@ -53,7 +58,7 @@ on:
           - preview
           - production
       dry_run:
-        description: 'Dry Run - show what would happen without deploying'
+        description: 'Dry Run - build only, no actual deployment'
         required: false
         default: false
         type: boolean
@@ -65,29 +70,25 @@ permissions:
   issues: write
 
 jobs:
-  # Determine environment from branch or input
+  # Display configuration and set outputs
   setup:
     name: Setup
     runs-on: ubuntu-latest
     outputs:
-      environment: ${{ steps.set-env.outputs.environment }}
-      deploy_infra: ${{ steps.set-flags.outputs.deploy_infra }}
-      auto_approve_infra: ${{ steps.set-flags.outputs.auto_approve_infra }}
-      deploy_backend: ${{ steps.set-flags.outputs.deploy_backend }}
-      deploy_frontend: ${{ steps.set-flags.outputs.deploy_frontend }}
-      deploy_mobile: ${{ steps.set-flags.outputs.deploy_mobile }}
-      deploy_mobile_ota: ${{ steps.set-flags.outputs.deploy_mobile_ota }}
-      mobile_ota_channel: ${{ steps.set-flags.outputs.mobile_ota_channel }}
-      dry_run: ${{ steps.set-flags.outputs.dry_run }}
+      environment: ${{ steps.config.outputs.environment }}
+      deploy_infra: ${{ steps.config.outputs.deploy_infra }}
+      auto_approve_infra: ${{ steps.config.outputs.auto_approve_infra }}
+      deploy_backend: ${{ steps.config.outputs.deploy_backend }}
+      deploy_frontend: ${{ steps.config.outputs.deploy_frontend }}
+      deploy_mobile: ${{ steps.config.outputs.deploy_mobile }}
+      deploy_mobile_ota: ${{ steps.config.outputs.deploy_mobile_ota }}
+      mobile_ota_channel: ${{ steps.config.outputs.mobile_ota_channel }}
+      dry_run: ${{ steps.config.outputs.dry_run }}
     steps:
-      - name: Determine environment
-        id: set-env
+      - name: Set configuration
+        id: config
         run: |
           echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
-
-      - name: Set deployment flags
-        id: set-flags
-        run: |
           echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
           echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
           echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
@@ -99,23 +100,31 @@ jobs:
 
       - name: Display configuration
         run: |
-          echo "🚀 Deployment Configuration"
-          echo "Environment: ${{ steps.set-env.outputs.environment }}"
-          echo "Dry Run: ${{ steps.set-flags.outputs.dry_run }}"
-          echo "Deploy Infra: ${{ steps.set-flags.outputs.deploy_infra }}"
-          echo "Deploy Backend: ${{ steps.set-flags.outputs.deploy_backend }}"
-          echo "Deploy Frontend: ${{ steps.set-flags.outputs.deploy_frontend }}"
-          echo "Deploy Mobile (Full Build): ${{ steps.set-flags.outputs.deploy_mobile }}"
-          echo "Deploy Mobile (OTA): ${{ steps.set-flags.outputs.deploy_mobile_ota }}"
-          if [ "${{ steps.set-flags.outputs.deploy_mobile_ota }}" = "true" ]; then
-            echo "  OTA Channel: ${{ steps.set-flags.outputs.mobile_ota_channel }}"
+          echo "========================================"
+          echo "DEPLOYMENT CONFIGURATION"
+          echo "========================================"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Dry Run: ${{ inputs.dry_run }}"
+          echo ""
+          echo "Components to deploy:"
+          echo "  Infrastructure (Terraform): ${{ inputs.deploy_infra }}"
+          if [ "${{ inputs.deploy_infra }}" = "true" ]; then
+            echo "    Auto-approve: ${{ inputs.auto_approve_infra }}"
           fi
-          if [ "${{ steps.set-flags.outputs.dry_run }}" = "true" ]; then
-            echo ""
-            echo "⚠️  DRY RUN MODE - No actual deployments will occur"
+          echo "  Backend (API + Workers): ${{ inputs.deploy_backend }}"
+          echo "  Frontend (S3 + CloudFront): ${{ inputs.deploy_frontend }}"
+          echo "  Mobile (Full Build): ${{ inputs.deploy_mobile }}"
+          echo "  Mobile (OTA Update): ${{ inputs.deploy_mobile_ota }}"
+          if [ "${{ inputs.deploy_mobile_ota }}" = "true" ]; then
+            echo "    OTA Channel: ${{ inputs.mobile_ota_channel }}"
           fi
+          echo ""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "** DRY RUN MODE - No actual deployments will occur **"
+          fi
+          echo "========================================"
 
-  # Stage 1: Infrastructure (Terraform)
+  # Stage 1: Infrastructure (Terraform) - runs first if enabled
   infrastructure:
     name: Infrastructure
     needs: setup
@@ -127,7 +136,7 @@ jobs:
       dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
-  # Stage 2: Backend (API + Workers)
+  # Stage 2: Backend (API + Workers) - runs after infra (if enabled)
   backend:
     name: Backend
     needs: [setup, infrastructure]
@@ -141,14 +150,14 @@ jobs:
       dry_run: ${{ needs.setup.outputs.dry_run == 'true' }}
     secrets: inherit
 
-  # Stage 3: Frontend (S3 + CloudFront)
+  # Stage 3: Frontend (S3 + CloudFront) - runs in parallel with backend
   frontend:
     name: Frontend
-    needs: [setup, backend]
+    needs: [setup, infrastructure]
     if: |
       always() &&
       needs.setup.outputs.deploy_frontend == 'true' &&
-      (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+      (needs.infrastructure.result == 'success' || needs.infrastructure.result == 'skipped')
     uses: ./.github/workflows/_frontend.yml
     with:
       environment: ${{ needs.setup.outputs.environment }}
@@ -158,10 +167,11 @@ jobs:
   # Stage 4a: Mobile Full Build (Expo EAS)
   mobile:
     name: Mobile (Full Build)
-    needs: [setup, frontend]
+    needs: [setup, backend, frontend]
     if: |
       always() &&
       needs.setup.outputs.deploy_mobile == 'true' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
     uses: ./.github/workflows/_mobile.yml
     with:
@@ -172,10 +182,11 @@ jobs:
   # Stage 4b: Mobile OTA Update (Fast deployment)
   mobile-ota:
     name: Mobile (OTA Update)
-    needs: [setup, frontend]
+    needs: [setup, backend, frontend]
     if: |
       always() &&
       needs.setup.outputs.deploy_mobile_ota == 'true' &&
+      (needs.backend.result == 'success' || needs.backend.result == 'skipped') &&
       (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
     uses: ./.github/workflows/_mobile-ota.yml
     with:
@@ -184,33 +195,47 @@ jobs:
       message: 'Deploy from GitHub Actions'
     secrets: inherit
 
-  # Summary
+  # Final Summary
   summary:
     name: Deployment Summary
     needs: [setup, infrastructure, backend, frontend, mobile, mobile-ota]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Deployment Summary
+      - name: Generate summary
         run: |
-          echo "🏁 Deployment Pipeline Complete"
-          echo "================================"
+          echo "========================================"
+          echo "DEPLOYMENT SUMMARY"
+          echo "========================================"
           echo "Environment: ${{ needs.setup.outputs.environment }}"
+          echo "Commit: ${{ github.sha }}"
           echo ""
           echo "Stage Results:"
           echo "  Infrastructure: ${{ needs.infrastructure.result || 'skipped' }}"
           echo "  Backend: ${{ needs.backend.result || 'skipped' }}"
           echo "  Frontend: ${{ needs.frontend.result || 'skipped' }}"
-          echo "  Mobile (Full Build): ${{ needs.mobile.result || 'skipped' }}"
+          echo "  Mobile (Full): ${{ needs.mobile.result || 'skipped' }}"
           echo "  Mobile (OTA): ${{ needs.mobile-ota.result || 'skipped' }}"
+          echo ""
 
-      - name: Check for failures
-        if: |
-          needs.infrastructure.result == 'failure' ||
-          needs.backend.result == 'failure' ||
-          needs.frontend.result == 'failure' ||
-          needs.mobile.result == 'failure' ||
-          needs.mobile-ota.result == 'failure'
-        run: |
-          echo "❌ One or more stages failed!"
-          exit 1
+          # Check overall status
+          FAILED=false
+          if [ "${{ needs.infrastructure.result }}" = "failure" ]; then FAILED=true; fi
+          if [ "${{ needs.backend.result }}" = "failure" ]; then FAILED=true; fi
+          if [ "${{ needs.frontend.result }}" = "failure" ]; then FAILED=true; fi
+          if [ "${{ needs.mobile.result }}" = "failure" ]; then FAILED=true; fi
+          if [ "${{ needs.mobile-ota.result }}" = "failure" ]; then FAILED=true; fi
+
+          if [ "$FAILED" = "true" ]; then
+            echo "STATUS: FAILED - One or more stages failed"
+            echo "========================================"
+            exit 1
+          else
+            echo "STATUS: SUCCESS"
+            echo "========================================"
+            echo ""
+            echo "Deployment complete! Verify at:"
+            echo "  Frontend: https://oncallshift.com"
+            echo "  API Health: https://oncallshift.com/api/health"
+            echo "  Version: https://oncallshift.com/version"
+          fi
