@@ -236,6 +236,6 @@ jobs:
             echo ""
             echo "Deployment complete! Verify at:"
             echo "  Frontend: https://oncallshift.com"
-            echo "  API Health: https://oncallshift.com/api/health"
+            echo "  API Health: https://oncallshift.com/health"
             echo "  Version: https://oncallshift.com/version"
           fi
