@@ -249,7 +249,7 @@ jobs:
           RETRY_DELAY=5
 
           for i in $(seq 1 $MAX_RETRIES); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/api/health)
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/health)
 
             if [ "$HTTP_CODE" = "200" ]; then
               echo "API health check passed (HTTP $HTTP_CODE)"
