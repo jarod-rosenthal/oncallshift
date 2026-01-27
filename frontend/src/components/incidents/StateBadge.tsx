@@ -1,5 +1,6 @@
 import { AlertCircle, Clock, CheckCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getStateBadgeColor, getStateLabel } from '../../lib/colors';
 
 interface StateBadgeProps {
   state: string;
@@ -8,23 +9,11 @@ interface StateBadgeProps {
   className?: string;
 }
 
-const stateConfig = {
-  triggered: {
-    icon: AlertCircle,
-    label: 'Triggered',
-    colors: 'bg-danger/10 text-danger border-danger/20',
-  },
-  acknowledged: {
-    icon: Clock,
-    label: 'Acknowledged',
-    colors: 'bg-warning/10 text-warning border-warning/20',
-  },
-  resolved: {
-    icon: CheckCircle,
-    label: 'Resolved',
-    colors: 'bg-success/10 text-success border-success/20',
-  },
-};
+const iconMap = {
+  triggered: AlertCircle,
+  acknowledged: Clock,
+  resolved: CheckCircle,
+} as const;
 
 /**
  * StateBadge component for displaying incident state
@@ -39,8 +28,9 @@ export function StateBadge({
   showIcon = true,
   className,
 }: StateBadgeProps) {
-  const config = stateConfig[state as keyof typeof stateConfig] || stateConfig.triggered;
-  const Icon = config.icon;
+  const Icon = iconMap[state as keyof typeof iconMap] || AlertCircle;
+  const colors = getStateBadgeColor(state);
+  const label = getStateLabel(state);
 
   const sizeClasses = {
     sm: 'px-2 py-0.5 text-xs gap-1',
@@ -58,13 +48,13 @@ export function StateBadge({
     <span
       className={cn(
         'inline-flex items-center font-medium border rounded-md',
-        config.colors,
+        colors,
         sizeClasses[size],
         className
       )}
     >
       {showIcon && <Icon className={iconSizes[size]} />}
-      {config.label}
+      {label}
     </span>
   );
 }
