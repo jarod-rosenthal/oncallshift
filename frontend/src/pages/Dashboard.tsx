@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { WeeklyCalendar } from '../components/WeeklyCalendar';
 import { incidentsAPI, setupAPI } from '../lib/api-client';
 import { useAuthStore } from '../store/auth-store';
-import { getSeverityBadgeColor, getStateBadgeColor } from '../utils/colors';
+import { getSeverityBadgeColor, getStateBadgeColor } from '../lib/colors';
 import type { Incident } from '../types/api';
 
 interface DashboardStats {

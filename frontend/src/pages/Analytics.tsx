@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select';
 import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam } from '../lib/api-client';
-import { getSeveritySolidColor } from '../utils/colors';
+import { getSeveritySolidColor } from '../lib/colors';
 
 type TimeRange = '24h' | '7d' | '30d';
 type Tab = 'overview' | 'responders' | 'sla';

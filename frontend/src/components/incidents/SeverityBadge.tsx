@@ -1,5 +1,6 @@
 import { AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getSeverityBadgeColor, getSeverityLabel } from '../../lib/colors';
 
 interface SeverityBadgeProps {
   severity: string;
@@ -8,33 +9,13 @@ interface SeverityBadgeProps {
   className?: string;
 }
 
-const severityConfig = {
-  critical: {
-    icon: AlertCircle,
-    label: 'Critical',
-    colors: 'bg-danger/10 text-danger border-danger/20',
-  },
-  error: {
-    icon: AlertTriangle,
-    label: 'Error',
-    colors: 'bg-warning/10 text-warning border-warning/20',
-  },
-  warning: {
-    icon: AlertTriangle,
-    label: 'Warning',
-    colors: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
-  },
-  info: {
-    icon: Info,
-    label: 'Info',
-    colors: 'bg-primary/10 text-primary border-primary/20',
-  },
-  low: {
-    icon: Info,
-    label: 'Low',
-    colors: 'bg-neutral-100 text-neutral-600 border-neutral-300',
-  },
-};
+const iconMap = {
+  critical: AlertCircle,
+  error: AlertTriangle,
+  warning: AlertTriangle,
+  info: Info,
+  low: Info,
+} as const;
 
 /**
  * SeverityBadge component for displaying incident severity
@@ -49,8 +30,9 @@ export function SeverityBadge({
   showIcon = true,
   className,
 }: SeverityBadgeProps) {
-  const config = severityConfig[severity as keyof typeof severityConfig] || severityConfig.info;
-  const Icon = config.icon;
+  const Icon = iconMap[severity as keyof typeof iconMap] || Info;
+  const colors = getSeverityBadgeColor(severity);
+  const label = getSeverityLabel(severity);
 
   const sizeClasses = {
     sm: 'px-2 py-0.5 text-xs gap-1',
@@ -68,13 +50,13 @@ export function SeverityBadge({
     <span
       className={cn(
         'inline-flex items-center font-medium border rounded-md',
-        config.colors,
+        colors,
         sizeClasses[size],
         className
       )}
     >
       {showIcon && <Icon className={iconSizes[size]} />}
-      {config.label}
+      {label}
     </span>
   );
 }

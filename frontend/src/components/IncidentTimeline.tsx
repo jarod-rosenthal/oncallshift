@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { getEventIcon, getEventColor } from '../utils/colors';
+import { getEventIcon, getEventColor } from '../lib/colors';
 import type { IncidentEvent } from '../types/api';
 
 interface IncidentTimelineProps {

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Clock, User, Server, ChevronRight, BellOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getSeverityBorderColor } from '../../lib/colors';
 import { Button } from '../ui/button';
 import { SeverityBadge } from './SeverityBadge';
 import { StateBadge } from './StateBadge';
@@ -14,14 +15,6 @@ interface IncidentCardProps {
   readOnly?: boolean;
   className?: string;
 }
-
-const severityBorderColors: Record<string, string> = {
-  critical: 'border-l-danger',
-  error: 'border-l-warning',
-  warning: 'border-l-yellow-500',
-  info: 'border-l-primary',
-  low: 'border-l-neutral-400',
-};
 
 /**
  * IncidentCard component for displaying a single incident
@@ -48,7 +41,7 @@ export function IncidentCard({
   readOnly = false,
   className,
 }: IncidentCardProps) {
-  const severityBorder = severityBorderColors[incident.severity] || 'border-l-neutral-300';
+  const severityBorder = getSeverityBorderColor(incident.severity);
 
   return (
     <div
