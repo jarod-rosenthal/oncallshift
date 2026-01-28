@@ -44,3 +44,9 @@ export {
   REQUEST_ID_HEADER,
   REQUEST_ID_RESPONSE_HEADER,
 } from './request-id';
+
+// Validation error handling
+export {
+  validationErrorMiddleware,
+  validationHandler,
+} from './validation-error';
