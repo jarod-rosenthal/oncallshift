@@ -6,15 +6,7 @@ import { Button } from '../ui/button';
 import { SeverityBadge } from './SeverityBadge';
 import { StateBadge } from './StateBadge';
 import type { Incident } from '../../types/api';
-
-interface IncidentCardProps {
-  incident: Incident;
-  onAcknowledge?: () => void;
-  onResolve?: () => void;
-  onEscalate?: () => void;
-  readOnly?: boolean;
-  className?: string;
-}
+import type { IncidentCardProps } from '../types';
 
 /**
  * IncidentCard component for displaying a single incident

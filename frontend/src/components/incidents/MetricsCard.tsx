@@ -1,10 +1,6 @@
 import { TrendingUp, Clock, AlertCircle, CheckCircle } from 'lucide-react';
 import type { Incident } from '../../types/api';
-
-interface MetricsCardProps {
-  incidents: Incident[];
-  className?: string;
-}
+import type { MetricsCardProps } from '../types';
 
 interface MetricItemProps {
   icon: React.ReactNode;

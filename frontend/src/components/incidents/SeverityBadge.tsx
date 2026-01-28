@@ -1,13 +1,7 @@
 import { AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getSeverityBadgeColor, getSeverityLabel } from '../../lib/colors';
-
-interface SeverityBadgeProps {
-  severity: string;
-  size?: 'sm' | 'md' | 'lg';
-  showIcon?: boolean;
-  className?: string;
-}
+import type { SeverityBadgeProps } from '../types';
 
 const iconMap = {
   critical: AlertCircle,
