@@ -4,9 +4,14 @@ import bcrypt from 'bcrypt';
 import { getDataSource } from '../db/data-source';
 import { User, Service, OrganizationApiKey } from '../models';
 import { logger } from '../utils/logger';
-
-// Auth method types
-export type AuthMethod = 'jwt' | 'api_key' | 'service_key';
+// Re-export core types from types module
+export type {
+  AuthMethod,
+  AuthenticatedRequest,
+  BaseRole,
+  PlatformRole,
+  AuthenticatedSubject
+} from '../types';
 
 // Extend Express Request to include user, service, and API key info
 declare global {
@@ -16,7 +21,7 @@ declare global {
       service?: Service;
       orgId?: string;
       apiKeyScopes?: string[];
-      authMethod?: AuthMethod;
+      authMethod?: 'jwt' | 'api_key' | 'service_key';
       organizationApiKey?: OrganizationApiKey;
     }
   }
