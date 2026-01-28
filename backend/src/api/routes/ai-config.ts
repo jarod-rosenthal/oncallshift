@@ -9,12 +9,27 @@ import {
 } from '../../shared/services/ai-providers';
 import { logger } from '../../shared/utils/logger';
 import { badRequest } from '../../shared/utils/problem-details';
+import {
+  UpdateAIConfigRequest,
+  GetAIConfigResponse,
+  UpdateAIConfigResponse,
+  GetProvidersResponse,
+  TestProviderKeyRequest,
+  TestProviderKeyResponse,
+  GetModelsResponse,
+  ProviderResponse,
+  ModelDetailResponse,
+  ErrorResponse,
+} from './types/ai-config.types';
 
 const router = Router();
 
 const AI_PROVIDERS: AIProvider[] = ['anthropic', 'openai', 'google'];
 
-function isOrgAdmin(user: any) {
+/**
+ * Check if user has admin role for modifying AI configuration
+ */
+function isOrgAdmin(user: any): boolean {
   const role = user?.role;
   const baseRole = user?.baseRole;
   return role === 'super_admin' || role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
@@ -23,8 +38,12 @@ function isOrgAdmin(user: any) {
 /**
  * GET /api/v1/ai-config
  * Get AI configuration for the organization
+ *
+ * @returns {GetAIConfigResponse} Current AI configuration
+ * @throws {401} If not authenticated
+ * @throws {500} If database query fails
  */
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', async (req: Request, res: Response<GetAIConfigResponse | ErrorResponse>): Promise<void> => {
   try {
     const orgId = req.user?.orgId;
     if (!orgId) {
@@ -54,7 +73,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const configuredProviders: AIProvider[] = [];
     for (const provider of AI_PROVIDERS) {
       const hasCredential = await credentialRepo.findOne({
-        where: { orgId, provider, enabled: true },
+        where: { orgId, provider: provider as any, enabled: true },
       });
       if (hasCredential) {
         configuredProviders.push(provider);
@@ -66,7 +85,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       configuredProviders.push('anthropic');
     }
 
-    res.json({
+    const response: GetAIConfigResponse = {
       default_provider: config.defaultProvider,
       capability_overrides: config.capabilityOverrides,
       model_preferences: config.modelPreferences,
@@ -74,7 +93,9 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       enable_fallback: config.enableFallback,
       configured_providers: configuredProviders,
       has_env_fallback: !!process.env.ANTHROPIC_API_KEY,
-    });
+    };
+
+    res.json(response);
   } catch (error: any) {
     logger.error('Failed to get AI config', { error: error.message });
     res.status(500).json({ error: 'Failed to get AI configuration' });
@@ -84,6 +105,14 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 /**
  * PUT /api/v1/ai-config
  * Update AI configuration for the organization
+ *
+ * @requires Admin role (admin, owner, or super_admin)
+ * @param {UpdateAIConfigRequest} req.body - Configuration updates (all fields optional)
+ * @returns {UpdateAIConfigResponse} Updated configuration
+ * @throws {401} If not authenticated
+ * @throws {403} If not an admin
+ * @throws {400} If validation fails
+ * @throws {500} If database operation fails
  */
 router.put(
   '/',
@@ -109,7 +138,7 @@ router.put(
       .isBoolean()
       .withMessage('enable_fallback must be a boolean'),
   ],
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request<{}, {}, UpdateAIConfigRequest>, res: Response<UpdateAIConfigResponse | ErrorResponse>): Promise<void> => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       badRequest(res, errors.array()[0].msg);
@@ -163,13 +192,15 @@ router.put(
 
       logger.info('AI config updated', { orgId, userId, changes: Object.keys(req.body) });
 
-      res.json({
+      const response: UpdateAIConfigResponse = {
         default_provider: config.defaultProvider,
         capability_overrides: config.capabilityOverrides,
         model_preferences: config.modelPreferences,
         fallback_chain: config.fallbackChain,
         enable_fallback: config.enableFallback,
-      });
+      };
+
+      res.json(response);
     } catch (error: any) {
       logger.error('Failed to update AI config', { error: error.message });
       res.status(500).json({ error: 'Failed to update AI configuration' });
@@ -180,8 +211,12 @@ router.put(
 /**
  * GET /api/v1/ai-config/providers
  * Get available providers with their models
+ *
+ * @returns {GetProvidersResponse} List of available providers and their models
+ * @throws {401} If not authenticated
+ * @throws {500} If operation fails
  */
-router.get('/providers', async (req: Request, res: Response): Promise<void> => {
+router.get('/providers', async (req: Request, res: Response<GetProvidersResponse | ErrorResponse>): Promise<void> => {
   try {
     const orgId = req.user?.orgId;
     if (!orgId) {
@@ -192,7 +227,7 @@ router.get('/providers', async (req: Request, res: Response): Promise<void> => {
     const available = await getAvailableProviders(orgId);
 
     // Format response with provider details
-    const providers = available.map(({ provider, models }) => ({
+    const providers: ProviderResponse[] = available.map(({ provider, models }) => ({
       id: provider,
       name: getProviderDisplayName(provider),
       models: models.map((m) => ({
@@ -217,7 +252,8 @@ router.get('/providers', async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    res.json({ providers });
+    const response: GetProvidersResponse = { providers };
+    res.json(response);
   } catch (error: any) {
     logger.error('Failed to get AI providers', { error: error.message });
     res.status(500).json({ error: 'Failed to get AI providers' });
@@ -227,11 +263,18 @@ router.get('/providers', async (req: Request, res: Response): Promise<void> => {
 /**
  * POST /api/v1/ai-config/test/:provider
  * Test an API key for a provider
+ *
+ * @param {string} provider - Provider ID (anthropic, openai, or google)
+ * @param {TestProviderKeyRequest} req.body - API key to validate
+ * @returns {TestProviderKeyResponse} Validation result
+ * @throws {401} If not authenticated
+ * @throws {400} If validation fails
+ * @throws {500} If operation fails
  */
 router.post(
   '/test/:provider',
   [body('api_key').notEmpty().withMessage('api_key is required')],
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: Request<{ provider: string }, {}, TestProviderKeyRequest>, res: Response<TestProviderKeyResponse | ErrorResponse>): Promise<void> => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       badRequest(res, errors.array()[0].msg);
@@ -249,11 +292,13 @@ router.post(
       const apiKey = req.body.api_key;
       const isValid = await validateProviderKey(provider, apiKey);
 
-      res.json({
+      const response: TestProviderKeyResponse = {
         provider,
         valid: isValid,
         message: isValid ? 'API key is valid' : 'API key validation failed',
-      });
+      };
+
+      res.json(response);
     } catch (error: any) {
       logger.error('Failed to test API key', { error: error.message });
       res.status(500).json({ error: 'Failed to test API key' });
@@ -264,8 +309,12 @@ router.post(
 /**
  * GET /api/v1/ai-config/models
  * Get all available models across configured providers
+ *
+ * @returns {GetModelsResponse} List of all available models with provider information
+ * @throws {401} If not authenticated
+ * @throws {500} If operation fails
  */
-router.get('/models', async (req: Request, res: Response): Promise<void> => {
+router.get('/models', async (req: Request, res: Response<GetModelsResponse | ErrorResponse>): Promise<void> => {
   try {
     const orgId = req.user?.orgId;
     if (!orgId) {
@@ -276,7 +325,7 @@ router.get('/models', async (req: Request, res: Response): Promise<void> => {
     const available = await getAvailableProviders(orgId);
 
     // Flatten all models
-    const allModels = available.flatMap(({ models }) =>
+    const allModels: ModelDetailResponse[] = available.flatMap(({ models }) =>
       models.map((m) => ({
         id: m.id,
         name: m.name,
@@ -290,13 +339,17 @@ router.get('/models', async (req: Request, res: Response): Promise<void> => {
       }))
     );
 
-    res.json({ models: allModels });
+    const response: GetModelsResponse = { models: allModels };
+    res.json(response);
   } catch (error: any) {
     logger.error('Failed to get AI models', { error: error.message });
     res.status(500).json({ error: 'Failed to get AI models' });
   }
 });
 
+/**
+ * Get human-readable display name for a provider
+ */
 function getProviderDisplayName(provider: AIProvider): string {
   switch (provider) {
     case 'anthropic':
@@ -306,7 +359,8 @@ function getProviderDisplayName(provider: AIProvider): string {
     case 'google':
       return 'Google (Gemini)';
     default:
-      return provider;
+      const _exhaustive: never = provider;
+      return _exhaustive;
   }
 }
 
