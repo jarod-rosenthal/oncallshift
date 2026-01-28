@@ -19,6 +19,7 @@
 import { MigrationAnalyzer } from './migration-analyzer.js';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { logger } from './logger.js';
 
 export interface SafetyCheckResult {
   safe: boolean;
@@ -103,7 +104,7 @@ async function checkTerraformSafety(repoPath: string): Promise<SafetyCheckResult
 
     return risks;
   } catch (error) {
-    console.error('[Safety] Terraform check failed:', error);
+    logger.error('Safety', 'Terraform check failed', { error: error instanceof Error ? error.message : String(error) });
     // Don't fail the entire check if terraform check fails
     return risks;
   }
@@ -126,7 +127,7 @@ export async function checkDeploymentSafety(): Promise<SafetyCheckResult> {
       throw new Error('REPO_PATH environment variable is required');
     }
 
-    console.error('[Safety] Checking deployment safety...');
+    logger.info('Safety', 'Checking deployment safety...');
 
     // 1. Check database migrations
     const migrationsDir = path.join(repoPath, 'backend', 'src', 'shared', 'db', 'migrations');
@@ -175,7 +176,7 @@ export async function checkDeploymentSafety(): Promise<SafetyCheckResult> {
       low: result.risks.filter(r => r.severity === 'low').length,
     };
 
-    console.error('[Safety] Safety check complete:', {
+    logger.info('Safety', 'Safety check complete', {
       safe: result.safe,
       requiresApproval: result.requiresApproval,
       risksFound: result.risks.length,
@@ -184,7 +185,7 @@ export async function checkDeploymentSafety(): Promise<SafetyCheckResult> {
 
     return result;
   } catch (error) {
-    console.error('[Safety] Safety check failed:', error);
+    logger.error('Safety', 'Safety check failed', { error: error instanceof Error ? error.message : String(error) });
 
     // On error, fail safe and require approval
     result.safe = false;
@@ -207,7 +208,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.safe ? 0 : 1);
   } catch (error) {
-    console.error('Fatal error during safety check:', error);
+    logger.error('Safety', 'Fatal error during safety check', { error: error instanceof Error ? error.message : String(error) });
     const errorResult: SafetyCheckResult = {
       safe: false,
       requiresApproval: true,

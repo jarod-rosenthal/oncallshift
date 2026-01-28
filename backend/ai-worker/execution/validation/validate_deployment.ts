@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { logger } from '../deploy/logger.js';
 
 const execAsync = promisify(exec);
 
@@ -91,10 +92,10 @@ async function checkTypescript(): Promise<{ passed: boolean; errors?: string[] }
   for (const check of checks) {
     try {
       await runCommand(check.command, { cwd: check.cwd });
-      console.log(`✓ TypeScript check passed: ${check.name}`);
+      logger.info("TypeScript", `Check passed: ${check.name}`);
     } catch (error: any) {
       const errors = parseTypescriptErrors(error);
-      console.error(`✗ TypeScript check failed: ${check.name}`);
+      logger.error("TypeScript", `Check failed: ${check.name}`, { errorCount: errors.length });
       allErrors.push(`[${check.name}] ${errors.length} error(s)`);
 
       // Add first 5 errors from this project to overall list
@@ -120,7 +121,7 @@ async function checkHealthEndpoint(): Promise<{ passed: boolean; status?: number
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`Health check attempt ${attempt}/${maxRetries}...`);
+      logger.info("HealthCheck", `Attempt ${attempt}/${maxRetries}...`);
 
       // Create abort controller for timeout
       const controller = new AbortController();
@@ -134,11 +135,11 @@ async function checkHealthEndpoint(): Promise<{ passed: boolean; status?: number
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        console.log(`✓ Health check passed (status: ${response.status})`);
+        logger.info("HealthCheck", "Check passed", { status: response.status });
         return { passed: true, status: response.status };
       }
 
-      console.warn(`Health check returned status ${response.status}`);
+      logger.warn("HealthCheck", `Check returned status ${response.status}`);
 
       // If not the last attempt, wait before retrying
       if (attempt < maxRetries) {
@@ -151,7 +152,7 @@ async function checkHealthEndpoint(): Promise<{ passed: boolean; status?: number
         };
       }
     } catch (error: any) {
-      console.error(`Health check attempt ${attempt} failed:`, error.message);
+      logger.error("HealthCheck", `Attempt ${attempt} failed`, { error: error.message });
 
       // If not the last attempt, wait before retrying
       if (attempt < maxRetries) {
@@ -173,7 +174,7 @@ async function checkHealthEndpoint(): Promise<{ passed: boolean; status?: number
  * Validate deployment by checking TypeScript compilation and health endpoint
  */
 export async function validateDeployment(): Promise<ValidationResult> {
-  console.log('Starting deployment validation...');
+  logger.info("Validation", "Starting deployment validation...");
 
   const result: ValidationResult = {
     success: false,
@@ -185,20 +186,21 @@ export async function validateDeployment(): Promise<ValidationResult> {
   };
 
   // 1. TypeScript compilation check
-  console.log('\n=== TypeScript Compilation Check ===');
+  logger.info("Validation", "Running TypeScript Compilation Check");
   result.checks.typescript = await checkTypescript();
 
   // 2. Health endpoint check with retries
-  console.log('\n=== Health Endpoint Check ===');
+  logger.info("Validation", "Running Health Endpoint Check");
   result.checks.healthCheck = await checkHealthEndpoint();
 
   // Overall success requires both checks to pass
   result.success = result.checks.typescript.passed && result.checks.healthCheck.passed;
 
-  console.log('\n=== Validation Summary ===');
-  console.log(`TypeScript: ${result.checks.typescript.passed ? '✓ PASS' : '✗ FAIL'}`);
-  console.log(`Health Check: ${result.checks.healthCheck.passed ? '✓ PASS' : '✗ FAIL'}`);
-  console.log(`Overall: ${result.success ? '✓ PASS' : '✗ FAIL'}`);
+  logger.info("Validation", "Validation Summary", {
+    typescript: result.checks.typescript.passed ? 'PASS' : 'FAIL',
+    healthCheck: result.checks.healthCheck.passed ? 'PASS' : 'FAIL',
+    overall: result.success ? 'PASS' : 'FAIL',
+  });
 
   return result;
 }
@@ -209,11 +211,12 @@ export async function validateDeployment(): Promise<ValidationResult> {
 if (require.main === module) {
   validateDeployment()
     .then((result) => {
-      console.log('\nFinal Result:', JSON.stringify(result, null, 2));
+      logger.info("Validation", "Validation complete");
+      console.log(JSON.stringify(result, null, 2));
       process.exit(result.success ? 0 : 1);
     })
     .catch((error) => {
-      console.error('Validation crashed:', error);
+      logger.error("Validation", "Validation crashed", { error: error instanceof Error ? error.message : String(error) });
       process.exit(1);
     });
 }

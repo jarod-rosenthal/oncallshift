@@ -27,6 +27,7 @@
 import { execSync, spawnSync } from "child_process";
 import * as path from "path";
 import { checkDeploymentSafety, SafetyCheckResult } from "./check_deployment_safety.js";
+import { logger } from "./logger.js";
 
 interface DeploymentResult {
   success: boolean;
@@ -208,7 +209,7 @@ async function main(): Promise<void> {
       throw new Error("REPO_PATH environment variable is required");
     }
 
-    console.error("[Deploy] Running safety checks before deployment...");
+    logger.info("Deploy", "Running safety checks before deployment...");
 
     // Step 1: Run safety checks
     const safetyCheckResult = await checkDeploymentSafety();
@@ -216,8 +217,8 @@ async function main(): Promise<void> {
 
     // Step 2: Check if approval is required
     if (safetyCheckResult.requiresApproval) {
-      console.error("[Deploy] Safety checks require human approval");
-      console.error("[Deploy] Risks detected:", safetyCheckResult.summary);
+      logger.warn("Deploy", "Safety checks require human approval");
+      logger.warn("Deploy", "Risks detected", safetyCheckResult.summary);
 
       output.requiresApproval = true;
       output.approvalReason = generateApprovalReason(safetyCheckResult);
@@ -229,7 +230,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    console.error("[Deploy] Safety checks passed, proceeding with deployment...");
+    logger.info("Deploy", "Safety checks passed, proceeding with deployment...");
 
     // Step 3: Deploy backend
     if (deployBackendFlag) {
@@ -254,7 +255,7 @@ async function main(): Promise<void> {
 
     output.logs = logs.join("\n");
     output.success = true;
-    console.error("[Deploy] Deployment completed successfully");
+    logger.info("Deploy", "Deployment completed successfully");
   } catch (error: unknown) {
     if (error instanceof Error) {
       output.error = error.message;
@@ -262,7 +263,7 @@ async function main(): Promise<void> {
       output.error = String(error);
     }
     output.logs = logs.join("\n");
-    console.error("[Deploy] Deployment failed:", output.error);
+    logger.error("Deploy", "Deployment failed", { error: output.error });
   }
 
   output.duration = Math.round((Date.now() - startTime) / 1000);
