@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { createApiClient } from './create-api-client';
 import type {
   LoginRequest,
   LoginResponse,
@@ -76,42 +76,8 @@ import type {
   CloudAccessLog,
 } from '../types/api';
 
-// API base URL - will be same origin when served from Express
-const API_BASE_URL = '/api/v1';
-
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Request interceptor to add auth token
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor to handle 401 errors
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Clear tokens and redirect to login
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('idToken');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+// Create API client with built-in authentication and error handling
+const apiClient = createApiClient();
 
 // Auth API
 export const authAPI = {
