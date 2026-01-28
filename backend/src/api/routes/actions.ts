@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { body, validationResult } from 'express-validator';
+import { body } from 'express-validator';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { authenticateUser } from '../../shared/auth/middleware';
+import { validationErrorMiddleware } from '../../shared/middleware';
 import { logger } from '../../shared/utils/logger';
 
 const execAsync = promisify(exec);
@@ -50,16 +51,11 @@ const executeAction = async (
 router.post(
   '/restart-pods',
   [
-    body('deployment').isString().notEmpty(),
-    body('namespace').optional().isString(),
+    body('deployment').isString().notEmpty().withMessage('Deployment name is required'),
+    body('namespace').optional().isString().withMessage('Namespace must be a string'),
   ],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { deployment, namespace = 'default' } = req.body;
     const result = await executeAction(
       'restart-pods',
@@ -79,16 +75,11 @@ router.post(
 router.post(
   '/scale-deployment',
   [
-    body('deployment').isString().notEmpty(),
-    body('replicas').isInt({ min: 1, max: 20 }),
+    body('deployment').isString().notEmpty().withMessage('Deployment name is required'),
+    body('replicas').isInt({ min: 1, max: 20 }).withMessage('Replicas must be between 1 and 20'),
   ],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { deployment, replicas } = req.body;
     const result = await executeAction(
       'scale-deployment',
@@ -107,14 +98,9 @@ router.post(
  */
 router.post(
   '/rollback',
-  [body('deployment').isString().notEmpty()],
+  [body('deployment').isString().notEmpty().withMessage('Deployment name is required')],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { deployment } = req.body;
     const result = await executeAction(
       'rollback',
@@ -138,16 +124,11 @@ router.post(
 router.post(
   '/rate-limit',
   [
-    body('enabled').isBoolean(),
-    body('rps').optional().isInt({ min: 10, max: 10000 }),
+    body('enabled').isBoolean().withMessage('Enabled must be a boolean'),
+    body('rps').optional().isInt({ min: 10, max: 10000 }).withMessage('RPS must be between 10 and 10000'),
   ],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { enabled, rps = 100 } = req.body;
     const result = await executeAction(
       'rate-limit',
@@ -196,14 +177,9 @@ router.post('/flush-pgbouncer', async (req: Request, res: Response) => {
  */
 router.post(
   '/traffic-shed',
-  [body('percentage').isInt({ min: 1, max: 50 })],
+  [body('percentage').isInt({ min: 1, max: 50 }).withMessage('Percentage must be between 1 and 50')],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { percentage } = req.body;
     const result = await executeAction(
       'traffic-shed',
@@ -222,14 +198,9 @@ router.post(
  */
 router.post(
   '/kill-queries',
-  [body('threshold_seconds').isInt({ min: 5, max: 300 })],
+  [body('threshold_seconds').isInt({ min: 5, max: 300 }).withMessage('Threshold must be between 5 and 300 seconds')],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { threshold_seconds } = req.body;
     const result = await executeAction(
       'kill-queries',
@@ -266,7 +237,8 @@ router.post('/rotate-logs', async (req: Request, res: Response) => {
  */
 router.post(
   '/clear-temp',
-  [body('older_than_hours').optional().isInt({ min: 1, max: 168 })],
+  [body('older_than_hours').optional().isInt({ min: 1, max: 168 }).withMessage('Hours must be between 1 and 168')],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
     const { older_than_hours = 24 } = req.body;
     const result = await executeAction(
@@ -363,14 +335,9 @@ router.post('/aws-identity', async (req: Request, res: Response) => {
  */
 router.post(
   '/shell-command',
-  [body('command').isString().notEmpty()],
+  [body('command').isString().notEmpty().withMessage('Command is required')],
+  validationErrorMiddleware,
   async (req: Request, res: Response) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
     const { command } = req.body;
 
     // Whitelist of allowed commands (read-only, safe commands)
