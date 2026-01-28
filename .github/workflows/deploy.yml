@@ -1,12 +1,26 @@
 name: Deploy
 
-# Manual trigger only - designed for CLI usage with `gh workflow run deploy`
-# Examples:
+# Triggers:
+# 1. Automatic on push to main (deploys backend + frontend)
+# 2. Manual via CLI with `gh workflow run deploy`
+#
+# Manual examples:
 #   gh workflow run deploy                              # Full deployment (backend + frontend)
 #   gh workflow run deploy -f deploy_backend=false     # Frontend only
 #   gh workflow run deploy -f deploy_frontend=false    # Backend only
 #   gh workflow run deploy -f dry_run=true             # Dry run (build only)
 on:
+  push:
+    branches:
+      - main
+    paths:
+      # Only deploy when actual code changes, not docs/config
+      - 'backend/**'
+      - 'frontend/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+
   workflow_dispatch:
     inputs:
       environment:
@@ -88,38 +102,53 @@ jobs:
       - name: Set configuration
         id: config
         run: |
-          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
-          echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
-          echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
-          echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
-          echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
-          echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
-          echo "deploy_mobile_ota=${{ inputs.deploy_mobile_ota }}" >> $GITHUB_OUTPUT
-          echo "mobile_ota_channel=${{ inputs.mobile_ota_channel }}" >> $GITHUB_OUTPUT
-          echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
+          # For push events, use sensible defaults
+          # For workflow_dispatch, use the provided inputs
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "deploy_infra=false" >> $GITHUB_OUTPUT
+            echo "auto_approve_infra=false" >> $GITHUB_OUTPUT
+            echo "deploy_backend=true" >> $GITHUB_OUTPUT
+            echo "deploy_frontend=true" >> $GITHUB_OUTPUT
+            echo "deploy_mobile=false" >> $GITHUB_OUTPUT
+            echo "deploy_mobile_ota=false" >> $GITHUB_OUTPUT
+            echo "mobile_ota_channel=preview" >> $GITHUB_OUTPUT
+            echo "dry_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "deploy_infra=${{ inputs.deploy_infra }}" >> $GITHUB_OUTPUT
+            echo "auto_approve_infra=${{ inputs.auto_approve_infra }}" >> $GITHUB_OUTPUT
+            echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
+            echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
+            echo "deploy_mobile=${{ inputs.deploy_mobile }}" >> $GITHUB_OUTPUT
+            echo "deploy_mobile_ota=${{ inputs.deploy_mobile_ota }}" >> $GITHUB_OUTPUT
+            echo "mobile_ota_channel=${{ inputs.mobile_ota_channel }}" >> $GITHUB_OUTPUT
+            echo "dry_run=${{ inputs.dry_run }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Display configuration
         run: |
           echo "========================================"
           echo "DEPLOYMENT CONFIGURATION"
           echo "========================================"
-          echo "Environment: ${{ inputs.environment }}"
-          echo "Dry Run: ${{ inputs.dry_run }}"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Environment: ${{ steps.config.outputs.environment }}"
+          echo "Dry Run: ${{ steps.config.outputs.dry_run }}"
           echo ""
           echo "Components to deploy:"
-          echo "  Infrastructure (Terraform): ${{ inputs.deploy_infra }}"
-          if [ "${{ inputs.deploy_infra }}" = "true" ]; then
-            echo "    Auto-approve: ${{ inputs.auto_approve_infra }}"
+          echo "  Infrastructure (Terraform): ${{ steps.config.outputs.deploy_infra }}"
+          if [ "${{ steps.config.outputs.deploy_infra }}" = "true" ]; then
+            echo "    Auto-approve: ${{ steps.config.outputs.auto_approve_infra }}"
           fi
-          echo "  Backend (API + Workers): ${{ inputs.deploy_backend }}"
-          echo "  Frontend (S3 + CloudFront): ${{ inputs.deploy_frontend }}"
-          echo "  Mobile (Full Build): ${{ inputs.deploy_mobile }}"
-          echo "  Mobile (OTA Update): ${{ inputs.deploy_mobile_ota }}"
-          if [ "${{ inputs.deploy_mobile_ota }}" = "true" ]; then
-            echo "    OTA Channel: ${{ inputs.mobile_ota_channel }}"
+          echo "  Backend (API + Workers): ${{ steps.config.outputs.deploy_backend }}"
+          echo "  Frontend (S3 + CloudFront): ${{ steps.config.outputs.deploy_frontend }}"
+          echo "  Mobile (Full Build): ${{ steps.config.outputs.deploy_mobile }}"
+          echo "  Mobile (OTA Update): ${{ steps.config.outputs.deploy_mobile_ota }}"
+          if [ "${{ steps.config.outputs.deploy_mobile_ota }}" = "true" ]; then
+            echo "    OTA Channel: ${{ steps.config.outputs.mobile_ota_channel }}"
           fi
           echo ""
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "${{ steps.config.outputs.dry_run }}" = "true" ]; then
             echo "** DRY RUN MODE - No actual deployments will occur **"
           fi
           echo "========================================"

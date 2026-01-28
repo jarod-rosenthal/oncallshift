@@ -27,7 +27,7 @@ on:
 
   # Trigger after deploy workflow completes
   workflow_run:
-    workflows: ["Deploy Pipeline"]
+    workflows: ["Deploy"]
     types:
       - completed
 
@@ -93,7 +93,7 @@ jobs:
       - name: Check API health endpoint
         run: |
           echo "Checking API health..."
-          response=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/api/health)
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://oncallshift.com/health)
 
           if [ "$response" = "200" ]; then
             echo "API health check passed (HTTP $response)"
