@@ -1,13 +1,7 @@
 import { AlertCircle, Clock, CheckCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getStateBadgeColor, getStateLabel } from '../../lib/colors';
-
-interface StateBadgeProps {
-  state: string;
-  size?: 'sm' | 'md' | 'lg';
-  showIcon?: boolean;
-  className?: string;
-}
+import type { StateBadgeProps } from '../types';
 
 const iconMap = {
   triggered: AlertCircle,
