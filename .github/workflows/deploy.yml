@@ -1,7 +1,7 @@
 name: Deploy
 
 # Triggers:
-# 1. Automatic on push to main (deploys backend + frontend)
+# 1. Automatic on PR merge to main (deploys backend + frontend)
 # 2. Manual via CLI with `gh workflow run deploy`
 #
 # Manual examples:
@@ -10,16 +10,10 @@ name: Deploy
 #   gh workflow run deploy -f deploy_frontend=false    # Backend only
 #   gh workflow run deploy -f dry_run=true             # Dry run (build only)
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
-    paths:
-      # Only deploy when actual code changes, not docs/config
-      - 'backend/**'
-      - 'frontend/**'
-      - 'Dockerfile'
-      - 'package.json'
-      - 'package-lock.json'
 
   workflow_dispatch:
     inputs:
@@ -88,6 +82,8 @@ jobs:
   setup:
     name: Setup
     runs-on: ubuntu-latest
+    # Only run on merged PRs or manual dispatch (skip closed-but-not-merged PRs)
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     outputs:
       environment: ${{ steps.config.outputs.environment }}
       deploy_infra: ${{ steps.config.outputs.deploy_infra }}
@@ -102,9 +98,9 @@ jobs:
       - name: Set configuration
         id: config
         run: |
-          # For push events, use sensible defaults
+          # For PR merge events, use sensible defaults
           # For workflow_dispatch, use the provided inputs
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "environment=dev" >> $GITHUB_OUTPUT
             echo "deploy_infra=false" >> $GITHUB_OUTPUT
             echo "auto_approve_infra=false" >> $GITHUB_OUTPUT
