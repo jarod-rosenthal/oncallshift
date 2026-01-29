@@ -87,28 +87,43 @@ router.get('/', [...paginationValidators], async (req: Request, res: Response) =
       take: pagination.limit,
     });
 
-    // Get user names for all on-call users
-    const schedulesWithUsers = await Promise.all(
-      schedules.map(async (schedule) => {
-        const oncallUserId = schedule.getCurrentOncallUserId();
-        let oncallUser = null;
-        if (oncallUserId) {
-          const user = await userRepo.findOne({ where: { id: oncallUserId } });
-          if (user) {
-            oncallUser = {
-              id: user.id,
-              fullName: user.fullName,
-              email: user.email,
-              profilePictureUrl: user.profilePictureUrl,
-            };
-          }
+    // Batch-fetch all on-call user IDs to avoid N+1 query
+    const userIds = new Set<string>();
+    for (const schedule of schedules) {
+      const oncallUserId = schedule.getCurrentOncallUserId();
+      if (oncallUserId) {
+        userIds.add(oncallUserId);
+      }
+    }
+
+    // Fetch all users at once
+    const users = userIds.size > 0
+      ? await userRepo.find({
+          where: userIds.size > 0 ? Array.from(userIds).map(id => ({ id })) : undefined,
+        })
+      : [];
+    const userMap = new Map(users.map(u => [u.id, u]));
+
+    // Build response with cached user data
+    const schedulesWithUsers = schedules.map((schedule) => {
+      const oncallUserId = schedule.getCurrentOncallUserId();
+      let oncallUser = null;
+      if (oncallUserId) {
+        const user = userMap.get(oncallUserId);
+        if (user) {
+          oncallUser = {
+            id: user.id,
+            fullName: user.fullName,
+            email: user.email,
+            profilePictureUrl: user.profilePictureUrl,
+          };
         }
-        return {
-          ...formatSchedule(schedule),
-          currentOncallUser: oncallUser,
-        };
-      })
-    );
+      }
+      return {
+        ...formatSchedule(schedule),
+        currentOncallUser: oncallUser,
+      };
+    });
 
     const lastItem = schedules[schedules.length - 1];
     return res.json(paginatedResponse(
@@ -212,6 +227,25 @@ router.get('/oncall', async (req: Request, res: Response) => {
       relations: ['schedule'],
     });
 
+    // Batch-fetch all on-call user IDs to avoid N+1 query
+    const userIds = new Set<string>();
+    for (const service of services) {
+      if (service.schedule) {
+        const oncallUserId = service.schedule.getCurrentOncallUserId();
+        if (oncallUserId) {
+          userIds.add(oncallUserId);
+        }
+      }
+    }
+
+    // Fetch all users at once
+    const users = userIds.size > 0
+      ? await userRepo.find({
+          where: userIds.size > 0 ? Array.from(userIds).map(id => ({ id })) : undefined,
+        })
+      : [];
+    const userMap = new Map(users.map(u => [u.id, u]));
+
     const oncallData = [];
 
     for (const service of services) {
@@ -221,9 +255,7 @@ router.get('/oncall', async (req: Request, res: Response) => {
 
         let oncallUser = null;
         if (oncallUserId) {
-          const user = await userRepo.findOne({
-            where: { id: oncallUserId },
-          });
+          const user = userMap.get(oncallUserId);
           if (user) {
             oncallUser = {
               id: user.id,
@@ -374,6 +406,25 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
       dates.push(date);
     }
 
+    // Batch-fetch all on-call user IDs to avoid N+1 query
+    const userIds = new Set<string>();
+    for (const schedule of schedules) {
+      for (const date of dates) {
+        const oncallUserId = calculateOncallForDate(schedule, date);
+        if (oncallUserId) {
+          userIds.add(oncallUserId);
+        }
+      }
+    }
+
+    // Fetch all users at once
+    const users = userIds.size > 0
+      ? await userRepo.find({
+          where: userIds.size > 0 ? Array.from(userIds).map(id => ({ id })) : undefined,
+        })
+      : [];
+    const userMap = new Map(users.map(u => [u.id, u]));
+
     const forecast: Array<{
       schedule: { id: string; name: string; type: string };
       days: Array<{
@@ -385,12 +436,13 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
     }> = [];
 
     for (const schedule of schedules) {
-      const days = await Promise.all(dates.map(async (date) => {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const days = dates.map((date) => {
         const oncallUserId = calculateOncallForDate(schedule, date);
         let oncallUser = null;
 
         if (oncallUserId) {
-          const user = await userRepo.findOne({ where: { id: oncallUserId } });
+          const user = userMap.get(oncallUserId);
           if (user) {
             oncallUser = {
               id: user.id,
@@ -402,7 +454,6 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
         }
 
         const isToday = date.toDateString() === today.toDateString();
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
         return {
           date: date.toISOString().split('T')[0],
@@ -410,7 +461,7 @@ router.get('/weekly-forecast', async (req: Request, res: Response) => {
           isToday,
           oncallUser,
         };
-      }));
+      });
 
       forecast.push({
         schedule: {
