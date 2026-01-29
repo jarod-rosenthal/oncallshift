@@ -23,8 +23,8 @@ const queueUrl = process.env.AI_WORKER_QUEUE_URL;
 
 // GitHub webhook secret
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
-// Jira webhook secret - TODO: re-enable after debugging HMAC verification
-// const JIRA_WEBHOOK_SECRET = process.env.JIRA_WEBHOOK_SECRET;
+// Jira webhook secret
+const JIRA_WEBHOOK_SECRET = process.env.JIRA_WEBHOOK_SECRET;
 
 // ============================================================================
 // CONFIGURATION - Adjust these values as needed
@@ -146,9 +146,9 @@ const PERSONA_MAPPING: Record<string, AIWorkerPersona> = {
   'Docs': 'tech_writer',
 };
 
-/*
- * Verify Jira webhook HMAC signature - TODO: re-enable after debugging
- *
+/**
+ * Verify Jira webhook HMAC signature
+ */
 function verifyJiraSignature(
   payload: string,
   signature: string | undefined,
@@ -169,7 +169,6 @@ function verifyJiraSignature(
     return false;
   }
 }
-*/
 
 /**
  * POST /api/v1/ai-worker/jira/webhook
@@ -177,9 +176,21 @@ function verifyJiraSignature(
  */
 router.post('/jira/webhook', async (req: Request, res: Response) => {
   try {
-    // TODO: Re-enable auth after testing - Jira HMAC signature verification needs debugging
-    // For now, we rely on the JQL filter (labels in ai-worker, ai-task) to limit which issues trigger this
-    logger.info('Jira webhook received (auth temporarily disabled for testing)');
+    // Verify Jira webhook signature
+    if (JIRA_WEBHOOK_SECRET) {
+      const signature = req.headers['x-atlassian-webhook-signature'] as string;
+      const payload = JSON.stringify(req.body);
+
+      if (!signature || !verifyJiraSignature(payload, signature, JIRA_WEBHOOK_SECRET)) {
+        logger.warn('Invalid Jira webhook signature', {
+          hasSignature: !!signature,
+          hasSecret: !!JIRA_WEBHOOK_SECRET,
+        });
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    } else {
+      logger.warn('JIRA_WEBHOOK_SECRET not configured - webhook signature verification disabled');
+    }
 
     const payload = req.body;
     const webhookEvent = payload.webhookEvent;
