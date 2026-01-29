@@ -444,3 +444,38 @@ export interface FilterCondition {
   operator: FilterOperator;
   value: any;
 }
+
+// ============================================================================
+// CRUD Type Exports
+// ============================================================================
+
+/**
+ * Re-export CRUD types for convenient imports
+ * Import from this module: import { CrudListResponse, CrudErrorResponse } from '../types';
+ */
+export {
+  CrudListQuery,
+  CrudPaginationMeta,
+  CrudListResponse,
+  CrudItemResponse,
+  CrudCreateResponse,
+  CrudUpdateResponse,
+  CrudDeleteResponse,
+  CrudErrorResponse,
+  CrudErrorDetail,
+  CrudValidationErrorResponse,
+  CrudNotFoundErrorResponse,
+  CrudConflictErrorResponse,
+  CrudCreateRequest,
+  CrudUpdateRequest,
+  CrudFilterConfig,
+  CrudTimestampedResource,
+  CrudUserTrackedResource,
+  CrudPaginationOptions,
+  CrudQueryOptions,
+  CrudBulkOperationOptions,
+  CrudBulkOperationResult,
+  isCrudListResponse,
+  isCrudErrorResponse,
+  isCrudValidationErrorResponse,
+} from './crud.types';
