@@ -107,7 +107,13 @@ router.post('/slack/interactions', async (req: Request, res: Response) => {
     }
 
     // Slack sends payload as form-urlencoded with a 'payload' field
-    const payload = JSON.parse(req.body.payload || '{}');
+    let payload;
+    try {
+      payload = JSON.parse(req.body.payload || '{}');
+    } catch (error) {
+      logger.error('Failed to parse Slack payload', { error });
+      return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
 
     if (!payload.type) {
       return res.status(400).json({ error: 'Invalid payload' });
