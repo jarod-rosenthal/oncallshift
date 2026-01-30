@@ -42,6 +42,39 @@ async function checkAndEscalateIncidents(): Promise<void> {
 
     logger.debug(`Checking ${triggeredIncidents.length} triggered incidents for escalation`);
 
+    // Batch load all escalation targets to identify schedules we need to fetch
+    // This avoids N+1 queries when processing multiple incidents
+    const allEscalationTargets = await targetRepo.find();
+
+    // Build lookup map for faster filtering: escalationStepId -> targets
+    const targetsByStepId = new Map<string, EscalationTarget[]>();
+    const scheduleIds = new Set<string>();
+
+    for (const target of allEscalationTargets) {
+      // Index targets by step ID for O(1) lookup
+      if (!targetsByStepId.has(target.escalationStepId)) {
+        targetsByStepId.set(target.escalationStepId, []);
+      }
+      targetsByStepId.get(target.escalationStepId)!.push(target);
+
+      // Collect all unique schedule IDs
+      if (target.scheduleId) {
+        scheduleIds.add(target.scheduleId);
+      }
+    }
+
+    // Pre-load all schedules with their relations
+    const scheduleMap = new Map<string, Schedule>();
+    if (scheduleIds.size > 0) {
+      const schedules = await scheduleRepo.find({
+        where: { id: In(Array.from(scheduleIds)) },
+        relations: ['layers', 'layers.members', 'overrides'],
+      });
+      for (const schedule of schedules) {
+        scheduleMap.set(schedule.id, schedule);
+      }
+    }
+
     for (const incident of triggeredIncidents) {
       try {
         await processIncidentEscalation(
@@ -50,7 +83,10 @@ async function checkAndEscalateIncidents(): Promise<void> {
           scheduleRepo,
           incidentRepo,
           eventRepo,
-          targetRepo
+          targetRepo,
+          scheduleMap,
+          allEscalationTargets,
+          targetsByStepId
         );
       } catch (error) {
         logger.error('Error processing escalation for incident:', {
@@ -70,7 +106,10 @@ async function processIncidentEscalation(
   scheduleRepo: any,
   incidentRepo: any,
   eventRepo: any,
-  targetRepo: any
+  targetRepo: any,
+  scheduleMap?: Map<string, Schedule>,
+  allEscalationTargets?: EscalationTarget[],
+  targetsByStepId?: Map<string, EscalationTarget[]>
 ): Promise<void> {
   // Get service with escalation policy
   const service = await serviceRepo.findOne({
@@ -176,7 +215,7 @@ async function processIncidentEscalation(
   await eventRepo.save(escalateEvent);
 
   // Get target users for next step and send notifications
-  const targetUserIds = await getStepTargetUsers(nextStep, scheduleRepo, targetRepo);
+  const targetUserIds = await getStepTargetUsers(nextStep, scheduleRepo, targetRepo, scheduleMap, allEscalationTargets, targetsByStepId);
 
   if (targetUserIds.length === 0) {
     logger.warn('No target users found for escalation step', {
@@ -233,12 +272,47 @@ async function processIncidentEscalation(
 async function getStepTargetUsers(
   step: EscalationStep,
   scheduleRepo: any,
-  targetRepo?: any
+  targetRepo?: any,
+  scheduleMap?: Map<string, Schedule>,
+  allEscalationTargets?: EscalationTarget[],
+  targetsByStepId?: Map<string, EscalationTarget[]>
 ): Promise<string[]> {
   const targetUsers: string[] = [];
 
   // First check new multi-target relation (EscalationTarget table)
-  if (targetRepo) {
+  if (targetsByStepId && targetsByStepId.has(step.id)) {
+    // Use pre-built lookup map for O(1) access (avoids linear filter)
+    const targets = targetsByStepId.get(step.id);
+
+    if (targets && targets.length > 0) {
+      for (const target of targets) {
+        if (target.targetType === 'user' && target.userId) {
+          targetUsers.push(target.userId);
+        } else if (target.targetType === 'schedule' && target.scheduleId) {
+          // Use pre-loaded schedules from map if available, otherwise fetch
+          let schedule = scheduleMap?.get(target.scheduleId);
+          if (!schedule) {
+            schedule = await scheduleRepo.findOne({
+              where: { id: target.scheduleId },
+              relations: ['layers', 'layers.members', 'overrides'],
+            });
+          }
+
+          if (schedule) {
+            const oncallUserId = schedule.getEffectiveOncallUserId(new Date());
+            if (oncallUserId && !targetUsers.includes(oncallUserId)) {
+              targetUsers.push(oncallUserId);
+            }
+          }
+        }
+      }
+
+      if (targetUsers.length > 0) {
+        return targetUsers;
+      }
+    }
+  } else if (targetRepo) {
+    // Fallback to query if targets not pre-loaded
     const targets = await targetRepo.find({
       where: { escalationStepId: step.id },
     });
@@ -248,10 +322,14 @@ async function getStepTargetUsers(
         if (target.targetType === 'user' && target.userId) {
           targetUsers.push(target.userId);
         } else if (target.targetType === 'schedule' && target.scheduleId) {
-          const schedule = await scheduleRepo.findOne({
-            where: { id: target.scheduleId },
-            relations: ['layers', 'layers.members', 'overrides'],
-          });
+          // Use pre-loaded schedules from map if available, otherwise fetch
+          let schedule = scheduleMap?.get(target.scheduleId);
+          if (!schedule) {
+            schedule = await scheduleRepo.findOne({
+              where: { id: target.scheduleId },
+              relations: ['layers', 'layers.members', 'overrides'],
+            });
+          }
 
           if (schedule) {
             const oncallUserId = schedule.getEffectiveOncallUserId(new Date());
@@ -275,11 +353,14 @@ async function getStepTargetUsers(
   }
 
   if (step.targetType === 'schedule' && step.scheduleId) {
-    // Schedule-based targeting - load with layers and overrides for full resolution
-    const schedule = await scheduleRepo.findOne({
-      where: { id: step.scheduleId },
-      relations: ['layers', 'layers.members', 'overrides'],
-    });
+    // Schedule-based targeting - use pre-loaded schedule if available
+    let schedule = scheduleMap?.get(step.scheduleId);
+    if (!schedule) {
+      schedule = await scheduleRepo.findOne({
+        where: { id: step.scheduleId },
+        relations: ['layers', 'layers.members', 'overrides'],
+      });
+    }
 
     if (schedule) {
       // Use getEffectiveOncallUserId which respects layers and overrides
@@ -318,9 +399,34 @@ async function checkAndAdvanceRotations(): Promise<void> {
 
     logger.debug(`Checking ${rotatingSchedules.length} rotating schedules for handoffs`);
 
+    // Collect all user IDs that will be needed for the rotation checks
+    const userIdsToLoad = new Set<string>();
+    for (const schedule of rotatingSchedules) {
+      if (schedule.currentOncallUserId) {
+        userIdsToLoad.add(schedule.currentOncallUserId);
+      }
+      if (schedule.rotation_config && typeof schedule.rotation_config === 'object') {
+        const config = schedule.rotation_config as { userIds?: string[] };
+        if (config.userIds) {
+          config.userIds.forEach(id => userIdsToLoad.add(id));
+        }
+      }
+    }
+
+    // Batch load all users
+    const userMap = new Map<string, User>();
+    if (userIdsToLoad.size > 0) {
+      const users = await userRepo.find({
+        where: { id: In(Array.from(userIdsToLoad)) },
+      });
+      for (const user of users) {
+        userMap.set(user.id, user);
+      }
+    }
+
     for (const schedule of rotatingSchedules) {
       try {
-        await processRotationHandoff(schedule, scheduleRepo, userRepo);
+        await processRotationHandoff(schedule, scheduleRepo, userRepo, userMap);
       } catch (error) {
         logger.error('Error processing rotation for schedule:', {
           scheduleId: schedule.id,
@@ -336,7 +442,8 @@ async function checkAndAdvanceRotations(): Promise<void> {
 async function processRotationHandoff(
   schedule: Schedule,
   scheduleRepo: any,
-  userRepo: any
+  userRepo: any,
+  userMap?: Map<string, User>
 ): Promise<void> {
   // Skip legacy rotation processing if schedule has layers configured
   // Layer-based rotations are calculated dynamically by getEffectiveOncallUserId()
@@ -412,11 +519,11 @@ async function processRotationHandoff(
   const currentOncallUserId = schedule.currentOncallUserId;
 
   if (currentOncallUserId !== expectedOncallUserId) {
-    // Get user names for logging
+    // Get user names for logging (use pre-loaded map if available)
     const previousUser = currentOncallUserId
-      ? await userRepo.findOne({ where: { id: currentOncallUserId } })
+      ? (userMap?.get(currentOncallUserId) ?? await userRepo.findOne({ where: { id: currentOncallUserId } }))
       : null;
-    const nextUser = await userRepo.findOne({ where: { id: expectedOncallUserId } });
+    const nextUser = userMap?.get(expectedOncallUserId) ?? await userRepo.findOne({ where: { id: expectedOncallUserId } });
 
     logger.info('Rotation handoff detected', {
       scheduleId: schedule.id,
@@ -567,6 +674,8 @@ async function checkAcknowledgementTimeouts(): Promise<void> {
     const incidentRepo = dataSource.getRepository(Incident);
     const eventRepo = dataSource.getRepository(IncidentEvent);
     const serviceRepo = dataSource.getRepository(Service);
+    const scheduleRepo = dataSource.getRepository(Schedule);
+    const targetRepo = dataSource.getRepository(EscalationTarget);
 
     // Find all acknowledged incidents
     const acknowledgedIncidents = await incidentRepo.find({
@@ -579,6 +688,33 @@ async function checkAcknowledgementTimeouts(): Promise<void> {
     }
 
     logger.debug(`Checking ${acknowledgedIncidents.length} acknowledged incidents for ack timeout`);
+
+    // Batch load schedules that might be referenced in escalation targets
+    const allEscalationTargets = await targetRepo.find();
+    const scheduleIds = new Set<string>();
+    const targetsByStepId = new Map<string, EscalationTarget[]>();
+
+    for (const target of allEscalationTargets) {
+      if (target.scheduleId) {
+        scheduleIds.add(target.scheduleId);
+      }
+      // Index targets by step ID for faster lookup
+      if (!targetsByStepId.has(target.escalationStepId)) {
+        targetsByStepId.set(target.escalationStepId, []);
+      }
+      targetsByStepId.get(target.escalationStepId)!.push(target);
+    }
+
+    const scheduleMap = new Map<string, Schedule>();
+    if (scheduleIds.size > 0) {
+      const schedules = await scheduleRepo.find({
+        where: { id: In(Array.from(scheduleIds)) },
+        relations: ['layers', 'layers.members', 'overrides'],
+      });
+      for (const schedule of schedules) {
+        scheduleMap.set(schedule.id, schedule);
+      }
+    }
 
     for (const incident of acknowledgedIncidents) {
       try {
@@ -661,10 +797,8 @@ async function checkAcknowledgementTimeouts(): Promise<void> {
             if (currentStepIndex >= 0 && currentStepIndex < steps.length) {
               const currentStep = steps[currentStepIndex];
 
-              // Get target users
-              const scheduleRepo = dataSource.getRepository(Schedule);
-              const targetRepo = dataSource.getRepository(EscalationTarget);
-              const targetUserIds = await getStepTargetUsers(currentStep, scheduleRepo, targetRepo);
+              // Get target users (using pre-loaded schedules, targets, and optimized lookup)
+              const targetUserIds = await getStepTargetUsers(currentStep, scheduleRepo, targetRepo, scheduleMap, allEscalationTargets, targetsByStepId);
 
               // Determine priority
               const priority = incident.severity === 'critical' || incident.severity === 'error' ? 'high' : 'normal';
