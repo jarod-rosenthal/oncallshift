@@ -73,3 +73,7 @@ docker-compose.override.yml
 tfplan
 .mcp.json
 .aider*
+
+# Claude Code
+.claude/progress/
+.claude/decisions/
