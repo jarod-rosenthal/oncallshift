@@ -179,3 +179,11 @@ variable "image_tag" {
   type        = string
   default     = "latest" # Temporary default during migration, will be removed
 }
+
+# Expo Access Token for push notifications
+variable "expo_access_token" {
+  description = "Expo Access Token for push notifications to mobile app. Store in tfvars or environment variable EXPO_ACCESS_TOKEN."
+  type        = string
+  default     = null
+  sensitive   = true
+}

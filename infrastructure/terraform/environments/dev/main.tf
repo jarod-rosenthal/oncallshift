@@ -581,8 +581,9 @@ resource "aws_secretsmanager_secret" "expo_access_token" {
 }
 
 resource "aws_secretsmanager_secret_version" "expo_access_token" {
+  count         = var.expo_access_token != null ? 1 : 0
   secret_id     = aws_secretsmanager_secret.expo_access_token.id
-  secret_string = "0-DPir5fH337iOFkkLK_T5pFCPmwPvNWNbFF2om3"
+  secret_string = var.expo_access_token
 }
 
 # Jira webhook secret (created manually, imported via data source)

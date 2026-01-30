@@ -33,6 +33,8 @@ lerna-debug.log*
 .terraform/
 .terraform.lock.hcl
 terraform.tfvars
+*.tfvars.json
+*.tfvars
 crash.log
 override.tf
 override.tf.json
