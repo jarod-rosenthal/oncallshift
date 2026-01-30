@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { useTimeout } from '../hooks/useTimeout';
 import { integrationsAPI, servicesAPI, type Integration, type IntegrationEvent, type SlackChannel } from '../lib/api-client';
 import type { Service } from '../types/api';
 
@@ -25,6 +26,7 @@ export function Integrations() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const { start: startSuccessTimeout } = useTimeout(() => setSuccess(null));
 
   // Create form state
   const [selectedType, setSelectedType] = useState<IntegrationType | null>(null);
@@ -85,7 +87,7 @@ export function Integrations() {
       window.history.replaceState({}, '', '/integrations');
       await loadData();
 
-      setTimeout(() => setSuccess(null), 3000);
+      startSuccessTimeout(3000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to connect Slack');
       window.history.replaceState({}, '', '/integrations');
@@ -130,7 +132,7 @@ export function Integrations() {
       setSuccess('Integration created successfully');
       resetForm();
       await loadData();
-      setTimeout(() => setSuccess(null), 3000);
+      startSuccessTimeout(3000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create integration');
     } finally {
@@ -183,7 +185,7 @@ export function Integrations() {
       });
       setSuccess('Default channel updated');
       await loadData();
-      setTimeout(() => setSuccess(null), 3000);
+      startSuccessTimeout(3000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to update channel');
     }
@@ -196,7 +198,7 @@ export function Integrations() {
       setIsTesting(true);
       await integrationsAPI.testSlack(selectedIntegration.id, selectedChannelId);
       setSuccess('Test message sent to Slack!');
-      setTimeout(() => setSuccess(null), 3000);
+      startSuccessTimeout(3000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to send test message');
     } finally {
@@ -212,7 +214,7 @@ export function Integrations() {
       const servicesRes = await integrationsAPI.getLinkedServices(selectedIntegration.id);
       setLinkedServices(servicesRes.services);
       setSuccess('Service linked');
-      setTimeout(() => setSuccess(null), 2000);
+      startSuccessTimeout(2000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to link service');
     }
@@ -239,7 +241,7 @@ export function Integrations() {
         setSelectedIntegration(null);
       }
       setSuccess('Integration deleted');
-      setTimeout(() => setSuccess(null), 3000);
+      startSuccessTimeout(3000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete integration');
     }
