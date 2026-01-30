@@ -431,12 +431,19 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # ECS - Task definitions, services, clusters
+      # ECS - Read-only operations (require wildcard for describe/list)
       {
         Effect = "Allow"
         Action = [
           "ecs:Describe*",
-          "ecs:List*",
+          "ecs:List*"
+        ]
+        Resource = "*"
+      },
+      # ECS - Write operations scoped to project resources
+      {
+        Effect = "Allow"
+        Action = [
           "ecs:RegisterTaskDefinition",
           "ecs:DeregisterTaskDefinition",
           "ecs:CreateService",
@@ -448,15 +455,33 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "ecs:UpdateCluster",
           "ecs:DeleteCluster"
         ]
+        Resource = [
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/${var.project_name}-*",
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/${var.project_name}-*/*",
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${var.project_name}-*:*"
+        ]
+      },
+      # ECR - GetAuthorizationToken requires wildcard
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
         Resource = "*"
       },
-      # ECR - Container registries
+      # ECR - Describe/List read-only operations
       {
         Effect = "Allow"
         Action = [
           "ecr:Describe*",
-          "ecr:List*",
-          "ecr:GetAuthorizationToken",
+          "ecr:List*"
+        ]
+        Resource = "*"
+      },
+      # ECR - Write operations scoped to project repositories
+      {
+        Effect = "Allow"
+        Action = [
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
@@ -468,7 +493,9 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "ecr:TagResource",
           "ecr:UntagResource"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-*"
+        ]
       },
       # Lambda - Functions
       {
@@ -586,28 +613,40 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
         ]
         Resource = "*"
       },
-      # Route53 - DNS
+      # Route53 - DNS (read-only list/get requires wildcard, write scoped)
       {
         Effect = "Allow"
         Action = [
           "route53:Get*",
-          "route53:List*",
-          "route53:ChangeResourceRecordSets"
+          "route53:List*"
         ]
         Resource = "*"
       },
-      # ACM - Certificates (expanded for terraform plan validation)
+      {
+        Effect = "Allow"
+        Action = [
+          "route53:ChangeResourceRecordSets"
+        ]
+        Resource = "arn:aws:route53:::hostedzone/*"
+      },
+      # ACM - Certificates (describe/list read-only, operations scoped)
       {
         Effect = "Allow"
         Action = [
           "acm:Describe*",
-          "acm:List*",
-          "acm:GetCertificate",
-          "acm:ListTagsForCertificate"
+          "acm:List*"
         ]
         Resource = "*"
       },
-      # Cognito - User pools
+      {
+        Effect = "Allow"
+        Action = [
+          "acm:GetCertificate",
+          "acm:ListTagsForCertificate"
+        ]
+        Resource = "arn:aws:acm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:certificate/*"
+      },
+      # Cognito - User pools (describe/list read-only, scoped to account)
       {
         Effect = "Allow"
         Action = [
@@ -615,57 +654,82 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "cognito-idp:List*",
           "cognito-idp:Get*"
         ]
-        Resource = "*"
+        Resource = "arn:aws:cognito-idp:${var.aws_region}:${data.aws_caller_identity.current.account_id}:userpool/*"
       },
-      # SQS - Queues
+      # SQS - Queues scoped to project
       {
         Effect = "Allow"
         Action = [
           "sqs:Get*",
-          "sqs:List*",
+          "sqs:List*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "sqs:CreateQueue",
           "sqs:DeleteQueue",
           "sqs:SetQueueAttributes"
         ]
-        Resource = "arn:aws:sqs:${var.aws_region}:*:${var.project_name}-*"
+        Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.project_name}-*"
       },
-      # SNS - Topics
+      # SNS - Topics scoped to project
       {
         Effect = "Allow"
         Action = [
           "sns:Get*",
-          "sns:List*",
+          "sns:List*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "sns:CreateTopic",
           "sns:DeleteTopic",
           "sns:SetTopicAttributes"
         ]
-        Resource = "arn:aws:sns:${var.aws_region}:*:${var.project_name}-*"
+        Resource = "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.project_name}-*"
       },
-      # CloudWatch - Logs and alarms
+      # CloudWatch - Logs operations scoped to project log groups
       {
         Effect = "Allow"
         Action = [
           "logs:Describe*",
-          "logs:List*",
+          "logs:List*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "logs:CreateLogGroup",
           "logs:DeleteLogGroup",
           "logs:PutRetentionPolicy",
           "logs:TagLogGroup"
         ]
-        Resource = "arn:aws:logs:${var.aws_region}:*:log-group:*${var.project_name}*"
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-*"
       },
+      # CloudWatch - Alarms and metrics (describe/list requires wildcard, write scoped)
       {
         Effect = "Allow"
         Action = [
           "cloudwatch:Describe*",
           "cloudwatch:List*",
-          "cloudwatch:Get*",
-          "cloudwatch:PutMetricAlarm",
-          "cloudwatch:DeleteAlarms"
+          "cloudwatch:Get*"
         ]
         Resource = "*"
       },
-      # EC2/VPC - Networking (read-only + security groups)
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DeleteAlarms"
+        ]
+        Resource = "arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.project_name}-*"
+      },
+      # EC2/VPC - Networking (read-only + security groups scoped to project)
       {
         Effect = "Allow"
         Action = [
@@ -685,18 +749,27 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "ec2:CreateTags",
           "ec2:DeleteTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:security-group/*",
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:security-group-rule/*"
+        ]
         Condition = {
           StringLike = {
             "ec2:ResourceTag/Name" = "${var.project_name}-*"
           }
         }
       },
-      # ELB - Load balancers
+      # ELB - Load balancers (describe requires wildcard, write scoped to project)
       {
         Effect = "Allow"
         Action = [
-          "elasticloadbalancing:Describe*",
+          "elasticloadbalancing:Describe*"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "elasticloadbalancing:CreateLoadBalancer",
           "elasticloadbalancing:DeleteLoadBalancer",
           "elasticloadbalancing:ModifyLoadBalancerAttributes",
@@ -709,7 +782,11 @@ resource "aws_iam_role_policy" "executor_terraform_infra" {
           "elasticloadbalancing:AddTags",
           "elasticloadbalancing:RemoveTags"
         ]
-        Resource = "*"
+        Resource = [
+          "arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:loadbalancer/*",
+          "arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:targetgroup/*",
+          "arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:listener/*"
+        ]
       },
       # EventBridge - Scheduled events
       {

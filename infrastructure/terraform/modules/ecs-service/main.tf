@@ -202,7 +202,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
             "ses:SendEmail",
             "ses:SendRawEmail"
           ]
-          Resource = "*"
+          Resource = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/*"
         },
         {
           Effect = "Allow"
@@ -212,7 +212,7 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
             "ssmmessages:OpenControlChannel",
             "ssmmessages:OpenDataChannel"
           ]
-          Resource = "*"
+          Resource = "arn:aws:ssmmessages:${var.aws_region}:${data.aws_caller_identity.current.account_id}:ecs-task/*"
         }
       ],
       var.additional_task_policy_statements

@@ -820,12 +820,22 @@ module "notification_worker" {
       Effect = "Allow"
       Action = [
         "sns:CreatePlatformEndpoint",
-        "sns:Publish",
         "sns:GetEndpointAttributes",
         "sns:SetEndpointAttributes",
         "sns:DeleteEndpoint"
       ]
-      Resource = "*"
+      Resource = [
+        "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:app/*"
+      ]
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "sns:Publish"
+      ]
+      Resource = [
+        "arn:aws:sns:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.project_name}-${var.environment}-*"
+      ]
     }
   ]
 
@@ -1491,8 +1501,23 @@ resource "aws_iam_role_policy" "github_actions_compute" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["ec2:Describe*", "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute", "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable", "ec2:CreateRoute", "ec2:DeleteRoute", "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway", "ec2:AttachInternetGateway", "ec2:DetachInternetGateway", "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:AllocateAddress", "ec2:ReleaseAddress", "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup", "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:CreateVpcEndpoint", "ec2:DeleteVpcEndpoints", "ec2:ModifyVpcEndpoint", "ec2:CreateTags", "ec2:DeleteTags"]
+        Action   = ["ec2:Describe*"]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:CreateVpc", "ec2:DeleteVpc", "ec2:ModifyVpcAttribute", "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable", "ec2:CreateRoute", "ec2:DeleteRoute", "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway", "ec2:AttachInternetGateway", "ec2:DetachInternetGateway", "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:AllocateAddress", "ec2:ReleaseAddress"]
+        Resource = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:vpc/*", "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:subnet/*", "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:route-table/*", "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:internet-gateway/*", "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:nat-gateway/*", "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:elastic-ip/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup", "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress", "ec2:CreateTags", "ec2:DeleteTags"]
+        Resource = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:security-group/*", "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:security-group-rule/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:CreateVpcEndpoint", "ec2:DeleteVpcEndpoints", "ec2:ModifyVpcEndpoint"]
+        Resource = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:vpc-endpoint/*"]
       },
       {
         Effect   = "Allow"
@@ -1516,8 +1541,13 @@ resource "aws_iam_role_policy" "github_actions_compute" {
       },
       {
         Effect   = "Allow"
-        Action   = ["elasticloadbalancing:*"]
+        Action   = ["elasticloadbalancing:Describe*"]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["elasticloadbalancing:Create*", "elasticloadbalancing:Delete*", "elasticloadbalancing:Modify*", "elasticloadbalancing:AddTags", "elasticloadbalancing:RemoveTags"]
+        Resource = ["arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:loadbalancer/*", "arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:targetgroup/*", "arn:aws:elasticloadbalancing:${var.aws_region}:${data.aws_caller_identity.current.account_id}:listener/*"]
       }
     ]
   })
