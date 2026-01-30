@@ -9,10 +9,15 @@ export function Navigation() {
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const user = useAuthStore((state) => state.user);
 
-  const handleLogout = () => {
-    authAPI.logout();
-    clearAuth();
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      authAPI.logout();
+      await clearAuth();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      navigate('/');
+    }
   };
 
   const isActive = (path: string) => {
