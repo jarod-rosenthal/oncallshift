@@ -551,9 +551,8 @@ export function Schedules() {
     setDateRangeStart(startOfDay(new Date()));
   }, []);
 
-  const handleExport = useCallback((scheduleId: string, format: string) => {
+  const handleExport = useCallback((_scheduleId: string, format: string) => {
     // In a real implementation, this would call an export API
-    console.log(`Exporting schedule ${scheduleId} as ${format}`);
     // Placeholder for future implementation
     alert(`Export as ${format.toUpperCase()} - Feature coming soon!`);
   }, []);

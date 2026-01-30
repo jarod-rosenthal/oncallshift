@@ -191,7 +191,6 @@ export default function AlertDetailScreen({ route, navigation }: any) {
       }
 
       // Refresh incident details when returning to this screen
-      console.log('[AlertDetail] Screen refocused, refreshing data...');
       fetchIncidentDetails();
     }, [incident.id])
   );
@@ -231,11 +230,9 @@ export default function AlertDetailScreen({ route, navigation }: any) {
 
   const fetchRunbook = async (serviceId: string, serviceName: string, severity: string) => {
     try {
-      console.log('[AlertDetail] Fetching runbook for service:', serviceId, 'severity:', severity);
       // Try to find runbook from API
       const rb = await runbookService.findRunbookForIncident(serviceId, severity);
       if (rb) {
-        console.log('[AlertDetail] Found runbook from API:', rb.title, 'id:', rb.id);
         setRunbook(rb);
 
         // Try to load existing execution state
@@ -245,7 +242,6 @@ export default function AlertDetailScreen({ route, navigation }: any) {
           setCompletedSteps(execution.stepsCompleted || []);
         }
       } else {
-        console.log('[AlertDetail] No runbook found for service, using mock');
         // Use mock runbook for demo
         setRunbook(runbookService.getMockRunbook(serviceId, serviceName));
       }
@@ -257,7 +253,6 @@ export default function AlertDetailScreen({ route, navigation }: any) {
   };
 
   const toggleStepCompleted = async (stepId: string) => {
-    console.log('[AlertDetail] Toggling step:', stepId);
     await hapticService.lightTap();
     const isCompleting = !completedSteps.includes(stepId);
 

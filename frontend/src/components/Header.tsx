@@ -99,7 +99,6 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     // TODO: Implement global search
-    console.log('Search:', searchQuery);
   };
 
   const handleLogout = async () => {
