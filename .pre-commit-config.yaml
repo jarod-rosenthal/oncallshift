@@ -1,0 +1,61 @@
+repos:
+  # Secret detection using detect-secrets
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets in code
+        entry: detect-secrets scan --baseline .secrets.baseline
+        language: python
+        types: [python, terraform, json, yaml, text]
+        additional_dependencies: ['detect-secrets[gibberish]']
+
+  # Terraform security scanning with tfsec
+  - repo: https://github.com/aquasecurity/tfsec
+    rev: v1.28.1
+    hooks:
+      - id: tfsec-docker
+        name: TFSec - Terraform security scanner
+        entry: tfsec
+        language: docker_image
+        types: [terraform]
+        require_serial: true
+
+  # Terraform formatting and validation
+  - repo: https://github.com/terraform-docs/terraform-docs
+    rev: v0.16.0
+    hooks:
+      - id: terraform-docs-go
+        name: Terraform docs
+        entry: terraform-docs
+        language: golang
+        types: [terraform]
+        args:
+          - --recursive
+          - --sort-by-required
+          - --format=markdown
+
+  # Prevent large files from being committed
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+        name: Detect private keys
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+      - id: check-case-conflict
+
+  # Check for hardcoded AWS secrets
+  - repo: local
+    hooks:
+      - id: terraform-secrets-check
+        name: Check Terraform for hardcoded secrets
+        entry: scripts/check-terraform-secrets.sh
+        language: script
+        types: [terraform]
+        pass_filenames: true
