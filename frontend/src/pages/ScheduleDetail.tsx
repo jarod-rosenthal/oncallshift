@@ -80,7 +80,6 @@ export function ScheduleDetail() {
 
     try {
       setIsLoading(true);
-      console.log('Loading schedule data for ID:', id);
 
       const [scheduleData, membersData, usersData, overridesData, layersData] = await Promise.all([
         schedulesAPI.get(id),
@@ -89,12 +88,6 @@ export function ScheduleDetail() {
         schedulesAPI.listOverrides(id),
         schedulesAPI.listLayers(id),
       ]);
-
-      console.log('Schedule data loaded:', scheduleData);
-      console.log('Members data loaded:', membersData);
-      console.log('Users data loaded:', usersData);
-      console.log('Overrides data loaded:', overridesData);
-      console.log('Layers data loaded:', layersData);
 
       setSchedule(scheduleData.schedule);
       // Handle paginated responses - prefer legacy key, fall back to data array
@@ -124,9 +117,7 @@ export function ScheduleDetail() {
     if (!id) return;
 
     try {
-      console.log('Adding member:', { scheduleId: id, userId });
-      const result = await schedulesAPI.addMember(id, userId);
-      console.log('Member added successfully:', result);
+      await schedulesAPI.addMember(id, userId);
       setShowAddMember(false);
       loadScheduleData(); // Reload to get updated list
     } catch (err: any) {
