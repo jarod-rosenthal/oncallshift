@@ -6,6 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { teamsAPI, type Team } from '../lib/api-client';
 import { useAuthStore } from '../store/auth-store';
+import { useTimeout } from '../hooks/useTimeout';
 
 export function Teams() {
   const currentUser = useAuthStore((state) => state.user);
@@ -14,6 +15,7 @@ export function Teams() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const successTimeout = useTimeout(() => setSuccess(null));
 
   // Create form state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -54,7 +56,7 @@ export function Teams() {
       setNewTeamName('');
       setNewTeamDescription('');
       await loadTeams();
-      setTimeout(() => setSuccess(null), 5000);
+      successTimeout.start(5000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create team');
     } finally {
@@ -72,7 +74,7 @@ export function Teams() {
       await teamsAPI.delete(teamId);
       setSuccess('Team deleted successfully');
       setTeams(teams.filter(t => t.id !== teamId));
-      setTimeout(() => setSuccess(null), 3000);
+      successTimeout.start(3000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete team');
     }

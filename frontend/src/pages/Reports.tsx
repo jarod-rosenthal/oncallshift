@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { useTimeout } from '../hooks/useTimeout';
 import api from '../lib/api-client';
 import { Plus, Edit, Trash2, Play, X, Clock, FileText, Mail, MessageSquare, Webhook, History, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 
@@ -102,6 +103,12 @@ export function Reports() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const { start: startSuccessTimeout, clear: clearSuccessTimeout } = useTimeout(() => setSuccess(null));
+
+  const showSuccessMessage = useCallback((message: string, duration = 3000) => {
+    setSuccess(message);
+    startSuccessTimeout(duration);
+  }, [startSuccessTimeout]);
 
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -244,10 +251,10 @@ export function Reports() {
 
       if (editingReport) {
         await api.put(`/reports/${editingReport.id}`, payload);
-        setSuccess('Report updated successfully');
+        showSuccessMessage('Report updated successfully');
       } else {
         await api.post('/reports', payload);
-        setSuccess('Report created successfully');
+        showSuccessMessage('Report created successfully');
       }
 
       await loadReports();
@@ -265,7 +272,7 @@ export function Reports() {
     try {
       setIsDeleting(true);
       await api.delete(`/reports/${deleteConfirm.id}`);
-      setSuccess('Report deleted successfully');
+      showSuccessMessage('Report deleted successfully');
       await loadReports();
       setDeleteConfirm(null);
     } catch (err: any) {
@@ -280,7 +287,7 @@ export function Reports() {
       setRunningReportId(report.id);
       setError(null);
       await api.post(`/reports/${report.id}/run`);
-      setSuccess(`Report "${report.name}" executed successfully`);
+      showSuccessMessage(`Report "${report.name}" executed successfully`);
       await loadReports();
 
       // Show execution history for this report
@@ -313,7 +320,7 @@ export function Reports() {
   const handleDeliverExecution = async (executionId: string) => {
     try {
       await api.post(`/reports/executions/${executionId}/deliver`);
-      setSuccess('Report delivery triggered');
+      showSuccessMessage('Report delivery triggered');
       if (selectedReport) {
         await loadExecutions(selectedReport.id);
       }
@@ -396,7 +403,13 @@ export function Reports() {
         <div className="bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400 p-4 rounded-lg flex items-center gap-2">
           <CheckCircle className="w-4 h-4" />
           {success}
-          <button onClick={() => setSuccess(null)} className="ml-auto">
+          <button
+            onClick={() => {
+              clearSuccessTimeout();
+              setSuccess(null);
+            }}
+            className="ml-auto"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>

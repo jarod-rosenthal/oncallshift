@@ -5,6 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { cloudCredentialsAPI } from '../lib/api-client';
 import type { CloudCredential, CloudProvider, CloudAccessLog } from '../types/api';
+import { useTimeout } from '../hooks/useTimeout';
 import { Cloud, Plus, Trash2, Eye, EyeOff, RefreshCw, CheckCircle, XCircle, Shield, Clock, AlertTriangle } from 'lucide-react';
 
 // Only cloud providers - AI providers are managed in AI Settings
@@ -26,6 +27,7 @@ export function CloudCredentials() {
   const [accessLogs, setAccessLogs] = useState<CloudAccessLog[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const successTimeout = useTimeout(() => setSuccess(null));
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
@@ -113,7 +115,7 @@ export function CloudCredentials() {
     try {
       await cloudCredentialsAPI.delete(id);
       setSuccess('Credential deleted successfully');
-      setTimeout(() => setSuccess(null), 3000);
+      successTimeout.start(3000);
       loadCredentials();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete credential');
@@ -124,7 +126,7 @@ export function CloudCredentials() {
     try {
       await cloudCredentialsAPI.update(credential.id, { enabled: !credential.enabled });
       setSuccess(`Credential ${credential.enabled ? 'disabled' : 'enabled'} successfully`);
-      setTimeout(() => setSuccess(null), 3000);
+      successTimeout.start(3000);
       loadCredentials();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to update credential');
@@ -198,7 +200,7 @@ export function CloudCredentials() {
       });
 
       setSuccess('Cloud credential created successfully');
-      setTimeout(() => setSuccess(null), 3000);
+      successTimeout.start(3000);
       setShowAddModal(false);
       resetForm();
       loadCredentials();
