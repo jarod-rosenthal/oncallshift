@@ -8,10 +8,13 @@ interface AuthState {
   isInitialized: boolean;
   setTokens: (tokens: AuthTokens) => void;
   setUser: (user: User | null) => void;
-  clearAuth: () => void;
+  clearAuth: () => Promise<void>;
   initializeAuth: () => void;
   isAdmin: () => boolean;
 }
+
+// Promise-based sign-out deduplication
+let signOutPromise: Promise<void> | null = null;
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
@@ -30,11 +33,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user });
   },
 
-  clearAuth: () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('idToken');
-    set({ tokens: null, user: null, isAuthenticated: false });
+  clearAuth: async () => {
+    // If a sign-out is already in progress, return the existing promise
+    if (signOutPromise) {
+      return signOutPromise;
+    }
+
+    // Create a new sign-out promise
+    signOutPromise = (async () => {
+      try {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('idToken');
+        set({ tokens: null, user: null, isAuthenticated: false });
+      } finally {
+        // Clear the promise after completion to allow future sign-outs
+        signOutPromise = null;
+      }
+    })();
+
+    return signOutPromise;
   },
 
   initializeAuth: () => {

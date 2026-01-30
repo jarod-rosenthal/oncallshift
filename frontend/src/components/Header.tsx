@@ -102,10 +102,15 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
     console.log('Search:', searchQuery);
   };
 
-  const handleLogout = () => {
-    authAPI.logout();
-    clearAuth();
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      authAPI.logout();
+      await clearAuth();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      navigate('/');
+    }
   };
 
   return (
