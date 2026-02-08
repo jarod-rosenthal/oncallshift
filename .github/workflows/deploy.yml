@@ -1,0 +1,43 @@
+# OnCallShift Deploy Orchestrator
+# This workflow is written during Phase 0 but not activated until Phase 13
+# when compute infrastructure (ECS, ALB, CloudFront) is provisioned.
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+      component:
+        description: "Component to deploy"
+        required: true
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-backend:
+    if: ${{ inputs.component == 'all' || inputs.component == 'backend' }}
+    uses: ./.github/workflows/_backend.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  deploy-frontend:
+    if: ${{ inputs.component == 'all' || inputs.component == 'frontend' }}
+    uses: ./.github/workflows/_frontend.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
