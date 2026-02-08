@@ -13,14 +13,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.62.0",
     "axios": "^1.7.9",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.563.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0",
-    "zustand": "^5.0.0",
-    "@tanstack/react-query": "^5.62.0"
+    "tailwind-merge": "^3.4.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@types/node": "^25.2.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
