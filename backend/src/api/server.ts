@@ -3,9 +3,14 @@ import { config } from "dotenv";
 config();
 
 import app from "./app.js";
+import { env, validateEnv } from "../shared/config/env.js";
+import { logger } from "../shared/utils/logger.js";
 
-const PORT = parseInt(process.env.PORT || "3000", 10);
+validateEnv();
 
-app.listen(PORT, () => {
-  console.log(`[server] OnCallShift API listening on :${PORT}`);
+app.listen(env.port, () => {
+  logger.info(`OnCallShift API listening on :${env.port}`, {
+    port: env.port,
+    nodeEnv: env.nodeEnv,
+  });
 });
