@@ -4,6 +4,7 @@ import { checkQueueHealth } from "../../shared/services/queue.js";
 import { checkAuthHealth } from "../../shared/services/auth.js";
 import { checkEmailHealth } from "../../shared/services/email.js";
 import { checkPushHealth } from "../../shared/services/push.js";
+import { AppDataSource } from "../../shared/db/connection.js";
 import { env } from "../../shared/config/env.js";
 import { logger } from "../../shared/utils/logger.js";
 
@@ -49,6 +50,11 @@ router.get("/health/detailed", async (_req, res) => {
   };
 
   await Promise.all([
+    checkService("database", async () => {
+      if (!AppDataSource.isInitialized) return false;
+      await AppDataSource.query("SELECT 1");
+      return true;
+    }),
     checkService("cognito", checkAuthHealth),
     checkService("sqs_alerts", () =>
       env.alertsQueueUrl
