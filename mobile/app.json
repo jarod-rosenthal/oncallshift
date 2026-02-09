@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "OnCallShift",
+    "slug": "oncallshift",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "oncallshift",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "com.oncallshift.app"
+    },
+    "android": {
+      "package": "com.oncallshift.app"
+    }
+  }
+}
