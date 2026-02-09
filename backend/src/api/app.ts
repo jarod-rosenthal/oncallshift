@@ -8,6 +8,7 @@ import { baseRateLimit } from "../shared/middleware/rate-limiter.js";
 import { swaggerSpec } from "./swagger.js";
 import { logger } from "../shared/utils/logger.js";
 import { sendProblem } from "../shared/utils/problem-details.js";
+import { router as healthRouter } from "./routes/health.js";
 
 const app = express();
 
@@ -53,8 +54,8 @@ app.use("/api", baseRateLimit);
 // Swagger docs
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// API routes will be registered here as they are created
-// e.g. app.use("/api/v1", healthRouter);
+// API routes
+app.use("/api/v1", healthRouter);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
