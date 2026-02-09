@@ -198,9 +198,11 @@ DashboardScreen, AlertListScreen, AlertDetailScreen, OnCallScreen, OnCallCalenda
 | **Database** | Docker PostgreSQL (local), RDS (prod) | Only thing that differs between local and cloud |
 | **Development environment** | Local processes + real AWS managed services | Sub-second code iteration; real service behavior; pennies in AWS cost |
 | **AWS Region** | us-east-2 | SES has production sending access in us-east-2; colocate all resources |
-| **Cloud deployment** | Terraform on AWS, phased | Phase 0: lightweight managed services. Phase 13: compute/networking infrastructure |
-| **CI/CD** | GitHub Actions, deferred to Phase 13 | Write workflow files during dev, activate at deploy time |
-| **Worker Terraform access** | Workers apply Terraform directly | devops_engineer persona has Terraform + AWS CLI in environment; applies infrastructure changes |
+| **Cloud deployment** | Terraform on AWS, incremental | Single prod environment from day 1. Bootstrap VPC + runner first, then CI/CD for everything else. |
+| **CI/CD** | GitHub Actions from Phase 0 | Bootstrap creates VPC + self-hosted runner. All subsequent infrastructure and app deployments go through GitHub Actions. |
+| **Worker Terraform access** | Direct apply ONLY for bootstrap | Workers run `terraform apply` once to create VPC + runner. After that, all terraform goes through GitHub Actions — workers never run terraform directly again. |
+| **Infrastructure discipline** | Terraform is the sole source of truth | Every variable has a proper default. No `-var` CLI flags. No sloppy overrides. `terraform apply` with no extra flags — the config speaks for itself. |
+| **Environment strategy** | Production from day 1 | Build in `environments/prod/`. No dev environment initially — backfill dev/test/staging later. |
 | **Source codebase access** | Workers read `pagerduty-lite` for reference | PAT grants access to all repos; task descriptions reference source for implementation details |
 | **AI Workers system** | EXCLUDE from rebuild | This is WorkerMill-specific, not OnCallShift |
 | **MCP Server** | Include | Good showcase of MCP capability |
@@ -224,6 +226,69 @@ DashboardScreen, AlertListScreen, AlertDetailScreen, OnCallScreen, OnCallCalenda
 - Semantic import (AI screenshot import) — Novel but not core
 - AI recommendations worker — Nice-to-have, defer
 - ProtonMail DNS records — Infrastructure-specific, not code
+
+---
+
+## Infrastructure Discipline
+
+> **Terraform is the sole source of truth for ALL infrastructure. No exceptions.**
+
+### Rules (Non-Negotiable)
+
+1. **Terraform owns everything.** Never create, modify, or delete AWS resources via the console, AWS CLI, or any other method. If it exists in AWS, it exists in Terraform.
+
+2. **Every variable has a proper default.** All variables must have sensible defaults in `variables.tf` or be set in `terraform.tfvars`. **Never use `-var` CLI flags.** Never use `-auto-approve` outside of CI/CD. Running `terraform apply` with no extra flags must always work — the config speaks for itself.
+
+3. **Production from day 1.** Build in `environments/prod/`. This is the real environment — it starts as a development workspace but is structured as production from the first commit. Dev/test/staging environments will be backfilled later by duplicating the prod config with different variable values.
+
+4. **Module-first architecture.** All resources are defined in reusable modules (`modules/networking/`, `modules/managed-services/`, `modules/github-runner/`, etc.). Environment directories (`environments/prod/`) only contain module calls and variable values. This ensures future environments (dev, test, staging) can be created by adding a new environment directory with different tfvars — no code duplication.
+
+5. **All deployment goes through GitHub Actions after bootstrap.** Workers run `terraform apply` directly exactly **once** — to bootstrap the VPC and self-hosted GitHub Actions runner. After the runner is online, every subsequent `terraform apply` (managed services, compute, networking changes, everything) goes through the `_infra.yml` GitHub Actions workflow on the self-hosted runner. Workers must never run `terraform apply` directly after the bootstrap step.
+
+6. **State isolation per environment.** Each environment gets its own state file:
+   ```
+   oncallshift/prod/terraform.tfstate    ← Active (Phase 0+)
+   oncallshift/dev/terraform.tfstate     ← Future
+   oncallshift/staging/terraform.tfstate  ← Future
+   ```
+
+### Bootstrap Sequence (Phase 0 Only)
+
+This is the one-time chicken-and-egg resolution. You need CI/CD to deploy infrastructure, but you need infrastructure to run CI/CD.
+
+```
+Step 1: Worker creates terraform for VPC + self-hosted GitHub Actions runner
+Step 2: Worker runs `terraform apply` directly (ONLY time this is allowed)
+Step 3: Self-hosted runner comes online inside the VPC
+Step 4: Worker creates .github/workflows/_infra.yml targeting the self-hosted runner
+Step 5: Worker configures GitHub repo secrets for AWS access (gh secret set)
+Step 6: All subsequent terraform changes go through GitHub Actions
+        Worker creates PR → _infra.yml runs terraform plan → merge → terraform apply
+```
+
+**After bootstrap, the rule is absolute:** infrastructure changes are code in a PR, reviewed, merged, and applied by GitHub Actions. Workers write terraform code and create PRs. They do not run terraform.
+
+### Directory Structure
+
+```
+infrastructure/
+└── terraform/
+    ├── modules/
+    │   ├── networking/          (VPC, subnets, NAT, security groups)
+    │   ├── github-runner/       (Self-hosted Actions runner in VPC)
+    │   ├── managed-services/    (Cognito, SQS, SES, SNS, S3, Secrets Manager)
+    │   ├── database/            (RDS, Secrets Manager for DB URL)
+    │   ├── ecs-service/         (Reusable ECS Fargate service)
+    │   └── cdn/                 (CloudFront, S3 static, ACM cert)
+    └── environments/
+        └── prod/                ← Only environment for now
+            ├── backend.tf       (S3 remote state config)
+            ├── provider.tf      (AWS provider, us-east-2)
+            ├── variables.tf     (ALL variables with proper defaults)
+            ├── terraform.tfvars (Environment-specific overrides)
+            ├── main.tf          (Module calls)
+            └── outputs.tf       (Resource IDs, URLs, ARNs)
+```
 
 ---
 
@@ -440,9 +505,9 @@ Worker writes code
 | Concern | Answer |
 |---------|--------|
 | **Cost** | Cognito free tier: 50K MAU. SQS free tier: 1M requests. SES: $0.10/1K emails. SNS free tier: 1M publishes. S3: pennies. Total dev cost: ~$5/month. |
-| **Complexity** | One `terraform apply` in Phase 0 creates all managed services. No VPC, no compute — just the services themselves. Takes 5 minutes. Workers (devops_engineer) apply Terraform directly. |
+| **Complexity** | Phase 0 bootstraps VPC + runner, then managed services via CI/CD. No manual terraform after bootstrap. |
 | **Credentials** | Backend reads from `.env` file: `COGNITO_USER_POOL_ID`, `SQS_ALERTS_URL`, etc. Same env vars in production. |
-| **Risk** | None of these services require networking infrastructure (VPC, NAT, ALB). They're standalone managed services accessible via public endpoints + IAM credentials. |
+| **Risk** | Managed services (Cognito, SQS, SES, SNS, S3) are standalone and accessible via public endpoints + IAM credentials. VPC exists from bootstrap but is only needed for compute (Phase 13). |
 
 ### What Differs Between Local and Production
 
@@ -467,23 +532,24 @@ OnCallShift shares the existing WorkerMill state bucket with a separate key pref
 ```
 Bucket:         workermill-terraform-state-593971626975
 DynamoDB Lock:  workermill-terraform-locks
-Region:         us-east-2
+Region:         us-east-1  (state bucket region — DO NOT change)
 
 State Keys:
-  oncallshift/dev/terraform.tfstate   ← Phase 0 (managed services)
-  oncallshift/prod/terraform.tfstate  ← Phase 13 (full stack)
+  oncallshift/prod/terraform.tfstate     ← Active (Phase 0+)
+  oncallshift/dev/terraform.tfstate      ← Future (backfill)
+  oncallshift/staging/terraform.tfstate   ← Future (backfill)
 
 Already in bucket (DO NOT overwrite):
   workermill/prod/terraform.tfstate
   workermill/sandbox/terraform.tfstate
 ```
 
-**backend.tf** (for `infrastructure/terraform/environments/dev/`):
+**backend.tf** (for `infrastructure/terraform/environments/prod/`):
 ```hcl
 terraform {
   backend "s3" {
     bucket         = "workermill-terraform-state-593971626975"
-    key            = "oncallshift/dev/terraform.tfstate"
+    key            = "oncallshift/prod/terraform.tfstate"
     region         = "us-east-1"       # State bucket is in us-east-1 (DO NOT change)
     dynamodb_table = "workermill-terraform-locks"
     encrypt        = true
@@ -500,11 +566,25 @@ provider "aws" {
 
 **Note:** Backend region (us-east-1) != provider region (us-east-2). The backend region is where the S3 bucket and DynamoDB lock table live. The provider region is where OnCallShift AWS resources are created.
 
-### Phased Infrastructure
+### Incremental Infrastructure (Single Prod Environment)
 
-**Phase 0 (day 1):** Lightweight Terraform — just the managed services
+All infrastructure lives in `environments/prod/`. It grows incrementally as phases progress.
+
+**Phase 0.0 — Bootstrap (worker applies directly, one time only):**
 ```
 terraform apply → creates:
+  - VPC with public/private subnets (2 AZ), NAT gateway, VPC endpoints
+  - Security groups (runner, future ECS, future RDS)
+  - Self-hosted GitHub Actions runner (EC2 in private subnet)
+  - GitHub Actions OIDC provider + IAM role (scoped to jarod-rosenthal/oncallshift)
+
+  This is the ONLY time a worker runs terraform apply directly.
+  After this, the self-hosted runner handles all subsequent terraform.
+```
+
+**Phase 0.1 — Managed services (via GitHub Actions on self-hosted runner):**
+```
+PR merge → GitHub Actions → terraform apply → creates:
   - Cognito User Pool + Client
   - SQS queues (alerts, notifications) + DLQs
   - SES domain identity (oncallshift.com) + DKIM verification
@@ -512,23 +592,19 @@ terraform apply → creates:
   - S3 buckets (uploads)
   - Secrets Manager (for credential encryption key)
 
-  Does NOT create: VPC, RDS, ECS, ALB, CloudFront, Route53
-  Cost: ~$5/month
-
-  Note: Workers (devops_engineer) apply Terraform directly.
-  Worker environment includes Terraform CLI + AWS credentials.
+  Cost: ~$5/month for managed services
 ```
 
-**Phase 13 (go live):** Full Terraform — add compute/networking
+**Phase 13 — Compute & app deployment (via GitHub Actions):**
 ```
-terraform apply → adds:
-  - VPC with public/private subnets, NAT
-  - RDS PostgreSQL (migrates from Docker)
+PR merge → GitHub Actions → terraform apply → adds:
+  - RDS PostgreSQL (replaces Docker PostgreSQL)
   - ECS Fargate cluster + services
-  - ALB with HTTPS
-  - CloudFront distribution
+  - ALB with HTTPS (ACM wildcard cert)
+  - CloudFront distribution (S3 origin + ALB origin)
+  - S3 bucket (web static)
   - Route53 DNS records
-  - GitHub Actions OIDC
+  - ECR repositories (backend, workers)
 ```
 
 ### Local Dev Environment Setup
@@ -551,10 +627,10 @@ services:
 DATABASE_URL=postgresql://oncallshift:localdev@localhost:5433/oncallshift
 COGNITO_USER_POOL_ID=us-east-2_xxxxx
 COGNITO_CLIENT_ID=xxxxx
-ALERTS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/593971626975/oncallshift-dev-alerts
-NOTIFICATIONS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/593971626975/oncallshift-dev-notifications
+ALERTS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/593971626975/oncallshift-prod-alerts
+NOTIFICATIONS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/593971626975/oncallshift-prod-notifications
 SES_FROM_EMAIL=noreply@oncallshift.com
-SNS_PUSH_TOPIC_ARN=arn:aws:sns:us-east-2:593971626975:oncallshift-dev-push-events
+SNS_PUSH_TOPIC_ARN=arn:aws:sns:us-east-2:593971626975:oncallshift-prod-push-events
 CORS_ORIGINS=http://localhost:5173
 AWS_REGION=us-east-2
 
@@ -569,22 +645,102 @@ wait
 
 ### CI/CD Strategy
 
-GitHub Actions workflows are **written during development** (as code in `.github/workflows/`) but **not used until Phase 13**. This means:
+GitHub Actions is **active from Phase 0** — not deferred to Phase 13. The bootstrap step creates a self-hosted runner in the VPC, and all subsequent infrastructure and deployment changes flow through GitHub Actions.
 
-- Workers write and commit workflow YAML files during Phase 0
-- Workflows aren't triggered because there's no compute infrastructure to deploy to
-- When ready to go live, the workflows are already there — just add secrets and run
+**Workflow files created in Phase 0:**
+- `_infra.yml` — Terraform plan on PRs, terraform apply on merge to main (runs on self-hosted runner)
+- `_test-api.yml` — Backend tests (runs on GitHub-hosted runner)
+- `test.yml` — Test orchestrator
+
+**Workflow files created in Phase 13 (when compute exists):**
+- `deploy.yml` — Orchestrator (manual + PR merge trigger)
+- `_backend.yml` — Docker → ECR → ECS with migrations (runs on self-hosted runner)
+- `_frontend.yml` — Build → S3 → CloudFront invalidation (runs on self-hosted runner)
+
+**The self-hosted runner runs inside the VPC**, giving it direct access to private resources (RDS, ECS) without exposing them publicly. All `_infra.yml` and deployment workflows target `runs-on: [self-hosted, oncallshift]`.
+
+**Rule: Workers never deploy infrastructure or applications directly.** They write code, create PRs, and let GitHub Actions handle execution. The only exception is the one-time bootstrap in Phase 0.0.
 
 ---
 
 ## Phased Rebuild Plan
 
-### Phase 0: Repository Bootstrap & Local Dev Environment
-**Estimated stories: 3 | Personas: devops_engineer**
+### Phase 0: Repository Bootstrap, Infrastructure Bootstrap & Local Dev Environment
+**Estimated stories: 5 | Personas: devops_engineer**
 
-Sets up the empty repo with project scaffolding, local dev environment, and Terraform for AWS managed services.
+Sets up the empty repo with project scaffolding, bootstraps the production VPC and CI/CD runner, provisions managed services via GitHub Actions, and gets local dev running.
 
-#### Phase 0.1 — Repository Scaffolding & Local Dev
+> **IMPORTANT: Read the "Infrastructure Discipline" section above before starting Phase 0. Terraform is the sole source of truth. Every variable must have a proper default. No `-var` CLI flags. The config speaks for itself.**
+
+#### Phase 0.0 — Infrastructure Bootstrap (VPC + Self-Hosted Runner)
+
+**This is the one-time bootstrap step.** The worker runs `terraform apply` directly because CI/CD doesn't exist yet. After this step, the worker must never run `terraform apply` directly again.
+
+Create terraform modules and the prod environment:
+
+```
+infrastructure/terraform/
+├── modules/
+│   ├── networking/          ← VPC, subnets, NAT, security groups, VPC endpoints
+│   └── github-runner/       ← Self-hosted Actions runner (EC2 in private subnet)
+└── environments/
+    └── prod/
+        ├── backend.tf       ← S3 remote state (oncallshift/prod/terraform.tfstate)
+        ├── provider.tf      ← AWS provider, us-east-2
+        ├── variables.tf     ← ALL variables with proper defaults
+        ├── terraform.tfvars ← Prod-specific values
+        ├── main.tf          ← Module calls (networking + github-runner for now)
+        └── outputs.tf       ← VPC ID, subnet IDs, runner instance ID, etc.
+```
+
+**What gets created:**
+- VPC with public/private subnets (2 AZ), NAT gateway, VPC endpoints
+- Security groups (runner, future ECS, future RDS, future ALB)
+- Self-hosted GitHub Actions runner (EC2 in private subnet, labeled `oncallshift`)
+- GitHub Actions OIDC provider + IAM role (scoped to `jarod-rosenthal/oncallshift`)
+
+**Then set up CI/CD:**
+- Create `.github/workflows/_infra.yml` — `terraform plan` on PRs (paths: `infrastructure/**`), `terraform apply` on merge to main. Runs on `[self-hosted, oncallshift]`.
+- Configure GitHub repo secrets via `gh secret set` for any values the runner needs
+- Verify: push a no-op terraform change via PR, confirm `_infra.yml` runs plan, merge triggers apply
+
+**Acceptance criteria:**
+- `terraform init && terraform apply` succeeds with NO `-var` flags (all defaults in variables.tf/terraform.tfvars)
+- VPC created in us-east-2 with proper CIDR, public/private subnets across 2 AZs
+- Self-hosted runner registers with GitHub and shows as "idle" in repo Settings > Actions > Runners
+- `.github/workflows/_infra.yml` runs `terraform plan` on PRs touching `infrastructure/**`
+- `.github/workflows/_infra.yml` runs `terraform apply` on merge to main
+- A test PR with a no-op terraform change triggers plan → merge triggers apply successfully
+- **Worker does NOT run terraform apply directly after this step — all subsequent infra goes through GitHub Actions**
+
+#### Phase 0.1 — Managed Services (via GitHub Actions)
+
+> **This step goes through GitHub Actions.** Worker creates a PR with terraform changes, CI runs plan, merge triggers apply on the self-hosted runner.
+
+Add managed services terraform module and wire it into the prod environment:
+
+```
+infrastructure/terraform/modules/
+└── managed-services/        ← Cognito, SQS, SES, SNS, S3, Secrets Manager
+```
+
+**What gets created (via PR → GitHub Actions → terraform apply):**
+- Cognito User Pool + app client
+- SQS queues (oncallshift-prod-alerts, oncallshift-prod-notifications) + DLQs
+- SES domain identity (oncallshift.com) + DKIM verification
+- SNS topic (oncallshift-prod-push-events) + FCM platform application (Android)
+- S3 bucket (oncallshift-prod-uploads)
+- Secrets Manager secret (oncallshift-prod-encryption-key)
+
+**Acceptance criteria:**
+- PR with managed services terraform triggers `_infra.yml` plan on the self-hosted runner
+- Merge triggers `terraform apply` — all resources created in us-east-2
+- Terraform outputs include all resource IDs/URLs/ARNs
+- All resources use `oncallshift-prod-*` naming
+- Cost: ~$5/month (all on free tier or pennies)
+
+#### Phase 0.2 — Repository Scaffolding & Local Dev
+
 ```
 Create monorepo structure:
 ├── backend/
@@ -645,16 +801,15 @@ Create monorepo structure:
 │   └── package.json
 ├── infrastructure/
 │   └── terraform/
-│       ├── environments/dev/    ← Applied in Phase 0 (managed services only)
-│       ├── environments/prod/   ← Applied in Phase 13 (full stack)
-│       └── modules/ (networking, database, ecs-service)
+│       ├── environments/prod/   ← Production from day 1
+│       └── modules/             ← Reusable modules (networking, managed-services, github-runner, etc.)
 ├── e2e/
 │   ├── tests/
 │   ├── page-objects/
 │   └── playwright.config.ts
 ├── packages/
 │   └── oncallshift-mcp/
-├── .github/workflows/           ← Written during dev, activated in Phase 13
+├── .github/workflows/           ← Active from Phase 0 (_infra.yml already running)
 ├── docker-compose.dev.yml       ← LOCAL DEV: PostgreSQL only
 ├── bin/dev                      ← LOCAL DEV: start everything
 ├── deploy.sh
@@ -671,9 +826,7 @@ Create monorepo structure:
 - Dockerfile for backend (multi-stage build)
 - `docker-compose.dev.yml` starts PostgreSQL on port 5433
 - `bin/dev` starts PostgreSQL + backend + frontend
-- AWS managed services created via Terraform (Cognito, SQS, SES, SNS, S3, Secrets Manager)
-- Terraform applied by devops_engineer worker (`cd infrastructure/terraform/environments/dev && terraform init && terraform apply`)
-- `.env` configured with real AWS service URLs/IDs (populated from Terraform outputs)
+- `.env` configured with real AWS service URLs/IDs from Phase 0.1 terraform outputs
 - Backend connects to real Cognito, SQS, SES, SNS, S3 from local dev
 - CORS middleware configured: whitelist `http://localhost:5173` for local dev, `https://oncallshift.com` for production (via `CORS_ORIGINS` env var)
 - `.env.example` with all required variables documented
@@ -1334,66 +1487,73 @@ Prompts:
 
 ---
 
-### Phase 13: Cloud Deployment — Infrastructure, CI/CD, Go Live
+### Phase 13: Cloud Deployment — Compute, App Deployment, Go Live
 **Estimated stories: 8 | Personas: devops_engineer**
 
-This phase takes the fully working local application and deploys it to AWS. All Terraform and workflow files are written during development (Phase 0+), but nothing is applied until this phase.
+This phase takes the fully working local application and deploys it to AWS production. VPC, self-hosted runner, managed services, and CI/CD (`_infra.yml`) already exist from Phase 0. This phase adds compute/networking modules and app deployment workflows.
 
-#### Phase 13.1 — Terraform Infrastructure (Compute & Networking)
+> **All infrastructure changes in this phase go through GitHub Actions.** Workers create PRs with terraform changes. The `_infra.yml` workflow on the self-hosted runner runs `terraform plan` on PR, `terraform apply` on merge. Workers never run terraform directly.
 
-Phase 0 already created the managed services (Cognito, SQS, SES, SNS, S3, Secrets Manager). This phase adds the compute and networking layer for production.
+#### Phase 13.1 — Terraform Compute & Networking Modules
+
+Add compute modules to the existing prod environment (via PR → GitHub Actions):
 
 ```
-Modules to create:
-- networking (VPC, subnets, NAT, security groups, VPC endpoints)
-- database (RDS PostgreSQL, Secrets Manager for DB URL, RDS Proxy)
-- ecs-service (reusable ECS service module)
+infrastructure/terraform/modules/ (new modules):
+- database/     (RDS PostgreSQL, Secrets Manager for DB URL, RDS Proxy)
+- ecs-service/  (Reusable ECS Fargate service module)
+- cdn/          (CloudFront, S3 static hosting, ACM cert, CloudFront Function)
 
-New resources (not yet created):
-- VPC with 2 AZ public/private subnets
+New resources (added to environments/prod/ via PR):
 - ALB with HTTPS (ACM wildcard cert for oncallshift.com)
 - ECS Fargate cluster with Spot support
 - RDS PostgreSQL 15 (db.t4g.small) — replaces Docker PostgreSQL
 - S3 bucket (web static) — uploads bucket already exists from Phase 0
 - CloudFront distribution (S3 origin for SPA + ALB origin for API)
 - Route53 records (A, CNAME, wildcard, MX)
-- GitHub Actions OIDC + IAM role (scoped policies)
 - CloudFront Function (SPA routing)
 - ECR repositories (backend, workers)
 
 Already exists from Phase 0:
-- Cognito User Pool + client
-- SQS queues (alerts, notifications) + DLQs
-- SES domain identity (oncallshift.com) + DKIM
-- SNS topic (push-events) + FCM platform application (Android)
-- S3 bucket (uploads)
-- Secrets Manager (credential encryption key)
+- VPC, subnets, NAT, security groups (Phase 0.0)
+- Self-hosted GitHub Actions runner (Phase 0.0)
+- GitHub Actions OIDC + IAM role (Phase 0.0)
+- Cognito User Pool + client (Phase 0.1)
+- SQS queues + DLQs (Phase 0.1)
+- SES domain identity + DKIM (Phase 0.1)
+- SNS topic + FCM platform (Phase 0.1)
+- S3 bucket (uploads) (Phase 0.1)
+- Secrets Manager (Phase 0.1)
 ```
 
 **Acceptance criteria:**
-- `terraform plan` succeeds with no errors
-- `terraform apply` creates compute/networking resources alongside existing managed services
-- All modules properly parameterized
-- RDS accessible from ECS tasks
-- OIDC role scoped to `jarod-rosenthal/oncallshift`
+- PR triggers `_infra.yml` plan on self-hosted runner — plan shows only compute additions
+- Merge triggers `terraform apply` — all compute resources created alongside existing infra
+- All modules properly parameterized with defaults (no `-var` flags)
+- RDS accessible from ECS tasks via private subnets
+- `terraform apply` succeeds with no manual intervention
+- **Worker verifies:** ECS services are running, ALB health checks pass, RDS is reachable
 
-#### Phase 13.2 — CI/CD Pipelines
+#### Phase 13.2 — App Deployment Workflows
+
+Add app deployment workflows (these run on the self-hosted runner which has VPC access):
+
 ```
-Workflows (files already written, now tested):
-- deploy.yml (orchestrator — manual + PR merge trigger)
-- _backend.yml (Docker → ECR → ECS + run migrations)
-- _frontend.yml (Build → S3 → CloudFront invalidation)
-- _infra.yml (Terraform plan → approval → apply)
-- _test-api.yml (Vitest backend tests)
-- _test-e2e.yml (Playwright E2E)
+.github/workflows/ (new):
+- deploy.yml      (Orchestrator — manual dispatch + PR merge trigger)
+- _backend.yml    (Docker → ECR → ECS + run migrations)
+- _frontend.yml   (Build → S3 → CloudFront invalidation)
 ```
+
+All deployment workflows run on `[self-hosted, oncallshift]`.
 
 **Acceptance criteria:**
-- GitHub Actions secrets configured (AWS OIDC role ARN)
-- Manual dispatch deploys backend + frontend successfully
-- PR merge to main triggers automated deployment
-- Terraform plan runs on infrastructure changes
+- Manual dispatch of `deploy.yml` deploys backend + frontend successfully
+- PR merge to main triggers automated deployment via `deploy.yml`
+- Backend deployment: Docker build → ECR push → ECS service update → health check passes
+- Frontend deployment: Vite build → S3 upload → CloudFront invalidation → site loads
 - Smoke tests pass post-deploy (`/health`, `/version`)
+- **Worker verifies:** trigger a deployment, confirm it succeeds end-to-end, check health endpoints return 200
 
 #### Phase 13.3 — Go Live Checklist
 1. DNS: oncallshift.com A record → CloudFront
@@ -1412,6 +1572,7 @@ Workflows (files already written, now tested):
 - API is reachable and authenticated requests work
 - At least one full flow works end-to-end: create incident → acknowledge → resolve
 - "Built by WorkerMill" visible in footer
+- **Worker verifies:** navigates to oncallshift.com, confirms pages load, tests a real user flow
 
 ---
 
@@ -1434,13 +1595,13 @@ Phase 0 ─── Phase 1 ─── Phase 2 ─── Phase 3 (3.1-3.5) ──�
                                           └── Phase 13 (cloud deployment) ← WHEN READY
 ```
 
-**Phases 0-4 are sequential** (each depends on the previous). All run locally.
+**Phases 0-4 are sequential** (each depends on the previous). All run locally (except infrastructure which runs via GitHub Actions).
 **Phase 5 (mobile)** depends on Phase 3 (notifications/push) and Phase 4 (UI patterns). Runs after Phase 4. Android only.
 **Phases 6-12 can run in parallel** once Phase 3 (incidents) is complete. All run locally.
 **Phase 13 (cloud deployment)** can happen anytime after Phase 4 — the product needs to be usable enough to be worth deploying. Realistically, after Phases 0-4 are complete you have a working web app that can go live.
 
-**Terraform:** Phase 0 Terraform is applied by devops_engineer workers. Phase 13 Terraform adds compute/networking on top of existing managed services.
-**CI/CD workflow files** are written throughout development (committed to the repo), but workflow execution only happens in Phase 13.
+**Infrastructure:** Phase 0.0 bootstraps VPC + runner (one-time direct apply). All subsequent infrastructure (Phase 0.1 managed services, Phase 13 compute) goes through GitHub Actions on the self-hosted runner.
+**CI/CD:** `_infra.yml` is active from Phase 0. App deployment workflows (`deploy.yml`, `_backend.yml`, `_frontend.yml`) are added in Phase 13 when compute exists.
 
 ---
 
@@ -1456,9 +1617,9 @@ Phase 0 ─── Phase 1 ─── Phase 2 ─── Phase 3 (3.1-3.5) ──�
 | Frontend pages | ~60 |
 | Mobile screens | ~31 |
 | Background workers | 5 (excl. AI-worker-specific) |
-| AWS managed services | 7 (Cognito, SQS, SES, SNS, S3, Secrets Manager, FCM platform) — created in Phase 0 |
-| Terraform modules | 3 (networking, database, ecs-service) — created in Phase 13 |
-| CI/CD workflows | 6 |
+| AWS managed services | 7 (Cognito, SQS, SES, SNS, S3, Secrets Manager, FCM platform) — created in Phase 0.1 via CI/CD |
+| Terraform modules | 6 (networking, github-runner, managed-services, database, ecs-service, cdn) |
+| CI/CD workflows | 7 (_infra from Phase 0, app deploy from Phase 13) |
 
 ---
 
@@ -1484,34 +1645,40 @@ Definition of Done:
 - [ ] Feature testable end-to-end in local dev environment
 - [ ] Seed data extended with demo data for new entities (`npm run seed`)
 - [ ] CLAUDE.md updated with patterns established in this phase (naming conventions, middleware, service interfaces)
+- [ ] **Work is deployed and verified as working** — infrastructure changes applied via GitHub Actions (terraform plan succeeds, apply completes), application features verified end-to-end. A task is NOT done until deployment succeeds and the worker has confirmed the result.
 
 Source reference: Workers have read access to `jarod-rosenthal/pagerduty-lite` via PAT.
 For complex domain logic (rotation algorithms, escalation, alert dedup), task descriptions
 should reference specific source files for workers to study.
 ```
 
-**Note:** No CI/CD pipeline requirement during development. Workers validate locally. CI/CD validation happens in Phase 13.
+**Deployment verification is mandatory at every stage.** Workers must not consider their work complete until:
+- Infrastructure changes: GitHub Actions `_infra.yml` ran successfully (terraform plan + apply)
+- Application code: PR merged, tests pass, feature works locally end-to-end
+- Phase 13+: Deployment workflow succeeds, health checks pass, feature verified in production
 
 **Example task sequence:**
-1. `[Phase 0.1] Repository scaffolding, local dev environment, Terraform managed services`
-2. `[Phase 0.2] Seed data & dev tooling`
-3. `[Phase 1.1] Database schema — core tables`
-4. `[Phase 1.2] Auth middleware & routes (Cognito)`
-5. `[Phase 1.3] Organization & user management`
-6. `[Phase 1.4] Teams`
-7. `[Phase 2.1] Services`
-8. `[Phase 2.2] Schedules & on-call`
-9. `[Phase 2.3] Escalation policies`
-10. `[Phase 3.1] Alert ingestion & processing`
-11. `[Phase 3.2] Incident CRUD & actions`
-12. `[Phase 3.3] Notification system`
-13. `[Phase 3.4] Escalation timer worker`
-14. `[Phase 3.5] Real-time SSE streaming`
-15. `[Phase 4.1] Frontend app shell & auth`
-16. ... and so on through Phase 12
-17. `[Phase 13.1] Terraform infrastructure`
-18. `[Phase 13.2] CI/CD pipelines`
-19. `[Phase 13.3] Go live`
+1. `[Phase 0.0] Infrastructure bootstrap — VPC + self-hosted GitHub Actions runner`
+2. `[Phase 0.1] Managed services via GitHub Actions (Cognito, SQS, SES, SNS, S3)`
+3. `[Phase 0.2] Repository scaffolding & local dev environment`
+4. `[Phase 0.3] Seed data & dev tooling`
+5. `[Phase 1.1] Database schema — core tables`
+6. `[Phase 1.2] Auth middleware & routes (Cognito)`
+7. `[Phase 1.3] Organization & user management`
+8. `[Phase 1.4] Teams`
+9. `[Phase 2.1] Services`
+10. `[Phase 2.2] Schedules & on-call`
+11. `[Phase 2.3] Escalation policies`
+12. `[Phase 3.1] Alert ingestion & processing`
+13. `[Phase 3.2] Incident CRUD & actions`
+14. `[Phase 3.3] Notification system`
+15. `[Phase 3.4] Escalation timer worker`
+16. `[Phase 3.5] Real-time SSE streaming`
+17. `[Phase 4.1] Frontend app shell & auth`
+18. ... and so on through Phase 12
+19. `[Phase 13.1] Terraform compute & networking (via GitHub Actions)`
+20. `[Phase 13.2] App deployment workflows`
+21. `[Phase 13.3] Go live`
 
 ---
 
