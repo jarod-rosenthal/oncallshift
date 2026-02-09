@@ -1,0 +1,19 @@
+# Terraform working directory
+.terraform/
+
+# Variable override files (may contain secrets)
+*.tfvars.local
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Terraform plan files
+*.tfplan
+
+# Keep the lock file
+!.terraform.lock.hcl
