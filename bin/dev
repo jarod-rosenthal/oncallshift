@@ -1,0 +1,51 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo "Starting OnCallShift development environment..."
+
+# Start PostgreSQL
+echo "Starting PostgreSQL..."
+docker compose -f "$ROOT_DIR/docker-compose.dev.yml" up -d
+
+# Wait for PostgreSQL to be healthy
+echo "Waiting for PostgreSQL..."
+until docker compose -f "$ROOT_DIR/docker-compose.dev.yml" exec -T postgres pg_isready -U oncallshift > /dev/null 2>&1; do
+  sleep 1
+done
+echo "PostgreSQL is ready."
+
+# Run migrations
+echo "Running database migrations..."
+cd "$ROOT_DIR/backend" && npx tsx src/shared/db/migrate.ts
+
+# Start backend and frontend in parallel
+echo "Starting backend (port 3000) and frontend (port 5173)..."
+cd "$ROOT_DIR/backend" && npm run dev &
+BACKEND_PID=$!
+
+cd "$ROOT_DIR/frontend" && npm run dev &
+FRONTEND_PID=$!
+
+# Trap signals for clean shutdown
+cleanup() {
+  echo ""
+  echo "Shutting down..."
+  kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
+  docker compose -f "$ROOT_DIR/docker-compose.dev.yml" stop
+  exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+echo ""
+echo "Development environment started:"
+echo "  Backend:    http://localhost:3000"
+echo "  Frontend:   http://localhost:5173"
+echo "  PostgreSQL: localhost:5433"
+echo ""
+echo "Press Ctrl+C to stop all services."
+
+wait
