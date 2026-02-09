@@ -1,0 +1,20 @@
+{
+  "name": "@oncallshift/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OnCallShift MCP Server - Model Context Protocol for incident management",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
