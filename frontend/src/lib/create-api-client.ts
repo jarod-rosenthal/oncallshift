@@ -17,7 +17,8 @@
  *   });
  */
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios from 'axios';
+import type { AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 /**
  * Configuration for creating an API client
@@ -38,7 +39,7 @@ export interface CreateApiClientConfig {
    * Each interceptor receives the config and must return it (or Promise<config>)
    */
   requestInterceptors?: Array<
-    (config: AxiosRequestConfig) => AxiosRequestConfig | Promise<AxiosRequestConfig>
+    (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig | Promise<InternalAxiosRequestConfig>
   >;
 
   /**

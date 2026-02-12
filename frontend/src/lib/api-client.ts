@@ -77,6 +77,7 @@ import type {
 } from '../types/api';
 
 // Create API client with built-in authentication and error handling
+const API_BASE_URL = '/api/v1';
 const apiClient = createApiClient();
 
 // Auth API
