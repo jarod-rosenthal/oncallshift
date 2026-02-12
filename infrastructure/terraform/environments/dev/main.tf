@@ -32,6 +32,20 @@ provider "aws" {
   }
 }
 
+# SES provider — region where SES has production sending access (out of sandbox)
+provider "aws" {
+  alias  = "ses"
+  region = var.ses_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+
 # Data sources
 data "aws_caller_identity" "current" {}
 data "aws_availability_zones" "available" {
@@ -281,7 +295,7 @@ resource "aws_route53_record" "protonmail_txt" {
   ttl     = 3600
   records = [
     "protonmail-verification=fc93d89c63116acd6455ebdb1bc45cd47f9e4d6b",
-    "v=spf1 include:_spf.protonmail.ch ~all"
+    "v=spf1 include:_spf.protonmail.ch include:amazonses.com ~all"
   ]
 }
 
@@ -339,6 +353,70 @@ resource "aws_route53_record" "protonmail_dmarc" {
   type    = "TXT"
   ttl     = 3600
   records = ["v=DMARC1; p=none; rua=mailto:dmarc@oncallshift.com"]
+}
+
+# ------------------------------------------------------------------------------
+# SES Email — oncallshift.com (var.ses_region, production sending access)
+# Resources: domain identity, DKIM, custom MAIL FROM, DNS records
+# ------------------------------------------------------------------------------
+
+resource "aws_ses_domain_identity" "main" {
+  provider = aws.ses
+  domain   = var.domain_name
+}
+
+# TXT record for SES domain verification
+resource "aws_route53_record" "ses_verification" {
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "_amazonses.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 300
+  records = [aws_ses_domain_identity.main.verification_token]
+}
+
+# DKIM for email deliverability (3 CNAME records required by SES)
+resource "aws_ses_domain_dkim" "main" {
+  provider = aws.ses
+  domain   = aws_ses_domain_identity.main.domain
+}
+
+resource "aws_route53_record" "ses_dkim" {
+  count = 3
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "${aws_ses_domain_dkim.main.dkim_tokens[count.index]}._domainkey.${var.domain_name}"
+  type    = "CNAME"
+  ttl     = 300
+  records = ["${aws_ses_domain_dkim.main.dkim_tokens[count.index]}.dkim.amazonses.com"]
+}
+
+# Custom MAIL FROM domain — improves deliverability by using our domain
+# for the envelope sender instead of amazonses.com
+resource "aws_ses_domain_mail_from" "main" {
+  provider               = aws.ses
+  domain                 = aws_ses_domain_identity.main.domain
+  mail_from_domain       = "${var.ses_mail_from_subdomain}.${var.domain_name}"
+  behavior_on_mx_failure = "UseDefaultValue"
+}
+
+# MX record for custom MAIL FROM domain — tells receiving servers where
+# to send bounce notifications for mail.oncallshift.com
+resource "aws_route53_record" "ses_mail_from_mx" {
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "${var.ses_mail_from_subdomain}.${var.domain_name}"
+  type    = "MX"
+  ttl     = 300
+  records = ["10 feedback-smtp.${var.ses_region}.amazonses.com"]
+}
+
+# SPF record for custom MAIL FROM domain — authorizes SES to send from
+# mail.oncallshift.com
+resource "aws_route53_record" "ses_mail_from_spf" {
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "${var.ses_mail_from_subdomain}.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 300
+  records = ["v=spf1 include:amazonses.com ~all"]
 }
 
 # SQS Queues
@@ -793,7 +871,8 @@ module "notification_worker" {
     APNS_PLATFORM_APP_ARN = var.apns_certificate != null ? aws_sns_platform_application.apns[0].arn : ""
     SENTRY_ENABLED = tostring(var.sentry_enabled)
     SENTRY_ENVIRONMENT = var.environment
-    SES_FROM_EMAIL = "noreply@oncallshift.com"
+    SES_REGION     = var.ses_region
+    SES_FROM_EMAIL = "noreply@${var.domain_name}"
     COGNITO_USER_POOL_ID = aws_cognito_user_pool.main.id
     COGNITO_CLIENT_ID = aws_cognito_user_pool_client.mobile.id
   }

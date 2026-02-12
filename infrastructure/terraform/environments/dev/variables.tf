@@ -109,7 +109,19 @@ variable "acm_certificate_arn" {
 variable "domain_name" {
   description = "Domain name for the application (e.g., oncallshift.com). Will create ACM certificate and Route53 records."
   type        = string
-  default     = null
+  default     = "oncallshift.com"
+}
+
+variable "ses_region" {
+  description = "AWS region for SES (must be a region where SES is out of sandbox with production sending access)"
+  type        = string
+  default     = "us-east-2"
+}
+
+variable "ses_mail_from_subdomain" {
+  description = "Subdomain for SES custom MAIL FROM domain (e.g., 'mail' creates mail.oncallshift.com)"
+  type        = string
+  default     = "mail"
 }
 
 # Push notification credentials (set via environment variables or tfvars)

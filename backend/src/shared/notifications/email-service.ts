@@ -3,7 +3,7 @@ import { getDataSource } from '../db/data-source';
 import { Incident, Notification, User } from '../models';
 import { logger } from '../utils/logger';
 
-const sesClient = new SESClient({ region: process.env.AWS_REGION || 'us-east-1' });
+const sesClient = new SESClient({ region: process.env.SES_REGION || 'us-east-2' });
 
 export interface EmailNotificationPayload {
   incidentId: string;

@@ -95,6 +95,31 @@ output "apns_platform_app_arn" {
   sensitive   = true
 }
 
+output "ses_domain_identity_arn" {
+  description = "ARN of the SES domain identity (us-east-2)"
+  value       = aws_ses_domain_identity.main.arn
+}
+
+output "ses_verification_token" {
+  description = "SES domain verification token"
+  value       = aws_ses_domain_identity.main.verification_token
+}
+
+output "ses_dkim_tokens" {
+  description = "SES DKIM tokens for DNS"
+  value       = aws_ses_domain_dkim.main.dkim_tokens
+}
+
+output "ses_mail_from_domain" {
+  description = "SES custom MAIL FROM domain"
+  value       = aws_ses_domain_mail_from.main.mail_from_domain
+}
+
+output "ses_region" {
+  description = "AWS region where SES is configured"
+  value       = var.ses_region
+}
+
 # Instructions for first deployment
 output "deployment_instructions" {
   description = "Instructions for deploying the application"
