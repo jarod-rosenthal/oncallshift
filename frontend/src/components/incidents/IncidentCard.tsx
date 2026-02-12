@@ -5,7 +5,6 @@ import { getSeverityBorderColor } from '../../lib/colors';
 import { Button } from '../ui/button';
 import { SeverityBadge } from './SeverityBadge';
 import { StateBadge } from './StateBadge';
-import type { Incident } from '../../types/api';
 import type { IncidentCardProps } from '../types';
 
 /**

@@ -19,7 +19,6 @@
 // Incident Components
 // ============================================================================
 export { IncidentCard, SeverityBadge, StateBadge, MetricsCard } from './incidents';
-export type { IncidentCardProps, SeverityBadgeProps, StateBadgeProps, MetricsCardProps } from './types';
 
 // ============================================================================
 // Layout Components
@@ -76,7 +75,7 @@ export { UserAvatar } from './UserAvatar';
 export { ProfilePictureEditor } from './ProfilePictureEditor';
 export { ExecutionMonitor } from './ExecutionMonitor';
 export { RunbookAutomationPanel } from './RunbookAutomationPanel';
-export { Toast } from './Toast';
+export { toast } from './Toast';
 export { EmptyState } from './EmptyState';
 export { WeeklyCalendar } from './WeeklyCalendar';
 export { SupportHoursConfig } from './SupportHoursConfig';

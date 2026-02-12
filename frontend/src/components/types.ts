@@ -63,7 +63,7 @@ export interface StateBadgeProps {
  */
 export interface MetricsCardProps {
   /** Array of incidents to calculate metrics from */
-  incidents: Record<string, any>[];
+  incidents: import('../types/api').Incident[];
   /** Additional CSS classes */
   className?: string;
 }
@@ -253,7 +253,7 @@ export interface DialogProps {
  *   label="Enable notifications"
  * />
  */
-export interface SwitchProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   /** Whether the switch is checked */
   checked?: boolean;
   /** Callback when switch state changes */
