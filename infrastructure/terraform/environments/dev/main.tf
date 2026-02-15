@@ -635,18 +635,6 @@ resource "aws_secretsmanager_secret_version" "credential_encryption_key" {
   secret_string = random_password.credential_encryption_key.result
 }
 
-# Secrets Manager secret for GitHub PAT (for AI Workers to clone repos and create PRs)
-# NOTE: After terraform apply, you need to set the actual token value:
-# aws secretsmanager put-secret-value --secret-id pagerduty-lite-dev-github-token --secret-string "ghp_your-token-here" --region us-east-1
-resource "aws_secretsmanager_secret" "github_token" {
-  name        = "${var.project_name}-${var.environment}-github-token"
-  description = "GitHub Personal Access Token for AI Workers to clone repos and create PRs"
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-github-token"
-  }
-}
-
 # Expo Access Token for push notifications to standalone mobile apps
 # This is required for EAS-built apps (not needed for Expo Go development)
 resource "aws_secretsmanager_secret" "expo_access_token" {
@@ -667,11 +655,6 @@ resource "aws_secretsmanager_secret_version" "expo_access_token" {
 # Jira webhook secret (created manually, imported via data source)
 data "aws_secretsmanager_secret" "jira_webhook_secret" {
   name = "${var.project_name}-${var.environment}-jira-webhook-secret"
-}
-
-# Jira API integration secret (created manually for AI worker Jira sync)
-data "aws_secretsmanager_secret" "jira_integration" {
-  name = "oncallshift/jira-integration"
 }
 
 # Internal service key (for worker-to-API authentication with elevated privileges)
@@ -723,18 +706,13 @@ module "api_service" {
     DATABASE_URL = module.database.secret_arn
     ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key.arn
     CREDENTIAL_ENCRYPTION_KEY = aws_secretsmanager_secret.credential_encryption_key.arn
-    GITHUB_TOKEN = aws_secretsmanager_secret.github_token.arn
     GITHUB_WEBHOOK_SECRET = data.aws_secretsmanager_secret.github_webhook_secret.arn
     SENTRY_DSN = data.aws_secretsmanager_secret.sentry_dsn.arn
     JIRA_WEBHOOK_SECRET = data.aws_secretsmanager_secret.jira_webhook_secret.arn
     INTERNAL_SERVICE_KEY = data.aws_secretsmanager_secret.internal_service_key.arn
-    # Jira API credentials for task trigger
-    JIRA_BASE_URL  = "${data.aws_secretsmanager_secret.jira_integration.arn}:base_url::"
-    JIRA_EMAIL     = "${data.aws_secretsmanager_secret.jira_integration.arn}:email::"
-    JIRA_API_TOKEN = "${data.aws_secretsmanager_secret.jira_integration.arn}:api_token::"
   }
 
-  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, aws_secretsmanager_secret.github_token.arn, data.aws_secretsmanager_secret.github_webhook_secret.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.jira_integration.arn, data.aws_secretsmanager_secret.internal_service_key.arn]
+  secrets_arns = [module.database.secret_arn, aws_secretsmanager_secret.anthropic_api_key.arn, aws_secretsmanager_secret.credential_encryption_key.arn, data.aws_secretsmanager_secret.github_webhook_secret.arn, data.aws_secretsmanager_secret.sentry_dsn.arn, data.aws_secretsmanager_secret.jira_webhook_secret.arn, data.aws_secretsmanager_secret.internal_service_key.arn]
 
   sqs_queue_arns = [
     aws_sqs_queue.alerts.arn,

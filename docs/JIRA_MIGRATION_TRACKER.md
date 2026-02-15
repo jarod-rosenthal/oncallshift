@@ -33,7 +33,6 @@ So that [benefit].
 - `on-call engineer` - Primary incident responder
 - `team lead` - Manages team schedules and policies
 - `platform admin` - Organization administrator
-- `super admin` - OnCallShift internal admin
 - `developer` - Building integrations with OnCallShift
 
 ### Definition of Done (DoD)
@@ -137,7 +136,6 @@ The following tickets should be deleted and recreated properly:
 | Document | Priority | Status | Items | Migration Status |
 |----------|----------|--------|-------|------------------|
 | `STRATEGIC_DIFFERENTIATORS.md` | Highest | Active | 43 capabilities | NOT STARTED |
-| `AI_WORKERS_SELF_RECOVERY_PLAN.md` | High | Planned | 8 phases | NOT STARTED |
 | `INFRASTRUCTURE-IMPROVEMENTS-PLAN.md` | High | Pre-Load-Test | 10 top changes | NOT STARTED |
 | `API_SCALABILITY_PLAN.md` | High | Phase 0-1 Complete | 7 phases | PARTIAL |
 | `SECURITY_HARDENING_PLAN.md` | High | Active | 22 findings | NOT STARTED |
@@ -187,7 +185,6 @@ These are the major initiatives that will contain child stories:
 | AI First Responder | STRATEGIC_DIFFERENTIATORS.md (Part 1) | Highest | Yes |
 | Infrastructure-Native AI | STRATEGIC_DIFFERENTIATORS.md (Part 2) | High | Yes |
 | Full Incident Lifecycle | STRATEGIC_DIFFERENTIATORS.md (Part 5) | High | Partial |
-| AI Workers Self-Recovery | AI_WORKERS_SELF_RECOVERY_PLAN.md | High | Yes |
 | Infrastructure Hardening | INFRASTRUCTURE-IMPROVEMENTS-PLAN.md | High | Yes |
 | API Scalability | API_SCALABILITY_PLAN.md | High | Yes |
 | Security Hardening | SECURITY_HARDENING_PLAN.md | High | Yes |
@@ -206,17 +203,6 @@ These are the major initiatives that will contain child stories:
 | Smart Paging with Context Enrichment | High | 8 |
 | Auto-Remediation for Low-Risk Actions | High | 13 |
 | Learning/Feedback Loop from Resolutions | Medium | 8 |
-
-#### From AI_WORKERS_SELF_RECOVERY_PLAN.md
-
-| Story | Priority | Points |
-|-------|----------|--------|
-| Database Schema for Self-Recovery (Migration 050) | Highest | 3 |
-| Watcher Lambda (5-min interval) | High | 5 |
-| Context Capture & Passing Between Retries | High | 5 |
-| Control Center UI Actions (Retry/Cancel) | High | 5 |
-| Heartbeat Integration | Medium | 3 |
-| CLI Tool Enhancements | Medium | 2 |
 
 #### From INFRASTRUCTURE-IMPROVEMENTS-PLAN.md
 
@@ -297,39 +283,7 @@ Acceptance Criteria:
 - MTTR reduced by 40%
 ```
 
-### Epic 2: AI Workers Self-Recovery
-
-```
-Summary: [EPIC] AI Workers Self-Recovery System
-
-Description:
-Add self-healing capabilities to AI Workers with auto-retry, stuck detection,
-and improved Control Center UI.
-
-Problem Statement:
-- Failed tasks require manual intervention
-- No mechanism to detect stuck tasks
-- Control Center is monitoring-only
-- CLI times out after a few minutes
-
-Capabilities:
-- Auto-retry ALL failed tasks (up to 3 retries)
-- Exponential backoff between retries
-- Watcher Lambda to detect stuck tasks
-- Context passing between retry attempts
-- Control Center action buttons
-- 4-hour global timeout
-
-Source: docs/AI_WORKERS_SELF_RECOVERY_PLAN.md
-
-Acceptance Criteria:
-- Failed tasks auto-retry with exponential backoff
-- Stuck tasks (no heartbeat 15+ min) are detected and restarted
-- Control Center shows retry/cancel buttons
-- Loop detection prevents infinite failures
-```
-
-### Epic 3: Infrastructure Hardening
+### Epic 2: Infrastructure Hardening
 
 ```
 Summary: [EPIC] Infrastructure Hardening for 100K+ Users
@@ -512,7 +466,6 @@ THEN [expected outcome]
 | Key | Summary | Priority |
 |-----|---------|----------|
 | OCS-42 | [EPIC] AI First Responder - Auto-Investigation & Smart Paging | Highest |
-| OCS-43 | [EPIC] AI Workers Self-Recovery System | High |
 | OCS-44 | [EPIC] Infrastructure Hardening for 100K+ Users | High |
 | OCS-45 | [EPIC] Security Hardening - OWASP ASVS Level 2 Compliance | High |
 | OCS-46 | [EPIC] API Scalability - World-Class REST API | High |
@@ -526,14 +479,6 @@ THEN [expected outcome]
 | OCS-59 | [GAP] Implement Auto-Investigation Trigger on Incident Creation | Gap | `feature/OCS-59-auto-investigation-trigger` |
 | OCS-60 | [GAP] Implement Similar Incident Matching with pgvector RAG | Gap | `feature/OCS-60-similar-incident-matching` |
 | OCS-61 | [GAP] Implement Auto-Remediation Execution for Low-Risk Actions | Gap | `feature/OCS-61-auto-remediation` |
-
-#### OCS-43: AI Workers Self-Recovery (3 stories)
-
-| Key | Summary | Type | Branch |
-|-----|---------|------|--------|
-| OCS-63 | [VERIFY] AI Workers Watcher Lambda Deployment | Verify | `feature/OCS-63-verify-watcher-lambda` |
-| OCS-64 | [VERIFY] AI Workers Heartbeat Integration | Verify | `feature/OCS-64-verify-heartbeat` |
-| OCS-65 | [GAP] Control Center Retry/Cancel Action Buttons | Gap | `feature/OCS-65-control-center-actions` |
 
 #### OCS-44: Infrastructure Hardening (3 stories)
 
@@ -564,7 +509,6 @@ THEN [expected outcome]
 | Epic | Status | Tickets Created | Source Archived |
 |------|--------|-----------------|-----------------|
 | AI First Responder (OCS-42) | IN PROGRESS | 3 | No |
-| AI Workers Self-Recovery (OCS-43) | IN PROGRESS | 3 | No |
 | Infrastructure Hardening (OCS-44) | IN PROGRESS | 3 | No |
 | Security Hardening (OCS-45) | IN PROGRESS | 3 | No |
 | API Scalability (OCS-46) | IN PROGRESS | 1 | No |

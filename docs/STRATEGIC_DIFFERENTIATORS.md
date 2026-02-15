@@ -319,7 +319,7 @@ Runbook auto-created, kept fresh as humans deviate
 - One-click rollback from incident page
 - Deploy freeze during active P1 incidents
 
-**Status:** Partial (GitHub integration for AI workers, not for incident correlation).
+**Status:** Not started (deploy-to-incident correlation not yet implemented).
 
 ---
 

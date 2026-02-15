@@ -49,7 +49,6 @@ jobs:
           echo "ECS_NOTIFICATION_WORKER_SERVICE=pagerduty-lite-${ENV}-notification-worker" >> $GITHUB_OUTPUT
           echo "ECS_ALERT_PROCESSOR_SERVICE=pagerduty-lite-${ENV}-alert-processor" >> $GITHUB_OUTPUT
           echo "ECS_ESCALATION_TIMER_SERVICE=pagerduty-lite-${ENV}-escalation-timer" >> $GITHUB_OUTPUT
-          echo "ECS_AIW_ORCH_SERVICE=pagerduty-lite-${ENV}-aiw-orch" >> $GITHUB_OUTPUT
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -149,18 +148,6 @@ jobs:
             --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
             --output table
 
-      - name: Deploy AI Worker Orchestrator service
-        if: inputs.dry_run != true
-        run: |
-          echo "Deploying AI Worker Orchestrator..."
-          aws ecs update-service \
-            --cluster ${{ steps.set-vars.outputs.ECS_CLUSTER }} \
-            --service ${{ steps.set-vars.outputs.ECS_AIW_ORCH_SERVICE }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }} \
-            --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
-            --output table
-
       # Wait for new task to start, then run migrations
       # Note: ECS execute-command requires Session Manager plugin which may not be available
       # Migrations also run automatically on container startup, so this is optional
@@ -236,7 +223,6 @@ jobs:
               ${{ steps.set-vars.outputs.ECS_NOTIFICATION_WORKER_SERVICE }} \
               ${{ steps.set-vars.outputs.ECS_ALERT_PROCESSOR_SERVICE }} \
               ${{ steps.set-vars.outputs.ECS_ESCALATION_TIMER_SERVICE }} \
-              ${{ steps.set-vars.outputs.ECS_AIW_ORCH_SERVICE }} \
             --region ${{ env.AWS_REGION }}
           echo "All worker services stable"
 
@@ -308,7 +294,6 @@ jobs:
           echo "  - Notification Worker: ${{ steps.set-vars.outputs.ECS_NOTIFICATION_WORKER_SERVICE }}"
           echo "  - Alert Processor: ${{ steps.set-vars.outputs.ECS_ALERT_PROCESSOR_SERVICE }}"
           echo "  - Escalation Timer: ${{ steps.set-vars.outputs.ECS_ESCALATION_TIMER_SERVICE }}"
-          echo "  - AI Worker Orchestrator: ${{ steps.set-vars.outputs.ECS_AIW_ORCH_SERVICE }}"
           echo ""
           echo "Would run:"
           echo "  - Database migrations via ECS exec"
@@ -330,7 +315,6 @@ jobs:
           echo "  - Notification Worker"
           echo "  - Alert Processor"
           echo "  - Escalation Timer"
-          echo "  - AI Worker Orchestrator"
           echo ""
           echo "Post-deployment checks:"
           echo "  - Database migrations"
