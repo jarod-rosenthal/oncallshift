@@ -114,7 +114,7 @@ rm -f tfplan
 cd ../../../../
 
 # 9. Force new ECS deployment for ALL services
-# NOTE: All services (API, notification-worker, alert-processor, escalation-timer, aiw-orch)
+# NOTE: All services (API, notification-worker, alert-processor, escalation-timer)
 # use the SAME Docker image from the API's ECR repository. We must force-redeploy
 # all of them to ensure they pick up the new image.
 echo "🔄 Triggering ECS deployment for API..."
@@ -153,14 +153,6 @@ aws ecs update-service \
   --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
   --output table
 
-echo "🔄 Triggering ECS deployment for AI Worker Orchestrator..."
-aws ecs update-service \
-  --cluster $ECS_CLUSTER \
-  --service pagerduty-lite-dev-aiw-orch \
-  --force-new-deployment \
-  --region $AWS_REGION \
-  --query 'service.deployments[*].{status:status,desiredCount:desiredCount}' \
-  --output table
 
 # 10. Wait for new task to be running and run migrations
 echo "⏳ Waiting for new ECS task to start (up to 3 minutes)..."
