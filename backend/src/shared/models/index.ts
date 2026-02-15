@@ -64,15 +64,5 @@ export * from './OnboardingSession';
 export * from './IdempotencyKey';
 export * from './ImportHistory';
 export * from './AIRecommendation';
-export * from './AIWorkerTask';
-export * from './AIWorkerInstance';
-export * from './AIWorkerTaskLog';
-export * from './AIWorkerConversation';
-export * from './AIWorkerApproval';
-export * from './AIWorkerTaskRun';
-export * from './AIWorkerReview';
-export * from './AIWorkerToolEvent';
-export * from './AIWorkerToolPattern';
-export * from './AIWorkerLearningSession';
-export * from './AIWorkerPatternApplication';
+
 export * from './AIProviderConfig';

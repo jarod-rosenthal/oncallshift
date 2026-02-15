@@ -147,8 +147,8 @@ router.post(
   ],
   async (req: Request, res: Response) => {
     try {
-      // Only admins or super_admins can create runbooks
-      if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      // Only admins can create runbooks
+      if (req.user?.role !== 'admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
@@ -235,8 +235,8 @@ router.put(
   ],
   async (req: Request, res: Response) => {
     try {
-      // Only admins or super_admins can update runbooks
-      if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      // Only admins can update runbooks
+      if (req.user?.role !== 'admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
@@ -295,8 +295,8 @@ router.put(
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    // Only admins or super_admins can delete runbooks
-    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+    // Only admins can delete runbooks
+    if (req.user?.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -340,7 +340,7 @@ router.post('/seed-examples', async (req: Request, res: Response) => {
     const serviceRepo = dataSource.getRepository(Service);
 
     // Check admin role
-    if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    if (req.user!.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

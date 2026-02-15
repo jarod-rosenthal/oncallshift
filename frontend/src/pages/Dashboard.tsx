@@ -35,7 +35,7 @@ export function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [showSetupBanner, setShowSetupBanner] = useState(false);
   const user = useAuthStore((state) => state.user);
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     loadDashboardData();

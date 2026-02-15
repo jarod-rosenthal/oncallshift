@@ -67,17 +67,6 @@ import { OrganizationApiKey } from '../models/OrganizationApiKey';
 import { IdempotencyKey } from '../models/IdempotencyKey';
 import { ImportHistory } from '../models/ImportHistory';
 import { AIRecommendation } from '../models/AIRecommendation';
-import { AIWorkerTask } from '../models/AIWorkerTask';
-import { AIWorkerTaskRun } from '../models/AIWorkerTaskRun';
-import { AIWorkerReview } from '../models/AIWorkerReview';
-import { AIWorkerInstance } from '../models/AIWorkerInstance';
-import { AIWorkerTaskLog } from '../models/AIWorkerTaskLog';
-import { AIWorkerConversation } from '../models/AIWorkerConversation';
-import { AIWorkerApproval } from '../models/AIWorkerApproval';
-import { AIWorkerToolEvent } from '../models/AIWorkerToolEvent';
-import { AIWorkerToolPattern } from '../models/AIWorkerToolPattern';
-import { AIWorkerLearningSession } from '../models/AIWorkerLearningSession';
-import { AIWorkerPatternApplication } from '../models/AIWorkerPatternApplication';
 import { AIProviderConfig } from '../models/AIProviderConfig';
 
 export async function createDataSource(): Promise<DataSource> {
@@ -161,17 +150,6 @@ export async function createDataSource(): Promise<DataSource> {
       IdempotencyKey,
       ImportHistory,
       AIRecommendation,
-      AIWorkerTask,
-      AIWorkerTaskRun,
-      AIWorkerReview,
-      AIWorkerInstance,
-      AIWorkerTaskLog,
-      AIWorkerConversation,
-      AIWorkerApproval,
-      AIWorkerToolEvent,
-      AIWorkerToolPattern,
-      AIWorkerLearningSession,
-      AIWorkerPatternApplication,
       AIProviderConfig,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],

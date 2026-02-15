@@ -246,8 +246,8 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      // Only admins or super_admins can apply recommendations
-      if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      // Only admins can apply recommendations
+      if (req.user?.role !== 'admin') {
         return res.status(403).json({ error: 'Admin access required' });
       }
 

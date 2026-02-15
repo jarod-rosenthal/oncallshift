@@ -516,8 +516,8 @@ router.post('/:id/regenerate-key', async (req: Request, res: Response) => {
     const orgId = req.orgId!;
     const currentUser = req.user!;
 
-    // Only admins or super_admins can regenerate API keys
-    if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin') {
+    // Only admins can regenerate API keys
+    if (currentUser.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -612,8 +612,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
       userRole: req.user?.role
     });
 
-    // Only admins, super_admins, or org API keys can delete services
-    if (req.authMethod === 'jwt' && req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+    // Only admins or org API keys can delete services
+    if (req.authMethod === 'jwt' && req.user?.role !== 'admin') {
       logger.warn('Delete service blocked - not admin', {
         serviceId: id,
         userRole: req.user?.role

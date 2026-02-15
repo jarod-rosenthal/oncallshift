@@ -128,10 +128,10 @@ router.post(
   ],
   async (req: Request, res: Response) => {
     try {
-      // Only admins can create API keys (super_admin counts as admin for all admin functions)
+      // Only admins can create API keys
       const role = req.user?.role;
       const baseRole = req.user?.baseRole;
-      const isAdmin = role === 'admin' || role === 'super_admin' || baseRole === 'admin' || baseRole === 'owner';
+      const isAdmin = role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
       if (!isAdmin) {
         return res.status(403).json({ error: 'Admin access required' });
       }
@@ -253,10 +253,10 @@ router.post(
  */
 router.get('/', [...paginationValidators], async (req: Request, res: Response) => {
   try {
-    // Only admins can list API keys (super_admin counts as admin for all admin functions)
+    // Only admins can list API keys
     const role = req.user?.role;
     const baseRole = req.user?.baseRole;
-    const isAdmin = role === 'admin' || role === 'super_admin' || baseRole === 'admin' || baseRole === 'owner';
+    const isAdmin = role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
     if (!isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -320,10 +320,10 @@ router.delete(
   [param('id').isUUID().withMessage('Invalid API key ID')],
   async (req: Request, res: Response) => {
     try {
-      // Only admins can delete API keys (super_admin counts as admin for all admin functions)
+      // Only admins can delete API keys
       const role = req.user?.role;
       const baseRole = req.user?.baseRole;
-      const isAdmin = role === 'admin' || role === 'super_admin' || baseRole === 'admin' || baseRole === 'owner';
+      const isAdmin = role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
       if (!isAdmin) {
         return res.status(403).json({ error: 'Admin access required' });
       }
@@ -406,10 +406,10 @@ router.post(
   [param('id').isUUID().withMessage('Invalid API key ID')],
   async (req: Request, res: Response) => {
     try {
-      // Only admins can rotate API keys (super_admin counts as admin for all admin functions)
+      // Only admins can rotate API keys
       const role = req.user?.role;
       const baseRole = req.user?.baseRole;
-      const isAdmin = role === 'admin' || role === 'super_admin' || baseRole === 'admin' || baseRole === 'owner';
+      const isAdmin = role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
       if (!isAdmin) {
         return res.status(403).json({ error: 'Admin access required' });
       }

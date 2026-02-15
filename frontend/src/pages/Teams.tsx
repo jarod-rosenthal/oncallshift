@@ -10,7 +10,7 @@ import { useTimeout } from '../hooks/useTimeout';
 
 export function Teams() {
   const currentUser = useAuthStore((state) => state.user);
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const isAdmin = currentUser?.role === 'admin';
   const [teams, setTeams] = useState<Team[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

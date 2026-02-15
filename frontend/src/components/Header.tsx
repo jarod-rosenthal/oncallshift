@@ -72,11 +72,6 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
     </svg>
   ),
-  ControlCenter: () => (
-    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-    </svg>
-  ),
   Sparkles: () => (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
@@ -93,8 +88,7 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  const isSuperAdmin = user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin';
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,21 +241,6 @@ export function Header({ sidebarCollapsed }: HeaderProps) {
                   <div className="text-sm font-medium text-foreground">{user?.fullName || 'User'}</div>
                   <div className="text-xs text-muted-foreground">{user?.email || ''}</div>
                 </div>
-
-                {/* Super Admin Control Center */}
-                {isSuperAdmin && (
-                  <>
-                    <Link
-                      to="/super-admin/control-center"
-                      onClick={() => setUserMenuOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-primary hover:bg-primary/10 font-medium"
-                    >
-                      <Icons.ControlCenter />
-                      <span>Control Center</span>
-                    </Link>
-                    <hr className="my-1 border-border" />
-                  </>
-                )}
 
                 {/* Profile Links */}
                 <div className="py-1">

@@ -11,7 +11,7 @@ import { notFound, internalError, badRequest } from '../../shared/utils/problem-
 function isOrgAdmin(user: any) {
   const role = user?.role;
   const baseRole = user?.baseRole;
-  return role === 'super_admin' || role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
+  return role === 'admin' || baseRole === 'admin' || baseRole === 'owner';
 }
 
 const router = Router();

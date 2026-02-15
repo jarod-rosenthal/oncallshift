@@ -57,10 +57,9 @@ type BaseRole = 'owner' | 'admin' | 'manager' | 'responder' | 'observer' | 'rest
 Platform-level roles (separate from organizational roles):
 
 ```typescript
-type PlatformRole = 'super_admin' | 'admin' | 'member';
+type PlatformRole = 'admin' | 'member';
 ```
 
-- `super_admin` - OnCallShift internal admin (AI Workers Control Center access)
 - `admin` - Organization administrator
 - `member` - Regular organization member
 

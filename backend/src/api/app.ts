@@ -49,12 +49,7 @@ import aiConfigurationRoutes from './routes/ai-configuration';
 import aiRecommendationsRoutes from './routes/ai-recommendations';
 import apiKeysRoutes from './routes/api-keys';
 import onboardingRoutes from './routes/onboarding';
-import aiWorkersRoutes from './routes/ai-workers';
-import aiWorkerTasksRoutes from './routes/ai-worker-tasks';
-import aiWorkerApprovalsRoutes from './routes/ai-worker-approvals';
-import aiWorkerWebhooksRoutes from './routes/ai-worker-webhooks';
-import superAdminRoutes from './routes/super-admin';
-import aiConfigRoutes from './routes/ai-config';
+
 import { captureRawBody, etagMiddleware } from '../shared/middleware';
 import { idempotencyMiddleware } from '../shared/middleware/idempotency';
 import { requestIdMiddleware } from '../shared/middleware/request-id';
@@ -377,8 +372,6 @@ export function createApp(): Express {
   app.use('/api/v1/workflows', idempotencyMiddleware, workflowsRoutes);
   app.use('/api/v1/webhook-subscriptions', idempotencyMiddleware, webhookSubscriptionsRoutes);
   app.use('/api/v1/reports', idempotencyMiddleware, reportsRoutes);
-  app.use('/api/v1/ai-worker', aiWorkerWebhooksRoutes); // Jira/GitHub webhooks - NO AUTH (moved before conferenceBridges to avoid auth middleware)
-  app.use('/api/v1/ai-worker-tasks', idempotencyMiddleware, aiWorkerTasksRoutes); // AI worker tasks - MUST be before conferenceBridges (it has /api/v1 catch-all with auth)
   app.use('/api/v1', conferenceBridgesRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
   app.use('/api/v1/postmortems', idempotencyMiddleware, postmortemsRoutes);
@@ -387,10 +380,6 @@ export function createApp(): Express {
   app.use('/api/v1/ai', aiRecommendationsRoutes); // AI-powered proactive recommendations
   app.use('/api/v1/api-keys', idempotencyMiddleware, apiKeysRoutes); // Organization API key management
   app.use('/api/v1/onboarding', onboardingRoutes); // AI-powered conversational onboarding
-  app.use('/api/v1/ai-workers', idempotencyMiddleware, aiWorkersRoutes); // AI worker instances
-  app.use('/api/v1/ai-worker-approvals', idempotencyMiddleware, aiWorkerApprovalsRoutes); // AI worker approvals
-  app.use('/api/v1/super-admin', superAdminRoutes); // Super admin control center
-  app.use('/api/v1/ai-config', aiConfigRoutes); // AI provider configuration
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

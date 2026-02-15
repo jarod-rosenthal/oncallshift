@@ -31,7 +31,7 @@ export function Navigation() {
     { path: '/escalation-policies', label: 'Escalation Policies' },
     { path: '/availability', label: 'Availability' },
     { path: '/profile', label: 'Profile' },
-    ...((user?.role === 'admin' || user?.role === 'super_admin') ? [
+    ...(user?.role === 'admin' ? [
       { path: '/integrations', label: 'Integrations' },
       { path: '/admin/users', label: 'Admin' },
     ] : []),

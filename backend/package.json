@@ -17,8 +17,7 @@
     "setup-contoso": "ts-node src/shared/db/setup-contoso-schedule.ts",
     "lint": "eslint src --ext .ts",
     "test": "jest",
-    "test:integration": "jest --config jest.integration.config.js",
-    "ai:watch": "ts-node scripts/ai-worker-cli.ts"
+    "test:integration": "jest --config jest.integration.config.js"
   },
   "keywords": [
     "incident-management",
