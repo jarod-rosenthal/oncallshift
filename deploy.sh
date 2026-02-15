@@ -83,18 +83,6 @@ docker push $ECR_REPO:$GIT_SHA
 IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REPO:$GIT_SHA | cut -d'@' -f2)
 echo "📝 Image digest: $IMAGE_DIGEST"
 
-# 7b. Build and push AI Worker Docker image
-# AI Worker has its own Dockerfile with Claude Code CLI and development tools
-AI_WORKER_ECR_REPO="593971626975.dkr.ecr.us-east-1.amazonaws.com/pagerduty-lite-dev-ai-worker"
-AI_WORKER_VERSION="v26"  # Increment this when making AI worker changes
-echo "🤖 Building AI Worker Docker image..."
-cd backend
-docker build -f Dockerfile.ai-worker -t $AI_WORKER_ECR_REPO:$AI_WORKER_VERSION -t $AI_WORKER_ECR_REPO:latest .
-cd ..
-echo "⬆️  Pushing AI Worker image to ECR..."
-docker push $AI_WORKER_ECR_REPO:$AI_WORKER_VERSION
-docker push $AI_WORKER_ECR_REPO:latest
-
 # 8. Deploy Terraform infrastructure changes
 echo "🏗️  Deploying Terraform infrastructure..."
 cd infrastructure/terraform/environments/dev

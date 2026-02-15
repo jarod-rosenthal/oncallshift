@@ -36,41 +36,7 @@ Successfully scoped IAM policies across the OnCallShift infrastructure to follow
 
 ---
 
-### 2. AI Workers Executor (`modules/ai-workers/main.tf`)
-
-**Scope Reduction**: 15+ statements refactored for least privilege
-
-#### ECS Permissions Restructured:
-- **Read operations** (describe/list) - kept wildcard (AWS requirement)
-- **Write operations** - scoped to project resources:
-  - Clusters: `arn:aws:ecs:*:*:cluster/${var.project_name}-*`
-  - Services: `arn:aws:ecs:*:*:service/${var.project_name}-*/*`
-  - Task definitions: `arn:aws:ecs:*:*:task-definition/${var.project_name}-*:*`
-
-#### ECR Permissions Restructured:
-- GetAuthorizationToken - kept wildcard (AWS requirement)
-- Describe/List - kept wildcard for cross-account access
-- Write operations - scoped to project repositories:
-  - `arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}-*`
-
-#### CloudWatch & Monitoring:
-- Log operations - scoped to project log groups: `/ecs/${var.project_name}-*`
-- Alarms - scoped to project alarms: `alarm:${var.project_name}-*`
-- CloudWatch Logs - created dedicated policy for describe/list (wildcard required) vs write (scoped)
-
-#### Networking:
-- EC2 security groups - scoped to project resources with tag conditions
-- ELB/ALB - scoped to project load balancers/target groups/listeners
-- Route53 - DNS list/get kept wildcard, ChangeResourceRecordSets scoped to hosted zones
-
-#### Messaging Services:
-- **SQS**: List kept wildcard, create/delete/update scoped to `${var.project_name}-*` queues
-- **SNS**: Publish scoped to project topics: `${var.project_name}-${var.environment}-*`
-- **Cognito**: Scoped to userpool ARNs
-
----
-
-### 3. GitHub Actions IAM Role (`environments/dev/main.tf`)
+### 2. GitHub Actions IAM Role (`environments/dev/main.tf`)
 
 **Scope Reduction**: 5 policy statements refactored
 
@@ -136,7 +102,6 @@ All modified policies remain under AWS's 10KB inline policy limit. The refactori
 | File | Changes | Lines Changed |
 |------|---------|---------------|
 | `infrastructure/terraform/modules/ecs-service/main.tf` | SES & SSM scope reduction | 2 statements |
-| `infrastructure/terraform/modules/ai-workers/main.tf` | Multi-service permission restructuring | 15+ statements |
 | `infrastructure/terraform/environments/dev/main.tf` | GitHub Actions & Worker service scoping | 8 statements |
 
 ## Deployment Notes

@@ -173,7 +173,6 @@ Located in `docs/archive/`:
 | `API_IMPROVEMENTS_PROGRESS.md` | API work tracking | Active |
 | `TERRAFORM_PROVIDER_PROGRESS.md` | TF provider status | Active |
 | `SEMANTIC_IMPORT_PROGRESS.md` | Semantic import WIP | In Progress |
-| `.claude/progress/ai-workers-self-recovery.md` | AI Workers progress | Active |
 
 ---
 

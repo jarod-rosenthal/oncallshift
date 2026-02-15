@@ -60,8 +60,8 @@ router.post(
   ],
   async (req: Request, res: Response) => {
     try {
-      // Only admins or super_admins can complete setup
-      if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+      // Only admins can complete setup
+      if (req.user?.role !== 'admin') {
         return res.status(403).json({ error: 'Admin access required to complete setup' });
       }
 
@@ -243,8 +243,8 @@ router.post(
  */
 router.post('/reset', async (req: Request, res: Response) => {
   try {
-    // Only admins or super_admins can reset setup
-    if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
+    // Only admins can reset setup
+    if (req.user?.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

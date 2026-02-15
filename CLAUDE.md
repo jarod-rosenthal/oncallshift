@@ -78,7 +78,7 @@ So that [benefit].
 - `on-call engineer` - Primary incident responder
 - `team lead` - Manages team schedules and policies
 - `platform admin` - Organization administrator
-- `super admin` - OnCallShift internal admin
+
 - `developer` - Building integrations with OnCallShift
 
 ### Definition of Done (Required)
@@ -296,7 +296,7 @@ Before debugging complex issues, verify basic assumptions:
 git remote -v
 ```
 
-**Example failure:** AI worker failed to clone `jarosenthal/pagerduty-lite` - the actual repo is `jarod-rosenthal/pagerduty-lite` (note the 'd'). An hour was wasted on encoding/shell issues when a simple `git remote -v` would have revealed the typo.
+**Example failure:** A task failed to clone `jarosenthal/pagerduty-lite` - the actual repo is `jarod-rosenthal/pagerduty-lite` (note the 'd'). An hour was wasted on encoding/shell issues when a simple `git remote -v` would have revealed the typo.
 
 ### AWS CLI Encoding Issues
 
@@ -521,40 +521,6 @@ The deploy script handles:
 
 **IMPORTANT: Always run `./deploy.sh` after making UI code changes** so the user can view them at https://oncallshift.com. The frontend is served from S3/CloudFront and changes are not visible until deployed.
 
-#### For AI Workers (ECS Container)
-
-**AI Workers MUST NOT use deploy.sh** - it requires Docker daemon which is unavailable in the container.
-
-Instead, use direct deployment commands as documented in `/app/directives/common/deploy_and_verify.md`:
-- **Backend:** Use Kaniko (`/kaniko/executor`) for Docker builds, then AWS CLI for ECS deployment
-- **Frontend:** Use `npm run build` then `aws s3 sync` and `aws cloudfront create-invalidation`
-
-See the ai-worker directives for complete deployment instructions.
-
-#### AI Worker Orchestrator Deployment
-
-**When changes affect ONLY the orchestrator,** use the dedicated orchestrator deployment script to ensure TypeScript is properly rebuilt:
-
-```bash
-./deploy-orchestrator.sh    # Deploy orchestrator with explicit TypeScript rebuild
-```
-
-**Use this script when:**
-- Modifying `backend/src/workers/ai-worker-orchestrator.ts`
-- Modifying `backend/src/shared/models/AIWorkerTask.ts` (especially status-related logic)
-- Modifying any orchestrator-specific logic
-- You've deployed before but the orchestrator is still running old code
-
-**The script ensures:**
-1. Backend TypeScript is explicitly rebuilt with `npm run build`
-2. Docker image is built with a unique versioned tag (not just `:latest`)
-3. New image is pushed to ECR
-4. Orchestrator service is force-redeployed
-5. New task starts and old task is terminated
-6. Logs are checked to verify new code is running
-
-**Why this exists:** The main `deploy.sh` doesn't always trigger TypeScript rebuilds, which can result in stale compiled JavaScript being packaged in Docker images. This dedicated script guarantees the orchestrator gets the latest code.
-
 ### Infrastructure
 ```bash
 cd infrastructure/terraform/environments/dev
@@ -584,34 +550,10 @@ terraform apply
 - **Runbook Automation**: `backend/src/api/routes/runbook-automation.ts` - Claude AI-powered automated runbook execution with sandboxed environments
 - **AI Assistant**: `backend/src/api/routes/ai-assistant.ts` - Unified AI chat with org-specific API keys and cloud investigation
 - **AI Diagnosis**: `backend/src/api/routes/ai-diagnosis.ts` - Claude-powered incident analysis
-- **AI Workers Control Center**: `backend/src/api/routes/super-admin.ts` - Super admin dashboard for monitoring AI workers (see below)
 - **User Actions**: Reassign, escalate, snooze, add responders in `backend/src/api/routes/incidents.ts`
 - **Setup Wizard**: `frontend/src/pages/SetupWizard.tsx` and `mobile/src/screens/SetupWizardScreen.tsx`
 - **Notification Tracking**: Delivery status per user/channel
 - **Cloud Credentials**: `backend/src/api/routes/cloud-credentials.ts` - AWS/GCP/Azure credential management for investigation
-
-### AI Workers Control Center
-
-A super admin feature for monitoring and managing AI workers. Requires `super_admin` role or org API key authentication.
-
-**Key Files:**
-- `backend/src/api/routes/super-admin.ts` - API endpoints for control center data
-- `frontend/src/pages/SuperAdminControlCenter.tsx` - Web dashboard (htop-style worker overview)
-- `backend/scripts/ai-worker-cli.ts` - CLI tool for terminal-based monitoring
-- `.claude/plans/effervescent-brewing-cloud.md` - Implementation plan
-
-**API Endpoints:**
-- `GET /api/v1/super-admin/control-center` - Aggregated worker/task data
-- `GET /api/v1/super-admin/control-center/logs/:taskId` - Stream logs for a task
-
-**CLI Tool:**
-```bash
-cd backend
-npx ts-node scripts/ai-worker-cli.ts          # Watch all active tasks
-npx ts-node scripts/ai-worker-cli.ts <taskId> # Watch specific task
-```
-
-**Authentication:** Supports both user JWT (super_admin role) and org API keys (`Bearer org_*`)
 
 ### Data Flow
 1. **Alert Ingestion**: Webhook → API → SQS → Alert Processor → Incident created → Escalation starts
@@ -850,20 +792,6 @@ aws ecs execute-command \
 **Common SQL queries:**
 
 ```sql
--- Cancel stuck AI worker task
-UPDATE ai_worker_tasks
-SET status = 'failed',
-    completed_at = NOW(),
-    error_message = 'Manually cancelled'
-WHERE jira_issue_key = 'OCS-91'
-  AND status NOT IN ('completed', 'failed', 'cancelled');
-
--- List active AI worker tasks
-SELECT id, jira_issue_key, status, summary, created_at
-FROM ai_worker_tasks
-WHERE status IN ('claimed', 'environment_setup', 'executing')
-ORDER BY created_at DESC;
-
 -- Check user status
 SELECT id, email, full_name, status FROM users WHERE org_id = 'YOUR_ORG_ID';
 ```
@@ -879,18 +807,6 @@ aws ecs execute-command --cluster pagerduty-lite-dev \
 
 # Create new migration (local)
 cd backend && npm run migrate:create
-```
-
-#### Alternative: Use API Endpoints
-
-For common operations, use the API instead of direct SQL:
-
-```bash
-# Cancel stuck task (requires super_admin role or org API key)
-curl -X POST https://oncallshift.com/api/v1/super-admin/control-center/tasks/cancel-by-key \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"jiraKey": "OCS-91", "reason": "Manually cancelled"}'
 ```
 
 ## Work In Progress
@@ -914,4 +830,4 @@ Main API routes include:
 - `/api/v1/status-pages` - Public/private status pages
 - `/api/v1/import`, `/api/v1/export` - Platform migration tools
 - `/api/v1/semantic-import` - AI-powered screenshot/text import (Claude Vision)
-- `/api/v1/super-admin/control-center` - AI Workers monitoring (super_admin or org API key)
+

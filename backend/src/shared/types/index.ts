@@ -38,7 +38,7 @@ export type BaseRole = 'owner' | 'admin' | 'manager' | 'responder' | 'observer' 
  * Platform-level roles (separate from organization base roles)
  * Used for system-wide access control
  */
-export type PlatformRole = 'super_admin' | 'admin' | 'member';
+export type PlatformRole = 'admin' | 'member';
 
 /**
  * User account status

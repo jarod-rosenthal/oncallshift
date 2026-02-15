@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ToastProvider } from './components/Toast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
-import { SuperAdminRoute } from './components/SuperAdminRoute';
+
 import { AppLayout } from './components/AppLayout';
 
 // Eagerly loaded pages (critical for initial user experience)
@@ -50,11 +50,6 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys').then(m => ({ default: m.Api
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ default: m.SetupWizard })));
 const ImportWizard = lazy(() => import('./pages/ImportWizard').then(m => ({ default: m.ImportWizard })));
 const SemanticImportPage = lazy(() => import('./features/semanticImport/SemanticImportPage').then(m => ({ default: m.SemanticImportPage })));
-const AIWorkers = lazy(() => import('./pages/AIWorkers').then(m => ({ default: m.AIWorkers })));
-
-// Lazy loaded pages - Super Admin functionality
-const SuperAdminControlCenter = lazy(() => import('./pages/SuperAdminControlCenter'));
-
 // Lazy loaded pages - Marketing/public pages
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
 const MigrateFromOpsgenie = lazy(() => import('./pages/MigrateFromOpsgenie').then(m => ({ default: m.MigrateFromOpsgenie })));
@@ -122,15 +117,6 @@ function AdminWithLayout({ children }: { children: React.ReactNode }) {
     <AdminRoute>
       <AppLayout>{children}</AppLayout>
     </AdminRoute>
-  );
-}
-
-// Wrapper component for super admin routes with layout
-function SuperAdminWithLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <SuperAdminRoute>
-      <AppLayout>{children}</AppLayout>
-    </SuperAdminRoute>
   );
 }
 
@@ -414,14 +400,6 @@ function App() {
           }
         />
         <Route
-          path="/ai-workers"
-          element={
-            <AdminWithLayout>
-              <AIWorkers />
-            </AdminWithLayout>
-          }
-        />
-        <Route
           path="/business-services"
           element={
             <AdminWithLayout>
@@ -475,16 +453,6 @@ function App() {
             <AdminWithLayout>
               <ApiKeys />
             </AdminWithLayout>
-          }
-        />
-
-        {/* Super Admin routes */}
-        <Route
-          path="/super-admin/control-center"
-          element={
-            <SuperAdminWithLayout>
-              <SuperAdminControlCenter />
-            </SuperAdminWithLayout>
           }
         />
 

@@ -61,7 +61,7 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
-  role: 'super_admin' | 'admin' | 'member';
+  role: 'admin' | 'member';
   phoneNumber: string | null;
   profilePictureUrl?: string | null;
   status?: 'active' | 'inactive';
@@ -151,7 +151,7 @@ export interface Service {
 export interface InviteUserRequest {
   email: string;
   fullName: string;
-  role?: 'super_admin' | 'admin' | 'member';
+  role?: 'admin' | 'member';
 }
 
 export interface CreateServiceRequest {

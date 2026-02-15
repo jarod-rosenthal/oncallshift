@@ -179,8 +179,7 @@ export function Sidebar({ collapsed, onToggle, incidentCount = 0 }: SidebarProps
   const user = useAuthStore((state) => state.user);
   const [showQuickActions, setShowQuickActions] = useState(true);
 
-  // super_admin should have all admin privileges for normal site interaction
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin';
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');

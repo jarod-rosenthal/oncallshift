@@ -9,8 +9,7 @@ interface AdminRouteProps {
 export function AdminRoute({ children }: AdminRouteProps) {
   const user = useAuthStore((state) => state.user);
 
-  // super_admin has all admin privileges plus more
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin';
 
   return (
     <ProtectedRoute>
