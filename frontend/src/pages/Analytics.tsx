@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select';
-import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
-import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam } from '../lib/api-client';
+import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle, CalendarDays } from 'lucide-react';
+import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam, type HeatmapData } from '../lib/api-client';
+import { IncidentHeatmap } from '../components/IncidentHeatmap';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { getSeveritySolidColor } from '../lib/colors';
 
 type TimeRange = '24h' | '7d' | '30d';
-type Tab = 'overview' | 'responders' | 'sla';
+type Tab = 'overview' | 'responders' | 'sla' | 'patterns';
 
 export function Analytics() {
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,7 @@ export function Analytics() {
   const [topResponders, setTopResponders] = useState<TopResponder[]>([]);
   const [slaData, setSlaData] = useState<SLAData | null>(null);
   const [teamData, setTeamData] = useState<TeamAnalyticsDetail | null>(null);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
 
   const getDateRange = () => {
     const end = new Date();
@@ -61,16 +64,18 @@ export function Analytics() {
     try {
       const { startDate, endDate } = getDateRange();
 
-      const [overview, responders, sla] = await Promise.all([
+      const [overview, responders, sla, heatmap] = await Promise.all([
         analyticsAPI.getOverview(startDate, endDate),
         analyticsAPI.getTopResponders(startDate, endDate, 10),
         analyticsAPI.getSLA(startDate, endDate, 15, 60),
+        analyticsAPI.getHeatmap(startDate, endDate),
       ]);
 
       setOverviewData(overview);
       // Handle response - backend returns topResponders, fall back to empty array
       setTopResponders(responders.topResponders || (responders as any).data || []);
       setSlaData(sla);
+      setHeatmapData(heatmap);
 
       if (selectedTeamId !== 'all') {
         const team = await analyticsAPI.getTeamAnalytics(selectedTeamId, startDate, endDate);
@@ -218,6 +223,13 @@ export function Analytics() {
         >
           SLA Compliance
         </Button>
+        <Button
+          variant={activeTab === 'patterns' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('patterns')}
+        >
+          <CalendarDays className="h-4 w-4 mr-2" />
+          Patterns
+        </Button>
       </div>
 
       {/* Overview Tab */}
@@ -304,23 +316,47 @@ export function Analytics() {
                 <CardTitle>By Severity</CardTitle>
                 <CardDescription>Incident distribution by severity level</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {overviewData?.bySeverity && Object.entries(overviewData.bySeverity).map(([severity, count]) => (
-                  <div key={severity}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="capitalize">{severity}</span>
-                      <span className="font-medium">{count}</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${getSeveritySolidColor(severity)} transition-all duration-300`}
-                        style={{
-                          width: `${Math.min((count / (overviewData?.totalIncidents || 1)) * 100, 100)}%`,
+              <CardContent>
+                {overviewData?.bySeverity ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart
+                      data={Object.entries(overviewData.bySeverity).map(([severity, count]) => ({
+                        severity: severity.charAt(0).toUpperCase() + severity.slice(1),
+                        count,
+                        fill: severity === 'critical' ? '#dc2626' :
+                              severity === 'error' ? '#f59e0b' :
+                              severity === 'warning' ? '#eab308' :
+                              severity === 'info' ? '#3b82f6' :
+                              '#9ca3af'
+                      }))}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <XAxis
+                        dataKey="severity"
+                        tick={{ fontSize: 12 }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12 }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <Tooltip
+                        formatter={(value) => [value, 'Incidents']}
+                        labelStyle={{ color: '#374151' }}
+                        contentStyle={{
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                         }}
                       />
-                    </div>
-                  </div>
-                ))}
+                      <Bar dataKey="count" fill="#8884d8" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">No data available</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -338,25 +374,49 @@ export function Analytics() {
               {(overviewData?.incidentsByDay || []).length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No data available</p>
               ) : (
-                <div className="flex items-end gap-1 h-32">
-                  {overviewData?.incidentsByDay?.map((day) => (
-                    <div key={day.date} className="flex-1 flex flex-col items-center">
-                      <div className="w-full flex justify-center mb-1">
-                        <div
-                          className="w-full max-w-8 bg-primary rounded-t transition-all duration-300"
-                          style={{
-                            height: `${Math.max((day.count / maxDailyCount) * 100, 4)}%`,
-                            minHeight: day.count > 0 ? '8px' : '4px',
-                          }}
-                          title={`${day.date}: ${day.count} incidents`}
-                        />
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(day.date).getDate()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart
+                    data={overviewData.incidentsByDay.map((day) => ({
+                      date: new Date(day.date).getDate().toString(),
+                      fullDate: day.date,
+                      count: day.count
+                    }))}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 12 }}
+                      tickLine={{ stroke: '#e5e7eb' }}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12 }}
+                      tickLine={{ stroke: '#e5e7eb' }}
+                      axisLine={{ stroke: '#e5e7eb' }}
+                    />
+                    <Tooltip
+                      formatter={(value) => [value, 'Incidents']}
+                      labelFormatter={(label, payload) => {
+                        const item = payload?.[0]?.payload;
+                        return item ? new Date(item.fullDate).toLocaleDateString() : label;
+                      }}
+                      labelStyle={{ color: '#374151' }}
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="count"
+                      stroke="#3b82f6"
+                      fill="#3b82f6"
+                      fillOpacity={0.2}
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               )}
             </CardContent>
           </Card>
@@ -632,29 +692,53 @@ export function Analytics() {
               {(slaData?.dailyTrend || []).length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No trend data available</p>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex items-end gap-1 h-32">
-                    {slaData?.dailyTrend.map((day) => (
-                      <div key={day.date} className="flex-1 flex flex-col items-center">
-                        <div className="w-full flex justify-center mb-1">
-                          <div
-                            className={`w-full max-w-8 rounded-t transition-all duration-300 ${
-                              day.ackComplianceRate >= 90 ? 'bg-green-500' :
-                              day.ackComplianceRate >= 70 ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}
-                            style={{
-                              height: `${Math.max(day.ackComplianceRate, 4)}%`,
-                              minHeight: '4px',
-                            }}
-                            title={`${day.date}: ${day.ackComplianceRate}% ack compliance`}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(day.date).getDate()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="space-y-6">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart
+                      data={slaData.dailyTrend.map((day) => ({
+                        date: new Date(day.date).getDate().toString(),
+                        fullDate: day.date,
+                        ackComplianceRate: day.ackComplianceRate,
+                        fill: day.ackComplianceRate >= 90 ? '#10b981' :
+                              day.ackComplianceRate >= 70 ? '#f59e0b' : '#ef4444'
+                      }))}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 12 }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <YAxis
+                        domain={[0, 100]}
+                        tick={{ fontSize: 12 }}
+                        tickLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: '#e5e7eb' }}
+                      />
+                      <Tooltip
+                        formatter={(value) => [`${value}%`, 'Compliance Rate']}
+                        labelFormatter={(label, payload) => {
+                          const item = payload?.[0]?.payload;
+                          return item ? new Date(item.fullDate).toLocaleDateString() : label;
+                        }}
+                        labelStyle={{ color: '#374151' }}
+                        contentStyle={{
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="ackComplianceRate"
+                        stroke="#10b981"
+                        fill="#10b981"
+                        fillOpacity={0.2}
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                   <div className="flex justify-center gap-6 text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded bg-green-500"></div>
@@ -669,6 +753,32 @@ export function Analytics() {
                       <span className="text-muted-foreground">&lt;70% (Critical)</span>
                     </div>
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Patterns Tab */}
+      {activeTab === 'patterns' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5" />
+                Incident Heatmap
+              </CardTitle>
+              <CardDescription>
+                Visual representation of when incidents occur by day of week and time of day
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {heatmapData ? (
+                <IncidentHeatmap data={heatmapData} />
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  Loading heatmap data...
                 </div>
               )}
             </CardContent>
