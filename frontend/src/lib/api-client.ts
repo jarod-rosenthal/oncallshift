@@ -1931,6 +1931,15 @@ export interface SLAData {
   }>;
 }
 
+export interface HeatmapData {
+  period: { startDate: string; endDate: string };
+  data: Array<{
+    dayOfWeek: number; // 0-6 (Sunday-Saturday)
+    hour: number; // 0-23
+    count: number;
+  }>;
+}
+
 export const analyticsAPI = {
   getOverview: async (startDate?: string, endDate?: string): Promise<AnalyticsOverview> => {
     const params: Record<string, string> = {};
@@ -1994,6 +2003,21 @@ export const analyticsAPI = {
     if (ackTargetMinutes) params.ackTargetMinutes = ackTargetMinutes;
     if (resolveTargetMinutes) params.resolveTargetMinutes = resolveTargetMinutes;
     const response = await apiClient.get<SLAData>('/analytics/sla', { params });
+    return response.data;
+  },
+
+  getHeatmap: async (
+    startDate?: string,
+    endDate?: string,
+    severity?: string,
+    serviceId?: string
+  ): Promise<HeatmapData> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (severity) params.severity = severity;
+    if (serviceId) params.serviceId = serviceId;
+    const response = await apiClient.get<HeatmapData>('/analytics/heatmap', { params });
     return response.data;
   },
 };
