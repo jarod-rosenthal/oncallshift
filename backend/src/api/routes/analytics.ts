@@ -795,4 +795,116 @@ router.get(
   }
 );
 
+/**
+ * GET /api/v1/analytics/heatmap
+ * Get incident heatmap showing incident counts by day-of-week and hour
+ */
+router.get(
+  '/heatmap',
+  [
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+    query('severity').optional().isIn(['critical', 'error', 'warning', 'info']),
+    query('serviceId').optional().isUUID(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { startDate, endDate, severity, serviceId } = req.query;
+      const orgId = req.orgId!;
+      const { start, end } = getDateRange(startDate as string, endDate as string);
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+
+      // Build query conditions
+      const whereConditions: any = {
+        orgId,
+        triggeredAt: Between(start, end),
+      };
+
+      if (severity) {
+        whereConditions.severity = severity;
+      }
+
+      if (serviceId) {
+        whereConditions.serviceId = serviceId;
+      }
+
+      const incidents = await incidentRepo.find({
+        where: whereConditions,
+        relations: ['service'],
+      });
+
+      // Initialize heatmap data structure - dayOfWeek (0-6) x hour (0-23)
+      const heatmapData: Array<{ dayOfWeek: number; hour: number; count: number }> = [];
+
+      // Create a map for fast lookups during aggregation
+      const heatmapMap = new Map<string, number>();
+
+      // Initialize all buckets with 0
+      for (let day = 0; day < 7; day++) {
+        for (let hour = 0; hour < 24; hour++) {
+          const key = `${day}-${hour}`;
+          heatmapMap.set(key, 0);
+          heatmapData.push({ dayOfWeek: day, hour, count: 0 });
+        }
+      }
+
+      // Aggregate incidents by day of week and hour
+      incidents.forEach((incident) => {
+        const date = new Date(incident.triggeredAt);
+        const dayOfWeek = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
+        const hour = date.getUTCHours(); // 0-23
+        const key = `${dayOfWeek}-${hour}`;
+
+        const currentCount = heatmapMap.get(key) || 0;
+        heatmapMap.set(key, currentCount + 1);
+      });
+
+      // Update heatmapData with actual counts
+      heatmapData.forEach((bucket) => {
+        const key = `${bucket.dayOfWeek}-${bucket.hour}`;
+        bucket.count = heatmapMap.get(key) || 0;
+      });
+
+      // Calculate summary stats
+      const totalIncidents = incidents.length;
+      const maxCount = Math.max(...heatmapData.map(d => d.count), 0);
+      const avgCount = totalIncidents > 0 ? Math.round(totalIncidents / 168) : 0; // 168 = 7 days * 24 hours
+
+      // Find peak hours
+      const peakHour = heatmapData.reduce((prev, curr) =>
+        curr.count > prev.count ? curr : prev
+      );
+
+      return res.json({
+        data: heatmapData,
+        summary: {
+          totalIncidents,
+          maxCount,
+          avgCount,
+          peakHour: {
+            dayOfWeek: peakHour.dayOfWeek,
+            hour: peakHour.hour,
+            count: peakHour.count,
+          },
+        },
+        filters: {
+          severity: severity || null,
+          serviceId: serviceId || null,
+        },
+        period: { startDate: start.toISOString(), endDate: end.toISOString() },
+      });
+    } catch (error) {
+      logger.error('Error fetching heatmap analytics:', error);
+      return res.status(500).json({ error: 'Failed to fetch heatmap analytics' });
+    }
+  }
+);
+
 export default router;
