@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 import type { HeatmapData } from '../lib/api-client';
 
