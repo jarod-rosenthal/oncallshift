@@ -795,4 +795,93 @@ router.get(
   }
 );
 
+/**
+ * GET /api/v1/analytics/heatmap
+ * Get incident heatmap data bucketed by day-of-week and hour
+ */
+router.get(
+  '/heatmap',
+  [
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+    query('severity').optional().isIn(['info', 'warning', 'error', 'critical']),
+    query('serviceId').optional().isUUID(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { startDate, endDate, severity, serviceId } = req.query;
+      const orgId = req.orgId!;
+      const { start, end } = getDateRange(startDate as string, endDate as string);
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+
+      // Build where clause
+      const whereClause: any = {
+        orgId,
+        triggeredAt: Between(start, end),
+      };
+
+      if (severity) {
+        whereClause.severity = severity as string;
+      }
+
+      if (serviceId) {
+        whereClause.serviceId = serviceId as string;
+      }
+
+      const incidents = await incidentRepo.find({
+        where: whereClause,
+      });
+
+      // Build heatmap data: dayOfWeek (0-6) x hour (0-23)
+      // Initialize 7x24 grid with zeros
+      const heatmapData: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
+
+      incidents.forEach((incident) => {
+        const date = new Date(incident.triggeredAt);
+        const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const hour = date.getHours(); // 0-23
+
+        heatmapData[dayOfWeek][hour]++;
+      });
+
+      // Convert to array of objects for easier frontend consumption
+      const heatmap = [];
+      for (let day = 0; day < 7; day++) {
+        for (let hour = 0; hour < 24; hour++) {
+          heatmap.push({
+            dayOfWeek: day,
+            hour: hour,
+            count: heatmapData[day][hour],
+          });
+        }
+      }
+
+      // Calculate max count for normalization
+      const maxCount = Math.max(...heatmap.map(cell => cell.count));
+
+      return res.json({
+        heatmap,
+        maxCount,
+        totalIncidents: incidents.length,
+        filters: {
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          severity: severity || null,
+          serviceId: serviceId || null,
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching heatmap data:', error);
+      return res.status(500).json({ error: 'Failed to fetch heatmap data' });
+    }
+  }
+);
+
 export default router;
