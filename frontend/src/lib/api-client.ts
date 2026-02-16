@@ -1938,6 +1938,20 @@ export interface HeatmapData {
     hour: number; // 0-23
     count: number;
   }>;
+  summary: {
+    totalIncidents: number;
+    maxCount: number;
+    avgCount: number;
+    peakHour: {
+      dayOfWeek: number;
+      hour: number;
+      count: number;
+    };
+  };
+  filters: {
+    severity: string | null;
+    serviceId: string | null;
+  };
 }
 
 export const analyticsAPI = {
