@@ -867,14 +867,11 @@ router.get(
       const maxCount = Math.max(...heatmap.map(cell => cell.count));
 
       return res.json({
-        heatmap,
+        data: heatmap,
         maxCount,
-        totalIncidents: incidents.length,
-        filters: {
+        period: {
           startDate: start.toISOString(),
           endDate: end.toISOString(),
-          severity: severity || null,
-          serviceId: serviceId || null,
         },
       });
     } catch (error) {

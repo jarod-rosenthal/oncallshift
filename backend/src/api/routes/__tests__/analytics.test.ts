@@ -300,41 +300,34 @@ describe('Analytics Heatmap Logic', () => {
       const totalIncidents = 9; // Sum of test data
 
       const response = {
-        heatmap,
+        data: heatmap,
         maxCount,
-        totalIncidents,
-        filters: {
+        period: {
           startDate: '2024-01-01T00:00:00.000Z',
           endDate: '2024-01-31T23:59:59.000Z',
-          severity: 'critical',
-          serviceId: 'service-123',
         },
       };
 
       expect(response.maxCount).toBe(5);
-      expect(response.totalIncidents).toBe(9);
-      expect(response.filters.severity).toBe('critical');
-      expect(response.filters.serviceId).toBe('service-123');
-      expect(response.heatmap).toHaveLength(3);
+      expect(response.period.startDate).toBe('2024-01-01T00:00:00.000Z');
+      expect(response.period.endDate).toBe('2024-01-31T23:59:59.000Z');
+      expect(response.data).toHaveLength(3);
     });
 
-    it('should handle null filters in response', () => {
+    it('should handle empty data in response', () => {
       const response = {
-        heatmap: [],
+        data: [],
         maxCount: 0,
-        totalIncidents: 0,
-        filters: {
+        period: {
           startDate: '2024-01-01T00:00:00.000Z',
           endDate: '2024-01-31T23:59:59.000Z',
-          severity: null,
-          serviceId: null,
         },
       };
 
-      expect(response.filters.severity).toBeNull();
-      expect(response.filters.serviceId).toBeNull();
-      expect(response.filters.startDate).toBeTruthy();
-      expect(response.filters.endDate).toBeTruthy();
+      expect(response.data).toEqual([]);
+      expect(response.maxCount).toBe(0);
+      expect(response.period.startDate).toBeTruthy();
+      expect(response.period.endDate).toBeTruthy();
     });
   });
 });
