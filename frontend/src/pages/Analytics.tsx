@@ -6,6 +6,7 @@ import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lu
 import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam } from '../lib/api-client';
 import { getSeveritySolidColor } from '../lib/colors';
 import { IncidentHeatmap } from '../components/IncidentHeatmap';
+import { SeverityBreakdownChart, DailyTrendChart, SLAComplianceTrendChart } from '../components/AnalyticsCharts';
 
 type TimeRange = '24h' | '7d' | '30d';
 type Tab = 'overview' | 'responders' | 'sla' | 'patterns';
@@ -140,7 +141,6 @@ export function Analytics() {
     );
   }
 
-  const maxDailyCount = Math.max(...(overviewData?.incidentsByDay?.map(d => d.count) || [1]), 1);
 
   // Extract metrics from overview data
   const mtta = overviewData?.mtta?.minutes || 0;
@@ -311,23 +311,15 @@ export function Analytics() {
                 <CardTitle>By Severity</CardTitle>
                 <CardDescription>Incident distribution by severity level</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {overviewData?.bySeverity && Object.entries(overviewData.bySeverity).map(([severity, count]) => (
-                  <div key={severity}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="capitalize">{severity}</span>
-                      <span className="font-medium">{count}</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${getSeveritySolidColor(severity)} transition-all duration-300`}
-                        style={{
-                          width: `${Math.min((count / (overviewData?.totalIncidents || 1)) * 100, 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
+              <CardContent>
+                {overviewData?.bySeverity ? (
+                  <SeverityBreakdownChart
+                    data={overviewData.bySeverity}
+                    totalIncidents={overviewData.totalIncidents || 0}
+                  />
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">No severity data available</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -345,25 +337,7 @@ export function Analytics() {
               {(overviewData?.incidentsByDay || []).length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No data available</p>
               ) : (
-                <div className="flex items-end gap-1 h-32">
-                  {overviewData?.incidentsByDay?.map((day) => (
-                    <div key={day.date} className="flex-1 flex flex-col items-center">
-                      <div className="w-full flex justify-center mb-1">
-                        <div
-                          className="w-full max-w-8 bg-primary rounded-t transition-all duration-300"
-                          style={{
-                            height: `${Math.max((day.count / maxDailyCount) * 100, 4)}%`,
-                            minHeight: day.count > 0 ? '8px' : '4px',
-                          }}
-                          title={`${day.date}: ${day.count} incidents`}
-                        />
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(day.date).getDate()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <DailyTrendChart data={overviewData.incidentsByDay} />
               )}
             </CardContent>
           </Card>
@@ -640,28 +614,7 @@ export function Analytics() {
                 <p className="text-muted-foreground text-center py-4">No trend data available</p>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-end gap-1 h-32">
-                    {slaData?.dailyTrend.map((day) => (
-                      <div key={day.date} className="flex-1 flex flex-col items-center">
-                        <div className="w-full flex justify-center mb-1">
-                          <div
-                            className={`w-full max-w-8 rounded-t transition-all duration-300 ${
-                              day.ackComplianceRate >= 90 ? 'bg-green-500' :
-                              day.ackComplianceRate >= 70 ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}
-                            style={{
-                              height: `${Math.max(day.ackComplianceRate, 4)}%`,
-                              minHeight: '4px',
-                            }}
-                            title={`${day.date}: ${day.ackComplianceRate}% ack compliance`}
-                          />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(day.date).getDate()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <SLAComplianceTrendChart data={slaData.dailyTrend} />
                   <div className="flex justify-center gap-6 text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded bg-green-500"></div>
