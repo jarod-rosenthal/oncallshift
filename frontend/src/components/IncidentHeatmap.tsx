@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { HeatmapData } from '../lib/api-client';
+import { getHeatmapIntensityColor } from '../lib/utils';
 
 interface IncidentHeatmapProps {
   data: HeatmapData | null;
@@ -37,16 +38,6 @@ export function IncidentHeatmap({ data, loading }: IncidentHeatmapProps) {
     return { heatmapGrid, maxCount };
   }, [data]);
 
-  const getIntensityColor = (count: number) => {
-    if (count === 0) return 'bg-gray-50';
-    const intensity = count / maxCount;
-
-    if (intensity >= 0.8) return 'bg-red-600';
-    if (intensity >= 0.6) return 'bg-red-500';
-    if (intensity >= 0.4) return 'bg-red-400';
-    if (intensity >= 0.2) return 'bg-red-300';
-    return 'bg-red-200';
-  };
 
   const formatHour = (hour: number) => {
     if (hour === 0) return '12a';
@@ -112,7 +103,7 @@ export function IncidentHeatmap({ data, loading }: IncidentHeatmapProps) {
               {hours.map(({ hour, count }) => (
                 <div
                   key={hour}
-                  className={`w-4 h-4 mx-px rounded-sm border border-gray-200 cursor-help ${getIntensityColor(count)}`}
+                  className={`w-4 h-4 mx-px rounded-sm border border-gray-200 cursor-help ${getHeatmapIntensityColor(count, maxCount)}`}
                   title={`${day} ${formatHour(hour)}: ${count} incident${count !== 1 ? 's' : ''}`}
                 />
               ))}
