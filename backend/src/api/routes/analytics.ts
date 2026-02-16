@@ -599,6 +599,81 @@ router.get(
 );
 
 /**
+ * GET /api/v1/analytics/heatmap
+ * Get incident heatmap data showing incident counts bucketed by day-of-week and hour
+ */
+router.get(
+  '/heatmap',
+  [
+    query('startDate').optional().isISO8601(),
+    query('endDate').optional().isISO8601(),
+    query('severity').optional().isIn(['critical', 'error', 'warning', 'info']),
+    query('serviceId').optional().isUUID(),
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { startDate, endDate, severity, serviceId } = req.query;
+      const orgId = req.orgId!;
+      const { start, end } = getDateRange(startDate as string, endDate as string);
+
+      const dataSource = await getDataSource();
+      const incidentRepo = dataSource.getRepository(Incident);
+
+      // Build query conditions
+      const whereConditions: any = {
+        orgId,
+        triggeredAt: Between(start, end),
+      };
+
+      if (severity) {
+        whereConditions.severity = severity;
+      }
+
+      if (serviceId) {
+        whereConditions.serviceId = serviceId;
+      }
+
+      const incidents = await incidentRepo.find({
+        where: whereConditions,
+      });
+
+      // Initialize heatmap grid: dayOfWeek (0-6) x hour (0-23)
+      const heatmapData: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
+
+      // Populate heatmap data
+      incidents.forEach((incident) => {
+        const date = new Date(incident.triggeredAt);
+        const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        const hour = date.getHours(); // 0-23
+        heatmapData[dayOfWeek][hour]++;
+      });
+
+      // Find max count for scaling
+      const maxCount = Math.max(...heatmapData.flat());
+
+      return res.json({
+        heatmapData,
+        maxCount,
+        totalIncidents: incidents.length,
+        period: { startDate: start.toISOString(), endDate: end.toISOString() },
+        filters: {
+          severity: severity || null,
+          serviceId: serviceId || null,
+        },
+      });
+    } catch (error) {
+      logger.error('Error fetching analytics heatmap:', error);
+      return res.status(500).json({ error: 'Failed to fetch analytics heatmap' });
+    }
+  }
+);
+
+/**
  * GET /api/v1/analytics/sla
  * Get SLA compliance metrics
  */

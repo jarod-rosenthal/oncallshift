@@ -77,3 +77,7 @@ tfplan
 # Claude Code
 .claude/progress/
 .claude/decisions/
+
+.workermill-message.md
+.workermill-response.md
+.workermill-answer.md
