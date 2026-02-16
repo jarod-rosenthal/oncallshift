@@ -5,9 +5,10 @@ import { Select } from '../components/ui/select';
 import { Users, Target, TrendingUp, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { analyticsAPI, type AnalyticsOverview, type TopResponder, type SLAData, type TeamAnalyticsDetail, type AnalyticsTeam } from '../lib/api-client';
 import { getSeveritySolidColor } from '../lib/colors';
+import { IncidentHeatmap } from '../components/IncidentHeatmap';
 
 type TimeRange = '24h' | '7d' | '30d';
-type Tab = 'overview' | 'responders' | 'sla';
+type Tab = 'overview' | 'responders' | 'sla' | 'patterns';
 
 export function Analytics() {
   const [loading, setLoading] = useState(true);
@@ -217,6 +218,12 @@ export function Analytics() {
           onClick={() => setActiveTab('sla')}
         >
           SLA Compliance
+        </Button>
+        <Button
+          variant={activeTab === 'patterns' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('patterns')}
+        >
+          Patterns
         </Button>
       </div>
 
@@ -671,6 +678,27 @@ export function Analytics() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Patterns Tab */}
+      {activeTab === 'patterns' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Incident Heatmap</CardTitle>
+              <CardDescription>
+                When do incidents happen? Incidents clustered by day-of-week and hour-of-day · {getTimeRangeLabel().toLowerCase()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <IncidentHeatmap
+                startDate={getDateRange().startDate}
+                endDate={getDateRange().endDate}
+                serviceId={selectedTeamId !== 'all' ? undefined : undefined}
+              />
             </CardContent>
           </Card>
         </div>
