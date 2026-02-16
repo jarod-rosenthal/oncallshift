@@ -1932,13 +1932,19 @@ export interface SLAData {
 }
 
 export interface HeatmapData {
-  period: { startDate: string; endDate: string };
-  data: Array<{
+  heatmap: Array<{
     dayOfWeek: number; // 0-6 (Sunday-Saturday)
     hour: number; // 0-23
     count: number;
   }>;
   maxCount: number;
+  totalIncidents: number;
+  filters: {
+    startDate: string;
+    endDate: string;
+    severity: string | null;
+    serviceId: string | null;
+  };
 }
 
 export const analyticsAPI = {

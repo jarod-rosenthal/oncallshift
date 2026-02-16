@@ -122,6 +122,10 @@ export default {
         'container-lg': '1024px',
         'container-xl': '1280px',
       },
+      // Grid template columns for heatmap
+      gridTemplateColumns: {
+        '24': 'repeat(24, minmax(0, 1fr))',
+      },
     },
   },
   plugins: [],

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 import type { HeatmapData } from '../lib/api-client';
 
@@ -111,12 +110,12 @@ export function IncidentHeatmap({ data, className }: IncidentHeatmapProps) {
   // Create a map for quick lookup of incident counts
   const incidentMap = useMemo(() => {
     const map = new Map<string, number>();
-    data.data.forEach(item => {
+    data.heatmap.forEach(item => {
       const key = `${item.dayOfWeek}-${item.hour}`;
       map.set(key, item.count);
     });
     return map;
-  }, [data.data]);
+  }, [data.heatmap]);
 
   const getIncidentCount = (dayOfWeek: number, hour: number) => {
     return incidentMap.get(`${dayOfWeek}-${hour}`) || 0;
@@ -206,7 +205,7 @@ export function IncidentHeatmap({ data, className }: IncidentHeatmapProps) {
       {/* Summary stats */}
       <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-muted-foreground">
         <span>
-          Period: {new Date(data.period.startDate).toLocaleDateString()} - {new Date(data.period.endDate).toLocaleDateString()}
+          Period: {new Date(data.filters.startDate).toLocaleDateString()} - {new Date(data.filters.endDate).toLocaleDateString()}
         </span>
         <span>
           Peak: {data.maxCount} {data.maxCount === 1 ? 'incident' : 'incidents'}
