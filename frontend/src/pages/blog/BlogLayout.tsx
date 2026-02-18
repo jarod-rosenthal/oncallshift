@@ -46,12 +46,12 @@ export function BlogLayout({ title, date, category, readTime, children }: BlogLa
             Ready to Modernize Your On-Call?
           </h2>
           <p className="text-white/80 mb-6 max-w-xl mx-auto">
-            Start free. No credit card required. Infrastructure as code from day one.
+            Infrastructure as code from day one. Join the waitlist.
           </p>
           <div className="flex items-center justify-center gap-4">
             <Link to="/register">
               <Button size="lg" variant="secondary">
-                Start Free Trial
+                Join Waitlist
               </Button>
             </Link>
             <Link to="/docs">

@@ -66,3 +66,4 @@ export * from './ImportHistory';
 export * from './AIRecommendation';
 
 export * from './AIProviderConfig';
+export * from './WaitlistEntry';

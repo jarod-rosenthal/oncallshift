@@ -73,7 +73,7 @@ export function Landing() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
               <Link to="/register">
                 <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-lg px-8 h-12 shadow-lg shadow-teal-500/25 hover:shadow-teal-400/30 transition-all">
-                  Start Free Trial
+                  Join Waitlist
                 </Button>
               </Link>
               <Link to="/demo">
@@ -84,7 +84,7 @@ export function Landing() {
             </div>
 
             <p className="text-sm text-slate-500">
-              No credit card required · Set up in 5 minutes · Cancel anytime
+              Be first in line · Early access coming soon
             </p>
           </div>
         </div>
@@ -466,12 +466,12 @@ export function Landing() {
             Ready to Fix On-Call?
           </h2>
           <p className="text-xl text-slate-400 mb-10 max-w-2xl mx-auto">
-            Start your free trial today. No credit card required. Set up in under 5 minutes.
+            Join the waitlist today. Be first to know when we launch.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/register">
               <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-lg px-8 h-12 shadow-lg shadow-teal-500/25">
-                Start Free Trial
+                Join Waitlist
               </Button>
             </Link>
             <Link to="/demo">

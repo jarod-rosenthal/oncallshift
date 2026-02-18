@@ -72,7 +72,7 @@ export function OpsgenieAlternative() {
         <div className="flex items-center justify-center gap-4 mb-8">
           <Link to="/register">
             <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950">
-              Start Free Trial
+              Join Waitlist
             </Button>
           </Link>
           <Link to="/migrate/from-opsgenie">
@@ -187,7 +187,7 @@ export function OpsgenieAlternative() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/register">
               <Button size="lg" variant="secondary">
-                Start Free Trial
+                Join Waitlist
               </Button>
             </Link>
             <Link to="/migrate/from-opsgenie">
@@ -252,12 +252,12 @@ export function OpsgenieAlternative() {
       <section className="container mx-auto px-4 py-16 text-center">
         <h2 className="text-2xl font-bold mb-4 text-white">Ready to Break Free from Atlassian Lock-in?</h2>
         <p className="text-slate-400 mb-6">
-          Start free. No credit card required. Migrate from Opsgenie in under an hour.
+          Migrate from Opsgenie in under an hour. Join the waitlist today.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register">
             <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950">
-              Start Free Trial
+              Join Waitlist
             </Button>
           </Link>
           <Link to="/demo">

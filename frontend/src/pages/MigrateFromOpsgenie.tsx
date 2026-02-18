@@ -28,7 +28,7 @@ export function MigrateFromOpsgenie() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link to="/register">
                 <Button size="lg" className="bg-orange-500 hover:bg-orange-400 text-slate-950 text-lg px-8 h-12">
-                  Start Free Migration
+                  Join Waitlist
                 </Button>
               </Link>
               <Link to="/demo">
@@ -318,7 +318,7 @@ export function MigrateFromOpsgenie() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
             <Link to="/register">
               <Button size="lg" className="bg-orange-500 hover:bg-orange-400 text-slate-950 text-lg px-8 h-12">
-                Start Free Migration
+                Join Waitlist
               </Button>
             </Link>
             <Link to="/company/contact">
@@ -329,7 +329,7 @@ export function MigrateFromOpsgenie() {
           </div>
 
           <p className="text-sm text-slate-500">
-            No credit card required · 14-day free trial · Import in minutes
+            Import in minutes · Early access coming soon
           </p>
         </div>
       </section>

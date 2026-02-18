@@ -348,7 +348,7 @@ export function MigrateFromPagerDuty() {
           <div className="flex items-center justify-center gap-4">
             <Link to="/register">
               <Button size="lg" variant="secondary">
-                Start Free Trial
+                Join Waitlist
               </Button>
             </Link>
             <Link to="/alternatives/pagerduty">

@@ -354,12 +354,12 @@ export function WhyOnCallShift() {
             Ready to Switch?
           </h2>
           <p className="text-teal-100 text-lg mb-8 max-w-2xl mx-auto">
-            Start your free trial today. Import from PagerDuty or OpsGenie in minutes. No credit card required.
+            Join the waitlist today. Be first to know when we launch.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/register">
               <Button size="lg" variant="secondary">
-                Start Free Trial
+                Join Waitlist
               </Button>
             </Link>
             <Link to="/pricing">

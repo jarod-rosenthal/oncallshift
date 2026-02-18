@@ -183,7 +183,7 @@ export function Demo() {
               <div className="flex gap-4 justify-center">
                 <Link to="/register">
                   <Button size="lg" variant="secondary">
-                    Start Free Trial
+                    Join Waitlist
                   </Button>
                 </Link>
                 <Link to="/">

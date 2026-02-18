@@ -279,11 +279,11 @@ export function ForSmallTeams() {
             Start Free. Scale When Ready.
           </h2>
           <p className="text-teal-100 text-lg mb-8 max-w-2xl mx-auto">
-            No credit card. No sales calls. No minimum seats. Just sign up and start using it.
+            No credit card. No sales calls. No minimum seats. Join the waitlist and be first to know.
           </p>
           <Link to="/register">
             <Button size="lg" variant="secondary" className="text-lg px-8">
-              Start Free Trial (10 Users)
+              Join Waitlist
             </Button>
           </Link>
           <p className="text-teal-100 text-sm mt-4">

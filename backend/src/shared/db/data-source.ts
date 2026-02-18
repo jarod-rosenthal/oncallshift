@@ -68,6 +68,7 @@ import { IdempotencyKey } from '../models/IdempotencyKey';
 import { ImportHistory } from '../models/ImportHistory';
 import { AIRecommendation } from '../models/AIRecommendation';
 import { AIProviderConfig } from '../models/AIProviderConfig';
+import { WaitlistEntry } from '../models/WaitlistEntry';
 
 export async function createDataSource(): Promise<DataSource> {
   const dbConfig = await getDbConfig();
@@ -151,6 +152,7 @@ export async function createDataSource(): Promise<DataSource> {
       ImportHistory,
       AIRecommendation,
       AIProviderConfig,
+      WaitlistEntry,
     ],
     migrations: ['src/shared/db/migrations/*.ts'],
     subscribers: [],

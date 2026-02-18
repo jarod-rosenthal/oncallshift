@@ -40,7 +40,7 @@ export function Pricing() {
         'Priority email support',
         '90-day incident history',
       ],
-      cta: 'Start Free Trial',
+      cta: 'Join Waitlist',
       ctaLink: '/register?plan=starter',
       highlighted: false,
       badge: 'Best Value',
@@ -60,7 +60,7 @@ export function Pricing() {
         '1-year incident history',
         'Priority email + chat support',
       ],
-      cta: 'Start Free Trial',
+      cta: 'Join Waitlist',
       ctaLink: '/register?plan=professional',
       highlighted: true,
       badge: 'Most Popular',
@@ -393,12 +393,12 @@ export function Pricing() {
       <section className="container mx-auto px-4 py-16 text-center">
         <h2 className="text-2xl font-bold mb-4 text-white">Not sure which plan is right for you?</h2>
         <p className="text-slate-400 mb-6">
-          Start free and upgrade anytime. No credit card required.
+          Join the waitlist. Early access coming soon.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register">
             <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950">
-              Start Free Trial
+              Join Waitlist
             </Button>
           </Link>
           <Link to="/demo">

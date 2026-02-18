@@ -49,6 +49,7 @@ import aiConfigurationRoutes from './routes/ai-configuration';
 import aiRecommendationsRoutes from './routes/ai-recommendations';
 import apiKeysRoutes from './routes/api-keys';
 import onboardingRoutes from './routes/onboarding';
+import waitlistRoutes from './routes/waitlist';
 
 import { captureRawBody, etagMiddleware } from '../shared/middleware';
 import { idempotencyMiddleware } from '../shared/middleware/idempotency';
@@ -380,6 +381,7 @@ export function createApp(): Express {
   app.use('/api/v1/ai', aiRecommendationsRoutes); // AI-powered proactive recommendations
   app.use('/api/v1/api-keys', idempotencyMiddleware, apiKeysRoutes); // Organization API key management
   app.use('/api/v1/onboarding', onboardingRoutes); // AI-powered conversational onboarding
+  app.use('/api/v1/waitlist', waitlistRoutes); // Public waitlist signup
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');

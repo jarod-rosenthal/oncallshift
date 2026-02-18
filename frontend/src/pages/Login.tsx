@@ -114,7 +114,7 @@ export function Login() {
           <p className="text-sm text-muted-foreground">
             Don't have an account?{' '}
             <Link to="/register" className="text-primary hover:underline">
-              Register
+              Join the Waitlist
             </Link>
           </p>
         </CardFooter>

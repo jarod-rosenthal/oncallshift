@@ -72,7 +72,7 @@ export function PagerDutyAlternative() {
         <div className="flex items-center justify-center gap-4 mb-8">
           <Link to="/register">
             <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950">
-              Start Free Trial
+              Join Waitlist
             </Button>
           </Link>
           <Link to="/migrate/from-pagerduty">
@@ -82,7 +82,7 @@ export function PagerDutyAlternative() {
           </Link>
         </div>
         <p className="text-sm text-slate-500">
-          No credit card required. PagerDuty-compatible webhooks. Migrate via AI conversation.
+          PagerDuty-compatible webhooks. Migrate via AI conversation. Join the waitlist.
         </p>
       </section>
 
@@ -285,12 +285,12 @@ export function PagerDutyAlternative() {
       <section className="container mx-auto px-4 py-16 text-center">
         <h2 className="text-2xl font-bold mb-4 text-white">Ready to Cut Your Incident Management Costs?</h2>
         <p className="text-slate-400 mb-6">
-          Start free. No credit card required. Migrate from PagerDuty in under an hour.
+          Migrate from PagerDuty in under an hour. Join the waitlist today.
         </p>
         <div className="flex items-center justify-center gap-4">
           <Link to="/register">
             <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950">
-              Start Free Trial
+              Join Waitlist
             </Button>
           </Link>
           <Link to="/demo">

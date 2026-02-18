@@ -177,7 +177,7 @@ export function About() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link to="/register">
               <Button size="lg" variant="secondary">
-                Try OnCallShift Free
+                Join Waitlist
               </Button>
             </Link>
             <a href="mailto:jarod@oncallshift.com">

@@ -2268,4 +2268,22 @@ export const aiConfigAPI = {
   },
 };
 
+// Waitlist API (public, no auth required)
+export const waitlistAPI = {
+  join: async (data: {
+    email: string;
+    fullName?: string;
+    source?: string;
+    plan?: string;
+  }): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>('/waitlist', data);
+    return response.data;
+  },
+
+  getCount: async (): Promise<{ count: number }> => {
+    const response = await apiClient.get<{ count: number }>('/waitlist/count');
+    return response.data;
+  },
+};
+
 export default apiClient;

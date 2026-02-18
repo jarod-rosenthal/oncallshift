@@ -125,10 +125,10 @@ function App() {
           <Routes>
           {/* Public routes */}
         <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route path="/demo" element={<Demo />} />
         {/* Marketing pages — wrapped in shared dark-themed layout */}
         <Route element={<MarketingLayout />}>
+          <Route path="/register" element={<Register />} />
           <Route path="/" element={<Landing />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/migrate/from-opsgenie" element={<MigrateFromOpsgenie />} />

@@ -36,8 +36,8 @@ export function DocsQuickStart() {
 
         <Step number={1} title="Create your account">
           <p>
-            Sign up at <a href="https://oncallshift.com/register" className="text-teal-400 hover:underline">oncallshift.com/register</a> with
-            your work email. You'll receive a verification email to confirm your account.
+            Join the waitlist at <a href="https://oncallshift.com/register" className="text-teal-400 hover:underline">oncallshift.com/register</a> with
+            your work email. We'll notify you when early access is available.
           </p>
           <p className="mt-2">
             If your organization already uses OnCallShift, ask an admin to invite you instead.

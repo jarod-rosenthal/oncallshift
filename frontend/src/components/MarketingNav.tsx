@@ -50,7 +50,7 @@ export function MarketingNav() {
             </Link>
             <Link to="/register">
               <Button size="sm" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold shadow-lg shadow-teal-500/20">
-                Start Free Trial
+                Join Waitlist
               </Button>
             </Link>
             <button
