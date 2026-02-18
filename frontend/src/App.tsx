@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 
 import { AppLayout } from './components/AppLayout';
+import { MarketingLayout } from './components/MarketingLayout';
 
 // Eagerly loaded pages (critical for initial user experience)
 import { Landing } from './pages/Landing';
@@ -56,12 +57,7 @@ const MigrateFromOpsgenie = lazy(() => import('./pages/MigrateFromOpsgenie').the
 const MigrateFromPagerDuty = lazy(() => import('./pages/MigrateFromPagerDuty').then(m => ({ default: m.MigrateFromPagerDuty })));
 const PagerDutyAlternative = lazy(() => import('./pages/PagerDutyAlternative').then(m => ({ default: m.PagerDutyAlternative })));
 const OpsgenieAlternative = lazy(() => import('./pages/OpsgenieAlternative').then(m => ({ default: m.OpsgenieAlternative })));
-const ProductOnCallScheduling = lazy(() => import('./pages/ProductOnCallScheduling').then(m => ({ default: m.ProductOnCallScheduling })));
-const ProductIncidentManagement = lazy(() => import('./pages/ProductIncidentManagement').then(m => ({ default: m.ProductIncidentManagement })));
-const ProductAIDiagnosis = lazy(() => import('./pages/ProductAIDiagnosis').then(m => ({ default: m.ProductAIDiagnosis })));
-const ProductIntegrations = lazy(() => import('./pages/ProductIntegrations').then(m => ({ default: m.ProductIntegrations })));
-const ProductMobileApp = lazy(() => import('./pages/ProductMobileApp').then(m => ({ default: m.ProductMobileApp })));
-const ProductEscalationPolicies = lazy(() => import('./pages/ProductEscalationPolicies').then(m => ({ default: m.ProductEscalationPolicies })));
+const Product = lazy(() => import('./pages/Product').then(m => ({ default: m.Product })));
 const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Contact })));
 const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
 const WhyOnCallShift = lazy(() => import('./pages/WhyOnCallShift').then(m => ({ default: m.WhyOnCallShift })));
@@ -128,50 +124,51 @@ function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
           {/* Public routes */}
-        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/demo" element={<Demo />} />
-        <Route path="/pricing" element={<Pricing />} />
-        <Route path="/migrate/from-opsgenie" element={<MigrateFromOpsgenie />} />
-        <Route path="/migrate/from-pagerduty" element={<MigrateFromPagerDuty />} />
-        <Route path="/alternatives/pagerduty" element={<PagerDutyAlternative />} />
-        <Route path="/alternatives/opsgenie" element={<OpsgenieAlternative />} />
-        <Route path="/product/on-call-scheduling" element={<ProductOnCallScheduling />} />
-        <Route path="/product/incident-management" element={<ProductIncidentManagement />} />
-        <Route path="/product/ai-diagnosis" element={<ProductAIDiagnosis />} />
-        <Route path="/product/integrations" element={<ProductIntegrations />} />
-        <Route path="/product/mobile-app" element={<ProductMobileApp />} />
-        <Route path="/product/escalation-policies" element={<ProductEscalationPolicies />} />
-        <Route path="/company/contact" element={<Contact />} />
-        <Route path="/company/about" element={<About />} />
-        <Route path="/why-oncallshift" element={<WhyOnCallShift />} />
-        <Route path="/for-small-teams" element={<ForSmallTeams />} />
-        <Route path="/legal/privacy" element={<Privacy />} />
-        <Route path="/legal/terms" element={<Terms />} />
-        <Route path="/blog" element={<Blog />} />
-        <Route path="/blog/stop-clicking-around" element={<BlogStopClickingAround />} />
-        <Route path="/blog/terraform-multi-team" element={<BlogTerraformMultiTeam />} />
-        <Route path="/blog/ten-thousand-alerts" element={<BlogTenThousandAlerts />} />
-        <Route path="/blog/alert-fatigue-system-design" element={<BlogAlertFatigueSystemDesign />} />
-        <Route path="/blog/when-teams-stop-trusting" element={<BlogWhenTeamsStopTrusting />} />
-        <Route path="/blog/cli-first-workflow" element={<BlogCliFirstWorkflow />} />
-        <Route path="/blog/building-reflexes" element={<BlogBuildingReflexes />} />
-        <Route path="/blog/running-llms-locally" element={<BlogRunningLlmsLocally />} />
-        <Route path="/blog/building-mcp-servers" element={<BlogBuildingMcpServers />} />
-        <Route path="/company/security" element={<Security />} />
-
-        {/* Documentation routes */}
-        <Route path="/docs" element={<DocsHome />} />
-        <Route path="/docs/getting-started/quick-start" element={<DocsQuickStart />} />
-        <Route path="/docs/ai/mcp" element={<DocsMcpServer />} />
-        <Route path="/docs/iac/terraform" element={<DocsTerraformProvider />} />
-        <Route path="/docs/*" element={<DocsComingSoon />} />
-
-        {/* Help Center routes */}
-        <Route path="/help" element={<HelpHome />} />
-        <Route path="/help/getting-started/first-steps" element={<HelpFirstSteps />} />
-        <Route path="/help/*" element={<HelpComingSoon />} />
+        {/* Marketing pages — wrapped in shared dark-themed layout */}
+        <Route element={<MarketingLayout />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/pricing" element={<Pricing />} />
+          <Route path="/migrate/from-opsgenie" element={<MigrateFromOpsgenie />} />
+          <Route path="/migrate/from-pagerduty" element={<MigrateFromPagerDuty />} />
+          <Route path="/alternatives/pagerduty" element={<PagerDutyAlternative />} />
+          <Route path="/alternatives/opsgenie" element={<OpsgenieAlternative />} />
+          <Route path="/product" element={<Product />} />
+          {/* Redirects for old product page URLs */}
+          <Route path="/product/on-call-scheduling" element={<Navigate to="/product#scheduling" replace />} />
+          <Route path="/product/incident-management" element={<Navigate to="/product#incident-management" replace />} />
+          <Route path="/product/ai-diagnosis" element={<Navigate to="/product#ai-diagnosis" replace />} />
+          <Route path="/product/integrations" element={<Navigate to="/product#integrations" replace />} />
+          <Route path="/product/mobile-app" element={<Navigate to="/product#mobile-app" replace />} />
+          <Route path="/product/escalation-policies" element={<Navigate to="/product#escalation-policies" replace />} />
+          <Route path="/company/contact" element={<Contact />} />
+          <Route path="/company/about" element={<About />} />
+          <Route path="/why-oncallshift" element={<WhyOnCallShift />} />
+          <Route path="/for-small-teams" element={<ForSmallTeams />} />
+          <Route path="/legal/privacy" element={<Privacy />} />
+          <Route path="/legal/terms" element={<Terms />} />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/stop-clicking-around" element={<BlogStopClickingAround />} />
+          <Route path="/blog/terraform-multi-team" element={<BlogTerraformMultiTeam />} />
+          <Route path="/blog/ten-thousand-alerts" element={<BlogTenThousandAlerts />} />
+          <Route path="/blog/alert-fatigue-system-design" element={<BlogAlertFatigueSystemDesign />} />
+          <Route path="/blog/when-teams-stop-trusting" element={<BlogWhenTeamsStopTrusting />} />
+          <Route path="/blog/cli-first-workflow" element={<BlogCliFirstWorkflow />} />
+          <Route path="/blog/building-reflexes" element={<BlogBuildingReflexes />} />
+          <Route path="/blog/running-llms-locally" element={<BlogRunningLlmsLocally />} />
+          <Route path="/blog/building-mcp-servers" element={<BlogBuildingMcpServers />} />
+          <Route path="/company/security" element={<Security />} />
+          <Route path="/docs" element={<DocsHome />} />
+          <Route path="/docs/getting-started/quick-start" element={<DocsQuickStart />} />
+          <Route path="/docs/ai/mcp" element={<DocsMcpServer />} />
+          <Route path="/docs/iac/terraform" element={<DocsTerraformProvider />} />
+          <Route path="/docs/*" element={<DocsComingSoon />} />
+          <Route path="/help" element={<HelpHome />} />
+          <Route path="/help/getting-started/first-steps" element={<HelpFirstSteps />} />
+          <Route path="/help/*" element={<HelpComingSoon />} />
+        </Route>
 
         {/* Public status pages */}
         <Route path="/status/:slug" element={<PublicStatusPage />} />

@@ -39,7 +39,7 @@ export function DocsTerraformProvider() {
           The provider is available for local installation. Configure it in your Terraform configuration:
         </p>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`terraform {
   required_providers {
     oncallshift = {
@@ -59,7 +59,7 @@ provider "oncallshift" {
 
         <p>Until the provider is published to the Terraform Registry, install locally:</p>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`# Clone the repository
 git clone https://github.com/oncallshift/pagerduty-lite.git
 cd pagerduty-lite/packages/terraform-provider-oncallshift
@@ -74,21 +74,21 @@ make install
 
         <p>
           The provider requires an API key for authentication. Create one at{' '}
-          <Link to="/settings/api-keys" className="text-blue-600 hover:underline">
-            Settings → API Keys
+          <Link to="/settings/api-keys" className="text-teal-400 hover:underline">
+            Settings &rarr; API Keys
           </Link>.
         </p>
 
         <h3>Environment Variable (Recommended)</h3>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`export ONCALLSHIFT_API_KEY="org_your-api-key-here"
 terraform plan`}</code>
         </pre>
 
         <h3>Provider Configuration</h3>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`provider "oncallshift" {
   api_key = var.oncallshift_api_key
   api_url = "https://oncallshift.com/api/v1"  # Optional, default shown
@@ -102,22 +102,22 @@ terraform plan`}</code>
         <div className="overflow-x-auto my-6">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b dark:border-slate-700">
-                <th className="text-left py-2 pr-4 font-semibold">Resource</th>
-                <th className="text-left py-2 pr-4 font-semibold">Description</th>
-                <th className="text-left py-2 font-semibold">Import</th>
+              <tr className="border-b border-white/5">
+                <th className="text-left py-2 pr-4 font-semibold text-slate-300">Resource</th>
+                <th className="text-left py-2 pr-4 font-semibold text-slate-300">Description</th>
+                <th className="text-left py-2 font-semibold text-slate-300">Import</th>
               </tr>
             </thead>
-            <tbody className="divide-y dark:divide-slate-700">
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_team</td><td className="pr-4">Create and manage teams</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_user</td><td className="pr-4">Invite and manage users</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_service</td><td className="pr-4">Define services with escalation policies</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_schedule</td><td className="pr-4">Configure on-call schedules with layers</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_escalation_policy</td><td className="pr-4">Multi-step escalation rules</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_integration</td><td className="pr-4">Connect external monitoring tools</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_routing_rule</td><td className="pr-4">Route alerts based on conditions</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_runbook</td><td className="pr-4">Document incident response procedures</td><td>Yes</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_workflow</td><td className="pr-4">Automate actions on incident events</td><td>Yes</td></tr>
+            <tbody className="divide-y divide-white/5">
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_team</td><td className="pr-4 text-slate-400">Create and manage teams</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_user</td><td className="pr-4 text-slate-400">Invite and manage users</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_service</td><td className="pr-4 text-slate-400">Define services with escalation policies</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_schedule</td><td className="pr-4 text-slate-400">Configure on-call schedules with layers</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_escalation_policy</td><td className="pr-4 text-slate-400">Multi-step escalation rules</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_integration</td><td className="pr-4 text-slate-400">Connect external monitoring tools</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_routing_rule</td><td className="pr-4 text-slate-400">Route alerts based on conditions</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_runbook</td><td className="pr-4 text-slate-400">Document incident response procedures</td><td className="text-slate-400">Yes</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_workflow</td><td className="pr-4 text-slate-400">Automate actions on incident events</td><td className="text-slate-400">Yes</td></tr>
             </tbody>
           </table>
         </div>
@@ -129,16 +129,16 @@ terraform plan`}</code>
         <div className="overflow-x-auto my-6">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b dark:border-slate-700">
-                <th className="text-left py-2 pr-4 font-semibold">Data Source</th>
-                <th className="text-left py-2 font-semibold">Description</th>
+              <tr className="border-b border-white/5">
+                <th className="text-left py-2 pr-4 font-semibold text-slate-300">Data Source</th>
+                <th className="text-left py-2 font-semibold text-slate-300">Description</th>
               </tr>
             </thead>
-            <tbody className="divide-y dark:divide-slate-700">
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_team</td><td>Look up team by ID</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_user</td><td>Look up user by ID or email</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_service</td><td>Look up service by ID</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs">oncallshift_schedule</td><td>Look up schedule by ID</td></tr>
+            <tbody className="divide-y divide-white/5">
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_team</td><td className="text-slate-400">Look up team by ID</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_user</td><td className="text-slate-400">Look up user by ID or email</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_service</td><td className="text-slate-400">Look up service by ID</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">oncallshift_schedule</td><td className="text-slate-400">Look up schedule by ID</td></tr>
             </tbody>
           </table>
         </div>
@@ -150,7 +150,7 @@ terraform plan`}</code>
           a Datadog integration:
         </p>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`# Create the platform team
 resource "oncallshift_team" "platform" {
   name        = "Platform Engineering"
@@ -263,7 +263,7 @@ output "datadog_webhook_url" {
           Import existing OnCallShift resources into Terraform management using the resource ID:
         </p>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`# Import an existing team
 terraform import oncallshift_team.platform team_abc123
 
@@ -285,7 +285,7 @@ terraform import oncallshift_schedule.primary sch_def456`}</code>
 
         <h3>Example Usage</h3>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`resource "oncallshift_team" "backend" {
   name        = "Backend Engineering"
   description = "Backend services team"
@@ -309,7 +309,7 @@ terraform import oncallshift_schedule.primary sch_def456`}</code>
 
         <h3>Example Usage</h3>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`resource "oncallshift_schedule" "primary_oncall" {
   name        = "Primary On-Call"
   description = "24/7 primary rotation"
@@ -361,7 +361,7 @@ terraform import oncallshift_schedule.primary sch_def456`}</code>
 
         <h3>Example Usage</h3>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`resource "oncallshift_escalation_policy" "critical" {
   name        = "Critical Incidents"
   description = "For P1 incidents - aggressive escalation"
@@ -425,7 +425,7 @@ terraform import oncallshift_schedule.primary sch_def456`}</code>
             href="https://github.com/oncallshift/pagerduty-lite/tree/main/packages/terraform-provider-oncallshift"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="text-teal-400 hover:underline"
           >
             GitHub
           </a>.
@@ -433,7 +433,7 @@ terraform import oncallshift_schedule.primary sch_def456`}</code>
 
         <h2>Development Commands</h2>
 
-        <pre className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg overflow-x-auto text-sm">
+        <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`cd packages/terraform-provider-oncallshift
 
 # Build the provider

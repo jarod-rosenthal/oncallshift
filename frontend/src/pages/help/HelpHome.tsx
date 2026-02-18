@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { DocsLayout, helpNav } from '../../components/docs';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 
 const categories = [
   {
@@ -65,10 +64,10 @@ export function HelpHome() {
       <div className="max-w-4xl">
         {/* Hero */}
         <div className="mb-12">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+          <h1 className="text-3xl font-bold text-white mb-4">
             How can we help?
           </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400">
+          <p className="text-lg text-slate-400">
             Find answers, guides, and solutions to get the most out of OnCallShift.
           </p>
         </div>
@@ -77,27 +76,23 @@ export function HelpHome() {
         <div className="grid gap-4 sm:grid-cols-2 mb-12">
           {categories.map((category) => (
             <Link key={category.href} to={category.href}>
-              <Card className="h-full hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-700 transition-all">
-                <CardHeader className="pb-2">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 flex items-center justify-center mb-2">
-                    {category.icon}
-                  </div>
-                  <CardTitle className="text-base">{category.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {category.description}
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="h-full rounded-xl border border-white/5 bg-white/[0.03] p-5 hover:border-teal-500/30 hover:bg-white/[0.05] transition-all">
+                <div className="w-10 h-10 rounded-lg bg-green-500/10 text-green-400 flex items-center justify-center mb-3">
+                  {category.icon}
+                </div>
+                <h3 className="text-base font-semibold text-white mb-1">{category.title}</h3>
+                <p className="text-sm text-slate-400">
+                  {category.description}
+                </p>
+              </div>
             </Link>
           ))}
         </div>
 
         {/* Quick Links */}
         <div className="grid gap-6 md:grid-cols-2 mb-12">
-          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
+          <div className="bg-white/[0.02] rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-4">
               Common questions
             </h2>
             <ul className="space-y-2">
@@ -105,9 +100,9 @@ export function HelpHome() {
                 <li key={link.href}>
                   <Link
                     to={link.href}
-                    className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                    className="flex items-center gap-2 text-sm text-slate-300 hover:text-teal-400"
                   >
-                    <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     {link.title}
@@ -117,7 +112,7 @@ export function HelpHome() {
             </ul>
             <Link
               to="/help/faq"
-              className="inline-flex items-center gap-1 mt-4 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              className="inline-flex items-center gap-1 mt-4 text-sm font-medium text-teal-400 hover:underline"
             >
               View all FAQs
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,8 +121,8 @@ export function HelpHome() {
             </Link>
           </div>
 
-          <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
+          <div className="bg-amber-500/5 rounded-xl p-6 border border-amber-500/10">
+            <h2 className="text-lg font-semibold text-white mb-4">
               Troubleshooting
             </h2>
             <ul className="space-y-2">
@@ -135,9 +130,9 @@ export function HelpHome() {
                 <li key={topic.href}>
                   <Link
                     to={topic.href}
-                    className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                    className="flex items-center gap-2 text-sm text-slate-300 hover:text-teal-400"
                   >
-                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                     {topic.title}
@@ -147,7 +142,7 @@ export function HelpHome() {
             </ul>
             <Link
               to="/help/troubleshooting"
-              className="inline-flex items-center gap-1 mt-4 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              className="inline-flex items-center gap-1 mt-4 text-sm font-medium text-teal-400 hover:underline"
             >
               View troubleshooting guide
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,23 +153,23 @@ export function HelpHome() {
         </div>
 
         {/* Contact Support */}
-        <div className="p-6 border border-slate-200 dark:border-slate-700 rounded-xl">
+        <div className="p-6 border border-white/5 rounded-xl">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-teal-500/10 text-teal-400 flex items-center justify-center flex-shrink-0">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-1">
+              <h3 className="font-semibold text-white mb-1">
                 Still need help?
               </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+              <p className="text-sm text-slate-400 mb-3">
                 Can't find what you're looking for? Our support team is here to help.
               </p>
               <Link
                 to="/help/contact"
-                className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                className="inline-flex items-center gap-2 text-sm font-medium text-teal-400 hover:underline"
               >
                 Contact support
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

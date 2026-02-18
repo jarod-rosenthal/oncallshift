@@ -86,42 +86,16 @@ export function Blog() {
   const categories = ['All', 'Infrastructure as Code', 'Alert Fatigue', 'AI & Automation', 'Architecture', 'Preparation'];
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Navigation */}
-      <nav className="border-b bg-white/95 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="text-2xl">📟</span>
-            <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-              OnCallShift
-            </span>
-          </Link>
-          <div className="flex items-center gap-3">
-            <Link to="/pricing">
-              <Button variant="ghost" size="sm">Pricing</Button>
-            </Link>
-            <Link to="/login">
-              <Button variant="ghost" size="sm">Login</Button>
-            </Link>
-            <Link to="/register">
-              <Button size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600">
-                Start Free Trial
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
-
+    <div className="min-h-screen">
       {/* Hero */}
       <section className="container mx-auto px-4 py-16 text-center">
-        <div className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
-          <span>🏗️</span>
+        <div className="inline-flex items-center gap-2 bg-teal-500/10 text-teal-400 px-4 py-2 rounded-full text-sm font-medium mb-6">
           <span>Terraform &bull; SRE &bull; DevOps &bull; AI</span>
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold mb-6">
+        <h1 className="text-4xl md:text-5xl font-bold mb-6 text-white">
           The OnCallShift Blog
         </h1>
-        <p className="text-xl text-slate-600 max-w-2xl mx-auto">
+        <p className="text-xl text-slate-400 max-w-2xl mx-auto">
           Battle-tested insights on incident management, infrastructure as code, and building reliable systems.
           Written by engineers who still get paged.
         </p>
@@ -135,8 +109,8 @@ export function Blog() {
               key={cat}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                 cat === 'All'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-teal-500 text-white'
+                  : 'bg-white/[0.05] text-slate-300 hover:bg-white/[0.1]'
               }`}
             >
               {cat}
@@ -148,26 +122,25 @@ export function Blog() {
       {/* Featured Posts */}
       <section className="container mx-auto px-4 py-8">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-            <span className="text-green-600">🏗️</span>
+          <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-white">
             Featured: Infrastructure as Code
           </h2>
           <div className="grid md:grid-cols-2 gap-6">
             {featuredPosts.map((post) => (
               <Link key={post.slug} to={`/blog/${post.slug}`}>
-                <Card className="border-2 border-green-200 bg-green-50/50 hover:shadow-lg hover:border-green-300 transition-all h-full">
+                <Card className="border border-teal-500/20 bg-teal-500/[0.05] hover:bg-teal-500/[0.08] hover:border-teal-500/30 transition-all h-full">
                   <CardContent className="pt-6">
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-medium">
+                      <span className="bg-teal-500/10 text-teal-400 text-xs px-2 py-1 rounded font-medium">
                         {post.category}
                       </span>
-                      <span className="text-xs text-slate-400">{post.date}</span>
-                      <span className="text-xs text-slate-400">&bull;</span>
-                      <span className="text-xs text-slate-400">{post.readTime}</span>
+                      <span className="text-xs text-slate-500">{post.date}</span>
+                      <span className="text-xs text-slate-500">&bull;</span>
+                      <span className="text-xs text-slate-500">{post.readTime}</span>
                     </div>
-                    <h3 className="font-bold text-lg mb-2 text-slate-900">{post.title}</h3>
-                    <p className="text-sm text-slate-600">{post.excerpt}</p>
-                    <p className="text-green-600 text-sm font-medium mt-4">Read article &rarr;</p>
+                    <h3 className="font-bold text-lg mb-2 text-white">{post.title}</h3>
+                    <p className="text-sm text-slate-400">{post.excerpt}</p>
+                    <p className="text-teal-400 text-sm font-medium mt-4">Read article &rarr;</p>
                   </CardContent>
                 </Card>
               </Link>
@@ -177,31 +150,31 @@ export function Blog() {
       </section>
 
       {/* All Posts Grid */}
-      <section className="bg-slate-50 py-12">
+      <section className="bg-white/[0.02] py-12">
         <div className="container mx-auto px-4">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-xl font-bold mb-6">All Articles</h2>
+            <h2 className="text-xl font-bold mb-6 text-white">All Articles</h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {regularPosts.map((post) => (
                 <Link key={post.slug} to={`/blog/${post.slug}`}>
-                  <Card className="border bg-white hover:shadow-md transition-shadow h-full">
+                  <Card className="border border-white/5 bg-white/[0.03] hover:bg-white/[0.05] transition-all h-full">
                     <CardContent className="pt-6">
                       <div className="flex items-center gap-2 mb-3">
                         <span className={`text-xs px-2 py-1 rounded font-medium ${
-                          post.category === 'Alert Fatigue' ? 'bg-red-100 text-red-700' :
-                          post.category === 'AI & Automation' ? 'bg-purple-100 text-purple-700' :
-                          post.category === 'Architecture' ? 'bg-blue-100 text-blue-700' :
-                          post.category === 'Team Health' ? 'bg-amber-100 text-amber-700' :
-                          post.category === 'Developer Experience' ? 'bg-cyan-100 text-cyan-700' :
-                          post.category === 'Preparation' ? 'bg-orange-100 text-orange-700' :
-                          'bg-slate-100 text-slate-700'
+                          post.category === 'Alert Fatigue' ? 'bg-red-500/10 text-red-400' :
+                          post.category === 'AI & Automation' ? 'bg-purple-500/10 text-purple-400' :
+                          post.category === 'Architecture' ? 'bg-blue-500/10 text-blue-400' :
+                          post.category === 'Team Health' ? 'bg-amber-500/10 text-amber-400' :
+                          post.category === 'Developer Experience' ? 'bg-cyan-500/10 text-cyan-400' :
+                          post.category === 'Preparation' ? 'bg-orange-500/10 text-orange-400' :
+                          'bg-white/[0.05] text-slate-300'
                         }`}>
                           {post.category}
                         </span>
-                        <span className="text-xs text-slate-400">{post.readTime}</span>
+                        <span className="text-xs text-slate-500">{post.readTime}</span>
                       </div>
-                      <h3 className="font-semibold mb-2">{post.title}</h3>
-                      <p className="text-sm text-slate-600 line-clamp-2">{post.excerpt}</p>
+                      <h3 className="font-semibold mb-2 text-white">{post.title}</h3>
+                      <p className="text-sm text-slate-400 line-clamp-2">{post.excerpt}</p>
                     </CardContent>
                   </Card>
                 </Link>
@@ -214,20 +187,19 @@ export function Blog() {
       {/* Topics */}
       <section className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-xl font-semibold mb-6 text-center">Topics We Cover</h2>
+          <h2 className="text-xl font-semibold mb-6 text-center text-white">Topics We Cover</h2>
           <div className="flex flex-wrap justify-center gap-3">
             {[
-              { name: 'Terraform & IaC', icon: '🏗️' },
-              { name: 'Alert Fatigue', icon: '🔕' },
-              { name: 'Incident Response', icon: '🚨' },
-              { name: 'AI & LLMs', icon: '🤖' },
-              { name: 'CLI Workflows', icon: '💻' },
-              { name: 'SRE Culture', icon: '🛠️' },
-              { name: 'On-Call Best Practices', icon: '📟' },
-              { name: 'System Design', icon: '📐' },
+              { name: 'Terraform & IaC', icon: '' },
+              { name: 'Alert Fatigue', icon: '' },
+              { name: 'Incident Response', icon: '' },
+              { name: 'AI & LLMs', icon: '' },
+              { name: 'CLI Workflows', icon: '' },
+              { name: 'SRE Culture', icon: '' },
+              { name: 'On-Call Best Practices', icon: '' },
+              { name: 'System Design', icon: '' },
             ].map((topic, i) => (
-              <span key={i} className="bg-slate-100 border px-4 py-2 rounded-full text-sm flex items-center gap-2">
-                <span>{topic.icon}</span>
+              <span key={i} className="bg-white/[0.05] border border-white/5 px-4 py-2 rounded-full text-sm flex items-center gap-2 text-slate-300">
                 <span>{topic.name}</span>
               </span>
             ))}
@@ -236,17 +208,17 @@ export function Blog() {
       </section>
 
       {/* Newsletter CTA */}
-      <section className="bg-gradient-to-r from-blue-600 to-indigo-600 py-12">
+      <section className="bg-gradient-to-r from-teal-500 to-cyan-500 py-12">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-2xl font-bold text-white mb-4">Stay Updated</h2>
-          <p className="text-blue-100 mb-6 max-w-xl mx-auto">
+          <p className="text-white/80 mb-6 max-w-xl mx-auto">
             Get new articles on incident management, IaC, and DevOps delivered to your inbox.
           </p>
           <div className="flex justify-center gap-2 max-w-md mx-auto">
             <input
               type="email"
               placeholder="Enter your email"
-              className="flex-1 px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-white"
+              className="flex-1 px-4 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-white bg-white/10 text-white placeholder-white/50 border border-white/20"
             />
             <Button variant="secondary">Subscribe</Button>
           </div>
@@ -255,28 +227,16 @@ export function Blog() {
 
       {/* CTA */}
       <section className="container mx-auto px-4 py-16 text-center">
-        <h2 className="text-2xl font-bold mb-4">Want to Contribute?</h2>
-        <p className="text-slate-600 mb-6">
+        <h2 className="text-2xl font-bold mb-4 text-white">Want to Contribute?</h2>
+        <p className="text-slate-400 mb-6">
           We're looking for guest posts from practitioners. Share your on-call war stories and lessons learned.
         </p>
         <Link to="/company/contact">
-          <Button variant="outline">
+          <Button variant="outline" className="border-white/20 text-slate-300 hover:bg-white/5">
             Get in Touch
           </Button>
         </Link>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t py-8 bg-slate-50">
-        <div className="container mx-auto px-4 text-center text-sm text-slate-500">
-          <p>&copy; 2025 OnCallShift. All rights reserved.</p>
-          <div className="mt-2 space-x-4">
-            <Link to="/legal/privacy" className="hover:text-slate-700">Privacy</Link>
-            <Link to="/legal/terms" className="hover:text-slate-700">Terms</Link>
-            <Link to="/company/contact" className="hover:text-slate-700">Contact</Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

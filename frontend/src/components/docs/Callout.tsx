@@ -10,28 +10,28 @@ interface CalloutProps {
 
 const calloutStyles: Record<CalloutType, { bg: string; border: string; icon: string; title: string }> = {
   info: {
-    bg: 'bg-blue-50 dark:bg-blue-950/30',
-    border: 'border-blue-200 dark:border-blue-800',
-    icon: 'text-blue-600 dark:text-blue-400',
-    title: 'text-blue-800 dark:text-blue-200',
+    bg: 'bg-blue-500/5',
+    border: 'border-blue-500/20',
+    icon: 'text-blue-400',
+    title: 'text-blue-300',
   },
   tip: {
-    bg: 'bg-green-50 dark:bg-green-950/30',
-    border: 'border-green-200 dark:border-green-800',
-    icon: 'text-green-600 dark:text-green-400',
-    title: 'text-green-800 dark:text-green-200',
+    bg: 'bg-green-500/5',
+    border: 'border-green-500/20',
+    icon: 'text-green-400',
+    title: 'text-green-300',
   },
   warning: {
-    bg: 'bg-amber-50 dark:bg-amber-950/30',
-    border: 'border-amber-200 dark:border-amber-800',
-    icon: 'text-amber-600 dark:text-amber-400',
-    title: 'text-amber-800 dark:text-amber-200',
+    bg: 'bg-amber-500/5',
+    border: 'border-amber-500/20',
+    icon: 'text-amber-400',
+    title: 'text-amber-300',
   },
   danger: {
-    bg: 'bg-red-50 dark:bg-red-950/30',
-    border: 'border-red-200 dark:border-red-800',
-    icon: 'text-red-600 dark:text-red-400',
-    title: 'text-red-800 dark:text-red-200',
+    bg: 'bg-red-500/5',
+    border: 'border-red-500/20',
+    icon: 'text-red-400',
+    title: 'text-red-300',
   },
 };
 
@@ -79,7 +79,7 @@ export function Callout({ type = 'info', title, children }: CalloutProps) {
           <p className={`font-semibold text-sm mb-1 ${styles.title}`}>
             {displayTitle}
           </p>
-          <div className="text-sm text-slate-700 dark:text-slate-300 prose-sm">
+          <div className="text-sm text-slate-300 prose-sm">
             {children}
           </div>
         </div>

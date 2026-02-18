@@ -15,15 +15,15 @@ export function StepList({ steps }: StepListProps) {
       {steps.map((step, index) => (
         <div key={index} className="flex gap-4">
           <div className="flex-shrink-0">
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-semibold">
+            <div className="w-8 h-8 rounded-full bg-teal-500 text-white flex items-center justify-center text-sm font-semibold">
               {index + 1}
             </div>
           </div>
           <div className="flex-1 min-w-0 pt-0.5">
-            <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
+            <h4 className="font-semibold text-white mb-2">
               {step.title}
             </h4>
-            <div className="text-slate-600 dark:text-slate-400 text-sm">
+            <div className="text-slate-400 text-sm">
               {step.content}
             </div>
           </div>
@@ -43,15 +43,15 @@ export function Step({ number, title, children }: StepProps) {
   return (
     <div className="flex gap-4 my-6">
       <div className="flex-shrink-0">
-        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-semibold">
+        <div className="w-8 h-8 rounded-full bg-teal-500 text-white flex items-center justify-center text-sm font-semibold">
           {number}
         </div>
       </div>
       <div className="flex-1 min-w-0 pt-0.5">
-        <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
+        <h4 className="font-semibold text-white mb-2">
           {title}
         </h4>
-        <div className="text-slate-600 dark:text-slate-400 text-sm">
+        <div className="text-slate-400 text-sm">
           {children}
         </div>
       </div>

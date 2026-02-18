@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 
@@ -32,142 +31,9 @@ function BuiltByBadge({ size = 'sm' }: { size?: 'sm' | 'md' }) {
 }
 
 export function Landing() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-teal-500/30">
-      {/* ── Subtle grid pattern overlay ── */}
-      <div
-        className="fixed inset-0 opacity-[0.03] pointer-events-none"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-        }}
-      />
-
-      {/* ══════════════════════════════════════════════════════════════════
-          NAVIGATION
-      ══════════════════════════════════════════════════════════════════ */}
-      <nav className="border-b border-white/5 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-8">
-              <Link to="/" className="flex items-center gap-2.5">
-                <span className="text-2xl">📟</span>
-                <span className="text-xl font-bold text-white tracking-tight">
-                  OnCallShift
-                </span>
-              </Link>
-
-              {/* Desktop Navigation */}
-              <div className="hidden lg:flex items-center gap-1">
-                <div className="relative group">
-                  <button className="px-3 py-2 text-sm font-medium text-slate-400 hover:text-white rounded-lg hover:bg-white/5 flex items-center gap-1 transition-colors">
-                    Product
-                    <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <div className="absolute left-0 top-full pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                    <div className="bg-slate-900 rounded-xl shadow-2xl shadow-black/50 border border-white/10 p-2 w-64 backdrop-blur-xl">
-                      <Link to="/product/on-call-scheduling" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">On-Call Scheduling</Link>
-                      <Link to="/product/incident-management" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Incident Management</Link>
-                      <Link to="/product/escalation-policies" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Escalation Policies</Link>
-                      <Link to="/product/ai-diagnosis" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">AI Diagnosis</Link>
-                      <Link to="/product/integrations" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Integrations</Link>
-                      <Link to="/product/mobile-app" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Mobile App</Link>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="relative group">
-                  <button className="px-3 py-2 text-sm font-medium text-slate-400 hover:text-white rounded-lg hover:bg-white/5 flex items-center gap-1 transition-colors">
-                    Solutions
-                    <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <div className="absolute left-0 top-full pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                    <div className="bg-slate-900 rounded-xl shadow-2xl shadow-black/50 border border-white/10 p-2 w-72 backdrop-blur-xl">
-                      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1 px-3 pt-1">Alternatives</div>
-                      <Link to="/alternatives/pagerduty" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">PagerDuty Alternative</Link>
-                      <Link to="/alternatives/opsgenie" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Opsgenie Alternative</Link>
-                      <div className="border-t border-white/5 my-1.5"></div>
-                      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1 px-3">Migration</div>
-                      <Link to="/migrate/from-opsgenie" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-amber-400 font-medium transition-colors">Migrate from Opsgenie</Link>
-                      <Link to="/migrate/from-pagerduty" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Migrate from PagerDuty</Link>
-                    </div>
-                  </div>
-                </div>
-
-                <Link to="/pricing" className="px-3 py-2 text-sm font-medium text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors">
-                  Pricing
-                </Link>
-
-                <div className="relative group">
-                  <button className="px-3 py-2 text-sm font-medium text-slate-400 hover:text-white rounded-lg hover:bg-white/5 flex items-center gap-1 transition-colors">
-                    Resources
-                    <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <div className="absolute left-0 top-full pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                    <div className="bg-slate-900 rounded-xl shadow-2xl shadow-black/50 border border-white/10 p-2 w-56 backdrop-blur-xl">
-                      <Link to="/docs" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Documentation</Link>
-                      <Link to="/help" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Help Center</Link>
-                      <a href="/api-docs" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">API Reference</a>
-                      <Link to="/blog" className="block px-3 py-2.5 rounded-lg hover:bg-white/5 text-sm text-slate-300 hover:text-white transition-colors">Blog</Link>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Link to="/login" className="hidden md:block">
-                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white hover:bg-white/5">
-                  Login
-                </Button>
-              </Link>
-              <Link to="/register">
-                <Button size="sm" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold shadow-lg shadow-teal-500/20">
-                  Start Free Trial
-                </Button>
-              </Link>
-              <button
-                className="lg:hidden p-2 text-slate-400 hover:text-white"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  {mobileMenuOpen ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  )}
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {/* Mobile Menu */}
-          {mobileMenuOpen && (
-            <div className="lg:hidden mt-4 pb-4 border-t border-white/5 pt-4">
-              <div className="space-y-1">
-                <Link to="/product/on-call-scheduling" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">On-Call Scheduling</Link>
-                <Link to="/product/incident-management" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Incident Management</Link>
-                <Link to="/pricing" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Pricing</Link>
-                <Link to="/migrate/from-opsgenie" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-amber-400">Migrate from Opsgenie</Link>
-                <Link to="/migrate/from-pagerduty" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Migrate from PagerDuty</Link>
-                <Link to="/docs" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Documentation</Link>
-                <Link to="/login" className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Login</Link>
-              </div>
-            </div>
-          )}
-        </div>
-      </nav>
-
-      {/* ══════════════════════════════════════════════════════════════════
-          HERO SECTION
-      ══════════════════════════════════════════════════════════════════ */}
+    <>
+      {/* ── HERO SECTION ── */}
       <section className="relative overflow-hidden">
         {/* Glow effects */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-teal-500/10 rounded-full blur-[150px] pointer-events-none" />
@@ -248,9 +114,7 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          PROBLEM / SOLUTION
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── PROBLEM / SOLUTION ── */}
       <section className="relative py-24">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-14">
@@ -290,10 +154,8 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          FEATURES
-      ══════════════════════════════════════════════════════════════════ */}
-      <section className="relative py-24 border-t border-white/5">
+      {/* ── FEATURES ── */}
+      <section id="features" className="relative py-24 border-t border-white/5 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Built for the AI Era</h2>
@@ -303,7 +165,6 @@ export function Landing() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 max-w-6xl mx-auto">
-            {/* Highlight cards */}
             <FeatureCard
               icon="🏗️"
               title="Terraform Provider"
@@ -338,7 +199,7 @@ export function Landing() {
                 <><strong>80% target</strong> auto-resolution rate</>,
                 'Human review for novel problems only',
               ]}
-              link={{ to: '/product/ai-diagnosis', label: 'See how it works →' }}
+              link={{ to: '/product#ai-diagnosis', label: 'See how it works →' }}
             />
             <FeatureCard
               icon="🔮"
@@ -349,7 +210,7 @@ export function Landing() {
                 'Auto-scale before traffic spikes hit',
                 'Risk scoring for deployments',
               ]}
-              link={{ to: '/product/predictive-ai', label: 'Learn more →' }}
+              link={{ to: '/product#ai-diagnosis', label: 'Learn more →' }}
             />
             <FeatureCard
               icon="☁️"
@@ -360,7 +221,7 @@ export function Landing() {
                 'Root cause analysis in seconds',
                 'Your credentials, your data, your control',
               ]}
-              link={{ to: '/product/cloud-investigation', label: 'Learn more →' }}
+              link={{ to: '/product#ai-diagnosis', label: 'Learn more →' }}
             />
             <FeatureCard
               icon="💻"
@@ -393,7 +254,7 @@ export function Landing() {
                 'Execute runbooks from phone',
                 'AI chat on mobile',
               ]}
-              link={{ to: '/product/mobile-app', label: 'Learn more →' }}
+              link={{ to: '/product#mobile-app', label: 'Learn more →' }}
             />
             <FeatureCard
               icon="🔄"
@@ -410,10 +271,8 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          DEVOPS INTEGRATION
-      ══════════════════════════════════════════════════════════════════ */}
-      <section className="relative py-24 border-t border-white/5">
+      {/* ── DEVOPS INTEGRATION ── */}
+      <section id="integrations" className="relative py-24 border-t border-white/5 scroll-mt-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl md:text-3xl font-bold text-white text-center mb-3">
             Built for the Modern DevOps Stack
@@ -481,10 +340,8 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          COMPARISON TABLE
-      ══════════════════════════════════════════════════════════════════ */}
-      <section className="relative py-24 border-t border-white/5">
+      {/* ── COMPARISON TABLE ── */}
+      <section id="comparison" className="relative py-24 border-t border-white/5 scroll-mt-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-4">
             Built by DevOps Veterans, for DevOps Teams
@@ -537,9 +394,7 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          OPSGENIE MIGRATION CTA
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── OPSGENIE MIGRATION CTA ── */}
       <section className="relative py-20 border-t border-white/5">
         <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-amber-500/5 pointer-events-none" />
         <div className="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -559,9 +414,7 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          TESTIMONIALS
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── TESTIMONIALS ── */}
       <section className="relative py-24 border-t border-white/5">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-14">
@@ -603,9 +456,7 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          FINAL CTA
-      ══════════════════════════════════════════════════════════════════ */}
+      {/* ── FINAL CTA ── */}
       <section className="relative py-24 border-t border-white/5 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-teal-500/10 via-transparent to-cyan-500/10 pointer-events-none" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-teal-500/10 rounded-full blur-[200px] pointer-events-none" />
@@ -631,111 +482,7 @@ export function Landing() {
           </div>
         </div>
       </section>
-
-      {/* ══════════════════════════════════════════════════════════════════
-          FOOTER
-      ══════════════════════════════════════════════════════════════════ */}
-      <footer className="border-t border-white/5 pt-16 pb-10 bg-slate-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-10 md:grid-cols-5">
-            <div className="md:col-span-2">
-              <div className="flex items-center gap-2.5 mb-4">
-                <span className="text-2xl">📟</span>
-                <span className="font-bold text-lg text-white">OnCallShift</span>
-              </div>
-              <p className="text-sm text-slate-500 mb-5 max-w-xs leading-relaxed">
-                On-call scheduling and incident management for teams who ship fast.
-              </p>
-
-              {/* Built by WorkerMill — footer badge */}
-              <a
-                href="https://workermill.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/5 hover:border-teal-500/30 transition-colors group mb-6"
-              >
-                <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-lg shadow-teal-500/20 flex-shrink-0">
-                  <WorkerMillIcon className="w-4 h-4 text-white" />
-                </span>
-                <span className="flex flex-col">
-                  <span className="text-xs text-slate-500 group-hover:text-slate-400 transition-colors leading-tight">Built by</span>
-                  <span className="text-sm font-semibold text-white group-hover:text-teal-400 transition-colors leading-tight">WorkerMill</span>
-                </span>
-              </a>
-
-              <div className="flex gap-4">
-                <a href="#" className="text-slate-600 hover:text-white transition-colors text-sm">
-                  𝕏
-                </a>
-                <a href="#" className="text-slate-600 hover:text-white transition-colors text-sm">
-                  GitHub
-                </a>
-                <a href="#" className="text-slate-600 hover:text-white transition-colors text-sm">
-                  LinkedIn
-                </a>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-white mb-4 text-sm">Product</h4>
-              <ul className="space-y-2.5 text-sm">
-                <li><Link to="/product/on-call-scheduling" className="text-slate-500 hover:text-white transition-colors">On-Call Scheduling</Link></li>
-                <li><Link to="/product/incident-management" className="text-slate-500 hover:text-white transition-colors">Incident Management</Link></li>
-                <li><Link to="/product/escalation-policies" className="text-slate-500 hover:text-white transition-colors">Escalation Policies</Link></li>
-                <li><Link to="/product/ai-diagnosis" className="text-slate-500 hover:text-white transition-colors">AI Diagnosis</Link></li>
-                <li><Link to="/product/integrations" className="text-slate-500 hover:text-white transition-colors">Integrations</Link></li>
-                <li><Link to="/pricing" className="text-slate-500 hover:text-white transition-colors">Pricing</Link></li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-white mb-4 text-sm">Resources</h4>
-              <ul className="space-y-2.5 text-sm">
-                <li><Link to="/docs" className="text-slate-500 hover:text-white transition-colors">Documentation</Link></li>
-                <li><Link to="/help" className="text-slate-500 hover:text-white transition-colors">Help Center</Link></li>
-                <li><a href="/api-docs" className="text-slate-500 hover:text-white transition-colors">API Reference</a></li>
-                <li><Link to="/blog" className="text-slate-500 hover:text-white transition-colors">Blog</Link></li>
-                <li><Link to="/demo" className="text-slate-500 hover:text-white transition-colors">Live Demo</Link></li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-white mb-4 text-sm">Company</h4>
-              <ul className="space-y-2.5 text-sm">
-                <li><Link to="/company/about" className="text-slate-500 hover:text-white transition-colors">About</Link></li>
-                <li><Link to="/company/security" className="text-slate-500 hover:text-white transition-colors">Security</Link></li>
-                <li><Link to="/legal/privacy" className="text-slate-500 hover:text-white transition-colors">Privacy</Link></li>
-                <li><Link to="/legal/terms" className="text-slate-500 hover:text-white transition-colors">Terms</Link></li>
-                <li><Link to="/company/contact" className="text-slate-500 hover:text-white transition-colors">Contact</Link></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="border-t border-white/5 mt-12 pt-8">
-            <div className="text-center mb-4">
-              <p className="text-slate-600 text-sm">
-                Built by DevOps engineers who get paged. Questions?{' '}
-                <a href="mailto:jarod@oncallshift.com" className="text-teal-500 hover:text-teal-400 transition-colors">
-                  Email the founder
-                </a>
-              </p>
-            </div>
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <p className="text-sm text-slate-600">
-                &copy; 2026 OnCallShift &middot;{' '}
-                <a href="https://workermill.com" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-teal-400 transition-colors">
-                  A WorkerMill product
-                </a>
-              </p>
-              <div className="flex items-center gap-4 text-sm text-slate-600">
-                <span>🔒 SOC 2 Type II</span>
-                <span>99.9% Uptime SLA</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </>
   );
 }
 

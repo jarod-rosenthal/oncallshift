@@ -36,7 +36,7 @@ export function DocsQuickStart() {
 
         <Step number={1} title="Create your account">
           <p>
-            Sign up at <a href="https://oncallshift.com/register">oncallshift.com/register</a> with
+            Sign up at <a href="https://oncallshift.com/register" className="text-teal-400 hover:underline">oncallshift.com/register</a> with
             your work email. You'll receive a verification email to confirm your account.
           </p>
           <p className="mt-2">
@@ -62,7 +62,7 @@ export function DocsQuickStart() {
             responsible for. To create a service:
           </p>
           <ol className="list-decimal ml-6 mt-2 space-y-1">
-            <li>Navigate to <strong>Configure → Services</strong></li>
+            <li>Navigate to <strong>Configure &rarr; Services</strong></li>
             <li>Click <strong>Create Service</strong></li>
             <li>Enter a name and description</li>
             <li>Select an escalation policy (you can create one in the next step)</li>
@@ -83,7 +83,7 @@ export function DocsQuickStart() {
         <Step number={5} title="Set up on-call schedules">
           <p>
             Create schedules to automatically rotate who's on-call. Navigate to{' '}
-            <strong>People → Schedules</strong> and create a new schedule with:
+            <strong>People &rarr; Schedules</strong> and create a new schedule with:
           </p>
           <ul className="list-disc ml-6 mt-2 space-y-1">
             <li>Rotation type (daily, weekly, custom)</li>
@@ -95,7 +95,7 @@ export function DocsQuickStart() {
         <Step number={6} title="Connect your monitoring tools">
           <p>
             Set up integrations to automatically create incidents from your monitoring tools.
-            Go to <strong>Settings → Integrations</strong> and follow the setup guide for:
+            Go to <strong>Settings &rarr; Integrations</strong> and follow the setup guide for:
           </p>
           <ul className="list-disc ml-6 mt-2 space-y-1">
             <li>Prometheus/Alertmanager</li>
@@ -108,7 +108,7 @@ export function DocsQuickStart() {
         <Callout type="info">
           <p>
             <strong>Need to migrate from another platform?</strong> Check out our{' '}
-            <Link to="/docs/migration/opsgenie" className="text-blue-600 hover:underline">
+            <Link to="/docs/migration/opsgenie" className="text-teal-400 hover:underline">
               migration guides
             </Link>{' '}
             for PagerDuty and Opsgenie.
@@ -124,22 +124,22 @@ export function DocsQuickStart() {
 
         <ul className="list-disc ml-6 space-y-2">
           <li>
-            <Link to="/docs/ai" className="text-blue-600 hover:underline">
+            <Link to="/docs/ai" className="text-teal-400 hover:underline">
               <strong>AI Diagnosis</strong>
             </Link>{' '}
-            — Let AI analyze incidents and suggest resolutions
+            -- Let AI analyze incidents and suggest resolutions
           </li>
           <li>
-            <Link to="/docs/ai/runbooks" className="text-blue-600 hover:underline">
+            <Link to="/docs/ai/runbooks" className="text-teal-400 hover:underline">
               <strong>Runbooks</strong>
             </Link>{' '}
-            — Automate incident response with step-by-step procedures
+            -- Automate incident response with step-by-step procedures
           </li>
           <li>
-            <Link to="/docs/integrations/slack" className="text-blue-600 hover:underline">
+            <Link to="/docs/integrations/slack" className="text-teal-400 hover:underline">
               <strong>Slack Integration</strong>
             </Link>{' '}
-            — Manage incidents directly from Slack
+            -- Manage incidents directly from Slack
           </li>
         </ul>
 

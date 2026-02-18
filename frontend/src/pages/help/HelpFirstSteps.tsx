@@ -32,7 +32,7 @@ export function HelpFirstSteps() {
         <p>
           After receiving your invitation email, click the link to set your password. Once
           you've done that, you can log in at{' '}
-          <a href="https://oncallshift.com/login" className="text-blue-600 hover:underline">
+          <a href="https://oncallshift.com/login" className="text-teal-400 hover:underline">
             oncallshift.com/login
           </a>
           .
@@ -49,16 +49,16 @@ export function HelpFirstSteps() {
 
         <ul className="list-disc ml-6 space-y-2 mt-4">
           <li>
-            <strong>Active Incidents</strong> — Any ongoing incidents that need attention
+            <strong>Active Incidents</strong> -- Any ongoing incidents that need attention
           </li>
           <li>
-            <strong>Your On-Call Status</strong> — Whether you're currently on-call
+            <strong>Your On-Call Status</strong> -- Whether you're currently on-call
           </li>
           <li>
-            <strong>Upcoming Shifts</strong> — Your scheduled on-call shifts
+            <strong>Upcoming Shifts</strong> -- Your scheduled on-call shifts
           </li>
           <li>
-            <strong>Recent Activity</strong> — What's been happening in your organization
+            <strong>Recent Activity</strong> -- What's been happening in your organization
           </li>
         </ul>
 
@@ -91,8 +91,8 @@ export function HelpFirstSteps() {
         <Step number={3} title="Install the mobile app">
           <p>
             Download the OnCallShift app for{' '}
-            <a href="#" className="text-blue-600 hover:underline">iOS</a> or{' '}
-            <a href="#" className="text-blue-600 hover:underline">Android</a>. The mobile app
+            <a href="#" className="text-teal-400 hover:underline">iOS</a> or{' '}
+            <a href="#" className="text-teal-400 hover:underline">Android</a>. The mobile app
             lets you:
           </p>
           <ul className="list-disc ml-6 mt-2 space-y-1">
@@ -117,19 +117,19 @@ export function HelpFirstSteps() {
 
         <ol className="list-decimal ml-6 space-y-3 mt-4">
           <li>
-            <strong>Acknowledge the incident</strong> — This stops escalation and lets your
+            <strong>Acknowledge the incident</strong> -- This stops escalation and lets your
             team know you're on it
           </li>
           <li>
-            <strong>Investigate the issue</strong> — Check the incident details, view AI
+            <strong>Investigate the issue</strong> -- Check the incident details, view AI
             diagnosis if available
           </li>
           <li>
-            <strong>Take action</strong> — Follow runbooks, execute fixes, or escalate if
+            <strong>Take action</strong> -- Follow runbooks, execute fixes, or escalate if
             needed
           </li>
           <li>
-            <strong>Resolve the incident</strong> — Once the issue is fixed, resolve it and
+            <strong>Resolve the incident</strong> -- Once the issue is fixed, resolve it and
             add notes
           </li>
         </ol>
@@ -140,18 +140,18 @@ export function HelpFirstSteps() {
 
         <ul className="list-disc ml-6 space-y-2">
           <li>
-            Check the <Link to="/help/faq" className="text-blue-600 hover:underline">FAQ</Link>{' '}
+            Check the <Link to="/help/faq" className="text-teal-400 hover:underline">FAQ</Link>{' '}
             for common questions
           </li>
           <li>
             Visit our{' '}
-            <Link to="/help/troubleshooting" className="text-blue-600 hover:underline">
+            <Link to="/help/troubleshooting" className="text-teal-400 hover:underline">
               Troubleshooting guide
             </Link>{' '}
             for known issues
           </li>
           <li>
-            <Link to="/help/contact" className="text-blue-600 hover:underline">
+            <Link to="/help/contact" className="text-teal-400 hover:underline">
               Contact support
             </Link>{' '}
             for personalized help

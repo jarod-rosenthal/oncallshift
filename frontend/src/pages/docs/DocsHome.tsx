@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { DocsLayout, docsNav } from '../../components/docs';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 
 const categories = [
   {
@@ -80,10 +79,10 @@ export function DocsHome() {
       <div className="max-w-4xl">
         {/* Hero */}
         <div className="mb-12">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+          <h1 className="text-3xl font-bold text-white mb-4">
             OnCallShift Documentation
           </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400">
+          <p className="text-lg text-slate-400">
             Everything you need to set up, configure, and master OnCallShift for your team.
           </p>
         </div>
@@ -92,26 +91,22 @@ export function DocsHome() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-12">
           {categories.map((category) => (
             <Link key={category.href} to={category.href}>
-              <Card className="h-full hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-700 transition-all">
-                <CardHeader className="pb-2">
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-2">
-                    {category.icon}
-                  </div>
-                  <CardTitle className="text-base">{category.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {category.description}
-                  </p>
-                </CardContent>
-              </Card>
+              <div className="h-full rounded-xl border border-white/5 bg-white/[0.03] p-5 hover:border-teal-500/30 hover:bg-white/[0.05] transition-all">
+                <div className="w-10 h-10 rounded-lg bg-teal-500/10 text-teal-400 flex items-center justify-center mb-3">
+                  {category.icon}
+                </div>
+                <h3 className="text-base font-semibold text-white mb-1">{category.title}</h3>
+                <p className="text-sm text-slate-400">
+                  {category.description}
+                </p>
+              </div>
             </Link>
           ))}
         </div>
 
         {/* Popular Articles */}
-        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">
+        <div className="bg-white/[0.02] rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-white mb-4">
             Popular articles
           </h2>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -119,9 +114,9 @@ export function DocsHome() {
               <Link
                 key={article.href}
                 to={article.href}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors text-sm text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/[0.05] transition-colors text-sm text-slate-300 hover:text-teal-400"
               >
-                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 {article.title}
@@ -131,23 +126,23 @@ export function DocsHome() {
         </div>
 
         {/* API Docs Link */}
-        <div className="mt-8 p-6 border border-slate-200 dark:border-slate-700 rounded-xl">
+        <div className="mt-8 p-6 border border-white/5 rounded-xl">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center flex-shrink-0">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-1">
+              <h3 className="font-semibold text-white mb-1">
                 Interactive API Reference
               </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+              <p className="text-sm text-slate-400 mb-3">
                 Explore our full API with interactive examples and try requests in real-time.
               </p>
               <a
                 href="/api-docs"
-                className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                className="inline-flex items-center gap-2 text-sm font-medium text-teal-400 hover:underline"
               >
                 Open API Docs
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
