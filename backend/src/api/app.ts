@@ -373,6 +373,7 @@ export function createApp(): Express {
   app.use('/api/v1/workflows', idempotencyMiddleware, workflowsRoutes);
   app.use('/api/v1/webhook-subscriptions', idempotencyMiddleware, webhookSubscriptionsRoutes);
   app.use('/api/v1/reports', idempotencyMiddleware, reportsRoutes);
+  app.use('/api/v1/waitlist', waitlistRoutes); // Public waitlist signup (no auth)
   app.use('/api/v1', conferenceBridgesRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
   app.use('/api/v1/postmortems', idempotencyMiddleware, postmortemsRoutes);
@@ -381,7 +382,6 @@ export function createApp(): Express {
   app.use('/api/v1/ai', aiRecommendationsRoutes); // AI-powered proactive recommendations
   app.use('/api/v1/api-keys', idempotencyMiddleware, apiKeysRoutes); // Organization API key management
   app.use('/api/v1/onboarding', onboardingRoutes); // AI-powered conversational onboarding
-  app.use('/api/v1/waitlist', waitlistRoutes); // Public waitlist signup
 
   // Serve static frontend files
   const frontendPath = path.join(__dirname, '../../frontend/dist');
