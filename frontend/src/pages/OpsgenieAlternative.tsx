@@ -11,8 +11,8 @@ export function OpsgenieAlternative() {
 
   const comparisonFeatures = [
     { feature: 'Standalone product', jira: 'No - requires JSM', oncallshift: 'Yes' },
-    { feature: 'Starting price', jira: '$21/agent/mo (JSM Premium)', oncallshift: '$0 (Free tier)' },
-    { feature: 'Unlimited users', jira: 'Per-agent pricing', oncallshift: 'Professional ($15/user)' },
+    { feature: 'Starting price', jira: '$21/agent/mo (JSM Premium)', oncallshift: 'Coming soon (Free tier available)' },
+    { feature: 'Unlimited users', jira: 'Per-agent pricing', oncallshift: 'Coming soon' },
     { feature: 'Migration complexity', jira: 'High (new platform)', oncallshift: 'Low (webhook compatible)' },
     { feature: 'Setup time', jira: 'Days to weeks', oncallshift: '< 30 minutes' },
     { feature: 'Atlassian lock-in', jira: 'Required', oncallshift: 'None' },
@@ -33,7 +33,7 @@ export function OpsgenieAlternative() {
     {
       title: 'Simple pricing',
       problem: "JSM's pricing is complex with multiple tiers and agent-based licensing. Costs can spiral quickly.",
-      solution: 'Clear per-user pricing. Free tier for small teams. Professional at $15/user/mo with everything included.',
+      solution: 'Clear per-user pricing. Free tier for small teams. Pricing details coming soon.',
     },
     {
       title: 'Faster migration',

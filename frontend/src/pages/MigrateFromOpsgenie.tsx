@@ -386,9 +386,8 @@ export function MigrateFromOpsgenie() {
                 What's the pricing difference?
               </summary>
               <p className="text-sm text-slate-400 mt-3">
-                OnCallShift Professional is $15/user/month (billed annually), which is
-                comparable to Opsgenie's pricing. Our free tier supports up to 5 users
-                with basic features.
+                We're finalizing our pricing plans. We'll have a free tier for small teams
+                and competitive paid plans. Join the waitlist to be notified when pricing is available.
               </p>
             </details>
           </div>

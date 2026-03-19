@@ -11,7 +11,7 @@ export function PagerDutyAlternative() {
     { feature: 'Cloud Investigation', pagerduty: 'Via integrations', oncallshift: 'Direct AWS/GCP/Azure', highlight: false },
     { feature: 'AI-powered diagnosis', pagerduty: 'AIOps add-on ($$$)', oncallshift: 'Included (BYOK)', highlight: false },
     { feature: 'SSO (SAML/OIDC)', pagerduty: 'Business tier+', oncallshift: 'Professional tier', highlight: false },
-    { feature: 'Starting price', pagerduty: '$21/user/mo', oncallshift: '$0 (Free tier)', highlight: false },
+    { feature: 'Starting price', pagerduty: '$21/user/mo', oncallshift: 'Coming soon (Free tier available)', highlight: false },
     { feature: 'Setup time', pagerduty: 'Days to weeks', oncallshift: '5 min (or via Terraform)', highlight: false },
   ];
 

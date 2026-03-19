@@ -29,7 +29,7 @@ export function ForSmallTeams() {
             </Link>
             <Link to="/pricing">
               <Button size="lg" variant="outline">
-                See Pricing
+                Learn More
               </Button>
             </Link>
           </div>
@@ -136,12 +136,12 @@ export function ForSmallTeams() {
             <Card className="border-2 border-green-500/20 bg-green-500/10">
               <CardContent className="pt-6">
                 <div className="text-2xl mb-3">✅</div>
-                <h3 className="font-bold text-green-300 mb-2">$9/user When You Grow</h3>
+                <h3 className="font-bold text-green-300 mb-2">Affordable Growth</h3>
                 <p className="text-sm text-green-200 mb-3">
-                  Starter tier unlocks unlimited AI, all channels (SMS, Voice), and escalation policies.
+                  Paid tiers unlock unlimited AI, all channels (SMS, Voice), and escalation policies.
                 </p>
                 <p className="text-xs text-green-300 italic">
-                  Not $41/user like PagerDuty.
+                  Pricing coming soon.
                 </p>
               </CardContent>
             </Card>
@@ -151,7 +151,7 @@ export function ForSmallTeams() {
                 <div className="text-2xl mb-3">✅</div>
                 <h3 className="font-bold text-green-300 mb-2">AI Included At Every Tier</h3>
                 <p className="text-sm text-green-200 mb-3">
-                  Even the free tier gets AI diagnosis. Pro tier ($19) gets AI execution. No enterprise upsell.
+                  Even the free tier gets AI diagnosis. Higher tiers get AI execution. No enterprise upsell.
                 </p>
                 <p className="text-xs text-green-300 italic">
                   We democratize AI, not paywall it.
@@ -205,45 +205,25 @@ export function ForSmallTeams() {
       <section className="bg-teal-500/10 py-16">
         <div className="container mx-auto px-4">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-2xl font-bold text-center mb-8 text-white">Real Example: 6-Person Startup</h2>
+            <h2 className="text-2xl font-bold text-center mb-8 text-white">Built for Small Teams</h2>
 
             <div className="bg-white/[0.03] rounded-lg shadow-lg p-8 border border-white/5">
-              <div className="grid md:grid-cols-2 gap-6 mb-6">
-                <div>
-                  <p className="text-sm text-slate-400 mb-1">Tier</p>
-                  <p className="text-2xl font-bold text-teal-400">Free</p>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-400 mb-1">Cost</p>
-                  <p className="text-2xl font-bold text-green-400">$0/month</p>
-                </div>
+              <div className="text-center mb-6">
+                <p className="text-2xl font-bold text-teal-400">Free Tier Available</p>
+                <p className="text-sm text-slate-400 mt-1">Pricing details coming soon</p>
               </div>
 
               <div className="border-t border-white/5 pt-6">
-                <p className="font-semibold mb-3 text-white">What You Get:</p>
+                <p className="font-semibold mb-3 text-white">What You'll Get on the Free Tier:</p>
                 <ul className="space-y-2 text-sm text-slate-300">
-                  <li>✓ 10 user accounts (only using 6)</li>
-                  <li>✓ 3 on-call schedules</li>
-                  <li>✓ AI diagnosis (10 incidents/month)</li>
+                  <li>✓ Multiple user accounts</li>
+                  <li>✓ On-call schedules</li>
+                  <li>✓ AI diagnosis</li>
                   <li>✓ Email + Push notifications</li>
                   <li>✓ Native iOS & Android apps</li>
-                  <li>✓ 30-day incident history</li>
+                  <li>✓ Incident history</li>
                   <li>✓ Community support</li>
                 </ul>
-              </div>
-
-              <div className="mt-6 pt-6 border-t border-white/5 bg-green-500/10 rounded-lg p-4">
-                <p className="font-semibold text-green-300 mb-2">Compared to PagerDuty:</p>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-slate-400">PagerDuty (6 users):</p>
-                    <p className="text-2xl font-bold text-slate-300">~$150/mo</p>
-                  </div>
-                  <div>
-                    <p className="text-green-300 font-semibold">Your Savings:</p>
-                    <p className="text-2xl font-bold text-green-400">$1,800/year</p>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -256,7 +236,7 @@ export function ForSmallTeams() {
           <Card className="border-2 border-teal-500/20">
             <CardContent className="pt-8 pb-8 text-center">
               <p className="text-lg italic text-slate-300 mb-6">
-                "We're a 4-person team and PagerDuty wanted $1,200/year minimum. OnCallShift's free tier does everything we need. When we grow, the pricing actually makes sense."
+                "We're a 4-person team and PagerDuty wanted us to pay for seats we don't use. OnCallShift's free tier does everything we need. When we grow, we know it'll scale with us."
               </p>
               <div className="flex items-center justify-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 font-bold">

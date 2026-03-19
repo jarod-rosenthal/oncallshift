@@ -73,7 +73,7 @@ export function WhyOnCallShift() {
                 </tr>
                 <tr className="border-b border-white/5">
                   <td className="py-3 px-4 font-medium text-white">Starting Price</td>
-                  <td className="py-3 px-4 text-green-400">$0/month (10 users free)</td>
+                  <td className="py-3 px-4 text-green-400">Coming soon</td>
                   <td className="py-3 px-4 text-slate-400">$21/user/month</td>
                 </tr>
               </tbody>
@@ -171,7 +171,7 @@ export function WhyOnCallShift() {
                   </tr>
                   <tr className="border-b border-white/5">
                     <td className="py-3 px-4 font-medium text-white">Pricing</td>
-                    <td className="py-3 px-4 text-green-400">Standalone ($0-19/user)</td>
+                    <td className="py-3 px-4 text-green-400">Coming soon</td>
                     <td className="py-3 px-4 text-red-400">Forces JSM bundle</td>
                   </tr>
                   <tr className="border-b border-white/5">
@@ -304,45 +304,17 @@ export function WhyOnCallShift() {
       {/* Cost Comparison */}
       <section className="bg-white/[0.02] py-16">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-3xl font-bold text-center mb-12 text-white">Real Cost Comparison</h2>
-
-          <div className="bg-white/[0.03] border-2 border-white/5 rounded-lg overflow-hidden">
-            <div className="bg-white/[0.02] px-6 py-4 border-b-2 border-white/5">
-              <p className="font-semibold text-white">Example: 20-person engineering team</p>
-            </div>
-            <div className="p-6">
-              <div className="space-y-4">
-                <div className="flex justify-between items-center py-3 border-b border-white/5">
-                  <div>
-                    <p className="font-semibold text-white">PagerDuty Professional</p>
-                    <p className="text-sm text-slate-400">20 users × $41/month (no AI)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-slate-300">$820/mo</p>
-                </div>
-                <div className="flex justify-between items-center py-3 border-b border-white/5">
-                  <div>
-                    <p className="font-semibold text-white">OpsGenie Standard + JSM</p>
-                    <p className="text-sm text-slate-400">20 users × $35/month (estimated)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-slate-300">$700/mo</p>
-                </div>
-                <div className="flex justify-between items-center py-3 bg-green-500/10 px-4 rounded-lg">
-                  <div>
-                    <p className="font-semibold text-green-300">OnCallShift Professional</p>
-                    <p className="text-sm text-green-400">20 users × $19/month (AI included)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-green-400">$380/mo</p>
-                </div>
-              </div>
-              <div className="mt-6 pt-6 border-t-2 border-white/5">
-                <div className="flex justify-between items-center">
-                  <p className="text-lg font-semibold text-white">Your Savings with OnCallShift:</p>
-                  <p className="text-3xl font-bold text-green-400">$5,280/year</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div className="max-w-4xl mx-auto text-center">
+            <h2 className="text-3xl font-bold mb-4 text-white">Competitive Pricing</h2>
+            <p className="text-slate-400 mb-8 max-w-2xl mx-auto">
+              Pricing details coming soon. We're building an incident platform that delivers enterprise features
+              at a fraction of the cost of legacy tools.
+            </p>
+            <Link to="/register">
+              <Button className="bg-teal-500 hover:bg-teal-400 text-slate-950">
+                Join Waitlist for Early Pricing
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
