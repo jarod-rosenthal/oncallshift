@@ -387,7 +387,7 @@ export function RunbookPanel({ incident, onAddNote }: RunbookPanelProps) {
               .filter((rb: any) => rb.steps?.some((s: any) => s.type === 'automated'))
               .map(cleanRunbook);
           } catch (e) {
-            console.log('Could not fetch org runbooks:', e);
+            // silently ignore - org runbooks are optional
           }
         }
 

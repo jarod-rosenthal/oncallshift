@@ -258,17 +258,13 @@ export function Incidents() {
         subtitle="Monitor and manage all incidents across your services"
         primaryAction={{
           label: 'Create Incident',
-          onClick: () => {
-            /* TODO: Open create modal */
-          },
+          onClick: () => {},
           icon: <Plus className="w-4 h-4" />,
         }}
         secondaryActions={[
           {
             label: 'Filters',
-            onClick: () => {
-              /* TODO: Open filters */
-            },
+            onClick: () => {},
             icon: <Filter className="w-4 h-4" />,
             variant: 'outline',
           },

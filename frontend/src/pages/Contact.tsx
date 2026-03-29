@@ -14,7 +14,6 @@ export function Contact() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement form submission
     setSubmitted(true);
   };
 

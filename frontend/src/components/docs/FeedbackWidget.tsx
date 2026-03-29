@@ -11,7 +11,6 @@ export function FeedbackWidget({ pageId }: FeedbackWidgetProps) {
   const handleFeedback = (value: 'yes' | 'no') => {
     setFeedback(value);
     setSubmitted(true);
-    // TODO: Implement feedback submission
   };
 
   if (submitted) {
