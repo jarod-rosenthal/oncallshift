@@ -173,3 +173,11 @@ THEME_IMPLEMENTATION_PROGRESS.md
 # Operations scripts (local only)
 # -----------------------------------------------------------------------------
 scripts/check-terraform-secrets.sh
+
+# -----------------------------------------------------------------------------
+# Development-only files (not for public repo)
+# -----------------------------------------------------------------------------
+test-api.sh
+backend/demo.html
+mobile/index.js.backup
+mobile/docs/
