@@ -1,6 +1,13 @@
 {
   "name": "oncallshift-mobile",
   "version": "1.0.0",
+  "description": "OnCallShift mobile app - React Native + Expo",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jarod-rosenthal/oncallshift.git",
+    "directory": "mobile"
+  },
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
