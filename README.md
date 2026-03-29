@@ -1,8 +1,10 @@
-# OnCallShift - Incident Management Platform
+# OnCallShift
 
-A cost-effective incident management and on-call platform built on AWS, providing core PagerDuty-like features at a fraction of the cost (~$5-10/user/month vs $29-49/user/month).
+An open-source incident management and on-call scheduling platform. Built with TypeScript across the full stack.
 
-**Live URL:** https://oncallshift.com
+**Website:** [oncallshift.com](https://oncallshift.com)
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ---
 
@@ -10,16 +12,15 @@ A cost-effective incident management and on-call platform built on AWS, providin
 
 ### Core Platform
 - **Incident Management** - Create, acknowledge, resolve with full audit trail
-- **Escalation Policies** - Multi-level PagerDuty-style escalation with automatic timeout advancement
+- **Escalation Policies** - Multi-level escalation with automatic timeout advancement
 - **On-Call Schedules** - Schedule management with member assignment and overrides
 - **Multi-Channel Notifications** - Push, Email, SMS with delivery tracking
 - **User Actions** - Reassign, snooze, manual escalate, add responders
 - **Status Pages** - Public and private status pages for stakeholder communication
 
 ### Mobile App (iOS & Android)
-- 31 React Native screens for full incident management
+- React Native screens for full incident management
 - Push notifications with deep linking
-- Incident list, detail, and actions
 - On-call schedule view with overrides
 - Analytics dashboard
 - OTA updates via EAS Update
@@ -28,12 +29,11 @@ A cost-effective incident management and on-call platform built on AWS, providin
 - **AI Diagnosis** - Claude-powered incident analysis and chat
 - **Runbook Automation** - AI executes runbook steps in sandboxed environments
 - **Cloud Investigation** - Query AWS/GCP/Azure resources during incidents
-- **AI Recommendations** - Improvement suggestions based on historical data
+- **Semantic Import** - AI-powered screenshot/text import using Claude Vision
 
 ### Platform Migration
 - **PagerDuty Import** - One-click migration of users, teams, schedules, escalation policies
 - **Opsgenie Import** - Full configuration import with key preservation
-- **Semantic Import** - AI-powered screenshot/text import using Claude Vision
 
 ### Developer Integrations
 - **MCP Server** - AI assistant integration for Claude Code, Cursor, and other MCP clients
@@ -46,89 +46,99 @@ A cost-effective incident management and on-call platform built on AWS, providin
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│               Mobile App (Expo/React Native)                │
-│                     Web App (React)                         │
-│                   MCP Server / Terraform                    │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ HTTPS
-┌─────────────────────▼───────────────────────────────────────┐
-│                Application Load Balancer                    │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-    ┌─────────────────┼─────────────────┐
-    │                 │                 │
-┌───▼───┐   ┌─────────▼─────────┐   ┌───▼───────────────┐
-│  API  │   │  Background       │   │  Escalation       │
-│Service│   │  Workers (5)      │   │  Timer            │
-└───┬───┘   └─────────┬─────────┘   └───────┬───────────┘
-    │                 │                     │
-    └────────┬────────┴─────────────────────┘
-             │
-    ┌────────▼────────┐         ┌───────────────┐
-    │      RDS        │         │     SQS       │
-    │   PostgreSQL    │         │    Queues     │
-    └─────────────────┘         └───────────────┘
+                      Mobile App (Expo/React Native)
+                        Web App (React + Vite)
+                      MCP Server / Terraform Provider
+                                |
+                              HTTPS
+                                |
+                    Application Load Balancer
+                                |
+            +-------------------+-------------------+
+            |                   |                   |
+         API Service     Background Workers    Escalation Timer
+            |                   |                   |
+            +--------+----------+-------------------+
+                     |
+              +------+------+         +-------------+
+              |  PostgreSQL |         |  SQS Queues  |
+              +-------------+         +-------------+
 ```
 
 ### Background Workers
 | Worker | Purpose |
 |--------|---------|
-| `alert-processor` | Processes incoming alerts from SQS → creates incidents |
+| `alert-processor` | Processes incoming alerts from SQS, creates incidents |
 | `notification-worker` | Delivers notifications via Email/Push/SMS |
 | `escalation-timer` | Auto-advances escalation steps every 30s |
 | `snooze-expiry` | Processes expired incident snoozes |
 | `report-scheduler` | Generates scheduled reports |
 
-### AWS Services
-- **ECS Fargate**: API + 5 background workers
-- **RDS PostgreSQL**: Primary database
-- **SQS**: Alert and notification queues with DLQs
-- **Cognito**: JWT authentication
-- **CloudFront + S3**: Frontend CDN hosting
-- **SES**: Email delivery (noreply@oncallshift.com)
-- **SNS**: SMS notifications
-- **Secrets Manager**: Credential storage
-
-### Cost
-- **Monthly:** ~$58/month base infrastructure
-- **Per User:** ~$3-6/month (for 10-20 users)
-- **Savings:** 87-90% cheaper than PagerDuty
-
 ---
 
 ## Quick Start
 
+### Prerequisites
+
+- Node.js 18+
+- PostgreSQL 14+
+- AWS account (for Cognito, SQS, SES, SNS)
+
 ### Local Development
 
 ```bash
-# Backend
+# Backend API
 cd backend
 npm install
-npm run dev          # localhost:3000
+cp .env.example .env    # Configure your environment variables
+npm run dev             # localhost:3000
 
-# Frontend
+# Web Frontend
 cd frontend
 npm install
-npm run dev          # localhost:5173
+npm run dev             # localhost:5173
 
-# Mobile
+# Mobile App
 cd mobile
 npm install
-npm start            # Expo dev server
+npm start               # Expo dev server
 ```
 
-### Deployment
+### Database Setup
 
 ```bash
-./deploy.sh          # Full deployment (ECR + ECS + CloudFront)
+cd backend
+npm run migrate         # Run database migrations
+npm run seed            # Seed test data (optional)
+```
+
+---
+
+## Project Structure
+
+```
+oncallshift/
+├── backend/                 # Express + TypeScript API
+│   ├── src/api/            # Routes and middleware
+│   ├── src/workers/        # Background processors
+│   └── src/shared/         # Models, utilities, middleware
+├── frontend/               # React + Vite web app
+│   ├── src/pages/          # Page components
+│   └── src/components/     # Shared components
+├── mobile/                 # React Native + Expo app
+│   ├── src/screens/        # Screen components
+│   └── src/services/       # API client, auth, push notifications
+├── packages/
+│   ├── oncallshift-mcp/    # MCP server for AI assistants
+│   └── terraform-provider-oncallshift/  # Terraform provider (Go)
+└── e2e/                    # Playwright E2E tests
 ```
 
 ---
 
 ## Packages
 
-### MCP Server (`packages/oncallshift-mcp`)
+### MCP Server
 
 Enable AI assistants to manage OnCallShift through natural language:
 
@@ -136,7 +146,6 @@ Enable AI assistants to manage OnCallShift through natural language:
 npx @oncallshift/mcp-server
 ```
 
-Configure in Claude Code/Cursor:
 ```json
 {
   "mcpServers": {
@@ -151,9 +160,9 @@ Configure in Claude Code/Cursor:
 }
 ```
 
-See [packages/oncallshift-mcp/README.md](packages/oncallshift-mcp/README.md) for full documentation.
+See [packages/oncallshift-mcp/README.md](packages/oncallshift-mcp/README.md) for details.
 
-### Terraform Provider (`packages/terraform-provider-oncallshift`)
+### Terraform Provider
 
 Manage OnCallShift resources as infrastructure-as-code:
 
@@ -170,93 +179,11 @@ resource "oncallshift_service" "api" {
 }
 ```
 
-See [packages/terraform-provider-oncallshift/README.md](packages/terraform-provider-oncallshift/README.md) for full documentation.
-
----
-
-## Directory Structure
-
-```
-pagerduty-lite/
-├── backend/                 # Express + TypeScript API
-│   ├── src/api/            # Routes and middleware
-│   ├── src/workers/        # Background processors (5 workers)
-│   └── src/shared/         # Models (60+), utilities
-├── frontend/               # React + Vite web app
-│   ├── src/pages/          # Page components
-│   └── src/components/     # Shared components
-├── mobile/                 # React Native + Expo app
-│   ├── src/screens/        # Screen components (31 screens)
-│   └── src/services/       # API client, auth, push
-├── packages/
-│   ├── oncallshift-mcp/    # MCP server for AI assistants
-│   └── terraform-provider-oncallshift/  # Terraform provider
-├── infrastructure/         # Terraform IaC
-│   └── terraform/
-├── e2e/                    # Playwright E2E tests
-└── .claude/                # Claude Code configuration
-    └── commands/           # Slash commands for workflows
-```
-
----
-
-## Developer Workflow
-
-### Slash Commands (Claude Code)
-
-This repo includes slash commands for common workflows:
-
-| Command | Purpose |
-|---------|---------|
-| `/deploy` | Deploy frontend + backend to production |
-| `/typecheck` | Run TypeScript checks on all projects |
-| `/commit-push-pr` | Stage, commit, push, and create PR |
-| `/test` | Run tests based on changed files |
-| `/build` | Build frontend and/or backend |
-| `/fix-types` | Iteratively fix TypeScript errors |
-| `/logs` | View ECS service logs |
-| `/status` | Quick overview of git state and open PRs |
-| `/mobile-update` | Push OTA update to mobile app |
-| `/verify` | Verify work is complete (types, tests) |
-
-### Type Checking
-
-```bash
-# All projects in parallel
-cd backend && npx tsc --noEmit &
-cd frontend && npx tsc -b &
-cd mobile && npx tsc --noEmit &
-wait
-```
-
-### Testing
-
-```bash
-# Backend unit tests
-cd backend && npm test
-
-# E2E tests
-cd e2e && npx playwright test
-```
-
----
-
-## Infrastructure Management
-
-**Terraform is the source of truth.** Never make manual changes in AWS Console.
-
-```bash
-cd infrastructure/terraform/environments/dev
-terraform init
-terraform plan
-terraform apply
-```
+See [packages/terraform-provider-oncallshift/README.md](packages/terraform-provider-oncallshift/README.md) for details.
 
 ---
 
 ## API Reference
-
-### Key Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
@@ -268,64 +195,54 @@ terraform apply
 | `GET /api/v1/services` | List services |
 | `POST /api/v1/import` | Platform migration |
 
-Full API documentation: https://oncallshift.com/api-docs
+Full API documentation: [oncallshift.com/api-docs](https://oncallshift.com/api-docs)
+
+---
+
+## Testing
+
+```bash
+# Backend unit tests
+cd backend && npm test
+
+# Single test file
+cd backend && npm test -- --testPathPattern=webhooks
+
+# E2E tests (Playwright)
+cd e2e && npx playwright test
+
+# Type checking (all projects)
+cd backend && npx tsc --noEmit
+cd frontend && npx tsc -b
+cd mobile && npx tsc --noEmit
+```
 
 ---
 
 ## Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - AI assistant guidance and development commands
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Technical architecture
-- **[mobile/README.md](mobile/README.md)** - Mobile app guide
-- **[packages/oncallshift-mcp/README.md](packages/oncallshift-mcp/README.md)** - MCP server docs
-- **[packages/terraform-provider-oncallshift/README.md](packages/terraform-provider-oncallshift/README.md)** - Terraform provider docs
+- [Support & User Guides](docs/support/)
+- [Terraform Provider Docs](docs/terraform-provider/)
+- [MCP Server](packages/oncallshift-mcp/README.md)
+- [Mobile App](mobile/README.md)
+- [Frontend](frontend/README.md)
 
 ---
 
-## Key URLs
+## Contributing
 
-| Resource | URL |
-|----------|-----|
-| Live App | https://oncallshift.com |
-| API Docs | https://oncallshift.com/api-docs |
-| Webhook | POST https://oncallshift.com/api/v1/alerts/webhook |
+We welcome contributions! Please:
 
----
-
-## Troubleshooting
-
-### Check Service Status
-```bash
-aws ecs describe-services --cluster pagerduty-lite-dev \
-  --services pagerduty-lite-dev-api --region us-east-1
-```
-
-### View Logs
-```bash
-# API logs
-aws logs tail /ecs/pagerduty-lite-dev/api --follow --region us-east-1
-
-# Worker logs
-aws logs tail /ecs/pagerduty-lite-dev/alert-processor --follow --region us-east-1
-aws logs tail /ecs/pagerduty-lite-dev/escalation-timer --follow --region us-east-1
-```
-
-### Create User
-```bash
-aws cognito-idp admin-create-user \
-  --user-pool-id REDACTED_COGNITO_POOL_ID_2 \
-  --username user@example.com \
-  --user-attributes Name=email,Value=user@example.com
-
-aws cognito-idp admin-set-user-password \
-  --user-pool-id REDACTED_COGNITO_POOL_ID_2 \
-  --username user@example.com \
-  --password YourPassword123! \
-  --permanent
-```
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Make your changes with tests
+4. Ensure type checking passes (`npx tsc --noEmit` in each project)
+5. Submit a pull request
 
 ---
 
 ## License
 
-MIT
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+Copyright 2025-2026 OnCallShift Contributors
