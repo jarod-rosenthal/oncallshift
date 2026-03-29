@@ -1,17 +1,114 @@
+# =============================================================================
+# OnCallShift .gitignore
+# =============================================================================
+# WARNING: DO NOT REMOVE OR WEAKEN ENTRIES IN THIS FILE.
+# This file protects secrets, infrastructure state, and internal tooling
+# from being committed to the public repository.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
 # Dependencies
+# -----------------------------------------------------------------------------
 node_modules/
 .pnp
 .pnp.js
 
-# Frontend build output
-frontend/dist/
-frontend/build/
+# -----------------------------------------------------------------------------
+# Build outputs
+# -----------------------------------------------------------------------------
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
 
-# Testing
-coverage/
-.nyc_output/
+# Exception: MCP package build (no source files, track compiled output)
+!packages/oncallshift-mcp/build/
 
+# Stale frontend build artifacts inside backend
+backend/frontend/
+
+# -----------------------------------------------------------------------------
+# Environment variables (all of them - no exceptions)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+*.env
+*.env.*
+
+# -----------------------------------------------------------------------------
+# Terraform / Infrastructure (entire directory - not public)
+# -----------------------------------------------------------------------------
+infrastructure/
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+*.tfvars.json
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+tfplan
+*.tfplan
+
+# -----------------------------------------------------------------------------
+# AWS / Cloud
+# -----------------------------------------------------------------------------
+.aws/
+
+# ECS task definitions with hardcoded ARNs
+migrate-task-def.json
+
+# DNS verification records
+add-protonmail-txt.json
+
+# -----------------------------------------------------------------------------
+# Deployment scripts and config (contain AWS account IDs, resource IDs)
+# -----------------------------------------------------------------------------
+deploy.sh
+deploy-backend.sh
+.workermill/deploy.json
+
+# -----------------------------------------------------------------------------
+# One-off scripts with hardcoded credentials or personal data
+# -----------------------------------------------------------------------------
+backend/run-migration.js
+backend/run-migrations.js
+backend/add-user.js
+backend/create-demo-users.js
+backend/create-demo-users.sql
+backend/setup-cognito-demo-users.js
+backend/setup-demo-logins.js
+backend/assign-schedule.js
+backend/fix-service-schedule.js
+backend/update-oncall.js
+backend/setup-cognito-demo-users.js
+
+# Seed data with personal info
+backend/src/shared/db/seeds/002_add_jarod.sql
+
+# -----------------------------------------------------------------------------
+# IDE / Editor
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# OS
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------------------------------------------------------
 # Logs
+# -----------------------------------------------------------------------------
 logs/
 *.log
 npm-debug.log*
@@ -20,60 +117,59 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# -----------------------------------------------------------------------------
+# Testing
+# -----------------------------------------------------------------------------
+coverage/
+.nyc_output/
 
-# Terraform
-*.tfstate
-*.tfstate.*
-.terraform/
-.terraform.lock.hcl
-terraform.tfvars
-*.tfvars.json
-*.tfvars
-crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
+# -----------------------------------------------------------------------------
+# Docker
+# -----------------------------------------------------------------------------
+docker-compose.override.yml
 
-# IDE / Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# OS
-Thumbs.db
-.DS_Store
-
-# Build artifacts
-dist/
-build/
-
-# Exception: MCP package build (no source files, track compiled output)
-!packages/oncallshift-mcp/build/
-
+# -----------------------------------------------------------------------------
 # Temporary files
+# -----------------------------------------------------------------------------
 tmp/
 temp/
 *.tmp
 
-# AWS
-.aws/
-
-# Docker
-docker-compose.override.yml
-tfplan
+# -----------------------------------------------------------------------------
+# AI tooling and session state (not public)
+# -----------------------------------------------------------------------------
+.workermill/
 .mcp.json
 .aider*
+.plan
+.workermill-message.md
+.workermill-response.md
+.workermill-answer.md
 
-# Claude Code
-.claude/progress/
-.claude/decisions/
+# Claude Code config and agent state (not public)
+CLAUDE.md
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# -----------------------------------------------------------------------------
+# Internal docs, plans, and progress tracking (not public)
+# -----------------------------------------------------------------------------
+# Keep docs/support/ (public-facing) but exclude everything else
+/docs/*
+!docs/support/
+!docs/terraform-provider/
+
+# Internal planning docs at repo root
+E2E_TESTING_PLAN.md
+MIGRATION_GAP_ANALYSIS.md
+PAGERDUTY_TEST_RESOURCES.md
+ROADMAP.md
+TECHNICAL_DEBT.md
+THEME_IMPLEMENTATION_PROGRESS.md
+
+# -----------------------------------------------------------------------------
+# Operations scripts (local only)
+# -----------------------------------------------------------------------------
+scripts/check-terraform-secrets.sh
