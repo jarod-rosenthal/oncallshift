@@ -1,47 +1,58 @@
 # OnCallShift
 
-An open-source incident management and on-call scheduling platform. Built with TypeScript across the full stack.
+**A full-stack incident management platform built entirely by AI agents.**
 
-**Website:** [oncallshift.com](https://oncallshift.com)
+OnCallShift is a showcase application demonstrating [WorkerMill](https://workermill.com) — an autonomous AI coding platform that takes Jira/Linear/GitHub tickets and ships production code. Every line of code in this repository was written, tested, and deployed by WorkerMill's AI workers.
+
+[Live App](https://oncallshift.com) | [WorkerMill Platform](https://workermill.com)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ---
 
-## Features
+## What's Inside
 
-### Core Platform
-- **Incident Management** - Create, acknowledge, resolve with full audit trail
-- **Escalation Policies** - Multi-level escalation with automatic timeout advancement
-- **On-Call Schedules** - Schedule management with member assignment and overrides
-- **Multi-Channel Notifications** - Push, Email, SMS with delivery tracking
-- **User Actions** - Reassign, snooze, manual escalate, add responders
-- **Status Pages** - Public and private status pages for stakeholder communication
+OnCallShift is a real, production incident management platform — not a toy demo. It includes:
 
-### Mobile App (iOS & Android)
-- React Native screens for full incident management
-- Push notifications with deep linking
-- On-call schedule view with overrides
-- Analytics dashboard
-- OTA updates via EAS Update
+- **Incident Management** — Create, acknowledge, resolve with full audit trail
+- **Escalation Policies** — Multi-level escalation with automatic timeout advancement
+- **On-Call Schedules** — Schedule management with member assignment and overrides
+- **Multi-Channel Notifications** — Push, Email, SMS with delivery tracking
+- **Status Pages** — Public and private status pages for stakeholder communication
+- **AI Diagnosis** — Claude-powered incident analysis and chat
+- **Runbook Automation** — AI executes runbook steps in sandboxed environments
+- **Cloud Investigation** — Query AWS/GCP/Azure resources during incidents
+- **Semantic Import** — AI-powered screenshot/text import using Claude Vision
+- **PagerDuty/Opsgenie Import** — One-click migration tools
+- **MCP Server** — AI assistant integration for Claude Code, Cursor, and other MCP clients
+- **Terraform Provider** — Infrastructure-as-code for OnCallShift resources
+- **Mobile App** — Full React Native app with push notifications and deep linking
 
-### AI-Powered Features
-- **AI Diagnosis** - Claude-powered incident analysis and chat
-- **Runbook Automation** - AI executes runbook steps in sandboxed environments
-- **Cloud Investigation** - Query AWS/GCP/Azure resources during incidents
-- **Semantic Import** - AI-powered screenshot/text import using Claude Vision
+## How It Was Built
 
-### Platform Migration
-- **PagerDuty Import** - One-click migration of users, teams, schedules, escalation policies
-- **Opsgenie Import** - Full configuration import with key preservation
+OnCallShift was built in **24 epics over ~18 hours** of autonomous execution for a total API cost of **$1,206**. The final repo contains **195,000+ lines of code across 573 files from 245 commits**.
 
-### Developer Integrations
-- **MCP Server** - AI assistant integration for Claude Code, Cursor, and other MCP clients
-- **Terraform Provider** - Infrastructure-as-code for OnCallShift resources
-- **Webhook API** - PagerDuty/Opsgenie-compatible alert ingestion
-- **REST API** - Full API with OpenAPI documentation
+| Component | Lines of Code | Description |
+|-----------|--------------|-------------|
+| Backend API | 92,000 | Express + TypeScript, 35+ routes, 60+ TypeORM models, 6 background workers |
+| Web Frontend | 52,000 | React + Vite, TanStack Query, Tailwind CSS |
+| Mobile App | 41,000 | React Native + Expo, 32 screens, push notifications |
+| Packages | 8,000 | MCP server (TypeScript) + Terraform provider (Go) |
+| E2E Tests | 2,000 | Playwright test suite |
 
----
+Each epic was planned by a WorkerMill planner agent, decomposed into parallel stories, executed by specialist AI personas (backend developer, frontend developer, mobile developer, DevOps engineer), reviewed by a tech lead agent, and consolidated into a single PR.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend API | Express, TypeScript, TypeORM, PostgreSQL |
+| Web Frontend | React, Vite, TanStack Query, Tailwind CSS |
+| Mobile App | React Native, Expo |
+| AI | Anthropic Claude API |
+| Auth | AWS Cognito |
+| Infrastructure | Terraform, AWS (ECS, SQS, SES, SNS, S3, CloudFront) |
+| Packages | MCP Server (TypeScript), Terraform Provider (Go) |
 
 ## Architecture
 
@@ -66,6 +77,7 @@ An open-source incident management and on-call scheduling platform. Built with T
 ```
 
 ### Background Workers
+
 | Worker | Purpose |
 |--------|---------|
 | `alert-processor` | Processes incoming alerts from SQS, creates incidents |
@@ -73,46 +85,6 @@ An open-source incident management and on-call scheduling platform. Built with T
 | `escalation-timer` | Auto-advances escalation steps every 30s |
 | `snooze-expiry` | Processes expired incident snoozes |
 | `report-scheduler` | Generates scheduled reports |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Node.js 18+
-- PostgreSQL 14+
-- AWS account (for Cognito, SQS, SES, SNS)
-
-### Local Development
-
-```bash
-# Backend API
-cd backend
-npm install
-cp .env.example .env    # Configure your environment variables
-npm run dev             # localhost:3000
-
-# Web Frontend
-cd frontend
-npm install
-npm run dev             # localhost:5173
-
-# Mobile App
-cd mobile
-npm install
-npm start               # Expo dev server
-```
-
-### Database Setup
-
-```bash
-cd backend
-npm run migrate         # Run database migrations
-npm run seed            # Seed test data (optional)
-```
-
----
 
 ## Project Structure
 
@@ -134,17 +106,11 @@ oncallshift/
 └── e2e/                    # Playwright E2E tests
 ```
 
----
-
 ## Packages
 
 ### MCP Server
 
 Enable AI assistants to manage OnCallShift through natural language:
-
-```bash
-npx @oncallshift/mcp-server
-```
 
 ```json
 {
@@ -152,9 +118,7 @@ npx @oncallshift/mcp-server
     "oncallshift": {
       "command": "npx",
       "args": ["@oncallshift/mcp-server"],
-      "env": {
-        "ONCALLSHIFT_API_KEY": "your-api-key"
-      }
+      "env": { "ONCALLSHIFT_API_KEY": "your-api-key" }
     }
   }
 }
@@ -181,8 +145,6 @@ resource "oncallshift_service" "api" {
 
 See [packages/terraform-provider-oncallshift/README.md](packages/terraform-provider-oncallshift/README.md) for details.
 
----
-
 ## API Reference
 
 | Endpoint | Description |
@@ -197,52 +159,23 @@ See [packages/terraform-provider-oncallshift/README.md](packages/terraform-provi
 
 Full API documentation: [oncallshift.com/api-docs](https://oncallshift.com/api-docs)
 
----
+## About WorkerMill
 
-## Testing
+[WorkerMill](https://workermill.com) is an autonomous AI coding platform. Point it at a ticket, and it:
 
-```bash
-# Backend unit tests
-cd backend && npm test
+1. **Plans** — Decomposes the task into parallel stories with file targets
+2. **Executes** — Specialist AI personas (frontend dev, backend dev, QA) work in parallel
+3. **Reviews** — Tech lead agent reviews each story for quality
+4. **Ships** — Creates a consolidated PR with all changes
 
-# Single test file
-cd backend && npm test -- --testPathPattern=webhooks
+OnCallShift exists to demonstrate that WorkerMill can build and maintain a production-grade, multi-platform application end-to-end. Every commit in this repo traces back to a WorkerMill task.
 
-# E2E tests (Playwright)
-cd e2e && npx playwright test
+## For AI Agents
 
-# Type checking (all projects)
-cd backend && npx tsc --noEmit
-cd frontend && npx tsc -b
-cd mobile && npx tsc --noEmit
-```
-
----
-
-## Documentation
-
-- [Support & User Guides](docs/support/)
-- [Terraform Provider Docs](docs/terraform-provider/)
-- [MCP Server](packages/oncallshift-mcp/README.md)
-- [Mobile App](mobile/README.md)
-- [Frontend](frontend/README.md)
-
----
-
-## Contributing
-
-We welcome contributions! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Make your changes with tests
-4. Ensure type checking passes (`npx tsc --noEmit` in each project)
-5. Submit a pull request
-
----
+If you're an AI worker building on this codebase, see [AGENTS.md](./AGENTS.md) for development guidelines.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Apache License 2.0 — see [LICENSE](LICENSE) for details.
 
 Copyright 2025-2026 OnCallShift Contributors
