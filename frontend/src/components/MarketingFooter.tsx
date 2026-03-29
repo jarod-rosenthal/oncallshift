@@ -52,7 +52,6 @@ export function MarketingFooter() {
               <li><Link to="/product#escalation-policies" className="text-slate-500 hover:text-white transition-colors">Escalation Policies</Link></li>
               <li><Link to="/product#ai-diagnosis" className="text-slate-500 hover:text-white transition-colors">AI Diagnosis</Link></li>
               <li><Link to="/product#integrations" className="text-slate-500 hover:text-white transition-colors">Integrations</Link></li>
-              <li><Link to="/pricing" className="text-slate-500 hover:text-white transition-colors">Pricing</Link></li>
             </ul>
           </div>
 

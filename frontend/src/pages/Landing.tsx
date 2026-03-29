@@ -369,7 +369,6 @@ export function Landing() {
                   ['CLI Tool', '✓ Full CLI (ocs)', '✓ pd CLI', 'Limited', false],
                   ['BYOK (Bring Your Own Key)', '✓ Yes', '✗ No', '✗ No', false],
                   ['Mobile Runbooks + AI', '✓ Full', '✗ Limited', '✗ None', false],
-                  ['Starting Price', 'Coming soon', '$21/user', 'Bundled w/ JSM', false],
                 ].map(([feature, ocs, pd, og, highlight], i) => (
                   <tr key={i} className={`border-b border-white/5 ${highlight ? 'bg-teal-500/5' : 'hover:bg-white/[0.02]'}`}>
                     <td className="py-3.5 px-5 font-medium text-slate-300">{feature as string}</td>

@@ -371,11 +371,6 @@ export function Product() {
                 Join Waitlist
               </Button>
             </Link>
-            <Link to="/pricing">
-              <Button size="lg" variant="outline" className="text-lg px-8 h-12 border-white/10 text-slate-300 hover:bg-white/5 hover:text-white">
-                View Pricing
-              </Button>
-            </Link>
           </div>
         </div>
       </section>

@@ -71,11 +71,6 @@ export function WhyOnCallShift() {
                   <td className="py-3 px-4 text-green-400">5 minutes (or via AI/Terraform)</td>
                   <td className="py-3 px-4 text-slate-400">Days (CSM required)</td>
                 </tr>
-                <tr className="border-b border-white/5">
-                  <td className="py-3 px-4 font-medium text-white">Starting Price</td>
-                  <td className="py-3 px-4 text-green-400">Coming soon</td>
-                  <td className="py-3 px-4 text-slate-400">$21/user/month</td>
-                </tr>
               </tbody>
             </table>
           </div>
@@ -109,7 +104,7 @@ export function WhyOnCallShift() {
               <li>• You have &lt; 100 on-call engineers</li>
               <li>• You want AI without enterprise contract</li>
               <li>• You need mobile-first experience</li>
-              <li>• You value transparent pricing</li>
+              <li>• You value transparency and self-serve tooling</li>
               <li>• You want software built by people who get paged</li>
             </ul>
           </div>
@@ -168,11 +163,6 @@ export function WhyOnCallShift() {
                     <td className="py-3 px-4 font-medium text-white">Mobile Experience</td>
                     <td className="py-3 px-4 text-green-400">✓ Full-featured</td>
                     <td className="py-3 px-4 text-slate-400">Basic</td>
-                  </tr>
-                  <tr className="border-b border-white/5">
-                    <td className="py-3 px-4 font-medium text-white">Pricing</td>
-                    <td className="py-3 px-4 text-green-400">Coming soon</td>
-                    <td className="py-3 px-4 text-red-400">Forces JSM bundle</td>
                   </tr>
                   <tr className="border-b border-white/5">
                     <td className="py-3 px-4 font-medium text-white">Migration</td>
@@ -301,24 +291,6 @@ export function WhyOnCallShift() {
         </div>
       </section>
 
-      {/* Cost Comparison */}
-      <section className="bg-white/[0.02] py-16">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-3xl font-bold mb-4 text-white">Competitive Pricing</h2>
-            <p className="text-slate-400 mb-8 max-w-2xl mx-auto">
-              Pricing details coming soon. We're building an incident platform that delivers enterprise features
-              at a fraction of the cost of legacy tools.
-            </p>
-            <Link to="/register">
-              <Button className="bg-teal-500 hover:bg-teal-400 text-slate-950">
-                Join Waitlist for Early Pricing
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </section>
-
       {/* Final CTA */}
       <section className="bg-gradient-to-r from-teal-500 to-cyan-500 py-16">
         <div className="container mx-auto px-4 text-center">
@@ -332,11 +304,6 @@ export function WhyOnCallShift() {
             <Link to="/register">
               <Button size="lg" variant="secondary">
                 Join Waitlist
-              </Button>
-            </Link>
-            <Link to="/pricing">
-              <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10">
-                View Pricing
               </Button>
             </Link>
           </div>

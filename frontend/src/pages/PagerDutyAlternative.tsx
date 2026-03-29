@@ -9,9 +9,8 @@ export function PagerDutyAlternative() {
     { feature: 'Self-Healing (Auto-Resolution)', pagerduty: 'Suggestions only', oncallshift: '80% target', highlight: false },
     { feature: 'CLI Tool', pagerduty: 'pd CLI', oncallshift: 'ocs CLI + GitHub Action', highlight: false },
     { feature: 'Cloud Investigation', pagerduty: 'Via integrations', oncallshift: 'Direct AWS/GCP/Azure', highlight: false },
-    { feature: 'AI-powered diagnosis', pagerduty: 'AIOps add-on ($$$)', oncallshift: 'Included (BYOK)', highlight: false },
+    { feature: 'AI-powered diagnosis', pagerduty: 'AIOps add-on', oncallshift: 'Included (BYOK)', highlight: false },
     { feature: 'SSO (SAML/OIDC)', pagerduty: 'Business tier+', oncallshift: 'Professional tier', highlight: false },
-    { feature: 'Starting price', pagerduty: '$21/user/mo', oncallshift: 'Coming soon (Free tier available)', highlight: false },
     { feature: 'Setup time', pagerduty: 'Days to weeks', oncallshift: '5 min (or via Terraform)', highlight: false },
   ];
 
@@ -23,7 +22,7 @@ export function PagerDutyAlternative() {
     },
     {
       title: 'AI-native from day one',
-      problem: "PagerDuty bolted on AI features as expensive add-ons. They don't have an MCP server, can't integrate with your AI assistant, and charge enterprise prices for basic AI diagnosis.",
+      problem: "PagerDuty bolted on AI features as add-ons. They don't have an MCP server, can't integrate with your AI assistant, and gate basic AI diagnosis behind higher tiers.",
       solution: 'OnCallShift was built for the AI era. Configure your org from Claude Code. AI that actually resolves incidents—80% without waking you up.',
     },
     {
@@ -86,7 +85,7 @@ export function PagerDutyAlternative() {
         </p>
       </section>
 
-      {/* Price Comparison */}
+      {/* Feature Comparison */}
       <section className="bg-white/[0.02] py-16">
         <div className="container mx-auto px-4">
           <h2 className="text-2xl font-bold text-center mb-4 text-white">Side-by-Side Comparison</h2>
@@ -119,11 +118,6 @@ export function PagerDutyAlternative() {
             </table>
           </div>
 
-          <div className="text-center mt-8">
-            <Link to="/pricing">
-              <Button variant="outline" className="border-white/10 text-slate-300 hover:bg-white/5">View Full Pricing</Button>
-            </Link>
-          </div>
         </div>
       </section>
 
@@ -131,7 +125,7 @@ export function PagerDutyAlternative() {
       <section className="container mx-auto px-4 py-16">
         <h2 className="text-2xl font-bold text-center mb-4 text-white">Why Teams Switch from PagerDuty</h2>
         <p className="text-slate-400 text-center mb-12 max-w-2xl mx-auto">
-          We built OnCallShift because incident management shouldn't require an enterprise budget.
+          We built OnCallShift because incident management should be built for engineers, not enterprise procurement.
         </p>
 
         <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">

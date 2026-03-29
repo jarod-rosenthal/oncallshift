@@ -103,11 +103,6 @@ export function MigrateFromOpsgenie() {
               </thead>
               <tbody>
                 <tr className="border-b border-white/5">
-                  <td className="py-4 px-6 font-medium text-white">Pricing</td>
-                  <td className="py-4 px-6 text-slate-400">Higher than Opsgenie</td>
-                  <td className="py-4 px-6 text-green-400 font-medium">Similar to Opsgenie</td>
-                </tr>
-                <tr className="border-b border-white/5">
                   <td className="py-4 px-6 font-medium text-white">Setup complexity</td>
                   <td className="py-4 px-6 text-slate-400">Complex ITSM platform</td>
                   <td className="py-4 px-6 text-green-400 font-medium">Simple, focused tool</td>
@@ -381,15 +376,6 @@ export function MigrateFromOpsgenie() {
               </p>
             </details>
 
-            <details className="bg-white/[0.03] rounded-lg p-4 border border-white/5">
-              <summary className="font-semibold cursor-pointer text-white">
-                What's the pricing difference?
-              </summary>
-              <p className="text-sm text-slate-400 mt-3">
-                We're finalizing our pricing plans. We'll have a free tier for small teams
-                and competitive paid plans. Join the waitlist to be notified when pricing is available.
-              </p>
-            </details>
           </div>
         </div>
       </section>

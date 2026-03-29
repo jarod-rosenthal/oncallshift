@@ -35,7 +35,6 @@ export function MarketingNav() {
 
             <div className="hidden md:flex items-center gap-1">
               <NavLink to="/product" active={isActive('/product')}>Product</NavLink>
-              <NavLink to="/pricing" active={isActive('/pricing')}>Pricing</NavLink>
               <NavLink to="/docs" active={isActive('/docs')}>Docs</NavLink>
               <NavLink to="/blog" active={isActive('/blog')}>Blog</NavLink>
               <NavLink to="/help" active={isActive('/help')}>Help</NavLink>
@@ -72,7 +71,6 @@ export function MarketingNav() {
           <div className="md:hidden mt-4 pb-4 border-t border-white/5 pt-4">
             <div className="space-y-1">
               <Link to="/product" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Product</Link>
-              <Link to="/pricing" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Pricing</Link>
               <Link to="/docs" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Docs</Link>
               <Link to="/blog" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Blog</Link>
               <Link to="/help" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5">Help</Link>

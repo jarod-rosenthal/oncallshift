@@ -37,8 +37,8 @@ export function About() {
               </p>
 
               <p className="text-slate-300 mb-6">
-                Enterprise tools with enterprise prices. Clunky mobile apps. AI features locked behind
-                five-figure contracts. "Contact sales" for basic functionality.
+                Enterprise tools with too much complexity. Clunky mobile apps. AI features locked behind
+                higher tiers. "Contact sales" for basic functionality.
                 <strong className="text-white"> We got tired of settling.</strong>
               </p>
 
@@ -53,7 +53,7 @@ export function About() {
                   <li>&#8226; Cloud investigation means querying your infrastructure directly, not reading stale dashboards</li>
                   <li>&#8226; The best incident tool is the one you never have to think about configuring</li>
                   <li>&#8226; If your AI assistant can't set it up, it's too complicated</li>
-                  <li>&#8226; Transparent pricing isn't a feature--it's basic respect</li>
+                  <li>&#8226; Transparency isn't a feature--it's basic respect</li>
                 </ul>
               </div>
 
@@ -130,7 +130,7 @@ export function About() {
             <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-6">
               <h3 className="text-xl font-bold mb-3 text-white">2. No Sales BS</h3>
               <p className="text-slate-400">
-                Transparent pricing. Self-serve signup. No "contact sales" gatekeeping.
+                Self-serve signup. No "contact sales" gatekeeping.
               </p>
             </div>
 

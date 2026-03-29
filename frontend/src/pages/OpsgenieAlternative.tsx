@@ -11,8 +11,6 @@ export function OpsgenieAlternative() {
 
   const comparisonFeatures = [
     { feature: 'Standalone product', jira: 'No - requires JSM', oncallshift: 'Yes' },
-    { feature: 'Starting price', jira: '$21/agent/mo (JSM Premium)', oncallshift: 'Coming soon (Free tier available)' },
-    { feature: 'Unlimited users', jira: 'Per-agent pricing', oncallshift: 'Coming soon' },
     { feature: 'Migration complexity', jira: 'High (new platform)', oncallshift: 'Low (webhook compatible)' },
     { feature: 'Setup time', jira: 'Days to weeks', oncallshift: '< 30 minutes' },
     { feature: 'Atlassian lock-in', jira: 'Required', oncallshift: 'None' },
@@ -29,11 +27,6 @@ export function OpsgenieAlternative() {
       title: 'Keep your workflow',
       problem: 'JSM has a different UI and workflow. Your team will need retraining and processes will change.',
       solution: 'OnCallShift works similarly to Opsgenie. Familiar concepts: schedules, escalation policies, services.',
-    },
-    {
-      title: 'Simple pricing',
-      problem: "JSM's pricing is complex with multiple tiers and agent-based licensing. Costs can spiral quickly.",
-      solution: 'Clear per-user pricing. Free tier for small teams. Pricing details coming soon.',
     },
     {
       title: 'Faster migration',
