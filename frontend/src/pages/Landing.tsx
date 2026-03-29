@@ -90,29 +90,6 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── Social proof bar ── */}
-      <section className="border-y border-white/5 bg-white/[0.02] py-5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-slate-500">
-            <div className="flex items-center gap-2">
-              <span className="text-amber-400">★★★★★</span>
-              <span>4.8/5 rating</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>🚀</span>
-              <span>5-minute setup</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>💳</span>
-              <span>No credit card required</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>🔒</span>
-              <span>SOC 2 compliant</span>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* ── PROBLEM / SOLUTION ── */}
       <section className="relative py-24">
@@ -240,7 +217,7 @@ export function Landing() {
               items={[
                 <><strong>SAML/OIDC SSO</strong> (Okta, Azure AD)</>,
                 'SCIM provisioning for user sync',
-                'SOC 2 Type II compliance',
+                'Encryption at rest and in transit',
                 'RBAC, audit logs, data residency',
               ]}
               link={{ to: '/company/security', label: 'Security details →' }}
@@ -413,47 +390,6 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── TESTIMONIALS ── */}
-      <section className="relative py-24 border-t border-white/5">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-white text-center mb-14">
-            What Teams Are Saying
-          </h2>
-
-          <div className="grid md:grid-cols-3 gap-5">
-            {[
-              {
-                quote: "We switched from PagerDuty and cut our bill by 60%. Setup took 20 minutes.",
-                initials: 'JD', name: 'James D.', role: 'SRE Lead',
-                color: 'from-teal-400 to-cyan-400',
-              },
-              {
-                quote: "The AI diagnosis feature found a memory leak we'd been hunting for weeks.",
-                initials: 'SK', name: 'Sarah K.', role: 'Platform Engineer',
-                color: 'from-violet-400 to-purple-400',
-              },
-              {
-                quote: "Finally, an on-call tool our team doesn't complain about.",
-                initials: 'MT', name: 'Mike T.', role: 'Engineering Manager',
-                color: 'from-emerald-400 to-green-400',
-              },
-            ].map((t, i) => (
-              <div key={i} className="rounded-2xl p-6 bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors">
-                <p className="text-slate-300 italic mb-5 leading-relaxed">"{t.quote}"</p>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${t.color} flex items-center justify-center text-white font-semibold text-sm`}>
-                    {t.initials}
-                  </div>
-                  <div>
-                    <div className="font-medium text-sm text-white">{t.name}</div>
-                    <div className="text-xs text-slate-500">{t.role}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ── FINAL CTA ── */}
       <section className="relative py-24 border-t border-white/5 overflow-hidden">
