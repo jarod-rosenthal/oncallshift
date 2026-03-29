@@ -4,7 +4,7 @@ interface FeedbackWidgetProps {
   pageId?: string;
 }
 
-export function FeedbackWidget({ pageId }: FeedbackWidgetProps) {
+export function FeedbackWidget({ pageId: _pageId }: FeedbackWidgetProps) {
   const [submitted, setSubmitted] = useState(false);
   const [feedback, setFeedback] = useState<'yes' | 'no' | null>(null);
 
