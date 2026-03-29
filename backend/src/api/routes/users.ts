@@ -30,7 +30,7 @@ const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
 });
 
-const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET || 'REDACTED_S3_UPLOADS_BUCKET';
+const UPLOADS_BUCKET = process.env.UPLOADS_BUCKET;
 
 const router = Router();
 

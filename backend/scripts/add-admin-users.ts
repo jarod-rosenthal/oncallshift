@@ -15,7 +15,7 @@ const PASSWORD = 'REDACTED_DEMO_PASSWORD';
 const usersToAdd = [
   { email: 'alice.jones@contoso.com', fullName: 'Alice Jones' },
   { email: 'bob.smith@contoso.com', fullName: 'Bob Smith' },
-  { email: 'admin@oncallshift.com', fullName: 'Jarod Rosenthal' },
+  { email: 'admin@oncallshift.com', fullName: 'Admin User' },
 ];
 
 const cognitoClient = new CognitoIdentityProviderClient({

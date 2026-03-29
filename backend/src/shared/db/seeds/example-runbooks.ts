@@ -67,8 +67,8 @@ export async function seedExampleRunbooks(): Promise<void> {
 set -e
 
 # Configuration
-CLUSTER_NAME="\${ECS_CLUSTER:-pagerduty-lite-dev}"
-SERVICE_NAME="\${ECS_SERVICE:-pagerduty-lite-dev-api}"
+CLUSTER_NAME="\${ECS_CLUSTER:-your-cluster-name}"
+SERVICE_NAME="\${ECS_SERVICE:-your-cluster-name-api}"
 REGION="\${AWS_REGION:-us-east-1}"
 
 echo "Checking ECS service health..."
@@ -129,8 +129,8 @@ fi`,
               code: `#!/bin/bash
 set -e
 
-CLUSTER_NAME="\${ECS_CLUSTER:-pagerduty-lite-dev}"
-SERVICE_NAME="\${ECS_SERVICE:-pagerduty-lite-dev-api}"
+CLUSTER_NAME="\${ECS_CLUSTER:-your-cluster-name}"
+SERVICE_NAME="\${ECS_SERVICE:-your-cluster-name-api}"
 REGION="\${AWS_REGION:-us-east-1}"
 
 echo "Forcing new deployment for ECS service..."
@@ -176,8 +176,8 @@ import os
 import sys
 
 # Configuration
-CLUSTER_NAME = os.environ.get('ECS_CLUSTER', 'pagerduty-lite-dev')
-SERVICE_NAME = os.environ.get('ECS_SERVICE', 'pagerduty-lite-dev-api')
+CLUSTER_NAME = os.environ.get('ECS_CLUSTER', 'your-cluster-name')
+SERVICE_NAME = os.environ.get('ECS_SERVICE', 'your-cluster-name-api')
 REGION = os.environ.get('AWS_REGION', 'us-east-1')
 MAX_WAIT_TIME = 240  # 4 minutes
 POLL_INTERVAL = 10   # 10 seconds
@@ -361,7 +361,7 @@ except Exception as e:
               code: `#!/bin/bash
 set -e
 
-DB_INSTANCE_ID="\${DB_INSTANCE_ID:-pagerduty-lite-dev}"
+DB_INSTANCE_ID="\${DB_INSTANCE_ID:-your-cluster-name}"
 REGION="\${AWS_REGION:-us-east-1}"
 
 echo "Checking RDS replica lag..."
@@ -559,8 +559,8 @@ if (inWindow) {
 import os
 from datetime import datetime, timedelta
 
-CLUSTER_NAME = os.environ.get('ECS_CLUSTER', 'pagerduty-lite-dev')
-SERVICE_NAME = os.environ.get('ECS_SERVICE', 'pagerduty-lite-dev-api')
+CLUSTER_NAME = os.environ.get('ECS_CLUSTER', 'your-cluster-name')
+SERVICE_NAME = os.environ.get('ECS_SERVICE', 'your-cluster-name-api')
 REGION = os.environ.get('AWS_REGION', 'us-east-1')
 
 print(f"Checking CPU metrics for ECS service...")
@@ -637,8 +637,8 @@ else:
               code: `#!/bin/bash
 set -e
 
-CLUSTER_NAME="\${ECS_CLUSTER:-pagerduty-lite-dev}"
-SERVICE_NAME="\${ECS_SERVICE:-pagerduty-lite-dev-api}"
+CLUSTER_NAME="\${ECS_CLUSTER:-your-cluster-name}"
+SERVICE_NAME="\${ECS_SERVICE:-your-cluster-name-api}"
 REGION="\${AWS_REGION:-us-east-1}"
 TARGET_CPU=50  # Target 50% CPU utilization
 
@@ -687,8 +687,8 @@ echo "NEW_TASK_COUNT=$NEW_TASKS"`,
               code: `#!/bin/bash
 set -e
 
-CLUSTER_NAME="\${ECS_CLUSTER:-pagerduty-lite-dev}"
-SERVICE_NAME="\${ECS_SERVICE:-pagerduty-lite-dev-api}"
+CLUSTER_NAME="\${ECS_CLUSTER:-your-cluster-name}"
+SERVICE_NAME="\${ECS_SERVICE:-your-cluster-name-api}"
 REGION="\${AWS_REGION:-us-east-1}"
 NEW_TASK_COUNT="\${NEW_TASK_COUNT:-2}"
 

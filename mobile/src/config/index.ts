@@ -6,7 +6,7 @@ export const config = {
   apiUrl: 'https://oncallshift.com/api',
   cognito: {
     userPoolId: 'REDACTED_COGNITO_POOL_ID',
-    clientId: 'REDACTED_COGNITO_CLIENT_ID_2',
+    clientId: 'REDACTED_COGNITO_CLIENT_ID',
     region: 'us-east-1',
   },
   // Expo project ID for push notifications

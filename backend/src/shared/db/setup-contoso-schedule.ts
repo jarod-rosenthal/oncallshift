@@ -17,11 +17,11 @@ async function setupContosoSchedule() {
     // 1. Find the user
     const userRepo = dataSource.getRepository(User);
     const user = await userRepo.findOne({
-      where: { email: 'jarod.rosenthal@protonmail.com' }
+      where: { email: 'admin@example.com' }
     });
 
     if (!user) {
-      console.error('User jarod.rosenthal@protonmail.com not found');
+      console.error('User admin@example.com not found');
       process.exit(1);
     }
 

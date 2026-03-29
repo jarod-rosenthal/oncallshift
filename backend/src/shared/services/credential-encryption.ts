@@ -25,11 +25,6 @@ function getMasterKey(): Buffer {
   const masterKeyHex = process.env.CREDENTIAL_ENCRYPTION_KEY;
 
   if (!masterKeyHex) {
-    // In development, use a default key (NOT for production!)
-    if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-      logger.warn('Using default encryption key - NOT SAFE FOR PRODUCTION');
-      return crypto.scryptSync('REDACTED_DEV_KEY', 'oncallshift-salt', KEY_LENGTH);
-    }
     throw new Error('CREDENTIAL_ENCRYPTION_KEY environment variable is required');
   }
 

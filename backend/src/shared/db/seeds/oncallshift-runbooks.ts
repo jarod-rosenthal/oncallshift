@@ -98,8 +98,8 @@ export async function seedOnCallShiftRunbooks(): Promise<void> {
               code: `#!/bin/bash
 set -e
 
-CLUSTER="pagerduty-lite-dev"
-SERVICE="pagerduty-lite-dev-api"
+CLUSTER="your-cluster-name"
+SERVICE="your-cluster-name-api"
 REGION="us-east-1"
 
 echo "🔍 Checking ECS service status..."
@@ -130,8 +130,8 @@ aws ecs describe-services \\
               code: `#!/bin/bash
 set -e
 
-CLUSTER="pagerduty-lite-dev"
-SERVICE="pagerduty-lite-dev-api"
+CLUSTER="your-cluster-name"
+SERVICE="your-cluster-name-api"
 REGION="us-east-1"
 
 echo "🔄 Forcing new deployment..."
@@ -183,8 +183,8 @@ cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')
 
 # Get current service status
 response = ecs.describe_services(
-    cluster='pagerduty-lite-dev',
-    services=['pagerduty-lite-dev-api']
+    cluster='your-cluster-name',
+    services=['your-cluster-name-api']
 )
 
 service = response['services'][0]
@@ -217,8 +217,8 @@ print(f"💡 Recommendation: Scale to {current_count + 1} tasks")`,
               code: `#!/bin/bash
 set -e
 
-CLUSTER="pagerduty-lite-dev"
-SERVICE="pagerduty-lite-dev-api"
+CLUSTER="your-cluster-name"
+SERVICE="your-cluster-name-api"
 
 # Get current count
 CURRENT=$(aws ecs describe-services \\
@@ -270,7 +270,7 @@ echo "✅ Service scaled successfully!"`,
             requiresApproval: false,
             script: {
               language: 'natural_language',
-              code: 'List the last 5 task definitions for the pagerduty-lite-dev-api ECS service and identify which one was running before the current deployment. Display the ARN and creation date.',
+              code: 'List the last 5 task definitions for the your-cluster-name-api ECS service and identify which one was running before the current deployment. Display the ARN and creation date.',
               naturalLanguageDescription: 'Claude finds the previous stable task definition',
               version: 1,
             },
@@ -535,7 +535,7 @@ echo "✅ Terminated 2 slow queries"`,
               code: `#!/bin/bash
 set -e
 
-QUEUE_NAME="pagerduty-lite-dev-alerts"
+QUEUE_NAME="your-cluster-name-alerts"
 REGION="us-east-1"
 
 echo "📊 Checking SQS queue depth..."
@@ -570,8 +570,8 @@ aws sqs get-queue-attributes \\
               code: `#!/bin/bash
 set -e
 
-CLUSTER="pagerduty-lite-dev"
-SERVICE="pagerduty-lite-dev-alert-processor"
+CLUSTER="your-cluster-name"
+SERVICE="your-cluster-name-alert-processor"
 
 # Get current count
 CURRENT=$(aws ecs describe-services \\

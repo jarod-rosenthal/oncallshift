@@ -390,8 +390,8 @@ router.post('/seed-examples', async (req: Request, res: Response) => {
                 language: 'bash' as ScriptLanguage,
                 code: `#!/bin/bash
 set -e
-CLUSTER="pagerduty-lite-dev"
-SERVICE="pagerduty-lite-dev-api"
+CLUSTER="your-cluster-name"
+SERVICE="your-cluster-name-api"
 echo "Checking ECS service status..."
 aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --region us-east-1 --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount}' --output table`,
                 version: 1,
@@ -414,8 +414,8 @@ aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --region us
                 language: 'bash' as ScriptLanguage,
                 code: `#!/bin/bash
 set -e
-CLUSTER="pagerduty-lite-dev"
-SERVICE="pagerduty-lite-dev-api"
+CLUSTER="your-cluster-name"
+SERVICE="your-cluster-name-api"
 echo "Forcing new deployment..."
 aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment --region us-east-1 --output json | jq '.service | {status, runningCount, desiredCount}'
 echo "New deployment initiated. Tasks will restart in ~2 minutes."`,
@@ -446,7 +446,7 @@ echo "New deployment initiated. Tasks will restart in ~2 minutes."`,
               script: {
                 language: 'bash' as ScriptLanguage,
                 code: `#!/bin/bash
-aws ecs describe-services --cluster pagerduty-lite-dev --services pagerduty-lite-dev-api --region us-east-1 --query 'services[0].{Desired:desiredCount,Running:runningCount,Pending:pendingCount}' --output table`,
+aws ecs describe-services --cluster your-cluster-name --services your-cluster-name-api --region us-east-1 --query 'services[0].{Desired:desiredCount,Running:runningCount,Pending:pendingCount}' --output table`,
                 version: 1,
               },
             },
@@ -467,10 +467,10 @@ aws ecs describe-services --cluster pagerduty-lite-dev --services pagerduty-lite
                 language: 'bash' as ScriptLanguage,
                 code: `#!/bin/bash
 set -e
-CURRENT=$(aws ecs describe-services --cluster pagerduty-lite-dev --services pagerduty-lite-dev-api --query 'services[0].desiredCount' --output text)
+CURRENT=$(aws ecs describe-services --cluster your-cluster-name --services your-cluster-name-api --query 'services[0].desiredCount' --output text)
 NEW_COUNT=$((CURRENT + 1))
 echo "Scaling from $CURRENT to $NEW_COUNT tasks..."
-aws ecs update-service --cluster pagerduty-lite-dev --service pagerduty-lite-dev-api --desired-count "$NEW_COUNT" --region us-east-1 --output json | jq '.service.desiredCount'
+aws ecs update-service --cluster your-cluster-name --service your-cluster-name-api --desired-count "$NEW_COUNT" --region us-east-1 --output json | jq '.service.desiredCount'
 echo "Service scaled successfully!"`,
                 version: 1,
               },
