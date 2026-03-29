@@ -217,7 +217,7 @@ oncallshift-mcp`}</code>
         <p className="mt-4 text-sm text-slate-400">
           For the complete list of 30+ tools, see the{' '}
           <a
-            href="https://github.com/oncallshift/pagerduty-lite/tree/main/packages/oncallshift-mcp"
+            href="https://github.com/jarod-rosenthal/oncallshift/tree/main/packages/oncallshift-mcp"
             target="_blank"
             rel="noopener noreferrer"
             className="text-teal-400 hover:underline"

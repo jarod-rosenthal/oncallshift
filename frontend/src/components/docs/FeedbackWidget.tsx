@@ -11,8 +11,7 @@ export function FeedbackWidget({ pageId }: FeedbackWidgetProps) {
   const handleFeedback = (value: 'yes' | 'no') => {
     setFeedback(value);
     setSubmitted(true);
-    // In a real implementation, you would send this to your analytics/feedback endpoint
-    console.log('Feedback submitted:', { pageId, helpful: value === 'yes' });
+    // TODO: Implement feedback submission
   };
 
   if (submitted) {

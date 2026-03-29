@@ -313,7 +313,7 @@ export ONCALLSHIFT_API_KEY=your-api-key
 ## Support
 
 - Documentation: https://oncallshift.com/docs
-- Issues: https://github.com/oncallshift/pagerduty-lite/issues
+- Issues: https://github.com/jarod-rosenthal/oncallshift/issues
 - Email: support@oncallshift.com
 
 ## License

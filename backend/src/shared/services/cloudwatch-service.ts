@@ -150,8 +150,8 @@ export async function getECSServiceLogs(
 
   // Common ECS log group patterns
   const logGroupPatterns = [
-    `/ecs/pagerduty-lite-dev/${serviceName}`,
-    `/ecs/pagerduty-lite-dev-${serviceName}`,
+    `/ecs/${process.env.ECS_CLUSTER || 'oncallshift'}/${serviceName}`,
+    `/ecs/${process.env.ECS_CLUSTER || 'oncallshift'}-${serviceName}`,
     `/ecs/${serviceName}`,
     `/aws/ecs/${serviceName}`,
   ];

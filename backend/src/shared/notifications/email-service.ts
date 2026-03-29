@@ -81,7 +81,7 @@ export async function sendEmailNotification(payload: EmailNotificationPayload): 
     await notificationRepo.save(notification);
 
     try {
-      const fromEmail = process.env.SES_FROM_EMAIL || 'noreply@pagerduty-lite.com';
+      const fromEmail = process.env.SES_FROM_EMAIL || 'noreply@oncallshift.com';
       const sourceEmail = `OnCallShift Alerts <${fromEmail}>`;
       const subject = createEmailSubject(incident);
       const htmlBody = createEmailHTMLBody(incident, user);

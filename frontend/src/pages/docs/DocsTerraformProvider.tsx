@@ -61,8 +61,8 @@ provider "oncallshift" {
 
         <pre className="bg-slate-900 border border-white/5 p-4 rounded-lg overflow-x-auto text-sm">
           <code>{`# Clone the repository
-git clone https://github.com/oncallshift/pagerduty-lite.git
-cd pagerduty-lite/packages/terraform-provider-oncallshift
+git clone https://github.com/jarod-rosenthal/oncallshift.git
+cd oncallshift/packages/terraform-provider-oncallshift
 
 # Build and install
 make install
@@ -422,7 +422,7 @@ terraform import oncallshift_schedule.primary sch_def456`}</code>
           <code>oncallshift_routing_rule</code>, <code>oncallshift_runbook</code>, and{' '}
           <code>oncallshift_workflow</code>, see the provider README at{' '}
           <a
-            href="https://github.com/oncallshift/pagerduty-lite/tree/main/packages/terraform-provider-oncallshift"
+            href="https://github.com/jarod-rosenthal/oncallshift/tree/main/packages/terraform-provider-oncallshift"
             target="_blank"
             rel="noopener noreferrer"
             className="text-teal-400 hover:underline"

@@ -35,7 +35,7 @@ async function getMasterKey(): Promise<Buffer> {
       region: process.env.AWS_REGION || 'us-east-1',
     });
 
-    const secretId = `${process.env.PROJECT_NAME || 'pagerduty-lite'}-${process.env.ENVIRONMENT || 'dev'}-credential-key`;
+    const secretId = `${process.env.PROJECT_NAME || 'oncallshift'}-${process.env.ENVIRONMENT || 'dev'}-credential-key`;
 
     const response = await secretsClient.send(
       new GetSecretValueCommand({ SecretId: secretId })

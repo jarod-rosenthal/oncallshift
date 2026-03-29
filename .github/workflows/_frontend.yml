@@ -1,3 +1,6 @@
+# NOTE: Repository secrets must be configured in GitHub Settings > Secrets:
+#   secrets.AWS_ROLE_ARN, secrets.CLOUDFRONT_DISTRIBUTION_ID
+
 name: Frontend (S3 + CloudFront)
 
 # Only callable from orchestrator - no standalone triggers
@@ -48,7 +51,7 @@ jobs:
           # CloudFront distribution ID - hardcoded for dev environment
           # In production, this could be looked up dynamically
           if [ "$ENV" = "dev" ]; then
-            echo "CLOUDFRONT_DIST_ID=REDACTED_CLOUDFRONT_DIST_ID" >> $GITHUB_OUTPUT
+            echo "CLOUDFRONT_DIST_ID=${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" >> $GITHUB_OUTPUT
           else
             # Try to find CloudFront distribution dynamically
             DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?contains(Aliases.Items, 'oncallshift.com') || contains(Comment, 'oncallshift-${ENV}')].Id" --output text | head -1)
@@ -59,7 +62,7 @@ jobs:
             echo "CLOUDFRONT_DIST_ID=${DIST_ID}" >> $GITHUB_OUTPUT
           fi
 
-          echo "Found CloudFront Distribution: ${DIST_ID:-REDACTED_CLOUDFRONT_DIST_ID}"
+          echo "Found CloudFront Distribution: ${DIST_ID:-${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
