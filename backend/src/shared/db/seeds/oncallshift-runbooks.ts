@@ -322,7 +322,7 @@ import os
 
 # Note: In production, credentials come from environment variables injected at runtime
 DB_HOST = os.environ.get('DB_HOST', 'REDACTED_RDS_HOSTNAME')
-DB_NAME = os.environ.get('DB_NAME', 'pagerduty_lite')
+DB_NAME = os.environ.get('DB_NAME', 'oncallshift')
 DB_USER = os.environ.get('DB_USER', 'pgadmin')
 DB_PASS = os.environ.get('DB_PASSWORD', '')
 
@@ -395,7 +395,7 @@ except Exception as e:
 import os
 
 DB_HOST = os.environ.get('DB_HOST', 'REDACTED_RDS_HOSTNAME')
-DB_NAME = os.environ.get('DB_NAME', 'pagerduty_lite')
+DB_NAME = os.environ.get('DB_NAME', 'oncallshift')
 DB_USER = os.environ.get('DB_USER', 'pgadmin')
 DB_PASS = os.environ.get('DB_PASSWORD', '')
 

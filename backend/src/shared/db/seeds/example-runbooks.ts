@@ -269,7 +269,7 @@ from datetime import datetime
 # Database configuration (from environment or defaults)
 DB_HOST = os.environ.get('DB_HOST', 'REDACTED_RDS_HOSTNAME')
 DB_PORT = os.environ.get('DB_PORT', '5432')
-DB_NAME = os.environ.get('DB_NAME', 'pagerduty_lite')
+DB_NAME = os.environ.get('DB_NAME', 'oncallshift')
 DB_USER = os.environ.get('DB_USER', 'pgadmin')
 DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
 
