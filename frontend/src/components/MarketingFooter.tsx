@@ -95,8 +95,7 @@ export function MarketingFooter() {
               </a>
             </p>
             <div className="flex items-center gap-4 text-sm text-slate-600">
-              <span>SOC 2 Type II</span>
-              <span>99.9% Uptime SLA</span>
+              <span>Encrypted & Secure</span>
             </div>
           </div>
         </div>

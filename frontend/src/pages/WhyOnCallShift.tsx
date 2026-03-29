@@ -210,12 +210,12 @@ export function WhyOnCallShift() {
 
             <div className="border-2 border-white/5 rounded-lg p-6">
               <div className="text-2xl mb-3">🏛️</div>
-              <h3 className="font-bold mb-2 text-white">SOC 2 Type II Compliant</h3>
+              <h3 className="font-bold mb-2 text-white">Security First</h3>
               <ul className="space-y-1 text-sm text-slate-400">
-                <li>• Annual third-party audits</li>
-                <li>• Continuous monitoring</li>
-                <li>• Documented security policies</li>
-                <li>• Vendor security assessments</li>
+                <li>• Encryption at rest and in transit</li>
+                <li>• Cognito JWT authentication</li>
+                <li>• RBAC and audit logging</li>
+                <li>• Multi-tenant data isolation</li>
               </ul>
             </div>
 

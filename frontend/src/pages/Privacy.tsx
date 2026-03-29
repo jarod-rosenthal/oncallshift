@@ -78,7 +78,7 @@ export function Privacy() {
               <li>Encryption in transit (TLS) and at rest (AES-256)</li>
               <li>Regular security audits</li>
               <li>Access controls and audit logging</li>
-              <li>SOC 2 Type II compliance (Enterprise plan)</li>
+              <li>Incident response procedures</li>
             </ul>
 
             <h2 className="text-xl font-semibold mt-8 mb-4 text-white">7. Third-Party Services</h2>

@@ -38,11 +38,6 @@ export function Security() {
 
   const compliance = [
     {
-      name: 'SOC 2 Type II',
-      status: 'In Progress',
-      description: 'Annual audit for security, availability, and confidentiality controls.',
-    },
-    {
       name: 'GDPR',
       status: 'Compliant',
       description: 'EU data protection regulation compliance with DPA available.',
