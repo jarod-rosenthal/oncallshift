@@ -62,7 +62,7 @@ export function Landing() {
             </h1>
 
             <p className="text-xl md:text-2xl text-slate-400 mb-4 max-w-2xl mx-auto leading-relaxed">
-              Configure your org through Claude Code. Migrate from competitors with a conversation.
+              Configure your org from the AI in the terminal. Migrate from competitors with a conversation.
               Let AI diagnose and fix incidents while you sleep.
             </p>
 
