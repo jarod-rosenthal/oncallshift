@@ -108,10 +108,10 @@ export function DocsQuickStart() {
         <Callout type="info">
           <p>
             <strong>Need to migrate from another platform?</strong> Check out our{' '}
-            <Link to="/docs/migration/opsgenie" className="text-teal-400 hover:underline">
-              migration guides
+            <Link to="/docs/migration/guide" className="text-teal-400 hover:underline">
+              migration guide
             </Link>{' '}
-            for PagerDuty and Opsgenie.
+            for step-by-step instructions.
           </p>
         </Callout>
 

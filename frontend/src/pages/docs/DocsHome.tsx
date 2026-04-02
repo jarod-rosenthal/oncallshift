@@ -54,7 +54,7 @@ const categories = [
   },
   {
     title: 'Migration',
-    description: 'Switch from PagerDuty or Opsgenie',
+    description: 'Switch from your current incident platform',
     href: '/docs/migration/opsgenie',
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -70,7 +70,7 @@ const popularArticles = [
   { title: 'Understanding Escalation Policies', href: '/docs/concepts/escalation' },
   { title: 'AI Diagnosis Setup', href: '/docs/ai/diagnosis' },
   { title: 'API Authentication', href: '/docs/api/authentication' },
-  { title: 'Migrating from Opsgenie', href: '/docs/migration/opsgenie' },
+  { title: 'Migration Guide', href: '/docs/migration/guide' },
 ];
 
 export function DocsHome() {

@@ -63,8 +63,7 @@ export const docsNav: NavSection[] = [
   {
     title: 'Migration',
     items: [
-      { title: 'From Opsgenie', href: '/docs/migration/opsgenie' },
-      { title: 'From PagerDuty', href: '/docs/migration/pagerduty' },
+      { title: 'Migration Guide', href: '/docs/migration/guide' },
     ],
   },
 ];

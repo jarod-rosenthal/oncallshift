@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
+import { Github, ExternalLink } from 'lucide-react';
 
 /* ── WorkerMill logo icon (layered-diamond SVG matching workermill.com) ── */
 function WorkerMillIcon({ className = 'w-5 h-5' }: { className?: string }) {
@@ -66,16 +67,23 @@ export function Landing() {
             </p>
 
             <p className="text-lg text-slate-500 mb-10 max-w-2xl mx-auto">
-              Built by DevOps veterans with 15+ years of on-call experience. We've carried the pager,
-              managed the escalations, and written the runbooks. Now we're building the platform we always wanted.
+              A full-stack showcase project demonstrating AI-powered incident management, built entirely by{' '}
+              <a href="https://workermill.com" target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:text-teal-300">WorkerMill</a>{' '}
+              autonomous coding agents.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
-              <Link to="/register">
-                <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-lg px-8 h-12 shadow-lg shadow-teal-500/25 hover:shadow-teal-400/30 transition-all">
-                  Join Waitlist
+              <a
+                href="https://github.com/jarod-rosenthal/oncallshift"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-lg px-8 h-12 shadow-lg shadow-teal-500/25 hover:shadow-teal-400/30 transition-all inline-flex items-center gap-2">
+                  <Github className="w-5 h-5" />
+                  View on GitHub
+                  <ExternalLink className="w-4 h-4 opacity-50" />
                 </Button>
-              </Link>
+              </a>
               <Link to="/demo">
                 <Button size="lg" variant="outline" className="text-lg px-8 h-12 border-white/10 text-slate-300 hover:bg-white/5 hover:text-white">
                   Watch Demo
@@ -84,7 +92,7 @@ export function Landing() {
             </div>
 
             <p className="text-sm text-slate-500">
-              Be first in line · Early access coming soon
+              Open source · Built with WorkerMill AI agents
             </p>
           </div>
         </div>
@@ -160,7 +168,7 @@ export function Landing() {
               accent="cyan"
               items={[
                 <><strong>Configure</strong> your org from Claude Code</>,
-                <><strong>Migrate</strong> from PagerDuty with a conversation</>,
+                <><strong>Migrate</strong> from your current provider with a conversation</>,
                 'Manage incidents from your IDE',
                 'Works with Cursor, VS Code, any MCP client',
               ]}
@@ -237,12 +245,12 @@ export function Landing() {
               icon="🔄"
               title="Zero-Friction Migration"
               items={[
-                'Import from PagerDuty or Opsgenie',
+                'Import from your existing platform',
                 'Preserves integration keys',
                 'Migrate via AI conversation',
                 'Zero downtime cutover',
               ]}
-              link={{ to: '/migrate/from-pagerduty', label: 'Migration guide →' }}
+              link={{ to: '/docs', label: 'Migration guide →' }}
             />
           </div>
         </div>
@@ -333,8 +341,8 @@ export function Landing() {
                 <tr className="border-b border-white/10 bg-white/[0.02]">
                   <th className="py-4 px-5 font-semibold text-slate-400 text-sm"></th>
                   <th className="py-4 px-5 font-semibold text-teal-400 text-sm">OnCallShift</th>
-                  <th className="py-4 px-5 font-semibold text-slate-500 text-sm">PagerDuty</th>
-                  <th className="py-4 px-5 font-semibold text-slate-500 text-sm">OpsGenie</th>
+                  <th className="py-4 px-5 font-semibold text-slate-500 text-sm">Legacy Platforms</th>
+                  <th className="py-4 px-5 font-semibold text-slate-500 text-sm">Other Tools</th>
                 </tr>
               </thead>
               <tbody className="text-sm">
@@ -370,19 +378,19 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── OPSGENIE MIGRATION CTA ── */}
+      {/* ── MIGRATION CTA ── */}
       <section className="relative py-20 border-t border-white/5">
         <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 via-transparent to-amber-500/5 pointer-events-none" />
         <div className="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="text-4xl mb-4">🔔</div>
+          <div className="text-4xl mb-4">🔄</div>
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
-            Migrating from Opsgenie?
+            Ready to Switch?
           </h2>
           <p className="text-slate-400 mb-8 max-w-lg mx-auto">
-            Opsgenie sunsets April 2027. Don't get forced into expensive JSM licenses.
+            Migrate from your current incident platform in minutes.
             OnCallShift imports your schedules, policies, and teams in one click.
           </p>
-          <Link to="/migrate/from-opsgenie">
+          <Link to="/docs">
             <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold shadow-lg shadow-amber-500/20">
               See Migration Guide →
             </Button>
@@ -398,22 +406,32 @@ export function Landing() {
 
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4">
-            Ready to Fix On-Call?
+            Explore the Code
           </h2>
           <p className="text-xl text-slate-400 mb-10 max-w-2xl mx-auto">
-            Join the waitlist today. Be first to know when we launch.
+            OnCallShift is a full-stack demo project built by WorkerMill AI coding agents. Browse the source, run it locally, or watch the demo.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link to="/register">
-              <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-lg px-8 h-12 shadow-lg shadow-teal-500/25">
-                Join Waitlist
+            <a
+              href="https://github.com/jarod-rosenthal/oncallshift"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button size="lg" className="bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-lg px-8 h-12 shadow-lg shadow-teal-500/25 inline-flex items-center gap-2">
+                <Github className="w-5 h-5" />
+                View on GitHub
               </Button>
-            </Link>
-            <Link to="/demo">
-              <Button size="lg" variant="outline" className="text-lg px-8 h-12 border-white/10 text-slate-300 hover:bg-white/5 hover:text-white">
-                Schedule Demo
+            </a>
+            <a
+              href="https://workermill.com"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button size="lg" variant="outline" className="text-lg px-8 h-12 border-white/10 text-slate-300 hover:bg-white/5 hover:text-white inline-flex items-center gap-2">
+                Learn About WorkerMill
+                <ExternalLink className="w-4 h-4 opacity-50" />
               </Button>
-            </Link>
+            </a>
           </div>
         </div>
       </section>

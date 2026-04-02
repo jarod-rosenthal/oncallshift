@@ -52,14 +52,9 @@ const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ defaul
 const ImportWizard = lazy(() => import('./pages/ImportWizard').then(m => ({ default: m.ImportWizard })));
 const SemanticImportPage = lazy(() => import('./features/semanticImport/SemanticImportPage').then(m => ({ default: m.SemanticImportPage })));
 // Lazy loaded pages - Marketing/public pages
-const MigrateFromOpsgenie = lazy(() => import('./pages/MigrateFromOpsgenie').then(m => ({ default: m.MigrateFromOpsgenie })));
-const MigrateFromPagerDuty = lazy(() => import('./pages/MigrateFromPagerDuty').then(m => ({ default: m.MigrateFromPagerDuty })));
-const PagerDutyAlternative = lazy(() => import('./pages/PagerDutyAlternative').then(m => ({ default: m.PagerDutyAlternative })));
-const OpsgenieAlternative = lazy(() => import('./pages/OpsgenieAlternative').then(m => ({ default: m.OpsgenieAlternative })));
 const Product = lazy(() => import('./pages/Product').then(m => ({ default: m.Product })));
 const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Contact })));
 const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
-const WhyOnCallShift = lazy(() => import('./pages/WhyOnCallShift').then(m => ({ default: m.WhyOnCallShift })));
 const Privacy = lazy(() => import('./pages/Privacy').then(m => ({ default: m.Privacy })));
 const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms })));
 const Blog = lazy(() => import('./pages/Blog').then(m => ({ default: m.Blog })));
@@ -128,10 +123,6 @@ function App() {
         <Route element={<MarketingLayout />}>
           <Route path="/register" element={<Register />} />
           <Route path="/" element={<Landing />} />
-          <Route path="/migrate/from-opsgenie" element={<MigrateFromOpsgenie />} />
-          <Route path="/migrate/from-pagerduty" element={<MigrateFromPagerDuty />} />
-          <Route path="/alternatives/pagerduty" element={<PagerDutyAlternative />} />
-          <Route path="/alternatives/opsgenie" element={<OpsgenieAlternative />} />
           <Route path="/product" element={<Product />} />
           {/* Redirects for old product page URLs */}
           <Route path="/product/on-call-scheduling" element={<Navigate to="/product#scheduling" replace />} />
@@ -142,7 +133,6 @@ function App() {
           <Route path="/product/escalation-policies" element={<Navigate to="/product#escalation-policies" replace />} />
           <Route path="/company/contact" element={<Contact />} />
           <Route path="/company/about" element={<About />} />
-          <Route path="/why-oncallshift" element={<WhyOnCallShift />} />
           <Route path="/legal/privacy" element={<Privacy />} />
           <Route path="/legal/terms" element={<Terms />} />
           <Route path="/blog" element={<Blog />} />

@@ -270,7 +270,7 @@ export function Product() {
           <SectionHeader
             icon="🔌"
             title="Integrations"
-            subtitle="Connect your existing monitoring tools in minutes. PagerDuty and Opsgenie compatible webhooks."
+            subtitle="Connect your existing monitoring tools in minutes. Drop-in compatible webhooks for easy migration."
           />
 
           {/* Tool grid */}
@@ -286,8 +286,8 @@ export function Product() {
               { name: 'Jira', icon: '📋' },
               { name: 'Azure', icon: '☁️' },
               { name: 'GCP', icon: '☁️' },
-              { name: 'PagerDuty', icon: '📟' },
-              { name: 'Opsgenie', icon: '🔔' },
+              { name: 'Webhooks', icon: '🔗' },
+              { name: 'REST API', icon: '🔔' },
             ].map((tool) => (
               <div key={tool.name} className="flex flex-col items-center text-center p-3 rounded-xl hover:bg-white/5 transition-colors">
                 <div className="text-xl mb-1">{tool.icon}</div>
@@ -304,13 +304,13 @@ export function Product() {
                 <div className="flex items-center gap-3 text-sm">
                   <span className="text-red-400 text-xs w-12">Before:</span>
                   <code className="bg-red-500/10 px-3 py-1 rounded text-xs text-red-400 flex-1 overflow-x-auto">
-                    events.pagerduty.com/v2/enqueue
+                    events.your-old-provider.com/v2/enqueue
                   </code>
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <span className="text-green-400 text-xs w-12">After:</span>
                   <code className="bg-green-500/10 px-3 py-1 rounded text-xs text-green-400 flex-1 overflow-x-auto">
-                    api.oncallshift.com/webhooks/pagerduty
+                    api.oncallshift.com/webhooks/ingest
                   </code>
                 </div>
               </div>

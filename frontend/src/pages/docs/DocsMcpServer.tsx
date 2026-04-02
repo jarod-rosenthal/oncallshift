@@ -152,8 +152,8 @@ oncallshift-mcp`}</code>
         <h2>Platform Migration</h2>
 
         <Callout type="info" title="Migrate with a single conversation">
-          The MCP server includes built-in migration tools. You can migrate your entire PagerDuty
-          or Opsgenie configuration through natural language--no manual export/import required.
+          The MCP server includes built-in migration tools. You can migrate your entire existing
+          platform configuration through natural language--no manual export/import required.
         </Callout>
 
         <p>Example migration conversation:</p>
@@ -161,11 +161,11 @@ oncallshift-mcp`}</code>
         <div className="bg-white/[0.02] p-4 rounded-lg space-y-4 my-4 border border-white/5">
           <div className="flex gap-3">
             <span className="font-medium text-teal-400">You:</span>
-            <span className="text-slate-300">I want to migrate from PagerDuty to OnCallShift</span>
+            <span className="text-slate-300">I want to migrate from my current incident platform to OnCallShift</span>
           </div>
           <div className="flex gap-3">
             <span className="font-medium text-green-400">AI:</span>
-            <span className="text-slate-300">I can help with that! First, I need your PagerDuty API key. You can create a read-only key at User Settings &rarr; API Access.</span>
+            <span className="text-slate-300">I can help with that! First, I need your platform's API key. You can usually create a read-only key in your account settings.</span>
           </div>
           <div className="flex gap-3">
             <span className="font-medium text-teal-400">You:</span>
@@ -209,7 +209,7 @@ oncallshift-mcp`}</code>
               <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">get_incident_metrics</td><td className="text-slate-400">Get MTTR, MTTA, trends</td></tr>
               <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">analyze_oncall_fairness</td><td className="text-slate-400">Analyze on-call load distribution</td></tr>
               <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">suggest_improvements</td><td className="text-slate-400">AI-powered improvement suggestions</td></tr>
-              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">migrate_from_mcp</td><td className="text-slate-400">Migrate from PagerDuty/Opsgenie</td></tr>
+              <tr><td className="py-2 pr-4 font-mono text-xs text-teal-400">migrate_from_mcp</td><td className="text-slate-400">Migrate from another platform</td></tr>
             </tbody>
           </table>
         </div>
@@ -261,8 +261,8 @@ oncallshift-mcp`}</code>
               description: 'AI-powered incident analysis',
             },
             {
-              title: 'Migration from PagerDuty',
-              href: '/docs/migration/pagerduty',
+              title: 'Migration Guide',
+              href: '/docs/migration/guide',
               description: 'Complete migration guide',
             },
           ]}

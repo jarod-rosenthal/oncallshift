@@ -672,7 +672,7 @@ export function ScheduleDetail() {
               <div>
                 <CardTitle>Rotation Layers</CardTitle>
                 <CardDescription>
-                  Configure automated rotation layers (PagerDuty-style). Lower layer number = higher priority.
+                  Configure automated rotation layers. Lower layer number = higher priority.
                 </CardDescription>
               </div>
               <Button onClick={handleOpenLayerForm}>

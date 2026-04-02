@@ -151,7 +151,7 @@ export function Register() {
                 </svg>
               </div>
               <h3 className="text-sm font-semibold text-white mb-1">Zero-Friction Migration</h3>
-              <p className="text-xs text-slate-500">Import from PagerDuty or Opsgenie with a single API call</p>
+              <p className="text-xs text-slate-500">Import from your existing platform with a single API call</p>
             </div>
           </div>
 
